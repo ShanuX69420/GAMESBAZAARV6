@@ -84,3 +84,52 @@ export async function getListingDetail(id) {
   if (!res.ok) throw new Error('Failed to get listing');
   return res.json();
 }
+
+// ── Chat API ────────────────────────────────────────────────────────────────
+
+export async function getConversations() {
+  const res = await fetch(`${API_BASE}/api/chat/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get conversations');
+  return res.json();
+}
+
+export async function startConversation(userId, message = '') {
+  const res = await fetch(`${API_BASE}/api/chat/start/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ user_id: userId, message }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to start conversation');
+  return data;
+}
+
+export async function getConversation(id) {
+  const res = await fetch(`${API_BASE}/api/chat/${id}/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get conversation');
+  return res.json();
+}
+
+export async function sendMessage(conversationId, content) {
+  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/send/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ content }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to send message');
+  return data;
+}
+
+export async function getUnreadCount() {
+  const res = await fetch(`${API_BASE}/api/chat/unread/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) return { unread_count: 0 };
+  return res.json();
+}
+

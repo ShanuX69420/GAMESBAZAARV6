@@ -1,12 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import { getUnreadCount } from '@/lib/api';
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, loading, logout } = useAuth();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) { setUnread(0); return; }
+    const fetchUnread = () => {
+      getUnreadCount().then(d => setUnread(d.unread_count || 0)).catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 5000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   return (
     <>
@@ -22,6 +34,12 @@ export default function Navbar() {
             {!loading && (
               user ? (
                 <>
+                  <li>
+                    <Link href="/inbox" className="nav-messages-link">
+                      💬 Messages
+                      {unread > 0 && <span className="nav-unread-badge">{unread}</span>}
+                    </Link>
+                  </li>
                   <li><Link href="/dashboard">Dashboard</Link></li>
                   <li>
                     <button onClick={logout} className="nav-btn-text">
@@ -56,6 +74,9 @@ export default function Navbar() {
         {!loading && (
           user ? (
             <>
+              <Link href="/inbox" onClick={() => setMenuOpen(false)}>
+                💬 Messages {unread > 0 && `(${unread})`}
+              </Link>
               <Link href="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</Link>
               <a href="#" onClick={(e) => { e.preventDefault(); logout(); setMenuOpen(false); }}>
                 Logout ({user.username})

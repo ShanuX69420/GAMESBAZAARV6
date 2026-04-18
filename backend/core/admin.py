@@ -5,6 +5,7 @@ from django.urls import reverse
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
+    Conversation, Message,
 )
 
 
@@ -168,3 +169,31 @@ class GameCategoryFilterAdmin(HiddenModelAdmin):
 admin.site.site_header = '🎮 GamesBazaar Admin'
 admin.site.site_title = 'GamesBazaar'
 admin.site.index_title = 'Dashboard'
+
+
+# ── Chat Admin (hidden from sidebar) ─────────────────────────────────────────
+
+class MessageInline(admin.TabularInline):
+    model = Message
+    extra = 0
+    readonly_fields = ['sender', 'content', 'is_read', 'created_at']
+
+
+@admin.register(Conversation)
+class ConversationAdmin(HiddenModelAdmin):
+    list_display = ['__str__', 'message_count', 'updated_at']
+    inlines = [MessageInline]
+
+    @admin.display(description='Messages')
+    def message_count(self, obj):
+        return obj.messages.count()
+
+
+@admin.register(Message)
+class MessageAdmin(HiddenModelAdmin):
+    list_display = ['sender', 'content_preview', 'conversation', 'is_read', 'created_at']
+    list_filter = ['is_read']
+
+    @admin.display(description='Content')
+    def content_preview(self, obj):
+        return obj.content[:60]

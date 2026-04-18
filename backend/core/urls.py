@@ -23,4 +23,11 @@ urlpatterns = [
     path('listings/', views.ListingCreateView.as_view(), name='listing-create'),
     path('listings/mine/', views.MyListingsView.as_view(), name='my-listings'),
     path('listings/<int:pk>/', views.ListingDetailView.as_view(), name='listing-detail'),
+
+    # Chat
+    path('chat/', views.ConversationListView.as_view(), name='conversation-list'),
+    path('chat/start/', views.StartConversationView.as_view(), name='start-conversation'),
+    path('chat/unread/', views.UnreadCountView.as_view(), name='unread-count'),
+    path('chat/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
+    path('chat/<int:pk>/send/', views.SendMessageView.as_view(), name='send-message'),
 ]

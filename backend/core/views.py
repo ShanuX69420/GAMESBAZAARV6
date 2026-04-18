@@ -2,12 +2,14 @@ from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.models import User
 from django.db.models import Q
-from .models import Game, GameCategory, UserProfile, Listing
+from .models import Game, GameCategory, UserProfile, Listing, Conversation, Message
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, UserSerializer, SellerApplicationSerializer,
     ListingSerializer, CreateListingSerializer,
+    ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
 )
 
 
@@ -159,3 +161,116 @@ class ListingDetailView(generics.RetrieveAPIView):
     queryset = Listing.objects.select_related(
         'seller', 'game_category__game', 'game_category__category'
     )
+
+
+# ── Chat views ─────────────────────────────────────────────────────────────────
+
+class ConversationListView(APIView):
+    """GET /api/chat/ — List all conversations for current user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        conversations = Conversation.objects.filter(
+            participants=request.user
+        ).prefetch_related('participants', 'messages__sender')
+        data = ConversationListSerializer(conversations, many=True,
+                                           context={'request': request}).data
+        return Response(data)
+
+
+class StartConversationView(APIView):
+    """POST /api/chat/start/ — Find or create a conversation with a user.
+    Body: {"user_id": 5, "message": "Hi, is this still available?"}
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        other_user_id = request.data.get('user_id')
+        initial_message = request.data.get('message', '').strip()
+
+        if not other_user_id:
+            return Response({'error': 'user_id is required.'}, status=400)
+
+        if int(other_user_id) == request.user.id:
+            return Response({'error': 'Cannot chat with yourself.'}, status=400)
+
+        other_user = get_object_or_404(User, id=other_user_id)
+
+        # Find existing conversation between these two users
+        conversation = Conversation.objects.filter(
+            participants=request.user
+        ).filter(
+            participants=other_user
+        ).first()
+
+        if not conversation:
+            conversation = Conversation.objects.create()
+            conversation.participants.add(request.user, other_user)
+
+        # Send initial message if provided
+        if initial_message:
+            Message.objects.create(
+                conversation=conversation,
+                sender=request.user,
+                content=initial_message,
+            )
+            conversation.save()  # Update updated_at
+
+        data = ConversationDetailSerializer(conversation, context={'request': request}).data
+        return Response(data, status=201)
+
+
+class ConversationDetailView(APIView):
+    """GET /api/chat/{id}/ — Get conversation with messages."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        conversation = get_object_or_404(
+            Conversation.objects.prefetch_related('participants', 'messages__sender'),
+            pk=pk,
+            participants=request.user,
+        )
+
+        # Mark unread messages from the other user as read
+        conversation.messages.filter(is_read=False).exclude(
+            sender=request.user
+        ).update(is_read=True)
+
+        data = ConversationDetailSerializer(conversation, context={'request': request}).data
+        return Response(data)
+
+
+class SendMessageView(APIView):
+    """POST /api/chat/{id}/send/ — Send a message in a conversation."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        conversation = get_object_or_404(
+            Conversation, pk=pk, participants=request.user
+        )
+
+        content = request.data.get('content', '').strip()
+        if not content:
+            return Response({'error': 'Message cannot be empty.'}, status=400)
+
+        message = Message.objects.create(
+            conversation=conversation,
+            sender=request.user,
+            content=content,
+        )
+        conversation.save()  # Update updated_at
+
+        data = MessageSerializer(message, context={'request': request}).data
+        return Response(data, status=201)
+
+
+class UnreadCountView(APIView):
+    """GET /api/chat/unread/ — Total unread message count for navbar badge."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        count = Message.objects.filter(
+            conversation__participants=request.user,
+            is_read=False,
+        ).exclude(sender=request.user).count()
+        return Response({'unread_count': count})

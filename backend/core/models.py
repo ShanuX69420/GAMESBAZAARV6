@@ -184,3 +184,41 @@ class Listing(models.Model):
     def __str__(self):
         return f"{self.title} — PKR {self.price}"
 
+
+# ── Chat ─────────────────────────────────────────────────────────────────────
+
+class Conversation(models.Model):
+    """A unified conversation between two users (not tied to orders/listings)."""
+    participants = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='conversations')
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        names = ', '.join(u.username for u in self.participants.all()[:2])
+        return f"Chat: {names}"
+
+    def other_user(self, user):
+        """Return the other participant in the conversation."""
+        return self.participants.exclude(id=user.id).first()
+
+
+class Message(models.Model):
+    """A message within a conversation."""
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE,
+                                      related_name='messages')
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name='sent_messages')
+    content = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.sender.username}: {self.content[:40]}"
+
+

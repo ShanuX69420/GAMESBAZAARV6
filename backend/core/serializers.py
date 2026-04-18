@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
+    Conversation, Message,
 )
 
 
@@ -136,6 +137,7 @@ class SellerApplicationSerializer(serializers.Serializer):
 # ── Listing Serializers ──────────────────────────────────────────────────────
 
 class ListingSerializer(serializers.ModelSerializer):
+    seller_id = serializers.IntegerField(source='seller.id', read_only=True)
     seller_name = serializers.CharField(source='seller.username', read_only=True)
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.category.name', read_only=True)
@@ -145,7 +147,7 @@ class ListingSerializer(serializers.ModelSerializer):
         model = Listing
         fields = [
             'id', 'title', 'description', 'price', 'status',
-            'seller_name', 'game_name', 'category_name',
+            'seller_id', 'seller_name', 'game_name', 'category_name',
             'filter_values', 'filter_display', 'created_at',
         ]
 
@@ -188,3 +190,76 @@ class CreateListingSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['seller'] = self.context['request'].user
         return Listing.objects.create(**validated_data)
+
+
+# ── Chat Serializers ─────────────────────────────────────────────────────────
+
+class MessageSerializer(serializers.ModelSerializer):
+    sender_name = serializers.CharField(source='sender.username', read_only=True)
+    sender_id = serializers.IntegerField(source='sender.id', read_only=True)
+    is_mine = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Message
+        fields = ['id', 'sender_id', 'sender_name', 'content', 'is_read', 'is_mine', 'created_at']
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        if request:
+            return obj.sender_id == request.user.id
+        return False
+
+
+class ConversationListSerializer(serializers.ModelSerializer):
+    other_user = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = ['id', 'other_user', 'last_message', 'unread_count', 'updated_at']
+
+    def get_other_user(self, obj):
+        request = self.context.get('request')
+        if request:
+            other = obj.other_user(request.user)
+            if other:
+                return {'id': other.id, 'username': other.username}
+        return None
+
+    def get_last_message(self, obj):
+        msg = obj.messages.order_by('-created_at').first()
+        if msg:
+            return {
+                'content': msg.content[:80],
+                'sender_name': msg.sender.username,
+                'created_at': msg.created_at,
+            }
+        return None
+
+    def get_unread_count(self, obj):
+        request = self.context.get('request')
+        if request:
+            return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
+        return 0
+
+
+class ConversationDetailSerializer(serializers.ModelSerializer):
+    other_user = serializers.SerializerMethodField()
+    messages = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = ['id', 'other_user', 'messages', 'updated_at']
+
+    def get_other_user(self, obj):
+        request = self.context.get('request')
+        if request:
+            other = obj.other_user(request.user)
+            if other:
+                return {'id': other.id, 'username': other.username}
+        return None
+
+    def get_messages(self, obj):
+        msgs = obj.messages.select_related('sender').all()
+        return MessageSerializer(msgs, many=True, context=self.context).data
