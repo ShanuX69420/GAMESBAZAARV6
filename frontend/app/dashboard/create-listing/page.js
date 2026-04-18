@@ -19,6 +19,7 @@ export default function CreateListingPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [quantity, setQuantity] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -67,14 +68,19 @@ export default function CreateListingPage() {
     setError('');
     setSubmitting(true);
     try {
-      await createListing({
+      const listingData = {
         game_slug: selectedGame.slug,
         category_slug: selectedCategory.slug,
         title,
         description,
         price: parseFloat(price),
         filter_values: filterValues,
-      });
+      };
+      // Only include quantity if the seller set it
+      if (quantity !== '') {
+        listingData.quantity = parseInt(quantity);
+      }
+      await createListing(listingData);
       router.push('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -229,6 +235,23 @@ export default function CreateListingPage() {
                   step="1"
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Stock Quantity (Optional)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="Leave empty for unlimited"
+                  min="1"
+                  step="1"
+                />
+                <span className="form-hint">
+                  Leave empty for an evergreen listing that never goes out of stock.
+                  Set a number to auto-deactivate after that many sales.
+                </span>
               </div>
 
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>

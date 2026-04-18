@@ -68,6 +68,14 @@ export default function Navbar() {
                       {unread > 0 && <span className="nav-unread-badge">{unread}</span>}
                     </Link>
                   </li>
+                  <li><Link href="/orders">Purchases</Link></li>
+                  {user.is_seller && (
+                    <>
+                      <li><Link href="/sales">Sales</Link></li>
+                      <li><Link href="/my-listings">My Listings</Link></li>
+                    </>
+                  )}
+                  <li><Link href="/wallet">Wallet</Link></li>
                   <li><Link href="/dashboard">Dashboard</Link></li>
                   <li>
                     <button onClick={logout} className="nav-btn-text">
@@ -105,6 +113,14 @@ export default function Navbar() {
               <Link href="/inbox" onClick={() => setMenuOpen(false)}>
                 Messages {unread > 0 && `(${unread})`}
               </Link>
+              <Link href="/orders" onClick={() => setMenuOpen(false)}>Purchases</Link>
+              {user.is_seller && (
+                <>
+                  <Link href="/sales" onClick={() => setMenuOpen(false)}>Sales</Link>
+                  <Link href="/my-listings" onClick={() => setMenuOpen(false)}>My Listings</Link>
+                </>
+              )}
+              <Link href="/wallet" onClick={() => setMenuOpen(false)}>Wallet</Link>
               <Link href="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</Link>
               <a href="#" onClick={(e) => { e.preventDefault(); logout(); setMenuOpen(false); }}>
                 Logout ({user.username})

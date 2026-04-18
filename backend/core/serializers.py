@@ -4,6 +4,8 @@ from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
+    Wallet, WalletTransaction, TopUpRequest, Order,
+    SellerCommissionOverride,
 )
 
 
@@ -124,10 +126,17 @@ class RegisterSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     seller_status = serializers.CharField(source='profile.seller_status', read_only=True)
     is_seller = serializers.BooleanField(source='profile.is_seller', read_only=True)
+    wallet_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'seller_status', 'is_seller']
+        fields = ['id', 'username', 'email', 'seller_status', 'is_seller', 'wallet_balance']
+
+    def get_wallet_balance(self, obj):
+        wallet = getattr(obj, 'wallet', None)
+        if wallet:
+            return str(wallet.balance)
+        return '0.00'
 
 
 class SellerApplicationSerializer(serializers.Serializer):
@@ -146,7 +155,7 @@ class ListingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = [
-            'id', 'title', 'description', 'price', 'status',
+            'id', 'title', 'description', 'price', 'quantity', 'status',
             'seller_id', 'seller_name', 'game_name', 'category_name',
             'filter_values', 'filter_display', 'created_at',
         ]
@@ -170,10 +179,11 @@ class ListingSerializer(serializers.ModelSerializer):
 class CreateListingSerializer(serializers.ModelSerializer):
     game_slug = serializers.SlugField(write_only=True)
     category_slug = serializers.SlugField(write_only=True)
+    quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
 
     class Meta:
         model = Listing
-        fields = ['game_slug', 'category_slug', 'title', 'description', 'price', 'filter_values']
+        fields = ['game_slug', 'category_slug', 'title', 'description', 'price', 'quantity', 'filter_values']
 
     def validate(self, attrs):
         game_slug = attrs.pop('game_slug')
@@ -190,6 +200,14 @@ class CreateListingSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['seller'] = self.context['request'].user
         return Listing.objects.create(**validated_data)
+
+
+class UpdateListingSerializer(serializers.ModelSerializer):
+    quantity = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+    class Meta:
+        model = Listing
+        fields = ['title', 'description', 'price', 'quantity', 'status']
 
 
 # ── Chat Serializers ─────────────────────────────────────────────────────────
@@ -284,3 +302,82 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
     def get_messages(self, obj):
         msgs = obj.messages.select_related('sender').all()
         return MessageSerializer(msgs, many=True, context=self.context).data
+
+
+# ── Wallet Serializers ───────────────────────────────────────────────────────
+
+class WalletSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Wallet
+        fields = ['balance', 'updated_at']
+
+
+class WalletTransactionSerializer(serializers.ModelSerializer):
+    transaction_type_display = serializers.CharField(
+        source='get_transaction_type_display', read_only=True
+    )
+
+    class Meta:
+        model = WalletTransaction
+        fields = [
+            'id', 'transaction_type', 'transaction_type_display',
+            'amount', 'balance_after', 'description', 'reference_id',
+            'created_at',
+        ]
+
+
+class TopUpRequestSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    payment_proof_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TopUpRequest
+        fields = [
+            'id', 'amount', 'payment_method', 'payment_proof_url',
+            'transaction_id', 'status', 'status_display',
+            'admin_note', 'created_at', 'reviewed_at',
+        ]
+
+    def get_payment_proof_url(self, obj):
+        if obj.payment_proof:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.payment_proof.url)
+            return obj.payment_proof.url
+        return None
+
+
+class CreateTopUpRequestSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1)
+    payment_method = serializers.CharField(max_length=200, required=False, default='')
+    transaction_id = serializers.CharField(max_length=200, required=False, default='')
+
+
+# ── Order Serializers ────────────────────────────────────────────────────────
+
+class OrderSerializer(serializers.ModelSerializer):
+    buyer_id = serializers.IntegerField(source='buyer.id', read_only=True)
+    buyer_name = serializers.CharField(source='buyer.username', read_only=True)
+    seller_id = serializers.IntegerField(source='seller.id', read_only=True)
+    seller_name = serializers.CharField(source='seller.username', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    listing_id = serializers.IntegerField(source='listing.id', read_only=True, default=None)
+    conversation_id = serializers.IntegerField(source='conversation.id', read_only=True, default=None)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'buyer_id', 'buyer_name', 'seller_id', 'seller_name',
+            'listing_id', 'listing_title', 'quantity',
+            'unit_price', 'total_amount',
+            'commission_rate', 'commission_amount', 'seller_amount',
+            'status', 'status_display',
+            'delivery_note', 'dispute_reason',
+            'conversation_id',
+            'created_at', 'updated_at',
+        ]
+
+
+class BuyListingSerializer(serializers.Serializer):
+    listing_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1, default=1)

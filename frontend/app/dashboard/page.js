@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getSellerStatus, applyAsSeller, getMyListings } from '@/lib/api';
+import { getSellerStatus, applyAsSeller, getMyListings, getWallet, getMySales } from '@/lib/api';
 
 export default function DashboardPage() {
   const { user, loading, fetchUser } = useAuth();
   const router = useRouter();
   const [sellerData, setSellerData] = useState(null);
   const [listings, setListings] = useState([]);
+  const [walletData, setWalletData] = useState(null);
+  const [sales, setSales] = useState([]);
   const [applicationNote, setApplicationNote] = useState('');
   const [applyError, setApplyError] = useState('');
   const [applying, setApplying] = useState(false);
@@ -18,15 +20,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
+      return;
     }
-  }, [user, loading, router]);
-
-  useEffect(() => {
     if (user) {
       getSellerStatus().then(setSellerData).catch(() => {});
+      getWallet().then(setWalletData).catch(() => {});
       getMyListings().then(setListings).catch(() => {});
+      getMySales().then(setSales).catch(() => {});
     }
-  }, [user]);
+  }, [user, loading, router]);
 
   async function handleApply(e) {
     e.preventDefault();
@@ -34,9 +36,9 @@ export default function DashboardPage() {
     setApplying(true);
     try {
       await applyAsSeller(applicationNote);
+      await fetchUser();
       const status = await getSellerStatus();
       setSellerData(status);
-      await fetchUser();
     } catch (err) {
       setApplyError(err.message);
     } finally {
@@ -52,6 +54,8 @@ export default function DashboardPage() {
     );
   }
 
+  const pendingSales = sales.filter(s => s.status === 'pending').length;
+
   return (
     <div className="container">
       <div className="page-header">
@@ -59,46 +63,93 @@ export default function DashboardPage() {
         <p className="page-subtitle">Welcome back, <strong>{user.username}</strong></p>
       </div>
 
+      {/* Quick Stats */}
+      <div className="dashboard-stats">
+        <Link href="/wallet" className="stat-card">
+          <div className="stat-icon">💰</div>
+          <div className="stat-info">
+            <div className="stat-value">
+              PKR {walletData ? Number(walletData.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 }) : '0.00'}
+            </div>
+            <div className="stat-label">Wallet Balance</div>
+          </div>
+        </Link>
+        <Link href="/orders" className="stat-card">
+          <div className="stat-icon">🛍️</div>
+          <div className="stat-info">
+            <div className="stat-value">My Purchases</div>
+            <div className="stat-label">View your order history</div>
+          </div>
+        </Link>
+        {sellerData?.is_seller && (
+          <>
+            <Link href="/sales" className="stat-card">
+              <div className="stat-icon">📦</div>
+              <div className="stat-info">
+                <div className="stat-value">{pendingSales} pending</div>
+                <div className="stat-label">Sales to Deliver</div>
+              </div>
+            </Link>
+            <Link href="/my-listings" className="stat-card">
+              <div className="stat-icon">🛒</div>
+              <div className="stat-info">
+                <div className="stat-value">{listings.length}</div>
+                <div className="stat-label">My Listings</div>
+              </div>
+            </Link>
+          </>
+        )}
+      </div>
+
       {/* Seller Status Section */}
       <section className="section">
         <div className="dashboard-card">
           <h2 className="card-title">🏪 Seller Status</h2>
-
-          {!sellerData || sellerData.seller_status === 'none' ? (
+          {!sellerData ? (
+            <div className="loading"><div className="loading-spinner"></div> Loading...</div>
+          ) : sellerData.seller_status === 'none' ? (
             <div>
-              <p className="card-text">
-                Want to sell on GamesBazaar? Apply to become a seller!
+              <p style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>
+                Want to sell on GamesBazaar? Apply to become a seller.
               </p>
               {applyError && <div className="alert alert-error">{applyError}</div>}
-              <form onSubmit={handleApply} className="seller-apply-form">
+              <form onSubmit={handleApply}>
                 <div className="form-group">
-                  <label className="form-label">Why do you want to sell?</label>
+                  <label className="form-label">Tell us about yourself</label>
                   <textarea
                     className="form-textarea"
                     value={applicationNote}
                     onChange={(e) => setApplicationNote(e.target.value)}
-                    placeholder="Tell us about yourself and what you plan to sell..."
+                    placeholder="What do you plan to sell? Any experience?"
                     rows={3}
                     required
                   />
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={applying}>
-                  {applying ? 'Submitting...' : 'Apply to Sell'}
+                  {applying ? 'Submitting...' : 'Apply as Seller'}
                 </button>
               </form>
             </div>
           ) : sellerData.seller_status === 'pending' ? (
-            <div className="status-badge status-pending">
-              ⏳ Your seller application is under review
+            <div>
+              <div className="status-badge status-pending">
+                ⏳ Your seller application is under review
+              </div>
             </div>
           ) : sellerData.seller_status === 'approved' ? (
             <div>
               <div className="status-badge status-approved">
                 ✅ You are an approved seller
               </div>
-              <div style={{ marginTop: '16px' }}>
+              <div style={{ marginTop: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <Link href="/dashboard/create-listing" className="btn btn-primary">
                   + Create New Listing
+                </Link>
+                <Link href="/my-listings" className="btn btn-outline">
+                  📋 View My Listings
+                </Link>
+                <Link href="/sales" className="btn btn-outline">
+                  💼 View My Sales
                 </Link>
               </div>
             </div>
@@ -109,58 +160,6 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
-
-      {/* My Listings Section */}
-      {sellerData?.is_seller && (
-        <section className="section">
-          <div className="section-header">
-            <h2 className="section-title">My Listings</h2>
-            <Link href="/dashboard/create-listing" className="btn btn-sm btn-primary">
-              + New Listing
-            </Link>
-          </div>
-
-          {listings.length > 0 ? (
-            <div className="listings-table-wrap">
-              <table className="listings-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Game</th>
-                    <th>Category</th>
-                    <th>Price</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {listings.map((listing) => (
-                    <tr key={listing.id}>
-                      <td>
-                        <Link href={`/listing/${listing.id}`} className="listing-link">
-                          {listing.title}
-                        </Link>
-                      </td>
-                      <td>{listing.game_name}</td>
-                      <td>{listing.category_name}</td>
-                      <td className="listing-price">PKR {listing.price}</td>
-                      <td>
-                        <span className={`status-pill status-${listing.status}`}>
-                          {listing.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <div className="empty-state-icon">📦</div>
-              <p>No listings yet. Create your first listing!</p>
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }

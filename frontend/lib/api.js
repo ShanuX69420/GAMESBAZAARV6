@@ -85,6 +85,31 @@ export async function getListingDetail(id) {
   return res.json();
 }
 
+export async function updateListing(id, data) {
+  const res = await fetch(`${API_BASE}/api/listings/${id}/`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(result).flat();
+    throw new Error(errors[0] || 'Failed to update listing');
+  }
+  return result;
+}
+
+export async function deleteListing(id) {
+  const res = await fetch(`${API_BASE}/api/listings/${id}/`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error('Failed to delete listing');
+  }
+  return true;
+}
+
 // ── Chat API ────────────────────────────────────────────────────────────────
 
 export async function getConversations() {
@@ -169,4 +194,129 @@ export function formatLastActive(isoString) {
   if (diff < 3600) return `Active ${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
   return `Active ${Math.floor(diff / 86400)}d ago`;
+}
+
+// ── Wallet API ──────────────────────────────────────────────────────────────
+
+export async function getWallet() {
+  const res = await fetch(`${API_BASE}/api/wallet/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get wallet');
+  return res.json();
+}
+
+export async function getWalletTransactions() {
+  const res = await fetch(`${API_BASE}/api/wallet/transactions/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get transactions');
+  return res.json();
+}
+
+export async function requestTopUp(amount, paymentMethod = '', transactionId = '', paymentProof = null) {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('amount', amount);
+  if (paymentMethod) formData.append('payment_method', paymentMethod);
+  if (transactionId) formData.append('transaction_id', transactionId);
+  if (paymentProof) formData.append('payment_proof', paymentProof);
+
+  const res = await fetch(`${API_BASE}/api/wallet/top-up/`, {
+    method: 'POST',
+    headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || data.amount?.[0] || 'Top-up request failed');
+  return data;
+}
+
+export async function getTopUpRequests() {
+  const res = await fetch(`${API_BASE}/api/wallet/top-up/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get top-up requests');
+  return res.json();
+}
+
+// ── Orders API ──────────────────────────────────────────────────────────────
+
+export async function buyListing(listingId, quantity = 1) {
+  const res = await fetch(`${API_BASE}/api/orders/buy/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ listing_id: listingId, quantity }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Purchase failed');
+  return data;
+}
+
+export async function getMyOrders() {
+  const res = await fetch(`${API_BASE}/api/orders/mine/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get orders');
+  return res.json();
+}
+
+export async function getMySales() {
+  const res = await fetch(`${API_BASE}/api/orders/sales/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get sales');
+  return res.json();
+}
+
+export async function getOrderDetail(id) {
+  const res = await fetch(`${API_BASE}/api/orders/${id}/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get order');
+  return res.json();
+}
+
+export async function deliverOrder(id, deliveryNote = '') {
+  const res = await fetch(`${API_BASE}/api/orders/${id}/deliver/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ delivery_note: deliveryNote }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to deliver order');
+  return data;
+}
+
+export async function confirmOrder(id) {
+  const res = await fetch(`${API_BASE}/api/orders/${id}/confirm/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to confirm order');
+  return data;
+}
+
+export async function disputeOrder(id, reason) {
+  const res = await fetch(`${API_BASE}/api/orders/${id}/dispute/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to dispute order');
+  return data;
+}
+
+export async function refundOrder(id) {
+  const res = await fetch(`${API_BASE}/api/orders/${id}/refund/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to refund order');
+  return data;
 }

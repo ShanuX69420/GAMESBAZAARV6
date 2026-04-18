@@ -34,4 +34,19 @@ urlpatterns = [
 
     # Presence
     path('heartbeat/', views.HeartbeatView.as_view(), name='heartbeat'),
+
+    # Wallet
+    path('wallet/', views.WalletView.as_view(), name='wallet'),
+    path('wallet/transactions/', views.WalletTransactionsView.as_view(), name='wallet-transactions'),
+    path('wallet/top-up/', views.TopUpRequestView.as_view(), name='topup-request'),
+
+    # Orders
+    path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),
+    path('orders/mine/', views.MyOrdersView.as_view(), name='my-orders'),
+    path('orders/sales/', views.MySalesView.as_view(), name='my-sales'),
+    path('orders/<int:pk>/', views.OrderDetailView.as_view(), name='order-detail'),
+    path('orders/<int:pk>/deliver/', views.DeliverOrderView.as_view(), name='deliver-order'),
+    path('orders/<int:pk>/confirm/', views.ConfirmOrderView.as_view(), name='confirm-order'),
+    path('orders/<int:pk>/dispute/', views.DisputeOrderView.as_view(), name='dispute-order'),
+    path('orders/<int:pk>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
 ]

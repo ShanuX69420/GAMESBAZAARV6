@@ -6,6 +6,7 @@ from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
+    Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
 )
 
 
@@ -43,6 +44,9 @@ class GameCategoryFilterInline(admin.TabularInline):
     autocomplete_fields = ['filter']
 
 
+
+
+
 # ── Visible in Sidebar ──────────────────────────────────────────────────────
 
 @admin.register(Game)
@@ -61,9 +65,15 @@ class GameAdmin(admin.ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'slug', 'icon', 'game_count', 'created_at']
+    list_display = ['name', 'slug', 'icon', 'commission_rate_display', 'game_count', 'created_at']
+    list_editable = []
     search_fields = ['name', 'slug']
     prepopulated_fields = {'slug': ('name',)}
+    fields = ['name', 'slug', 'description', 'icon', 'commission_rate']
+
+    @admin.display(description='Commission')
+    def commission_rate_display(self, obj):
+        return f'{obj.commission_rate}%'
 
     @admin.display(description='Used in Games')
     def game_count(self, obj):
@@ -84,11 +94,18 @@ class FilterAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'seller_status', 'created_at', 'seller_reviewed_at']
+    list_display = ['user', 'seller_status', 'wallet_balance', 'created_at', 'seller_reviewed_at']
     list_filter = ['seller_status']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'seller_application_note', 'created_at']
     actions = ['approve_sellers', 'reject_sellers']
+
+    @admin.display(description='Wallet Balance')
+    def wallet_balance(self, obj):
+        wallet = getattr(obj.user, 'wallet', None)
+        if wallet:
+            return f'PKR {wallet.balance}'
+        return 'N/A'
 
     @admin.action(description='✅ Approve selected sellers')
     def approve_sellers(self, request, queryset):
@@ -109,10 +126,180 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Listing)
 class ListingAdmin(admin.ModelAdmin):
-    list_display = ['title', 'seller', 'game_category', 'price', 'status', 'created_at']
+    list_display = ['title', 'seller', 'game_category', 'price', 'quantity', 'status', 'created_at']
     list_filter = ['status', 'game_category__game']
     search_fields = ['title', 'seller__username']
     readonly_fields = ['seller', 'created_at', 'updated_at']
+
+
+# ── Wallet & Orders (Visible in Sidebar) ────────────────────────────────────
+
+@admin.register(TopUpRequest)
+class TopUpRequestAdmin(admin.ModelAdmin):
+    list_display = ['user', 'amount', 'payment_method', 'status', 'created_at', 'reviewed_at']
+    list_filter = ['status']
+    search_fields = ['user__username', 'transaction_id']
+    readonly_fields = ['user', 'amount', 'payment_method', 'transaction_id',
+                       'payment_proof', 'created_at']
+    fields = ['user', 'amount', 'payment_method', 'transaction_id',
+              'payment_proof', 'status', 'admin_note', 'reviewed_at', 'created_at']
+    actions = ['approve_topups', 'reject_topups']
+
+    def save_model(self, request, obj, form, change):
+        """Credit wallet when admin changes status to 'approved' via edit form."""
+        if change and 'status' in form.changed_data and obj.status == 'approved':
+            from .models import Wallet, WalletTransaction
+            wallet, _ = Wallet.objects.get_or_create(user=obj.user)
+            # Check if we already credited this top-up (avoid double credit)
+            already_credited = WalletTransaction.objects.filter(
+                reference_id=f'topup_{obj.pk}',
+                transaction_type='topup_approved',
+            ).exists()
+            if not already_credited:
+                wallet.balance += obj.amount
+                wallet.save(update_fields=['balance'])
+                WalletTransaction.objects.create(
+                    wallet=wallet,
+                    transaction_type='topup_approved',
+                    amount=obj.amount,
+                    balance_after=wallet.balance,
+                    description=f'Top-up approved: PKR {obj.amount} via {obj.payment_method or "N/A"}',
+                    reference_id=f'topup_{obj.pk}',
+                )
+            obj.reviewed_at = timezone.now()
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description='✅ Approve selected top-ups')
+    def approve_topups(self, request, queryset):
+        from .models import Wallet, WalletTransaction
+        count = 0
+        for topup in queryset.filter(status='pending'):
+            wallet, _ = Wallet.objects.get_or_create(user=topup.user)
+            # Check if we already credited this top-up
+            already_credited = WalletTransaction.objects.filter(
+                reference_id=f'topup_{topup.pk}',
+                transaction_type='topup_approved',
+            ).exists()
+            if not already_credited:
+                wallet.balance += topup.amount
+                wallet.save(update_fields=['balance'])
+                WalletTransaction.objects.create(
+                    wallet=wallet,
+                    transaction_type='topup_approved',
+                    amount=topup.amount,
+                    balance_after=wallet.balance,
+                    description=f'Top-up approved: PKR {topup.amount} via {topup.payment_method or "N/A"}',
+                    reference_id=f'topup_{topup.pk}',
+                )
+
+            topup.status = 'approved'
+            topup.reviewed_at = timezone.now()
+            topup.save(update_fields=['status', 'reviewed_at'])
+            count += 1
+        self.message_user(request, f'{count} top-up(s) approved and wallets credited.')
+
+    @admin.action(description='❌ Reject selected top-ups')
+    def reject_topups(self, request, queryset):
+        updated = queryset.filter(status='pending').update(
+            status='rejected',
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(request, f'{updated} top-up(s) rejected.')
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ['id', 'listing_title', 'buyer', 'seller', 'total_amount',
+                    'commission_display', 'status', 'created_at']
+    list_filter = ['status']
+    search_fields = ['listing_title', 'buyer__username', 'seller__username']
+    readonly_fields = ['buyer', 'seller', 'listing', 'listing_title', 'quantity',
+                       'unit_price', 'total_amount', 'commission_rate',
+                       'commission_amount', 'seller_amount', 'created_at', 'updated_at']
+    actions = ['refund_and_cancel', 'release_to_seller']
+
+    @admin.display(description='Commission')
+    def commission_display(self, obj):
+        return f'{obj.commission_rate}% (PKR {obj.commission_amount})'
+
+    @admin.action(description='💰 Refund buyer & cancel (for disputes)')
+    def refund_and_cancel(self, request, queryset):
+        from .models import Wallet, WalletTransaction
+        count = 0
+        for order in queryset.filter(status__in=('pending', 'delivered', 'disputed')):
+            # Refund buyer
+            buyer_wallet, _ = Wallet.objects.get_or_create(user=order.buyer)
+            buyer_wallet.balance += order.total_amount
+            buyer_wallet.save(update_fields=['balance'])
+
+            WalletTransaction.objects.create(
+                wallet=buyer_wallet,
+                transaction_type='refund',
+                amount=order.total_amount,
+                balance_after=buyer_wallet.balance,
+                description=f'Refund: {order.listing_title}',
+                reference_id=f'order_{order.pk}',
+            )
+
+            # Restore stock if listing still exists
+            if order.listing:
+                order.listing.quantity += order.quantity
+                if order.listing.status == 'sold':
+                    order.listing.status = 'active'
+                order.listing.save(update_fields=['quantity', 'status'])
+
+            order.status = 'cancelled'
+            order.save(update_fields=['status', 'updated_at'])
+            count += 1
+        self.message_user(request, f'{count} order(s) refunded and cancelled.')
+
+    @admin.action(description='✅ Release to seller (resolve dispute in seller favor)')
+    def release_to_seller(self, request, queryset):
+        from .models import Wallet, WalletTransaction
+        count = 0
+        for order in queryset.filter(status='disputed'):
+            seller_wallet, _ = Wallet.objects.get_or_create(user=order.seller)
+            seller_wallet.balance += order.seller_amount
+            seller_wallet.save(update_fields=['balance'])
+
+            WalletTransaction.objects.create(
+                wallet=seller_wallet,
+                transaction_type='sale',
+                amount=order.seller_amount,
+                balance_after=seller_wallet.balance,
+                description=f'Dispute resolved (seller): {order.listing_title}',
+                reference_id=f'order_{order.pk}',
+            )
+
+            if order.commission_amount > 0:
+                WalletTransaction.objects.create(
+                    wallet=seller_wallet,
+                    transaction_type='commission',
+                    amount=order.commission_amount,
+                    balance_after=seller_wallet.balance,
+                    description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                    reference_id=f'order_{order.pk}',
+                )
+
+            order.status = 'completed'
+            order.save(update_fields=['status', 'updated_at'])
+            count += 1
+        self.message_user(request, f'{count} order(s) released to seller.')
+
+
+@admin.register(SellerCommissionOverride)
+class SellerCommissionOverrideAdmin(admin.ModelAdmin):
+    list_display = ['seller', 'category', 'commission_rate', 'created_at']
+    list_filter = ['category']
+    search_fields = ['seller__username', 'category__name']
+    autocomplete_fields = ['seller', 'category']
+
+
+@admin.register(Wallet)
+class WalletAdmin(admin.ModelAdmin):
+    list_display = ['user', 'balance', 'updated_at']
+    search_fields = ['user__username']
+    readonly_fields = ['user', 'balance', 'updated_at', 'created_at']
 
 
 # ── Hidden from Sidebar (still accessible via links) ────────────────────────
@@ -197,3 +384,11 @@ class MessageAdmin(HiddenModelAdmin):
     @admin.display(description='Content')
     def content_preview(self, obj):
         return obj.content[:60]
+
+
+@admin.register(WalletTransaction)
+class WalletTransactionAdmin(HiddenModelAdmin):
+    list_display = ['wallet', 'transaction_type', 'amount', 'balance_after', 'created_at']
+    list_filter = ['transaction_type']
+    search_fields = ['wallet__user__username', 'description']
+
