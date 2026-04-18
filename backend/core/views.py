@@ -19,6 +19,7 @@ from .serializers import (
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     OrderSerializer, BuyListingSerializer,
 )
+from .services import get_or_create_locked_wallet, validate_uploaded_image
 
 
 # ── Public Game / Category / Filter views ────────────────────────────────────
@@ -309,14 +310,9 @@ class SendImageView(APIView):
         if not image:
             return Response({'error': 'No image provided.'}, status=400)
 
-        # Validate file type
-        allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-        if image.content_type not in allowed:
-            return Response({'error': 'Invalid image type.'}, status=400)
-
-        # Validate file size (5MB max)
-        if image.size > 5 * 1024 * 1024:
-            return Response({'error': 'Image too large. Max 5MB.'}, status=400)
+        validation_error = validate_uploaded_image(image)
+        if validation_error:
+            return Response({'error': validation_error}, status=400)
 
         content = request.data.get('content', '').strip()
         message = Message.objects.create(
@@ -400,6 +396,10 @@ class TopUpRequestView(APIView):
 
         # Handle payment proof image upload
         payment_proof = request.FILES.get('payment_proof')
+        if payment_proof:
+            validation_error = validate_uploaded_image(payment_proof)
+            if validation_error:
+                return Response({'error': validation_error}, status=400)
 
         topup = TopUpRequest.objects.create(
             user=request.user,
@@ -439,38 +439,45 @@ class BuyListingView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        listing = get_object_or_404(Listing, id=data['listing_id'])
         qty = data.get('quantity', 1)
 
-        # Validations
-        if listing.status != 'active':
-            return Response({'error': 'This listing is no longer available.'}, status=400)
-
-        if listing.seller == request.user:
-            return Response({'error': 'You cannot buy your own listing.'}, status=400)
-
-        if listing.quantity is not None and qty > listing.quantity:
-            return Response({'error': f'Only {listing.quantity} available.'}, status=400)
-
-        total = listing.price * qty
-
-        # Get wallet
-        wallet, _ = Wallet.objects.get_or_create(user=request.user)
-
-        if wallet.balance < total:
-            return Response({'error': 'Insufficient wallet balance.'}, status=400)
-
-        # Calculate commission
-        category = listing.game_category.category
-        rate = get_commission_rate(listing.seller, category)
-        commission = (total * rate / Decimal('100')).quantize(Decimal('0.01'))
-        seller_receives = total - commission
-
-        # Atomic: deduct from buyer, create order, reduce stock
         with db_transaction.atomic():
+            listing = get_object_or_404(
+                Listing.objects.select_for_update().select_related(
+                    'seller',
+                    'game_category__category',
+                ),
+                id=data['listing_id'],
+            )
+
+            # Run validations after locking the listing so stock/status cannot
+            # change between the check and the stock decrement.
+            if listing.status != 'active':
+                return Response({'error': 'This listing is no longer available.'}, status=400)
+
+            if listing.seller == request.user:
+                return Response({'error': 'You cannot buy your own listing.'}, status=400)
+
+            if listing.quantity is not None and qty > listing.quantity:
+                return Response({'error': f'Only {listing.quantity} available.'}, status=400)
+
+            total = listing.price * qty
+            if total <= 0:
+                return Response({'error': 'Invalid listing price.'}, status=400)
+
+            wallet = get_or_create_locked_wallet(request.user)
+
+            if wallet.balance < total:
+                return Response({'error': 'Insufficient wallet balance.'}, status=400)
+
+            category = listing.game_category.category
+            rate = get_commission_rate(listing.seller, category)
+            commission = (total * rate / Decimal('100')).quantize(Decimal('0.01'))
+            seller_receives = total - commission
+
             # Deduct from buyer
             wallet.balance -= total
-            wallet.save(update_fields=['balance'])
+            wallet.save(update_fields=['balance', 'updated_at'])
 
             # Create order
             order = Order.objects.create(
@@ -598,16 +605,23 @@ class ConfirmOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk, buyer=request.user)
-
-        if order.status not in ('pending', 'delivered'):
-            return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
-
         with db_transaction.atomic():
+            order = get_object_or_404(
+                Order.objects.select_for_update().select_related('seller'),
+                pk=pk,
+                buyer=request.user,
+            )
+
+            if order.status == 'completed':
+                return Response(OrderSerializer(order).data)
+
+            if order.status not in ('pending', 'delivered'):
+                return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
+
             # Release funds to seller (minus commission)
-            seller_wallet, _ = Wallet.objects.get_or_create(user=order.seller)
+            seller_wallet = get_or_create_locked_wallet(order.seller)
             seller_wallet.balance += order.seller_amount
-            seller_wallet.save(update_fields=['balance'])
+            seller_wallet.save(update_fields=['balance', 'updated_at'])
 
             # Log sale transaction for seller
             WalletTransaction.objects.create(
@@ -662,21 +676,31 @@ class RefundOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk, seller=request.user)
-
-        if order.status == 'cancelled':
-            return Response({'error': 'Order is already cancelled/refunded.'}, status=400)
-
         with db_transaction.atomic():
+            order = get_object_or_404(
+                Order.objects.select_for_update().select_related('buyer', 'seller'),
+                pk=pk,
+                seller=request.user,
+            )
+
+            if order.status == 'cancelled':
+                return Response(OrderSerializer(order).data)
+
+            listing = None
+            if order.listing_id:
+                listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
+                if listing and listing.quantity is None:
+                    listing = None
+
             # If order was completed, seller already received funds — deduct from seller
             if order.status == 'completed':
-                seller_wallet, _ = Wallet.objects.get_or_create(user=order.seller)
+                seller_wallet = get_or_create_locked_wallet(order.seller)
                 if seller_wallet.balance < order.seller_amount:
                     return Response({
                         'error': f'Insufficient seller wallet balance. You need PKR {order.seller_amount} to refund.'
                     }, status=400)
                 seller_wallet.balance -= order.seller_amount
-                seller_wallet.save(update_fields=['balance'])
+                seller_wallet.save(update_fields=['balance', 'updated_at'])
                 WalletTransaction.objects.create(
                     wallet=seller_wallet,
                     transaction_type='refund',
@@ -687,9 +711,9 @@ class RefundOrderView(APIView):
                 )
 
             # Refund buyer the full amount
-            buyer_wallet, _ = Wallet.objects.get_or_create(user=order.buyer)
+            buyer_wallet = get_or_create_locked_wallet(order.buyer)
             buyer_wallet.balance += order.total_amount
-            buyer_wallet.save(update_fields=['balance'])
+            buyer_wallet.save(update_fields=['balance', 'updated_at'])
 
             WalletTransaction.objects.create(
                 wallet=buyer_wallet,
@@ -701,11 +725,11 @@ class RefundOrderView(APIView):
             )
 
             # Restore stock if listing exists and has finite stock
-            if order.listing and order.listing.quantity is not None:
-                order.listing.quantity += order.quantity
-                if order.listing.status == 'sold':
-                    order.listing.status = 'active'
-                order.listing.save(update_fields=['quantity', 'status'])
+            if listing:
+                listing.quantity += order.quantity
+                if listing.status == 'sold':
+                    listing.status = 'active'
+                listing.save(update_fields=['quantity', 'status'])
 
             order.status = 'cancelled'
             order.save(update_fields=['status', 'updated_at'])

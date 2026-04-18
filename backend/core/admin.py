@@ -2,12 +2,14 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
+from django.db import transaction
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
 )
+from .services import apply_wallet_delta_once, approve_topup_request
 
 
 # ── Inlines ──────────────────────────────────────────────────────────────────
@@ -148,54 +150,24 @@ class TopUpRequestAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """Credit wallet when admin changes status to 'approved' via edit form."""
         if change and 'status' in form.changed_data and obj.status == 'approved':
-            from .models import Wallet, WalletTransaction
-            wallet, _ = Wallet.objects.get_or_create(user=obj.user)
-            # Check if we already credited this top-up (avoid double credit)
-            already_credited = WalletTransaction.objects.filter(
-                reference_id=f'topup_{obj.pk}',
-                transaction_type='topup_approved',
-            ).exists()
-            if not already_credited:
-                wallet.balance += obj.amount
-                wallet.save(update_fields=['balance'])
-                WalletTransaction.objects.create(
-                    wallet=wallet,
-                    transaction_type='topup_approved',
-                    amount=obj.amount,
-                    balance_after=wallet.balance,
-                    description=f'Top-up approved: PKR {obj.amount} via {obj.payment_method or "N/A"}',
-                    reference_id=f'topup_{obj.pk}',
-                )
-            obj.reviewed_at = timezone.now()
+            with transaction.atomic():
+                TopUpRequest.objects.select_for_update().get(pk=obj.pk)
+                super().save_model(request, obj, form, change)
+                obj.refresh_from_db()
+                approve_topup_request(obj)
+            return
         super().save_model(request, obj, form, change)
 
     @admin.action(description='✅ Approve selected top-ups')
     def approve_topups(self, request, queryset):
-        from .models import Wallet, WalletTransaction
         count = 0
-        for topup in queryset.filter(status='pending'):
-            wallet, _ = Wallet.objects.get_or_create(user=topup.user)
-            # Check if we already credited this top-up
-            already_credited = WalletTransaction.objects.filter(
-                reference_id=f'topup_{topup.pk}',
-                transaction_type='topup_approved',
-            ).exists()
-            if not already_credited:
-                wallet.balance += topup.amount
-                wallet.save(update_fields=['balance'])
-                WalletTransaction.objects.create(
-                    wallet=wallet,
-                    transaction_type='topup_approved',
-                    amount=topup.amount,
-                    balance_after=wallet.balance,
-                    description=f'Top-up approved: PKR {topup.amount} via {topup.payment_method or "N/A"}',
-                    reference_id=f'topup_{topup.pk}',
-                )
-
-            topup.status = 'approved'
-            topup.reviewed_at = timezone.now()
-            topup.save(update_fields=['status', 'reviewed_at'])
-            count += 1
+        for topup_id in queryset.filter(status='pending').values_list('pk', flat=True):
+            with transaction.atomic():
+                topup = TopUpRequest.objects.select_for_update().select_related('user').get(pk=topup_id)
+                if topup.status != 'pending':
+                    continue
+                approve_topup_request(topup)
+                count += 1
         self.message_user(request, f'{count} top-up(s) approved and wallets credited.')
 
     @admin.action(description='❌ Reject selected top-ups')
@@ -224,66 +196,67 @@ class OrderAdmin(admin.ModelAdmin):
 
     @admin.action(description='💰 Refund buyer & cancel (for disputes)')
     def refund_and_cancel(self, request, queryset):
-        from .models import Wallet, WalletTransaction
         count = 0
-        for order in queryset.filter(status__in=('pending', 'delivered', 'disputed')):
-            # Refund buyer
-            buyer_wallet, _ = Wallet.objects.get_or_create(user=order.buyer)
-            buyer_wallet.balance += order.total_amount
-            buyer_wallet.save(update_fields=['balance'])
+        for order_id in queryset.filter(status__in=('pending', 'delivered', 'disputed')).values_list('pk', flat=True):
+            with transaction.atomic():
+                order = Order.objects.select_for_update().select_related('buyer').get(pk=order_id)
+                if order.status not in ('pending', 'delivered', 'disputed'):
+                    continue
 
-            WalletTransaction.objects.create(
-                wallet=buyer_wallet,
-                transaction_type='refund',
-                amount=order.total_amount,
-                balance_after=buyer_wallet.balance,
-                description=f'Refund: {order.listing_title}',
-                reference_id=f'order_{order.pk}',
-            )
+                apply_wallet_delta_once(
+                    order.buyer,
+                    delta=order.total_amount,
+                    transaction_type='refund',
+                    amount=order.total_amount,
+                    description=f'Refund: {order.listing_title}',
+                    reference_id=f'order_{order.pk}',
+                )
 
-            # Restore stock if listing still exists
-            if order.listing:
-                order.listing.quantity += order.quantity
-                if order.listing.status == 'sold':
-                    order.listing.status = 'active'
-                order.listing.save(update_fields=['quantity', 'status'])
+                # Restore stock if listing still exists and has finite stock.
+                if order.listing_id:
+                    listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
+                    if listing and listing.quantity is not None:
+                        listing.quantity += order.quantity
+                        if listing.status == 'sold':
+                            listing.status = 'active'
+                        listing.save(update_fields=['quantity', 'status'])
 
-            order.status = 'cancelled'
-            order.save(update_fields=['status', 'updated_at'])
-            count += 1
+                order.status = 'cancelled'
+                order.save(update_fields=['status', 'updated_at'])
+                count += 1
         self.message_user(request, f'{count} order(s) refunded and cancelled.')
 
     @admin.action(description='✅ Release to seller (resolve dispute in seller favor)')
     def release_to_seller(self, request, queryset):
-        from .models import Wallet, WalletTransaction
         count = 0
-        for order in queryset.filter(status='disputed'):
-            seller_wallet, _ = Wallet.objects.get_or_create(user=order.seller)
-            seller_wallet.balance += order.seller_amount
-            seller_wallet.save(update_fields=['balance'])
+        for order_id in queryset.filter(status='disputed').values_list('pk', flat=True):
+            with transaction.atomic():
+                order = Order.objects.select_for_update().select_related('seller').get(pk=order_id)
+                if order.status != 'disputed':
+                    continue
 
-            WalletTransaction.objects.create(
-                wallet=seller_wallet,
-                transaction_type='sale',
-                amount=order.seller_amount,
-                balance_after=seller_wallet.balance,
-                description=f'Dispute resolved (seller): {order.listing_title}',
-                reference_id=f'order_{order.pk}',
-            )
-
-            if order.commission_amount > 0:
-                WalletTransaction.objects.create(
-                    wallet=seller_wallet,
-                    transaction_type='commission',
-                    amount=order.commission_amount,
-                    balance_after=seller_wallet.balance,
-                    description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                apply_wallet_delta_once(
+                    order.seller,
+                    delta=order.seller_amount,
+                    transaction_type='sale',
+                    amount=order.seller_amount,
+                    description=f'Dispute resolved (seller): {order.listing_title}',
                     reference_id=f'order_{order.pk}',
                 )
 
-            order.status = 'completed'
-            order.save(update_fields=['status', 'updated_at'])
-            count += 1
+                if order.commission_amount > 0:
+                    apply_wallet_delta_once(
+                        order.seller,
+                        delta=0,
+                        transaction_type='commission',
+                        amount=order.commission_amount,
+                        description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                        reference_id=f'order_{order.pk}',
+                    )
+
+                order.status = 'completed'
+                order.save(update_fields=['status', 'updated_at'])
+                count += 1
         self.message_user(request, f'{count} order(s) released to seller.')
 
 
@@ -391,4 +364,3 @@ class WalletTransactionAdmin(HiddenModelAdmin):
     list_display = ['wallet', 'transaction_type', 'amount', 'balance_after', 'created_at']
     list_filter = ['transaction_type']
     search_fields = ['wallet__user__username', 'description']
-

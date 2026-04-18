@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
@@ -179,6 +180,7 @@ class ListingSerializer(serializers.ModelSerializer):
 class CreateListingSerializer(serializers.ModelSerializer):
     game_slug = serializers.SlugField(write_only=True)
     category_slug = serializers.SlugField(write_only=True)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
 
     class Meta:
@@ -203,6 +205,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
 
 
 class UpdateListingSerializer(serializers.ModelSerializer):
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
     class Meta:

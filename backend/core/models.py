@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.utils.text import slugify
 
 
@@ -184,7 +185,11 @@ class Listing(models.Model):
                                        related_name='listings')
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True, default='')
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
     quantity = models.PositiveIntegerField(
         null=True, blank=True, default=None,
         help_text='Available stock. Leave empty for unlimited (evergreen). Auto-deactivates when finite stock reaches 0.',
@@ -197,6 +202,12 @@ class Listing(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(price__gt=Decimal('0.00')),
+                name='listing_price_positive',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.title} — PKR {self.price}"
@@ -304,6 +315,13 @@ class WalletTransaction(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['wallet', 'transaction_type', 'reference_id'],
+                condition=~models.Q(reference_id=''),
+                name='uniq_wallet_tx_type_reference',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.wallet.user.username} — {self.get_transaction_type_display()} — PKR {self.amount}"
@@ -384,4 +402,3 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.pk} — {self.listing_title} — {self.get_status_display()}"
-
