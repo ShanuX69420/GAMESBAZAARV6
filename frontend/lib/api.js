@@ -139,6 +139,17 @@ export async function getConversation(id) {
   return res.json();
 }
 
+export async function getChatWebSocketTicket(conversationId) {
+  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/ws-ticket/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to get chat connection ticket');
+  return data;
+}
+
 export async function sendMessage(conversationId, content) {
   const res = await fetch(`${API_BASE}/api/chat/${conversationId}/send/`, {
     method: 'POST',

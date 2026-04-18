@@ -1,5 +1,4 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from . import views
 
 urlpatterns = [
@@ -11,8 +10,8 @@ urlpatterns = [
 
     # Auth
     path('auth/register/', views.RegisterView.as_view(), name='register'),
-    path('auth/login/', TokenObtainPairView.as_view(), name='token-obtain'),
-    path('auth/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('auth/login/', views.LoginView.as_view(), name='token-obtain'),
+    path('auth/refresh/', views.RefreshTokenView.as_view(), name='token-refresh'),
     path('auth/me/', views.MeView.as_view(), name='me'),
 
     # Seller
@@ -29,8 +28,10 @@ urlpatterns = [
     path('chat/start/', views.StartConversationView.as_view(), name='start-conversation'),
     path('chat/unread/', views.UnreadCountView.as_view(), name='unread-count'),
     path('chat/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
+    path('chat/<int:pk>/ws-ticket/', views.ChatWebSocketTicketView.as_view(), name='chat-ws-ticket'),
     path('chat/<int:pk>/send/', views.SendMessageView.as_view(), name='send-message'),
     path('chat/<int:pk>/send-image/', views.SendImageView.as_view(), name='send-image'),
+    path('chat/messages/<int:pk>/image/', views.ChatMessageImageView.as_view(), name='chat-message-image'),
 
     # Presence
     path('heartbeat/', views.HeartbeatView.as_view(), name='heartbeat'),
@@ -39,6 +40,7 @@ urlpatterns = [
     path('wallet/', views.WalletView.as_view(), name='wallet'),
     path('wallet/transactions/', views.WalletTransactionsView.as_view(), name='wallet-transactions'),
     path('wallet/top-up/', views.TopUpRequestView.as_view(), name='topup-request'),
+    path('wallet/top-up/<int:pk>/proof/', views.TopUpProofView.as_view(), name='topup-proof'),
 
     # Orders
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),

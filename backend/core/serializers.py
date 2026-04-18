@@ -1,6 +1,10 @@
 from decimal import Decimal
+from urllib.parse import urlencode
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.urls import reverse
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
@@ -8,6 +12,39 @@ from .models import (
     Wallet, WalletTransaction, TopUpRequest, Order,
     SellerCommissionOverride,
 )
+from .services import create_private_media_ticket
+
+
+def build_listing_filter_display_map(listings):
+    pairs = set()
+    for listing in listings:
+        for filter_id_str, option_value in (listing.filter_values or {}).items():
+            try:
+                pairs.add((int(filter_id_str), option_value))
+            except (TypeError, ValueError):
+                continue
+
+    if not pairs:
+        return {}
+
+    filter_ids = {filter_id for filter_id, _ in pairs}
+    option_values = {option_value for _, option_value in pairs}
+    options = FilterOption.objects.select_related('filter').filter(
+        filter_id__in=filter_ids,
+        value__in=option_values,
+    )
+    return {
+        (str(option.filter_id), option.value): (option.filter.name, option.label)
+        for option in options
+    }
+
+
+def build_private_media_url(request, view_name, object_id, kind):
+    ticket = create_private_media_ticket(kind, object_id)
+    path = f"{reverse(view_name, args=[object_id])}?{urlencode({'ticket': ticket})}"
+    if request:
+        return request.build_absolute_uri(path)
+    return path
 
 
 # ── Game / Category / Filter Serializers (from Phase 1) ──────────────────────
@@ -116,6 +153,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({'password2': 'Passwords do not match.'})
+        user = User(username=attrs.get('username'), email=attrs.get('email'))
+        try:
+            validate_password(attrs['password'], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'password': list(exc.messages)})
         return attrs
 
     def create(self, validated_data):
@@ -165,8 +207,14 @@ class ListingSerializer(serializers.ModelSerializer):
         """Convert filter_values {filter_id: option_value} to human-readable labels."""
         if not obj.filter_values:
             return {}
+        display_map = self.context.get('filter_option_display_map') or {}
         result = {}
         for filter_id_str, option_value in obj.filter_values.items():
+            mapped = display_map.get((filter_id_str, option_value))
+            if mapped:
+                filter_name, option_label = mapped
+                result[filter_name] = option_label
+                continue
             try:
                 opt = FilterOption.objects.select_related('filter').get(
                     filter__id=int(filter_id_str), value=option_value
@@ -234,9 +282,7 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_image_url(self, obj):
         if obj.image:
             request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
+            return build_private_media_url(request, 'chat-message-image', obj.pk, 'chat_message_image')
         return None
 
 
@@ -252,7 +298,11 @@ class ConversationListSerializer(serializers.ModelSerializer):
     def get_other_user(self, obj):
         request = self.context.get('request')
         if request:
-            other = obj.other_user(request.user)
+            other = next(
+                (participant for participant in obj.participants.all()
+                 if participant.id != request.user.id),
+                None,
+            )
             if other:
                 profile = getattr(other, 'profile', None)
                 return {
@@ -264,7 +314,19 @@ class ConversationListSerializer(serializers.ModelSerializer):
         return None
 
     def get_last_message(self, obj):
-        msg = obj.messages.order_by('-created_at').first()
+        latest_created_at = getattr(obj, 'latest_message_created_at', None)
+        if latest_created_at is not None:
+            return {
+                'content': (getattr(obj, 'latest_message_content', '') or '')[:80],
+                'sender_name': getattr(obj, 'latest_message_sender_name', '') or '',
+                'created_at': latest_created_at,
+            }
+
+        prefetched_messages = getattr(obj, 'prefetched_messages_desc', None)
+        if prefetched_messages is not None:
+            msg = prefetched_messages[0] if prefetched_messages else None
+        else:
+            msg = obj.messages.order_by('-created_at').first()
         if msg:
             return {
                 'content': msg.content[:80],
@@ -275,6 +337,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
 
     def get_unread_count(self, obj):
         request = self.context.get('request')
+        if hasattr(obj, 'unread_messages_count'):
+            return obj.unread_messages_count
         if request:
             return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
         return 0
@@ -291,7 +355,11 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
     def get_other_user(self, obj):
         request = self.context.get('request')
         if request:
-            other = obj.other_user(request.user)
+            other = next(
+                (participant for participant in obj.participants.all()
+                 if participant.id != request.user.id),
+                None,
+            )
             if other:
                 profile = getattr(other, 'profile', None)
                 return {
@@ -344,9 +412,7 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
     def get_payment_proof_url(self, obj):
         if obj.payment_proof:
             request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.payment_proof.url)
-            return obj.payment_proof.url
+            return build_private_media_url(request, 'topup-proof', obj.pk, 'topup_proof')
         return None
 
 

@@ -74,7 +74,7 @@ DATABASES = {
 }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
@@ -104,6 +104,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_PAGINATION_CLASS': None,
+    'DEFAULT_THROTTLE_RATES': {
+        'auth_login': '10/min',
+        'auth_refresh': '30/min',
+        'auth_register': '5/hour',
+        'chat_start': '20/min',
+        'chat_upload': '20/min',
+        'topup_request': '10/hour',
+        'heartbeat': '120/hour',
+    },
 }
 
 # JWT Settings
@@ -127,4 +136,3 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
     },
 }
-

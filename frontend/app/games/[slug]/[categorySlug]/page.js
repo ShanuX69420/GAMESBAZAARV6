@@ -3,38 +3,55 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getGameIcon } from '@/lib/icons';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const LISTING_PAGE_SIZE = 48;
 
 export default function GameCategoryPage() {
   const params = useParams();
   const { slug, categorySlug } = params;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeFilters, setActiveFilters] = useState({});
 
-  const fetchData = useCallback(async (filters = {}) => {
-    setLoading(true);
+  const fetchData = useCallback(async (filters = {}, offset = 0, append = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const filterParams = Object.entries(filters)
-        .filter(([, v]) => v)
-        .map(([k, v]) => `filter_${k}=${v}`)
-        .join('&');
-      const url = `${API_BASE}/api/games/${slug}/${categorySlug}/${filterParams ? '?' + filterParams : ''}`;
+      const query = new URLSearchParams({
+        limit: String(LISTING_PAGE_SIZE),
+        offset: String(offset),
+      });
+      Object.entries(filters)
+        .filter(([, value]) => value)
+        .forEach(([key, value]) => query.set(`filter_${key}`, value));
+
+      const url = `${API_BASE}/api/games/${slug}/${categorySlug}/?${query.toString()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
-        setData(await res.json());
+        const nextData = await res.json();
+        setData(prev => {
+          if (!append || !prev) return nextData;
+          return {
+            ...nextData,
+            listings: [...(prev.listings || []), ...(nextData.listings || [])],
+          };
+        });
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [slug, categorySlug]);
 
   useEffect(() => {
-    fetchData(activeFilters);
+    fetchData(activeFilters, 0, false);
   }, [fetchData, activeFilters]);
 
   function handleFilterChange(filterId, value) {
@@ -62,6 +79,8 @@ export default function GameCategoryPage() {
   if (!data) return null;
 
   const { game, category, filters, listings } = data;
+  const pagination = data.listing_pagination;
+  const listingCount = pagination?.count ?? listings?.length ?? 0;
 
   return (
     <div className="container">
@@ -141,7 +160,7 @@ export default function GameCategoryPage() {
       <section className="section">
         <div className="section-header">
           <h2 className="section-title">
-            {listings?.length || 0} Listing{listings?.length !== 1 ? 's' : ''}
+            {listingCount} Listing{listingCount !== 1 ? 's' : ''}
           </h2>
         </div>
 
@@ -165,6 +184,16 @@ export default function GameCategoryPage() {
                 <div className="listing-row-price">PKR {listing.price}</div>
               </Link>
             ))}
+            {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+              <button
+                className="btn btn-outline btn-full"
+                style={{ marginTop: '16px' }}
+                onClick={() => fetchData(activeFilters, pagination.next_offset, true)}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading...' : 'Load More'}
+              </button>
+            )}
           </div>
         ) : (
           <div className="empty-state">

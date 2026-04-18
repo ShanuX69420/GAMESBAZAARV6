@@ -1,4 +1,5 @@
 from PIL import Image, UnidentifiedImageError
+from django.core import signing
 from django.utils import timezone
 
 from .models import Wallet, WalletTransaction
@@ -6,6 +7,10 @@ from .models import Wallet, WalletTransaction
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
 MAX_IMAGE_UPLOAD_SIZE = 5 * 1024 * 1024
+CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
+CHAT_WS_TICKET_SALT = 'core.chat.websocket'
+PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
+PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
 
 
 def get_or_create_locked_wallet(user):
@@ -66,3 +71,41 @@ def validate_uploaded_image(image):
         image.seek(0)
 
     return None
+
+
+def create_chat_ws_ticket(user, conversation_id):
+    """Create a short-lived ticket for opening one chat WebSocket."""
+    return signing.dumps(
+        {
+            'user_id': user.pk,
+            'conversation_id': int(conversation_id),
+        },
+        salt=CHAT_WS_TICKET_SALT,
+    )
+
+
+def decode_chat_ws_ticket(ticket, max_age=CHAT_WS_TICKET_MAX_AGE_SECONDS):
+    payload = signing.loads(ticket, salt=CHAT_WS_TICKET_SALT, max_age=max_age)
+    return {
+        'user_id': int(payload['user_id']),
+        'conversation_id': int(payload['conversation_id']),
+    }
+
+
+def create_private_media_ticket(kind, object_id):
+    """Create a short-lived bearer ticket for a protected uploaded file."""
+    return signing.dumps(
+        {
+            'kind': kind,
+            'object_id': int(object_id),
+        },
+        salt=PRIVATE_MEDIA_TICKET_SALT,
+    )
+
+
+def decode_private_media_ticket(ticket, max_age=PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS):
+    payload = signing.loads(ticket, salt=PRIVATE_MEDIA_TICKET_SALT, max_age=max_age)
+    return {
+        'kind': str(payload['kind']),
+        'object_id': int(payload['object_id']),
+    }

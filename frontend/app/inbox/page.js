@@ -21,7 +21,7 @@ export default function InboxPage() {
   const fetchConvos = useCallback(() => {
     if (!user) return;
     getConversations()
-      .then(setConversations)
+      .then(data => setConversations(sortConversationsByActivity(data)))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [user]);
@@ -159,4 +159,12 @@ function formatTime(dateStr) {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
   return date.toLocaleDateString();
+}
+
+function sortConversationsByActivity(conversations) {
+  return [...conversations].sort((a, b) => {
+    const aDate = new Date(a.last_message?.created_at || a.updated_at).getTime();
+    const bDate = new Date(b.last_message?.created_at || b.updated_at).getTime();
+    return bDate - aDate;
+  });
 }

@@ -1,20 +1,25 @@
 from decimal import Decimal
 from io import BytesIO
 from threading import Barrier, Thread
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.test import RequestFactory, TestCase, TransactionTestCase
+from django.urls import resolve
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
 from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
-    Category, Conversation, Game, GameCategory, Listing, Message, Order,
-    TopUpRequest, Wallet, WalletTransaction,
+    Category, Conversation, Filter, FilterOption, Game, GameCategory, Listing, Message, Order,
+    SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
 
 
@@ -23,6 +28,13 @@ def make_image_file(name='proof.png', image_format='PNG', content_type='image/pn
     image = Image.new('RGB', (2, 2), color='green')
     image.save(buffer, format=image_format)
     return SimpleUploadedFile(name, buffer.getvalue(), content_type=content_type)
+
+
+def path_with_query(url):
+    parsed = urlsplit(url)
+    if parsed.query:
+        return f'{parsed.path}?{parsed.query}'
+    return parsed.path
 
 
 class PurchaseFlowTests(TestCase):
@@ -117,6 +129,17 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(response.status_code, 201)
         topup = TopUpRequest.objects.get(transaction_id='valid-proof')
         self.assertTrue(topup.payment_proof.name.startswith('topup_proofs/'))
+        self.assertIn(f'/api/wallet/top-up/{topup.pk}/proof/', response.data['payment_proof_url'])
+        self.assertNotIn('/media/', response.data['payment_proof_url'])
+
+        self.client.force_authenticate(user=None)
+        proof_response = self.client.get(path_with_query(response.data['payment_proof_url']))
+        self.assertEqual(proof_response.status_code, 200)
+
+        other_user = User.objects.create_user(username='other_buyer', password='password123')
+        self.client.force_authenticate(user=other_user)
+        unsigned_response = self.client.get(f'/api/wallet/top-up/{topup.pk}/proof/')
+        self.assertEqual(unsigned_response.status_code, 404)
 
     def test_rejects_payment_proof_with_invalid_content_type(self):
         response = self.client.post(
@@ -174,6 +197,242 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'Image too large. Max 5MB.')
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-large').exists())
+
+
+THROTTLE_TEST_REST_FRAMEWORK = {
+    'DEFAULT_THROTTLE_RATES': {
+        'auth_login': '1/min',
+        'auth_refresh': '1/min',
+        'auth_register': '1/min',
+        'chat_start': '1/min',
+        'chat_upload': '1/min',
+        'topup_request': '1/min',
+        'heartbeat': '1/min',
+    },
+}
+
+
+class ApiThrottleConfigurationTests(TestCase):
+    def test_sensitive_endpoints_have_scoped_throttles(self):
+        cases = {
+            '/api/auth/login/': 'auth_login',
+            '/api/auth/refresh/': 'auth_refresh',
+            '/api/auth/register/': 'auth_register',
+            '/api/chat/start/': 'chat_start',
+            '/api/chat/1/send-image/': 'chat_upload',
+            '/api/wallet/top-up/': 'topup_request',
+            '/api/heartbeat/': 'heartbeat',
+        }
+
+        for path, scope in cases.items():
+            with self.subTest(path=path):
+                view_class = resolve(path).func.view_class
+                self.assertEqual(view_class.throttle_scope, scope)
+
+
+class ApiThrottleBehaviorTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.rate_patcher = patch.dict(
+            ScopedRateThrottle.THROTTLE_RATES,
+            THROTTLE_TEST_REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'],
+        )
+        self.rate_patcher.start()
+
+    def tearDown(self):
+        self.rate_patcher.stop()
+        cache.clear()
+
+    def test_register_is_rate_limited(self):
+        strong_password = 'S3cure!Passphrase42'
+        first = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'buyer1',
+                'email': 'buyer1@example.com',
+                'password': strong_password,
+                'password2': strong_password,
+            },
+            format='json',
+        )
+        second = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'buyer2',
+                'email': 'buyer2@example.com',
+                'password': strong_password,
+                'password2': strong_password,
+            },
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 429)
+
+    def test_login_is_rate_limited(self):
+        User.objects.create_user(username='buyer', password='password123')
+
+        first = self.client.post(
+            '/api/auth/login/',
+            {'username': 'buyer', 'password': 'wrong-password'},
+            format='json',
+        )
+        second = self.client.post(
+            '/api/auth/login/',
+            {'username': 'buyer', 'password': 'wrong-password'},
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, 401)
+        self.assertEqual(second.status_code, 429)
+
+    def test_heartbeat_is_rate_limited_per_authenticated_user(self):
+        user = User.objects.create_user(username='buyer', password='password123')
+        self.client.force_authenticate(user=user)
+
+        first = self.client.post('/api/heartbeat/', {}, format='json')
+        second = self.client.post('/api/heartbeat/', {}, format='json')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+
+class RegistrationPasswordValidationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_register_rejects_password_failing_django_validators(self):
+        response = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'weakbuyer',
+                'email': 'weakbuyer@example.com',
+                'password': 'short7',
+                'password2': 'short7',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
+        self.assertFalse(User.objects.filter(username='weakbuyer').exists())
+
+    def test_register_accepts_strong_password(self):
+        strong_password = 'S3cure!Passphrase42'
+        response = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'strongbuyer',
+                'email': 'strongbuyer@example.com',
+                'password': strong_password,
+                'password2': strong_password,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(username='strongbuyer').exists())
+
+
+class CommissionRateValidationTests(TestCase):
+    def setUp(self):
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.category = Category.objects.create(name='Accounts', slug='accounts')
+
+    def test_category_commission_rate_must_be_between_zero_and_one_hundred(self):
+        for rate in (Decimal('-0.01'), Decimal('100.01')):
+            with self.subTest(rate=rate):
+                category = Category(name=f'Invalid {rate}', slug=f'invalid-{str(rate).replace(".", "-")}',
+                                    commission_rate=rate)
+                with self.assertRaises(ValidationError):
+                    category.full_clean()
+                with self.assertRaises(IntegrityError):
+                    with db_transaction.atomic():
+                        Category.objects.create(
+                            name=f'DB Invalid {rate}',
+                            slug=f'db-invalid-{str(rate).replace(".", "-")}',
+                            commission_rate=rate,
+                        )
+
+    def test_seller_override_commission_rate_must_be_between_zero_and_one_hundred(self):
+        for rate in (Decimal('-0.01'), Decimal('100.01')):
+            with self.subTest(rate=rate):
+                override = SellerCommissionOverride(
+                    seller=self.seller,
+                    category=self.category,
+                    commission_rate=rate,
+                )
+                with self.assertRaises(ValidationError):
+                    override.full_clean()
+                with self.assertRaises(IntegrityError):
+                    with db_transaction.atomic():
+                        SellerCommissionOverride.objects.create(
+                            seller=self.seller,
+                            category=self.category,
+                            commission_rate=rate,
+                        )
+
+    def test_commission_rate_boundaries_are_valid(self):
+        for rate in (Decimal('0.00'), Decimal('100.00')):
+            with self.subTest(rate=rate):
+                category = Category(
+                    name=f'Boundary {rate}',
+                    slug=f'boundary-{str(rate).replace(".", "-")}',
+                    commission_rate=rate,
+                )
+                category.full_clean()
+
+
+class GameCategoryListingPaginationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.game = Game.objects.create(name='Test Game', slug='test-game')
+        self.category = Category.objects.create(name='Accounts', slug='accounts')
+        self.game_category = GameCategory.objects.create(game=self.game, category=self.category)
+
+        rank_filter = Filter.objects.create(name='Rank', filter_type='button')
+        self.gold = FilterOption.objects.create(
+            filter=rank_filter,
+            label='Gold',
+            value='gold',
+        )
+
+        for index in range(3):
+            Listing.objects.create(
+                seller=self.seller,
+                game_category=self.game_category,
+                title=f'Listing {index}',
+                price=Decimal('10.00'),
+                quantity=1,
+                status='active',
+                filter_values={str(rank_filter.id): 'gold'},
+            )
+
+    def test_category_listings_are_paginated_with_filter_display(self):
+        response = self.client.get('/api/games/test-game/accounts/?limit=2')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['listings']), 2)
+        self.assertEqual(response.data['listing_pagination'], {
+            'count': 3,
+            'limit': 2,
+            'offset': 0,
+            'next_offset': 2,
+            'previous_offset': None,
+        })
+        self.assertEqual(response.data['listings'][0]['filter_display'], {'Rank': 'Gold'})
+
+        second_page = self.client.get('/api/games/test-game/accounts/?limit=2&offset=2')
+
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(len(second_page.data['listings']), 1)
+        self.assertEqual(second_page.data['listing_pagination']['next_offset'], None)
+        self.assertEqual(second_page.data['listing_pagination']['previous_offset'], 0)
 
 
 class AccessControlTests(TestCase):
@@ -342,6 +601,193 @@ class AccessControlTests(TestCase):
         self.assertEqual(send_response.status_code, 404)
         self.assertEqual(image_response.status_code, 404)
         self.assertFalse(Message.objects.filter(content='not your chat').exists())
+
+    def test_chat_image_is_served_through_private_endpoint(self):
+        message = Message.objects.create(
+            conversation=self.conversation,
+            sender=self.buyer,
+            image=make_image_file(name='chat.png'),
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        detail_response = self.client.get(f'/api/chat/{self.conversation.id}/')
+        self.assertEqual(detail_response.status_code, 200)
+
+        image_url = next(
+            msg['image_url']
+            for msg in detail_response.data['messages']
+            if msg['id'] == message.id
+        )
+        self.assertIn(f'/api/chat/messages/{message.pk}/image/', image_url)
+        self.assertNotIn('/media/', image_url)
+
+        self.client.force_authenticate(user=None)
+        signed_response = self.client.get(path_with_query(image_url))
+        self.assertEqual(signed_response.status_code, 200)
+
+        self.client.force_authenticate(user=self.intruder)
+        unsigned_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
+        self.assertEqual(unsigned_response.status_code, 404)
+
+        self.client.force_authenticate(user=self.seller)
+        participant_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
+        self.assertEqual(participant_response.status_code, 200)
+
+    def test_conversation_list_includes_last_message_and_unread_count(self):
+        Message.objects.create(
+            conversation=self.conversation,
+            sender=self.seller,
+            content='first unread seller message',
+        )
+        Message.objects.create(
+            conversation=self.conversation,
+            sender=self.buyer,
+            content='latest buyer message',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/chat/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['unread_count'], 1)
+        self.assertEqual(response.data[0]['last_message']['content'], 'latest buyer message')
+        self.assertEqual(response.data[0]['other_user']['id'], self.seller.id)
+
+    def test_conversation_list_orders_by_newest_message(self):
+        old_conversation = self.conversation
+        newer_conversation = Conversation.objects.create()
+        newer_conversation.participants.add(self.buyer, self.other_seller)
+
+        Message.objects.create(
+            conversation=old_conversation,
+            sender=self.seller,
+            content='older chat message',
+        )
+        Message.objects.create(
+            conversation=newer_conversation,
+            sender=self.other_seller,
+            content='newer chat message',
+        )
+        Message.objects.create(
+            conversation=old_conversation,
+            sender=self.buyer,
+            content='old chat is newest now',
+        )
+        old_conversation.save()
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/chat/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]['id'], old_conversation.id)
+        self.assertEqual(response.data[0]['last_message']['content'], 'old chat is newest now')
+        self.assertEqual(response.data[1]['id'], newer_conversation.id)
+
+    def test_chat_websocket_ticket_is_scoped_to_participant_and_conversation(self):
+        from .services import CHAT_WS_TICKET_MAX_AGE_SECONDS, decode_chat_ws_ticket
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(
+            f'/api/chat/{self.conversation.id}/ws-ticket/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['expires_in'], CHAT_WS_TICKET_MAX_AGE_SECONDS)
+
+        payload = decode_chat_ws_ticket(response.data['ticket'])
+        self.assertEqual(payload['user_id'], self.buyer.id)
+        self.assertEqual(payload['conversation_id'], self.conversation.id)
+
+        self.client.force_authenticate(user=self.intruder)
+        intruder_response = self.client.post(
+            f'/api/chat/{self.conversation.id}/ws-ticket/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(intruder_response.status_code, 404)
+
+
+class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.intruder = User.objects.create_user(username='intruder', password='password123')
+        self.conversation = Conversation.objects.create()
+        self.conversation.participants.add(self.buyer, self.seller)
+        self.other_conversation = Conversation.objects.create()
+        self.other_conversation.participants.add(self.buyer, self.intruder)
+
+    def test_websocket_accepts_scoped_ticket_and_rejects_raw_jwt(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        from .services import create_chat_ws_ticket
+
+        async def run_ticket_flow():
+            ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to({
+                'type': 'chat_message',
+                'content': 'hello over ticket',
+            })
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'new_message')
+            self.assertEqual(event['message']['content'], 'hello over ticket')
+            await communicator.disconnect()
+
+        async_to_sync(run_ticket_flow)()
+
+        self.assertTrue(
+            Message.objects.filter(
+                conversation=self.conversation,
+                sender=self.buyer,
+                content='hello over ticket',
+            ).exists()
+        )
+
+        async def run_jwt_rejection():
+            raw_jwt = AccessToken.for_user(self.buyer)
+            jwt_communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?token={raw_jwt}',
+            )
+            connected, _ = await jwt_communicator.connect()
+            self.assertFalse(connected)
+
+        async_to_sync(run_jwt_rejection)()
+
+    def test_websocket_rejects_ticket_for_different_conversation(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket
+
+        async def run_wrong_conversation_rejection():
+            wrong_ticket = create_chat_ws_ticket(self.buyer, self.other_conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={wrong_ticket}',
+            )
+
+            connected, _ = await communicator.connect()
+            self.assertFalse(connected)
+
+        async_to_sync(run_wrong_conversation_rejection)()
 
 
 class AdminMoneyActionTests(TestCase):
@@ -627,6 +1073,32 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             thread.join(timeout=10)
         return results
 
+    def post_pairs_concurrently(self, requests):
+        barrier = Barrier(len(requests))
+        results = [None] * len(requests)
+
+        def post(index, user, path, payload):
+            client = APIClient()
+            client.force_authenticate(user=user)
+            try:
+                barrier.wait(timeout=5)
+                response = client.post(path, payload, format='json')
+                results[index] = response.status_code
+            except Exception as exc:
+                results[index] = exc
+            finally:
+                connections.close_all()
+
+        threads = [
+            Thread(target=post, args=(index, user, path, payload))
+            for index, (user, path, payload) in enumerate(requests)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        return results
+
     def test_concurrent_confirm_releases_seller_funds_once(self):
         order = self.create_order(status='delivered')
 
@@ -650,6 +1122,73 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             ).count(),
             1,
         )
+
+    def test_concurrent_deliver_and_confirm_cannot_reopen_paid_order(self):
+        order = self.create_order(status='pending')
+
+        results = self.post_pairs_concurrently([
+            (
+                self.seller,
+                f'/api/orders/{order.id}/deliver/',
+                {'delivery_note': 'delivered'},
+            ),
+            (
+                self.buyer,
+                f'/api/orders/{order.id}/confirm/',
+                {},
+            ),
+        ])
+
+        self.assertIn(results[0], (200, 400), results)
+        self.assertEqual(results[1], 200, results)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'completed')
+
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.id}',
+            ).count(),
+            1,
+        )
+
+    def test_concurrent_dispute_and_confirm_cannot_dispute_paid_order(self):
+        order = self.create_order(status='pending')
+
+        results = self.post_pairs_concurrently([
+            (
+                self.buyer,
+                f'/api/orders/{order.id}/dispute/',
+                {'reason': 'not delivered'},
+            ),
+            (
+                self.buyer,
+                f'/api/orders/{order.id}/confirm/',
+                {},
+            ),
+        ])
+
+        self.assertEqual(results.count(200), 1, results)
+        self.assertEqual(results.count(400), 1, results)
+
+        order.refresh_from_db()
+        sale_count = WalletTransaction.objects.filter(
+            wallet=self.seller_wallet,
+            transaction_type='sale',
+            reference_id=f'order_{order.id}',
+        ).count()
+
+        self.seller_wallet.refresh_from_db()
+        if sale_count:
+            self.assertEqual(order.status, 'completed')
+            self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+        else:
+            self.assertEqual(order.status, 'disputed')
+            self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
 
     def test_concurrent_refund_reverses_completed_order_once(self):
         order = self.create_order(status='completed')

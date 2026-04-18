@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { getConversation, getConversations, startConversation, sendImageMessage, formatLastActive } from '@/lib/api';
+import {
+  getChatWebSocketTicket,
+  getConversation,
+  getConversations,
+  startConversation,
+  sendImageMessage,
+  formatLastActive,
+} from '@/lib/api';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000';
 
@@ -82,16 +89,36 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     mountedRef.current = true;
     if (!activeConvoId || !user) return;
 
-    function connectWs() {
-      const token = localStorage.getItem('gb_access_token');
-      if (!token) return;
+    function scheduleReconnect() {
+      if (!mountedRef.current) return;
+      setConnected(false);
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
+      reconnectAttempts.current += 1;
+      reconnectTimer.current = setTimeout(() => {
+        if (mountedRef.current) {
+          loadMessages();
+          connectWs();
+        }
+      }, delay);
+    }
+
+    async function connectWs() {
+      let ticket;
+      try {
+        const data = await getChatWebSocketTicket(activeConvoId);
+        ticket = data.ticket;
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      if (!ticket || !mountedRef.current) return;
 
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
       }
 
-      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/?token=${token}`);
+      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/?ticket=${encodeURIComponent(ticket)}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -116,16 +143,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       };
 
       ws.onclose = () => {
-        if (!mountedRef.current) return;
-        setConnected(false);
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
-        reconnectAttempts.current += 1;
-        reconnectTimer.current = setTimeout(() => {
-          if (mountedRef.current) {
-            loadMessages();
-            connectWs();
-          }
-        }, delay);
+        scheduleReconnect();
       };
 
       ws.onerror = () => {};

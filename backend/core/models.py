@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
 
 
@@ -38,6 +38,7 @@ class Category(models.Model):
                             help_text='Emoji icon for the category (e.g., 🎮, 💰, ⚔️)')
     commission_rate = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal('5.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
         help_text='Default platform commission % for this category (e.g., 10.00 = 10%)',
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -45,6 +46,13 @@ class Category(models.Model):
     class Meta:
         ordering = ['name']
         verbose_name_plural = 'Categories'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(commission_rate__gte=Decimal('0.00')) &
+                      models.Q(commission_rate__lte=Decimal('100.00')),
+                name='category_commission_rate_0_100',
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -263,6 +271,7 @@ class SellerCommissionOverride(models.Model):
                                  related_name='commission_overrides')
     commission_rate = models.DecimalField(
         max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
         help_text='Custom commission % for this seller on this category',
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -272,6 +281,13 @@ class SellerCommissionOverride(models.Model):
         unique_together = ['seller', 'category']
         verbose_name = 'Seller Commission Override'
         verbose_name_plural = 'Seller Commission Overrides'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(commission_rate__gte=Decimal('0.00')) &
+                      models.Q(commission_rate__lte=Decimal('100.00')),
+                name='seller_override_commission_rate_0_100',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.seller.username} — {self.category.name}: {self.commission_rate}%"

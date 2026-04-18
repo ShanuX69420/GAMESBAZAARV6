@@ -15,9 +15,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.user = self.scope['user']
         self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
+        self.ticket_conversation_id = self.scope.get('chat_ticket_conversation_id')
 
         # Reject unauthenticated users
         if isinstance(self.user, AnonymousUser):
+            await self.close()
+            return
+        if int(self.conversation_id) != self.ticket_conversation_id:
             await self.close()
             return
 

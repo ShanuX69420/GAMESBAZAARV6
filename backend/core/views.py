@@ -1,10 +1,15 @@
 from decimal import Decimal
+import mimetypes
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
-from django.db.models import Q, F
+from django.core import signing
+from django.http import FileResponse, Http404
+from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery
 from django.db import transaction as db_transaction
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
@@ -13,13 +18,84 @@ from .models import (
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, UserSerializer, SellerApplicationSerializer,
+    build_listing_filter_display_map,
     ListingSerializer, CreateListingSerializer,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     OrderSerializer, BuyListingSerializer,
 )
-from .services import get_or_create_locked_wallet, validate_uploaded_image
+from .services import (
+    CHAT_WS_TICKET_MAX_AGE_SECONDS,
+    create_chat_ws_ticket,
+    decode_private_media_ticket,
+    get_or_create_locked_wallet,
+    validate_uploaded_image,
+)
+
+
+DEFAULT_LISTING_PAGE_SIZE = 48
+MAX_LISTING_PAGE_SIZE = 100
+
+
+class ScopedPostThrottleMixin:
+    """Apply a scoped throttle only to mutating POST endpoints."""
+    throttle_classes = [ScopedRateThrottle]
+    throttle_methods = {'POST'}
+
+    def get_throttles(self):
+        if self.request.method not in self.throttle_methods:
+            return []
+        return super().get_throttles()
+
+
+def has_valid_private_media_ticket(request, *, kind, object_id):
+    ticket = request.query_params.get('ticket')
+    if not ticket:
+        return False
+    try:
+        payload = decode_private_media_ticket(ticket)
+    except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError, ValueError):
+        return False
+    return payload['kind'] == kind and payload['object_id'] == int(object_id)
+
+
+def private_file_response(file_field):
+    if not file_field:
+        raise Http404
+    try:
+        opened_file = file_field.open('rb')
+    except (FileNotFoundError, OSError):
+        raise Http404
+    content_type = mimetypes.guess_type(file_field.name)[0] or 'application/octet-stream'
+    return FileResponse(opened_file, content_type=content_type)
+
+
+def get_pagination_params(request, default_limit=DEFAULT_LISTING_PAGE_SIZE, max_limit=MAX_LISTING_PAGE_SIZE):
+    try:
+        limit = int(request.query_params.get('limit', default_limit))
+    except (TypeError, ValueError):
+        limit = default_limit
+    try:
+        offset = int(request.query_params.get('offset', 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    limit = max(1, min(limit, max_limit))
+    offset = max(0, offset)
+    return limit, offset
+
+
+def get_pagination_payload(total_count, limit, offset):
+    next_offset = offset + limit if offset + limit < total_count else None
+    previous_offset = max(offset - limit, 0) if offset > 0 else None
+    return {
+        'count': total_count,
+        'limit': limit,
+        'offset': offset,
+        'next_offset': next_offset,
+        'previous_offset': previous_offset,
+    }
 
 
 # ── Public Game / Category / Filter views ────────────────────────────────────
@@ -72,16 +148,37 @@ class GameCategoryDetailView(APIView):
                     filter_values__contains={filter_id: value}
                 )
 
-        listings_data = ListingSerializer(listings_qs, many=True).data
+        total_count = listings_qs.count()
+        limit, offset = get_pagination_params(request)
+        listings = list(listings_qs[offset:offset + limit])
+        listing_context = {
+            'request': request,
+            'filter_option_display_map': build_listing_filter_display_map(listings),
+        }
+        listings_data = ListingSerializer(
+            listings,
+            many=True,
+            context=listing_context,
+        ).data
         cat_data['listings'] = listings_data
+        cat_data['listing_pagination'] = get_pagination_payload(total_count, limit, offset)
         return Response(cat_data)
 
 
 # ── Auth views ───────────────────────────────────────────────────────────────
 
-class RegisterView(generics.CreateAPIView):
+class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
+    throttle_scope = 'auth_login'
+
+
+class RefreshTokenView(ScopedPostThrottleMixin, TokenRefreshView):
+    throttle_scope = 'auth_refresh'
+
+
+class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
     """POST /api/auth/register/ — Register a new user."""
     serializer_class = RegisterSerializer
+    throttle_scope = 'auth_register'
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -163,6 +260,18 @@ class MyListingsView(generics.ListAPIView):
             seller=self.request.user
         ).select_related('game_category__game', 'game_category__category')
 
+    def list(self, request, *args, **kwargs):
+        listings = list(self.get_queryset())
+        serializer = self.get_serializer(
+            listings,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                'filter_option_display_map': build_listing_filter_display_map(listings),
+            },
+        )
+        return Response(serializer.data)
+
 
 class ListingDetailView(APIView):
     """GET /api/listings/{id}/ — Get listing detail.
@@ -182,7 +291,13 @@ class ListingDetailView(APIView):
                 'seller', 'game_category__game', 'game_category__category'
             ), pk=pk
         )
-        return Response(ListingSerializer(listing).data)
+        return Response(ListingSerializer(
+            listing,
+            context={
+                'request': request,
+                'filter_option_display_map': build_listing_filter_display_map([listing]),
+            },
+        ).data)
 
     def put(self, request, pk):
         from .serializers import UpdateListingSerializer
@@ -191,7 +306,13 @@ class ListingDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         listing.refresh_from_db()
-        return Response(ListingSerializer(listing).data)
+        return Response(ListingSerializer(
+            listing,
+            context={
+                'request': request,
+                'filter_option_display_map': build_listing_filter_display_map([listing]),
+            },
+        ).data)
 
     def delete(self, request, pk):
         listing = get_object_or_404(Listing, pk=pk, seller=request.user)
@@ -203,19 +324,33 @@ class ConversationListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        latest_message = Message.objects.filter(
+            conversation=OuterRef('pk')
+        ).order_by('-created_at', '-pk')
         conversations = Conversation.objects.filter(
             participants=request.user
-        ).prefetch_related('participants', 'messages__sender')
+        ).annotate(
+            unread_messages_count=Count(
+                'messages',
+                filter=Q(messages__is_read=False) & ~Q(messages__sender=request.user),
+            ),
+            latest_message_content=Subquery(latest_message.values('content')[:1]),
+            latest_message_sender_name=Subquery(latest_message.values('sender__username')[:1]),
+            latest_message_created_at=Subquery(latest_message.values('created_at')[:1]),
+        ).prefetch_related(
+            Prefetch('participants', queryset=User.objects.select_related('profile')),
+        ).order_by(F('latest_message_created_at').desc(nulls_last=True), '-updated_at', '-pk')
         data = ConversationListSerializer(conversations, many=True,
                                            context={'request': request}).data
         return Response(data)
 
 
-class StartConversationView(APIView):
+class StartConversationView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/start/ — Find or create a conversation with a user.
     Body: {"user_id": 5, "message": "Hi, is this still available?"}
     """
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'chat_start'
 
     def post(self, request):
         other_user_id = request.data.get('user_id')
@@ -273,6 +408,18 @@ class ConversationDetailView(APIView):
         return Response(data)
 
 
+class ChatWebSocketTicketView(APIView):
+    """POST /api/chat/{id}/ws-ticket/ — Issue a short-lived chat WebSocket ticket."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        conversation = get_object_or_404(Conversation, pk=pk, participants=request.user)
+        return Response({
+            'ticket': create_chat_ws_ticket(request.user, conversation.pk),
+            'expires_in': CHAT_WS_TICKET_MAX_AGE_SECONDS,
+        })
+
+
 class SendMessageView(APIView):
     """POST /api/chat/{id}/send/ — Send a message in a conversation."""
     permission_classes = [permissions.IsAuthenticated]
@@ -297,9 +444,10 @@ class SendMessageView(APIView):
         return Response(data, status=201)
 
 
-class SendImageView(APIView):
+class SendImageView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/{id}/send-image/ — Send an image message."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'chat_upload'
 
     def post(self, request, pk):
         conversation = get_object_or_404(
@@ -327,6 +475,32 @@ class SendImageView(APIView):
         return Response(data, status=201)
 
 
+class ChatMessageImageView(APIView):
+    """GET /api/chat/messages/{id}/image/ — Serve a protected chat image."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        message = get_object_or_404(
+            Message.objects.select_related('conversation'),
+            pk=pk,
+        )
+        has_ticket = has_valid_private_media_ticket(
+            request,
+            kind='chat_message_image',
+            object_id=message.pk,
+        )
+        is_participant = (
+            request.user.is_authenticated and
+            Conversation.objects.filter(
+                pk=message.conversation_id,
+                participants=request.user,
+            ).exists()
+        )
+        if not (has_ticket or is_participant):
+            raise Http404
+        return private_file_response(message.image)
+
+
 class UnreadCountView(APIView):
     """GET /api/chat/unread/ — Count of conversations with unread messages."""
     permission_classes = [permissions.IsAuthenticated]
@@ -341,9 +515,10 @@ class UnreadCountView(APIView):
         return Response({'unread_count': count})
 
 
-class HeartbeatView(APIView):
+class HeartbeatView(ScopedPostThrottleMixin, APIView):
     """POST /api/heartbeat/ — Update user's last_active timestamp."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'heartbeat'
 
     def post(self, request):
         from django.utils import timezone
@@ -378,11 +553,12 @@ class WalletTransactionsView(APIView):
         return Response(WalletTransactionSerializer(transactions, many=True).data)
 
 
-class TopUpRequestView(APIView):
+class TopUpRequestView(ScopedPostThrottleMixin, APIView):
     """POST /api/wallet/top-up/ — Create a top-up request.
     GET /api/wallet/top-up/ — List my top-up requests.
     """
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'topup_request'
 
     def get(self, request):
         requests_qs = TopUpRequest.objects.filter(user=request.user)
@@ -413,6 +589,26 @@ class TopUpRequestView(APIView):
             TopUpRequestSerializer(topup, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class TopUpProofView(APIView):
+    """GET /api/wallet/top-up/{id}/proof/ — Serve a protected payment proof."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        topup = get_object_or_404(TopUpRequest, pk=pk)
+        has_ticket = has_valid_private_media_ticket(
+            request,
+            kind='topup_proof',
+            object_id=topup.pk,
+        )
+        can_view = (
+            request.user.is_authenticated and
+            (topup.user_id == request.user.id or request.user.is_staff)
+        )
+        if not (has_ticket or can_view):
+            raise Http404
+        return private_file_response(topup.payment_proof)
 
 
 # ── Order views ───────────────────────────────────────────────────────────────
@@ -587,15 +783,20 @@ class DeliverOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk, seller=request.user)
+        with db_transaction.atomic():
+            order = get_object_or_404(
+                Order.objects.select_for_update(),
+                pk=pk,
+                seller=request.user,
+            )
 
-        if order.status != 'pending':
-            return Response({'error': 'Order can only be delivered when pending.'}, status=400)
+            if order.status != 'pending':
+                return Response({'error': 'Order can only be delivered when pending.'}, status=400)
 
-        delivery_note = request.data.get('delivery_note', '').strip()
-        order.status = 'delivered'
-        order.delivery_note = delivery_note
-        order.save(update_fields=['status', 'delivery_note', 'updated_at'])
+            delivery_note = request.data.get('delivery_note', '').strip()
+            order.status = 'delivered'
+            order.delivery_note = delivery_note
+            order.save(update_fields=['status', 'delivery_note', 'updated_at'])
 
         return Response(OrderSerializer(order).data)
 
@@ -655,18 +856,23 @@ class DisputeOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk, buyer=request.user)
-
-        if order.status not in ('pending', 'delivered'):
-            return Response({'error': 'Cannot dispute in current state.'}, status=400)
-
         reason = request.data.get('reason', '').strip()
         if not reason:
             return Response({'error': 'Please provide a reason for the dispute.'}, status=400)
 
-        order.status = 'disputed'
-        order.dispute_reason = reason
-        order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
+        with db_transaction.atomic():
+            order = get_object_or_404(
+                Order.objects.select_for_update(),
+                pk=pk,
+                buyer=request.user,
+            )
+
+            if order.status not in ('pending', 'delivered'):
+                return Response({'error': 'Cannot dispute in current state.'}, status=400)
+
+            order.status = 'disputed'
+            order.dispute_reason = reason
+            order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
 
         return Response(OrderSerializer(order).data)
 
