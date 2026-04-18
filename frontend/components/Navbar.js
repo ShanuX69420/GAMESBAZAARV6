@@ -64,7 +64,7 @@ export default function Navbar() {
                 <>
                   <li>
                     <Link href="/inbox" className="nav-messages-link">
-                      💬 Messages
+                      Messages
                       {unread > 0 && <span className="nav-unread-badge">{unread}</span>}
                     </Link>
                   </li>
@@ -103,7 +103,7 @@ export default function Navbar() {
           user ? (
             <>
               <Link href="/inbox" onClick={() => setMenuOpen(false)}>
-                💬 Messages {unread > 0 && `(${unread})`}
+                Messages {unread > 0 && `(${unread})`}
               </Link>
               <Link href="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</Link>
               <a href="#" onClick={(e) => { e.preventDefault(); logout(); setMenuOpen(false); }}>
