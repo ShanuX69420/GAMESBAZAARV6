@@ -66,8 +66,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def chat_message(self, event):
         """Send message to WebSocket client."""
         msg = event['message']
-        # Add is_mine flag for the receiving client
-        msg['is_mine'] = (msg['sender_id'] == self.user.id)
+        is_mine = (msg['sender_id'] == self.user.id)
+        msg['is_mine'] = is_mine
+
+        # Auto-mark as read — user is actively in this chat
+        if not is_mine:
+            await self.mark_message_read(msg['id'])
+
         await self.send_json({
             'type': 'new_message',
             'message': msg,
@@ -95,6 +100,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             'sender_id': msg.sender.id,
             'sender_name': msg.sender.username,
             'content': msg.content,
+            'image_url': msg.image.url if msg.image else None,
             'is_read': msg.is_read,
             'created_at': msg.created_at.isoformat(),
         }
@@ -105,3 +111,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             conversation_id=self.conversation_id,
             is_read=False,
         ).exclude(sender=self.user).update(is_read=True)
+
+    @database_sync_to_async
+    def mark_message_read(self, message_id):
+        Message.objects.filter(id=message_id, is_read=False).update(is_read=True)

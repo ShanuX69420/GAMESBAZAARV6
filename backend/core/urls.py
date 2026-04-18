@@ -30,4 +30,8 @@ urlpatterns = [
     path('chat/unread/', views.UnreadCountView.as_view(), name='unread-count'),
     path('chat/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
     path('chat/<int:pk>/send/', views.SendMessageView.as_view(), name='send-message'),
+    path('chat/<int:pk>/send-image/', views.SendImageView.as_view(), name='send-image'),
+
+    # Presence
+    path('heartbeat/', views.HeartbeatView.as_view(), name='heartbeat'),
 ]

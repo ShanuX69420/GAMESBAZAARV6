@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getConversations } from '@/lib/api';
+import { getConversations, formatLastActive } from '@/lib/api';
 import ChatBox from '@/components/ChatBox';
 
 export default function InboxPage() {
@@ -11,29 +11,39 @@ export default function InboxPage() {
   const router = useRouter();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeChat, setActiveChat] = useState(null);
+  const [activeChatId, setActiveChatId] = useState(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  // Poll conversations — NEVER auto-select, just update the list
-  useEffect(() => {
+  const fetchConvos = useCallback(() => {
     if (!user) return;
-    const fetchConvos = () => {
-      getConversations()
-        .then(setConversations)
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    };
-    fetchConvos();
-    const interval = setInterval(fetchConvos, 5000);
-    return () => clearInterval(interval);
+    getConversations()
+      .then(setConversations)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    fetchConvos();
+    // Poll every 10s for presence updates + fallback for messages
+    const interval = setInterval(fetchConvos, 10000);
+    const handleChatUpdate = () => fetchConvos();
+    window.addEventListener('chatUpdate', handleChatUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('chatUpdate', handleChatUpdate);
+    };
+  }, [user, fetchConvos]);
+
+  // Derive activeChat from latest conversations data (always fresh)
+  const activeChat = conversations.find(c => c.id === activeChatId) || null;
+
   function selectConversation(convo) {
-    setActiveChat(convo);
+    setActiveChatId(convo.id);
     setMobileChatOpen(true);
   }
 
@@ -52,7 +62,7 @@ export default function InboxPage() {
   return (
     <div className="container">
       <div className="page-header" style={{ paddingBottom: '16px' }}>
-        <h1 className="page-title">💬 Messages</h1>
+        <h1 className="page-title">Messages</h1>
       </div>
 
       {loading ? (
@@ -64,16 +74,16 @@ export default function InboxPage() {
         </div>
       ) : (
         <div className={`inbox-split ${mobileChatOpen ? 'mobile-chat-open' : ''}`}>
-          {/* Left panel: conversation list */}
           <div className="inbox-sidebar">
             {conversations.map((convo) => (
               <div
                 key={convo.id}
-                className={`inbox-item ${activeChat?.id === convo.id ? 'active' : ''}`}
+                className={`inbox-item ${activeChatId === convo.id ? 'active' : ''}`}
                 onClick={() => selectConversation(convo)}
               >
                 <div className="inbox-avatar">
                   {convo.other_user?.username?.[0]?.toUpperCase() || '?'}
+                  {convo.other_user?.is_online && <span className="online-dot"></span>}
                 </div>
                 <div className="inbox-info">
                   <div className="inbox-name">
@@ -102,7 +112,6 @@ export default function InboxPage() {
             ))}
           </div>
 
-          {/* Right panel: active chat */}
           <div className="inbox-chatpanel">
             {activeChat ? (
               <>
@@ -112,14 +121,20 @@ export default function InboxPage() {
                   </button>
                   <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
                     {activeChat.other_user?.username?.[0]?.toUpperCase() || '?'}
+                    {activeChat.other_user?.is_online && <span className="online-dot"></span>}
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                    {activeChat.other_user?.username}
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                      {activeChat.other_user?.username}
+                    </div>
+                    <div className={`presence-text ${activeChat.other_user?.is_online ? 'is-online' : ''}`}>
+                      {formatLastActive(activeChat.other_user?.last_active)}
+                    </div>
                   </div>
                 </div>
                 <ChatBox
-                  key={activeChat.id}
-                  conversationId={activeChat.id}
+                  key={activeChatId}
+                  conversationId={activeChatId}
                   compact={true}
                 />
               </>

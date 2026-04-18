@@ -133,3 +133,40 @@ export async function getUnreadCount() {
   return res.json();
 }
 
+export async function sendImageMessage(conversationId, imageFile, content = '') {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('image', imageFile);
+  if (content) formData.append('content', content);
+
+  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/send-image/`, {
+    method: 'POST',
+    headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to send image');
+  return data;
+}
+
+// ── Presence API ────────────────────────────────────────────────────────────
+
+export async function sendHeartbeat() {
+  const res = await fetch(`${API_BASE}/api/heartbeat/`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return res.ok;
+}
+
+export function formatLastActive(isoString) {
+  if (!isoString) return 'Offline';
+  const date = new Date(isoString);
+  const now = new Date();
+  const diff = (now - date) / 1000; // seconds
+
+  if (diff < 120) return 'Online';
+  if (diff < 3600) return `Active ${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
+  return `Active ${Math.floor(diff / 86400)}d ago`;
+}

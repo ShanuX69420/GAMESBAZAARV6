@@ -198,16 +198,25 @@ class MessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source='sender.username', read_only=True)
     sender_id = serializers.IntegerField(source='sender.id', read_only=True)
     is_mine = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ['id', 'sender_id', 'sender_name', 'content', 'is_read', 'is_mine', 'created_at']
+        fields = ['id', 'sender_id', 'sender_name', 'content', 'image_url', 'is_read', 'is_mine', 'created_at']
 
     def get_is_mine(self, obj):
         request = self.context.get('request')
         if request:
             return obj.sender_id == request.user.id
         return False
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
 
 
 class ConversationListSerializer(serializers.ModelSerializer):
@@ -224,7 +233,13 @@ class ConversationListSerializer(serializers.ModelSerializer):
         if request:
             other = obj.other_user(request.user)
             if other:
-                return {'id': other.id, 'username': other.username}
+                profile = getattr(other, 'profile', None)
+                return {
+                    'id': other.id,
+                    'username': other.username,
+                    'is_online': profile.is_online if profile else False,
+                    'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
+                }
         return None
 
     def get_last_message(self, obj):
@@ -257,7 +272,13 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
         if request:
             other = obj.other_user(request.user)
             if other:
-                return {'id': other.id, 'username': other.username}
+                profile = getattr(other, 'profile', None)
+                return {
+                    'id': other.id,
+                    'username': other.username,
+                    'is_online': profile.is_online if profile else False,
+                    'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
+                }
         return None
 
     def get_messages(self, obj):

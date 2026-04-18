@@ -1,23 +1,51 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getUnreadCount } from '@/lib/api';
+import { getUnreadCount, sendHeartbeat } from '@/lib/api';
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, loading, logout } = useAuth();
   const [unread, setUnread] = useState(0);
+  const prevUnread = useRef(0);
+
+  const fetchUnread = useCallback(() => {
+    if (!user) return;
+    getUnreadCount().then(d => {
+      const count = d.unread_count || 0;
+      setUnread(count);
+      // If count changed, notify inbox & other components
+      if (count !== prevUnread.current) {
+        prevUnread.current = count;
+        window.dispatchEvent(new Event('chatUpdate'));
+      }
+    }).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
-    if (!user) { setUnread(0); return; }
-    const fetchUnread = () => {
-      getUnreadCount().then(d => setUnread(d.unread_count || 0)).catch(() => {});
-    };
+    if (!user) { setUnread(0); prevUnread.current = 0; return; }
     fetchUnread();
-    const interval = setInterval(fetchUnread, 5000);
-    return () => clearInterval(interval);
+    // Poll every 3s — this is the source of truth for new conversations
+    const interval = setInterval(fetchUnread, 3000);
+
+    // Also react to chatUpdate events (from WebSocket) for instant updates
+    const handleChatUpdate = () => fetchUnread();
+    window.addEventListener('chatUpdate', handleChatUpdate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('chatUpdate', handleChatUpdate);
+    };
+  }, [user, fetchUnread]);
+
+  // Heartbeat — keep user online while site is open (every 60s)
+  useEffect(() => {
+    if (!user) return;
+    sendHeartbeat();
+    const hb = setInterval(() => sendHeartbeat(), 60000);
+    return () => clearInterval(hb);
   }, [user]);
 
   return (

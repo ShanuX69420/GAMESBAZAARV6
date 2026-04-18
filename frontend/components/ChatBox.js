@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { getConversation, getConversations, startConversation } from '@/lib/api';
+import { getConversation, getConversations, startConversation, sendImageMessage, formatLastActive } from '@/lib/api';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000';
 
@@ -14,12 +14,17 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   const [sending, setSending] = useState(false);
   const [activeConvoId, setActiveConvoId] = useState(conversationId);
   const [connected, setConnected] = useState(false);
-  const messagesEndRef = useRef(null);
+  const [pendingImage, setPendingImage] = useState(null); // { file, preview }
+  const [imageUploading, setImageUploading] = useState(false);
   const messagesContainerRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
+  const reconnectTimer = useRef(null);
+  const reconnectAttempts = useRef(0);
   const isNearBottom = useRef(true);
+  const mountedRef = useRef(true);
+  const fileInputRef = useRef(null);
 
-  // Track scroll position
   function handleScroll() {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -29,12 +34,15 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   function scrollToBottom(instant = false) {
     const el = messagesContainerRef.current;
     if (!el) return;
-    if (instant) {
-      el.scrollTop = el.scrollHeight;
-    } else if (isNearBottom.current) {
+    if (instant || isNearBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
   }
+
+  // Scroll when messages change (after DOM renders)
+  useEffect(() => {
+    setTimeout(() => scrollToBottom(), 50);
+  }, [messages.length]);
 
   // On mount: look up existing conversation with seller
   useEffect(() => {
@@ -42,7 +50,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     getConversations()
       .then(convos => {
         const existing = convos.find(c => c.other_user?.id === sellerId);
-        if (existing) setActiveConvoId(existing.id);
+        if (existing && mountedRef.current) setActiveConvoId(existing.id);
       })
       .catch(() => {});
   }, [sellerId, user, activeConvoId]);
@@ -52,62 +60,141 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     if (conversationId) setActiveConvoId(conversationId);
   }, [conversationId]);
 
-  // Load initial messages via REST (once), then WebSocket takes over
-  useEffect(() => {
+  // Load messages via REST
+  const loadMessages = useCallback(async () => {
     if (!activeConvoId) return;
-    getConversation(activeConvoId)
-      .then(data => {
-        setConvo(data);
-        setMessages(data.messages || []);
-        // Instant scroll on first load
-        requestAnimationFrame(() => {
-          const el = messagesContainerRef.current;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-      })
-      .catch(() => {});
+    try {
+      const data = await getConversation(activeConvoId);
+      if (!mountedRef.current) return;
+      setConvo(data);
+      setMessages(data.messages || []);
+      requestAnimationFrame(() => scrollToBottom(true));
+    } catch { }
   }, [activeConvoId]);
 
-  // WebSocket connection
+  // Initial load
   useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // WebSocket with auto-reconnect
+  useEffect(() => {
+    mountedRef.current = true;
     if (!activeConvoId || !user) return;
 
-    const token = localStorage.getItem('gb_access_token');
-    if (!token) return;
+    function connectWs() {
+      const token = localStorage.getItem('gb_access_token');
+      if (!token) return;
 
-    const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/?token=${token}`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnected(true);
-    };
-
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === 'new_message') {
-        setMessages(prev => {
-          // Avoid duplicates
-          if (prev.some(m => m.id === data.message.id)) return prev;
-          return [...prev, data.message];
-        });
-        // Scroll for new messages
-        requestAnimationFrame(() => scrollToBottom());
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
       }
-    };
 
-    ws.onclose = () => {
-      setConnected(false);
-    };
+      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/?token=${token}`);
+      wsRef.current = ws;
 
-    ws.onerror = () => {
-      setConnected(false);
-    };
+      ws.onopen = () => {
+        if (!mountedRef.current) return;
+        setConnected(true);
+        reconnectAttempts.current = 0;
+        setTimeout(() => window.dispatchEvent(new Event('chatUpdate')), 300);
+      };
+
+      ws.onmessage = (e) => {
+        if (!mountedRef.current) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'new_message') {
+            setMessages(prev => {
+              if (prev.some(m => m.id === data.message.id)) return prev;
+              return [...prev, data.message];
+            });
+            window.dispatchEvent(new Event('chatUpdate'));
+          }
+        } catch { }
+      };
+
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        setConnected(false);
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
+        reconnectAttempts.current += 1;
+        reconnectTimer.current = setTimeout(() => {
+          if (mountedRef.current) {
+            loadMessages();
+            connectWs();
+          }
+        }, delay);
+      };
+
+      ws.onerror = () => {};
+    }
+
+    connectWs();
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      mountedRef.current = false;
+      clearTimeout(reconnectTimer.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [activeConvoId, user]);
+  }, [activeConvoId, user, loadMessages]);
+
+  // Handle paste for images
+  function handlePaste(e) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) openPreview(file);
+        break;
+      }
+    }
+  }
+
+  // Handle file input change
+  function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      openPreview(file);
+    }
+    e.target.value = ''; // Reset
+  }
+
+  function openPreview(file) {
+    const preview = URL.createObjectURL(file);
+    setPendingImage({ file, preview });
+  }
+
+  function cancelPreview() {
+    if (pendingImage?.preview) URL.revokeObjectURL(pendingImage.preview);
+    setPendingImage(null);
+  }
+
+  async function sendImage() {
+    if (!pendingImage || !activeConvoId) return;
+    setImageUploading(true);
+    try {
+      const data = await sendImageMessage(activeConvoId, pendingImage.file, '');
+      // Add to messages immediately (REST-uploaded, not via WebSocket)
+      setMessages(prev => {
+        if (prev.some(m => m.id === data.id)) return prev;
+        return [...prev, { ...data, is_mine: true }];
+      });
+      window.dispatchEvent(new Event('chatUpdate'));
+      cancelPreview();
+    } catch (err) {
+      alert(err.message || 'Failed to send image');
+    } finally {
+      setImageUploading(false);
+    }
+  }
 
   async function handleSend(e) {
     e.preventDefault();
@@ -118,19 +205,14 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     setInput('');
 
     try {
-      // If no conversation yet, start via REST, then WebSocket will connect
       if (!activeConvoId && sellerId) {
         const data = await startConversation(sellerId, messageText);
         setActiveConvoId(data.id);
         setConvo(data);
         setMessages(data.messages || []);
         if (onConversationStart) onConversationStart(data.id);
-        requestAnimationFrame(() => {
-          const el = messagesContainerRef.current;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
+        requestAnimationFrame(() => scrollToBottom(true));
       } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        // Send via WebSocket — consumer will save & broadcast back
         wsRef.current.send(JSON.stringify({
           type: 'chat_message',
           content: messageText,
@@ -141,6 +223,57 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     } finally {
       setSending(false);
     }
+  }
+
+  // Build grouped messages with date separators
+  function renderMessages() {
+    const elements = [];
+    let lastDate = null;
+    let lastSender = null;
+    let lastTime = null;
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const msgDate = new Date(msg.created_at);
+      const dateKey = msgDate.toDateString();
+
+      if (dateKey !== lastDate) {
+        elements.push(
+          <div key={`date-${dateKey}`} className="chat-date-separator">
+            <span>{formatDateSeparator(msgDate)}</span>
+          </div>
+        );
+        lastDate = dateKey;
+        lastSender = null;
+        lastTime = null;
+      }
+
+      const timeDiff = lastTime ? (msgDate - lastTime) / 60000 : Infinity;
+      const showHeader = msg.sender_name !== lastSender || timeDiff >= 5;
+
+      elements.push(
+        <div key={msg.id} className={`chat-msg-row ${showHeader ? 'with-header' : ''}`}>
+          {showHeader && (
+            <div className="chat-msg-header">
+              <span className="chat-msg-sender">{msg.is_mine ? 'You' : msg.sender_name}</span>
+              <span className="chat-msg-time">
+                {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          )}
+          {msg.image_url && (
+            <div className="chat-msg-image">
+              <img src={msg.image_url} alt="Shared image" onClick={() => window.open(msg.image_url, '_blank')} />
+            </div>
+          )}
+          {msg.content && <div className="chat-msg-content">{msg.content}</div>}
+        </div>
+      );
+
+      lastSender = msg.sender_name;
+      lastTime = msgDate;
+    }
+    return elements;
   }
 
   if (!user) {
@@ -160,10 +293,20 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
       {!compact && (
         <div className="chatbox-header">
-          <span>💬 {convo?.other_user?.username || sellerName || 'Chat'}</span>
-          {activeConvoId && (
-            <span className={`ws-indicator ${connected ? 'online' : 'offline'}`}></span>
-          )}
+          <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
+            {(convo?.other_user?.username || sellerName || '?')[0].toUpperCase()}
+            {convo?.other_user?.is_online && <span className="online-dot"></span>}
+          </div>
+          <div>
+            <div className="chatbox-header-name">
+              {convo?.other_user?.username || sellerName || 'Chat'}
+            </div>
+            {convo?.other_user?.last_active && (
+              <div className={`presence-text ${convo.other_user.is_online ? 'is-online' : ''}`}>
+                {formatLastActive(convo.other_user.last_active)}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -176,36 +319,77 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
           <div className="chatbox-empty-msg">
             No messages yet. Say hello!
           </div>
-        ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`chat-msg ${msg.is_mine ? 'mine' : 'theirs'}`}
-            >
-              <div className="chat-msg-bubble">
-                {msg.content}
-              </div>
-              <div className="chat-msg-time">
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            </div>
-          ))
-        )}
+        ) : renderMessages()}
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="chatbox-input" onSubmit={handleSend}>
+      {/* Image Preview Modal */}
+      {pendingImage && (
+        <div className="image-preview-overlay" onClick={cancelPreview}>
+          <div className="image-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="image-preview-header">
+              <span>Send Image</span>
+              <button className="image-preview-close" onClick={cancelPreview}>✕</button>
+            </div>
+            <div className="image-preview-body">
+              <img src={pendingImage.preview} alt="Preview" />
+            </div>
+            <div className="image-preview-footer">
+              <button className="btn btn-secondary btn-sm" onClick={cancelPreview} disabled={imageUploading}>
+                Cancel
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={sendImage} disabled={imageUploading}>
+                {imageUploading ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Input Area */}
+      <form className="chatbox-input" onSubmit={handleSend} onPaste={handlePaste}>
+        <input type="hidden" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message..."
+          placeholder="Message..."
           disabled={sending}
         />
+        <button
+          type="button"
+          className="chatbox-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach image"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
         <button type="submit" disabled={sending || !input.trim()}>
-          ➤
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+          </svg>
         </button>
       </form>
     </div>
   );
+}
+
+function formatDateSeparator(date) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = (today - msgDay) / 86400000;
+
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long' });
 }

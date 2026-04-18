@@ -141,6 +141,7 @@ class UserProfile(models.Model):
     seller_application_note = models.TextField(blank=True, default='',
                                                 help_text='Why do you want to become a seller?')
     seller_reviewed_at = models.DateTimeField(null=True, blank=True)
+    last_active = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -150,6 +151,13 @@ class UserProfile(models.Model):
     @property
     def is_seller(self):
         return self.seller_status == 'approved'
+
+    @property
+    def is_online(self):
+        if not self.last_active:
+            return False
+        from django.utils import timezone
+        return (timezone.now() - self.last_active).total_seconds() < 120
 
     def __str__(self):
         return f"{self.user.username} ({self.get_seller_status_display()})"
@@ -211,7 +219,8 @@ class Message(models.Model):
                                       related_name='messages')
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='sent_messages')
-    content = models.TextField()
+    content = models.TextField(blank=True, default='')
+    image = models.ImageField(upload_to='chat_images/', blank=True, null=True)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -219,6 +228,6 @@ class Message(models.Model):
         ordering = ['created_at']
 
     def __str__(self):
-        return f"{self.sender.username}: {self.content[:40]}"
+        return f"{self.sender.username}: {self.content[:40] or '[image]'}"
 
 

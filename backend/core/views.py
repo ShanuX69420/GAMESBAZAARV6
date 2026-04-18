@@ -264,13 +264,62 @@ class SendMessageView(APIView):
         return Response(data, status=201)
 
 
+class SendImageView(APIView):
+    """POST /api/chat/{id}/send-image/ — Send an image message."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        conversation = get_object_or_404(
+            Conversation, pk=pk, participants=request.user
+        )
+
+        image = request.FILES.get('image')
+        if not image:
+            return Response({'error': 'No image provided.'}, status=400)
+
+        # Validate file type
+        allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        if image.content_type not in allowed:
+            return Response({'error': 'Invalid image type.'}, status=400)
+
+        # Validate file size (5MB max)
+        if image.size > 5 * 1024 * 1024:
+            return Response({'error': 'Image too large. Max 5MB.'}, status=400)
+
+        content = request.data.get('content', '').strip()
+        message = Message.objects.create(
+            conversation=conversation,
+            sender=request.user,
+            content=content,
+            image=image,
+        )
+        conversation.save()
+
+        data = MessageSerializer(message, context={'request': request}).data
+        return Response(data, status=201)
+
+
 class UnreadCountView(APIView):
-    """GET /api/chat/unread/ — Total unread message count for navbar badge."""
+    """GET /api/chat/unread/ — Count of conversations with unread messages."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         count = Message.objects.filter(
             conversation__participants=request.user,
             is_read=False,
-        ).exclude(sender=request.user).count()
+        ).exclude(sender=request.user).values(
+            'conversation'
+        ).distinct().count()
         return Response({'unread_count': count})
+
+
+class HeartbeatView(APIView):
+    """POST /api/heartbeat/ — Update user's last_active timestamp."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from django.utils import timezone
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.last_active = timezone.now()
+        profile.save(update_fields=['last_active'])
+        return Response({'status': 'ok'})
