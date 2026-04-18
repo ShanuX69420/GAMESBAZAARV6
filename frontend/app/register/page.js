@@ -1,0 +1,112 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useAuth } from '@/lib/auth';
+
+export default function RegisterPage() {
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    password2: '',
+  });
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const { register } = useAuth();
+  const router = useRouter();
+
+  function handleChange(e) {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setSubmitting(true);
+    try {
+      await register(formData.username, formData.email, formData.password, formData.password2);
+      router.push('/login?registered=true');
+    } catch (err) {
+      setError(err.message || 'Registration failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="container">
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1 className="auth-title">Create Account</h1>
+          <p className="auth-subtitle">Join Pakistan&apos;s gaming marketplace</p>
+
+          {error && <div className="alert alert-error">{error}</div>}
+
+          <form onSubmit={handleSubmit} className="auth-form">
+            <div className="form-group">
+              <label className="form-label">Username</label>
+              <input
+                type="text"
+                name="username"
+                className="form-input"
+                value={formData.username}
+                onChange={handleChange}
+                placeholder="Choose a username"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input
+                type="email"
+                name="email"
+                className="form-input"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="your@email.com"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input
+                type="password"
+                name="password"
+                className="form-input"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Min. 6 characters"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Confirm Password</label>
+              <input
+                type="password"
+                name="password2"
+                className="form-input"
+                value={formData.password2}
+                onChange={handleChange}
+                placeholder="Repeat your password"
+                required
+              />
+            </div>
+
+            <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
+              {submitting ? 'Creating Account...' : 'Create Account'}
+            </button>
+          </form>
+
+          <p className="auth-footer">
+            Already have an account? <Link href="/login">Sign In</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
