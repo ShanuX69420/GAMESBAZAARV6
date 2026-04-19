@@ -58,16 +58,22 @@ class GameCategoryFilterInline(admin.TabularInline):
 
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
-    list_display = ['name', 'is_active', 'order', 'category_count', 'created_at']
+    list_display = ['name', 'is_active', 'order', 'category_count', 'search_keywords_preview', 'created_at']
     list_filter = ['is_active']
     list_editable = ['order', 'is_active']
-    search_fields = ['name', 'slug']
+    search_fields = ['name', 'slug', 'search_keywords']
     prepopulated_fields = {'slug': ('name',)}
     inlines = [GameCategoryInline]
 
     @admin.display(description='Categories')
     def category_count(self, obj):
         return obj.game_categories.count()
+
+    @admin.display(description='Search Keywords')
+    def search_keywords_preview(self, obj):
+        if obj.search_keywords:
+            return obj.search_keywords[:60] + ('...' if len(obj.search_keywords) > 60 else '')
+        return '—'
 
 
 @admin.register(Category)

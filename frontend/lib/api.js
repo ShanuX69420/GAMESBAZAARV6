@@ -391,3 +391,12 @@ export async function getSellerProfile(username) {
   if (!res.ok) throw new Error('Failed to get seller profile');
   return res.json();
 }
+
+// ── Search API ──────────────────────────────────────────────────────────────
+
+export async function searchMarketplace(query) {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${API_BASE}/api/search/?${params.toString()}`);
+  if (!res.ok) throw new Error('Search failed');
+  return res.json();
+}

@@ -61,4 +61,7 @@ urlpatterns = [
 
     # Seller Profile
     path('seller/profile/<str:username>/', views.SellerProfileView.as_view(), name='seller-profile'),
+
+    # Search
+    path('search/', views.SearchView.as_view(), name='search'),
 ]

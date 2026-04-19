@@ -1368,3 +1368,42 @@ class SellerProfileView(APIView):
             'completed_sales': completed_sales,
             'active_listings': active_listings,
         })
+
+
+class SearchView(APIView):
+    """GET /api/search/?q=<query> — Search game-categories."""
+    permission_classes = []
+
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query or len(query) < 2:
+            return Response({'query': query, 'results': []})
+
+        # Search GameCategory via game name, game keywords, or category name
+        game_categories = GameCategory.objects.filter(
+            game__is_active=True,
+        ).filter(
+            Q(game__name__icontains=query) |
+            Q(game__search_keywords__icontains=query) |
+            Q(category__name__icontains=query)
+        ).select_related('game', 'category').order_by(
+            'game__order', 'game__name', 'order', 'category__name'
+        )[:50]
+
+        results = []
+        for gc in game_categories:
+            icon_url = None
+            if gc.game.icon:
+                icon_url = request.build_absolute_uri(gc.game.icon.url)
+            results.append({
+                'id': gc.id,
+                'display_name': f'{gc.game.name} {gc.category.name}',
+                'game_name': gc.game.name,
+                'game_slug': gc.game.slug,
+                'game_icon_url': icon_url,
+                'category_name': gc.category.name,
+                'category_slug': gc.category.slug,
+            })
+
+        return Response({'query': query, 'results': results})
+

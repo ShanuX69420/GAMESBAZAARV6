@@ -1,4 +1,4 @@
-from decimal import Decimal
+﻿from decimal import Decimal
 from io import BytesIO
 from threading import Barrier, Thread
 from urllib.parse import urlsplit
@@ -20,7 +20,7 @@ from rest_framework.test import APIClient
 from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    Listing, Message, Order,
+    Listing, Message, Order, Review,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
 
@@ -2086,3 +2086,606 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             ).count(),
             1,
         )
+
+
+class ReviewTests(TestCase):
+    """Tests for the Reviews & Trust system."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.other_buyer = User.objects.create_user(username='other_buyer', password='password123')
+
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        game = Game.objects.create(name='Test Game', slug='test-game')
+        category = Category.objects.create(
+            name='Accounts', slug='accounts', commission_rate=Decimal('10.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Test Listing',
+            price=Decimal('50.00'),
+            quantity=5,
+            status='active',
+        )
+
+        self.completed_order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='completed',
+        )
+
+    # â”€â”€ CreateReviewView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_buyer_can_review_completed_order(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 5, 'comment': 'Great seller!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rating'], 5)
+        self.assertEqual(response.data['comment'], 'Great seller!')
+        self.assertTrue(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_review_without_comment_is_accepted(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 4},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['rating'], 4)
+        self.assertEqual(response.data['comment'], '')
+
+    def test_cannot_review_same_order_twice(self):
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+            comment='First review',
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 3, 'comment': 'Second review'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already reviewed', response.data['error'])
+        self.assertEqual(Review.objects.filter(order=self.completed_order).count(), 1)
+
+    def test_cannot_review_pending_order(self):
+        pending_order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='pending',
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': pending_order.id, 'rating': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('completed orders', response.data['error'])
+        self.assertFalse(Review.objects.filter(order=pending_order).exists())
+
+    def test_cannot_review_cancelled_order(self):
+        cancelled_order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='cancelled',
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': cancelled_order.id, 'rating': 1},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Review.objects.filter(order=cancelled_order).exists())
+
+    def test_seller_cannot_review_own_order(self):
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_other_buyer_cannot_review_someone_elses_order(self):
+        self.client.force_authenticate(user=self.other_buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_unauthenticated_user_cannot_review(self):
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_review_rejects_rating_below_1(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 0},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_review_rejects_rating_above_5(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 6},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_review_rejects_missing_rating(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_review_rejects_missing_order_id(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'rating': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    # â”€â”€ has_review flag on OrderSerializer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_order_has_review_false_before_review(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.get(f'/api/orders/{self.completed_order.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['has_review'])
+
+    def test_order_has_review_true_after_review(self):
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.get(f'/api/orders/{self.completed_order.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['has_review'])
+
+    # â”€â”€ SellerReviewsView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_seller_reviews_endpoint_lists_reviews(self):
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=4,
+            comment='Good seller',
+        )
+
+        response = self.client.get('/api/reviews/seller/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['rating'], 4)
+        self.assertEqual(response.data[0]['comment'], 'Good seller')
+        self.assertEqual(response.data[0]['reviewer_name'], 'buyer')
+        self.assertEqual(response.data[0]['listing_title'], 'Test Listing')
+
+    def test_seller_reviews_endpoint_returns_empty_for_no_reviews(self):
+        response = self.client.get('/api/reviews/seller/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_seller_reviews_endpoint_returns_404_for_unknown_user(self):
+        response = self.client.get('/api/reviews/seller/nonexistent/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_seller_reviews_are_public(self):
+        """Unauthenticated users can view seller reviews."""
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+        )
+
+        response = self.client.get('/api/reviews/seller/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+    # â”€â”€ SellerProfileView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_seller_profile_returns_correct_stats(self):
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=4,
+        )
+
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['username'], 'seller')
+        self.assertEqual(response.data['avg_rating'], 4.0)
+        self.assertEqual(response.data['review_count'], 1)
+        self.assertEqual(response.data['completed_sales'], 1)
+        self.assertIn('member_since', response.data)
+        self.assertIn('is_online', response.data)
+        self.assertIn('active_listings', response.data)
+
+    def test_seller_profile_avg_rating_with_multiple_reviews(self):
+        # Create a second completed order for a second review
+        second_order = Order.objects.create(
+            buyer=self.other_buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='completed',
+        )
+        Review.objects.create(
+            order=self.completed_order, reviewer=self.buyer, seller=self.seller, rating=5,
+        )
+        Review.objects.create(
+            order=second_order, reviewer=self.other_buyer, seller=self.seller, rating=3,
+        )
+
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['avg_rating'], 4.0)
+        self.assertEqual(response.data['review_count'], 2)
+        self.assertEqual(response.data['completed_sales'], 2)
+
+    def test_seller_profile_without_reviews(self):
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['avg_rating'])
+        self.assertEqual(response.data['review_count'], 0)
+
+    def test_non_seller_profile_returns_404(self):
+        response = self.client.get('/api/seller/profile/buyer/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_seller_profile_is_public(self):
+        """Unauthenticated users can view seller profile."""
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['username'], 'seller')
+
+    def test_seller_profile_returns_404_for_unknown_user(self):
+        response = self.client.get('/api/seller/profile/nonexistent/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_seller_profile_active_listings_count(self):
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['active_listings'], 1)
+
+
+class SearchTests(TestCase):
+    """Tests for GET /api/search/?q=<query> â€” game-category search."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # Create games
+        self.valorant = Game.objects.create(name='Valorant', slug='valorant', is_active=True)
+        self.pubg = Game.objects.create(name='PUBG Mobile', slug='pubg-mobile', is_active=True)
+        self.gta = Game.objects.create(
+            name='GTA 5', slug='gta-5', is_active=True,
+            search_keywords='gta, grand theft auto, gta v, gta5, grand theft auto 5',
+        )
+        self.inactive_game = Game.objects.create(
+            name='Inactive Game', slug='inactive-game', is_active=False,
+        )
+
+        # Create categories
+        self.accounts = Category.objects.create(name='Accounts', slug='accounts')
+        self.topup = Category.objects.create(name='Top-Up', slug='top-up')
+        self.boosting = Category.objects.create(name='Boosting', slug='boosting')
+
+        # Create game-category links
+        self.val_accounts = GameCategory.objects.create(
+            game=self.valorant, category=self.accounts,
+        )
+        self.val_topup = GameCategory.objects.create(
+            game=self.valorant, category=self.topup,
+        )
+        self.val_boosting = GameCategory.objects.create(
+            game=self.valorant, category=self.boosting,
+        )
+        self.pubg_accounts = GameCategory.objects.create(
+            game=self.pubg, category=self.accounts,
+        )
+        self.gta_accounts = GameCategory.objects.create(
+            game=self.gta, category=self.accounts,
+        )
+        self.inactive_gc = GameCategory.objects.create(
+            game=self.inactive_game, category=self.accounts,
+        )
+
+    # â”€â”€ Search by game name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_by_game_name(self):
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['query'], 'Valorant')
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('Valorant Accounts', names)
+        self.assertIn('Valorant Top-Up', names)
+        self.assertIn('Valorant Boosting', names)
+        # PUBG should not appear
+        self.assertNotIn('PUBG Mobile Accounts', names)
+
+    def test_search_game_name_case_insensitive(self):
+        response = self.client.get('/api/search/?q=valorant')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('Valorant Accounts', names)
+
+    def test_search_game_name_partial_match(self):
+        response = self.client.get('/api/search/?q=PUBG')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('PUBG Mobile Accounts', names)
+
+    # â”€â”€ Search by game keywords / aliases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_by_keyword_alias(self):
+        """Searching 'gta' should find 'GTA 5 Accounts' via search_keywords."""
+        response = self.client.get('/api/search/?q=gta')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('GTA 5 Accounts', names)
+
+    def test_search_by_full_alias(self):
+        """Searching 'grand theft auto' should find GTA 5 categories."""
+        response = self.client.get('/api/search/?q=grand theft auto')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('GTA 5 Accounts', names)
+
+    def test_search_keyword_does_not_match_unrelated(self):
+        response = self.client.get('/api/search/?q=gta')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertNotIn('Valorant Accounts', names)
+
+    # â”€â”€ Search by category name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_by_category_name(self):
+        response = self.client.get('/api/search/?q=Accounts')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('Valorant Accounts', names)
+        self.assertIn('PUBG Mobile Accounts', names)
+        self.assertIn('GTA 5 Accounts', names)
+        # Boosting and Top-Up should NOT appear
+        self.assertNotIn('Valorant Boosting', names)
+        self.assertNotIn('Valorant Top-Up', names)
+
+    def test_search_by_category_name_case_insensitive(self):
+        response = self.client.get('/api/search/?q=boosting')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertIn('Valorant Boosting', names)
+
+    # â”€â”€ Exclusions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_excludes_inactive_games(self):
+        response = self.client.get('/api/search/?q=Inactive')
+
+        self.assertEqual(response.status_code, 200)
+        names = [r['display_name'] for r in response.data['results']]
+        self.assertNotIn('Inactive Game Accounts', names)
+
+    def test_search_excludes_inactive_game_when_searching_category(self):
+        """Searching 'Accounts' should not return categories under inactive games."""
+        response = self.client.get('/api/search/?q=Accounts')
+
+        self.assertEqual(response.status_code, 200)
+        game_names = [r['game_name'] for r in response.data['results']]
+        self.assertNotIn('Inactive Game', game_names)
+
+    # â”€â”€ Empty / short queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_empty_query_returns_empty(self):
+        response = self.client.get('/api/search/?q=')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+
+    def test_search_missing_query_returns_empty(self):
+        response = self.client.get('/api/search/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+
+    def test_search_short_query_returns_empty(self):
+        response = self.client.get('/api/search/?q=V')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['query'], 'V')
+        self.assertEqual(response.data['results'], [])
+
+    def test_search_no_match_returns_empty(self):
+        response = self.client.get('/api/search/?q=zzzznonexistent')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+
+    def test_search_whitespace_only_returns_empty(self):
+        response = self.client.get('/api/search/?q=%20%20%20')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+
+    # â”€â”€ Response structure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_response_structure(self):
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('query', response.data)
+        self.assertIn('results', response.data)
+        self.assertEqual(response.data['query'], 'Valorant')
+
+    def test_search_result_contains_expected_fields(self):
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        result = response.data['results'][0]
+        for field in ('id', 'display_name', 'game_name', 'game_slug',
+                       'game_icon_url', 'category_name', 'category_slug'):
+            self.assertIn(field, result, f'Missing field: {field}')
+
+    def test_search_result_display_name_format(self):
+        """display_name should be '{Game Name} {Category Name}'."""
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        result = next(r for r in response.data['results'] if r['category_slug'] == 'accounts')
+        self.assertEqual(result['display_name'], 'Valorant Accounts')
+        self.assertEqual(result['game_name'], 'Valorant')
+        self.assertEqual(result['game_slug'], 'valorant')
+        self.assertEqual(result['category_name'], 'Accounts')
+        self.assertEqual(result['category_slug'], 'accounts')
+
+    # â”€â”€ Results limit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_results_limited_to_fifty(self):
+        """At most 50 results should be returned."""
+        game = Game.objects.create(name='ManyCategories', slug='many-categories', is_active=True)
+        for i in range(55):
+            cat = Category.objects.create(name=f'Cat{i}', slug=f'cat{i}')
+            GameCategory.objects.create(game=game, category=cat)
+
+        response = self.client.get('/api/search/?q=ManyCategories')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(response.data['results']), 50)
+
+    # â”€â”€ Public access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_is_public(self):
+        """Search endpoint should work without authentication."""
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('results', response.data)
+        self.assertGreater(len(response.data['results']), 0)
+
+    # â”€â”€ No duplicates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def test_search_no_duplicate_results(self):
+        """A game-category matching both game name and category name should appear once."""
+        response = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(response.status_code, 200)
+        ids = [r['id'] for r in response.data['results']]
+        self.assertEqual(len(ids), len(set(ids)), 'Duplicate result IDs found')
+
