@@ -19,6 +19,7 @@ from django.db import transaction as db_transaction
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
+    Review,
 )
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
@@ -29,6 +30,7 @@ from .serializers import (
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     OrderSerializer, BuyListingSerializer,
+    ReviewSerializer, CreateReviewSerializer,
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
@@ -1277,3 +1279,92 @@ class RefundOrderView(APIView):
 
         return Response(OrderSerializer(order).data)
 
+
+# ── Reviews ───────────────────────────────────────────────────────────────────────
+
+class CreateReviewView(APIView):
+    """POST /api/reviews/ — Submit a review for a completed order."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = CreateReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        order = get_object_or_404(Order, pk=data['order_id'], buyer=request.user)
+
+        if order.status != 'completed':
+            return Response({'error': 'You can only review completed orders.'}, status=400)
+
+        if hasattr(order, 'review'):
+            return Response({'error': 'You have already reviewed this order.'}, status=400)
+
+        review = Review.objects.create(
+            order=order,
+            reviewer=request.user,
+            seller=order.seller,
+            rating=data['rating'],
+            comment=data.get('comment', ''),
+        )
+
+        return Response(ReviewSerializer(review).data, status=201)
+
+
+class SellerReviewsView(APIView):
+    """GET /api/reviews/seller/<username>/ — Get all reviews for a seller."""
+    permission_classes = []
+
+    def get(self, request, username):
+        seller = get_object_or_404(User, username=username)
+        reviews = Review.objects.filter(
+            seller=seller
+        ).select_related('reviewer', 'order')
+        return Response(ReviewSerializer(reviews, many=True).data)
+
+
+class SellerProfileView(APIView):
+    """GET /api/seller/profile/<username>/ — Public seller profile with stats."""
+    permission_classes = []
+
+    def get(self, request, username):
+        seller = get_object_or_404(User, username=username)
+        profile = seller.profile
+
+        if profile.seller_status != 'approved':
+            return Response({'error': 'Seller not found.'}, status=404)
+
+        # Get reviews
+        reviews = Review.objects.filter(seller=seller)
+        review_count = reviews.count()
+        avg_rating = None
+        if review_count > 0:
+            total = sum(r.rating for r in reviews)
+            avg_rating = round(total / review_count, 1)
+
+        # Get completed sales count
+        completed_sales = Order.objects.filter(
+            seller=seller, status='completed'
+        ).count()
+
+        # Get active listings count
+        active_listings = Listing.objects.filter(
+            seller=seller, status='active'
+        ).count()
+
+        # Member since
+        member_since = seller.date_joined
+
+        # Online status
+        is_online = profile.is_online
+        last_active = profile.last_active
+
+        return Response({
+            'username': seller.username,
+            'member_since': member_since,
+            'is_online': is_online,
+            'last_active': last_active,
+            'avg_rating': avg_rating,
+            'review_count': review_count,
+            'completed_sales': completed_sales,
+            'active_listings': active_listings,
+        })

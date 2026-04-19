@@ -54,4 +54,11 @@ urlpatterns = [
     path('orders/<int:pk>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
     path('admin/orders/<int:pk>/resolve-dispute/',
          views.ResolveDisputeView.as_view(), name='admin-resolve-dispute'),
+
+    # Reviews
+    path('reviews/', views.CreateReviewView.as_view(), name='create-review'),
+    path('reviews/seller/<str:username>/', views.SellerReviewsView.as_view(), name='seller-reviews'),
+
+    # Seller Profile
+    path('seller/profile/<str:username>/', views.SellerProfileView.as_view(), name='seller-profile'),
 ]

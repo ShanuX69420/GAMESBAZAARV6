@@ -117,7 +117,7 @@ export default function ListingDetailPage() {
           <div className="listing-detail-price-card">
             <div className="listing-detail-price">PKR {listing.price}</div>
             <div className="listing-detail-seller">
-              Sold by <strong>{listing.seller_name}</strong>
+              Sold by <Link href={`/seller/${listing.seller_name}`} style={{ color: 'var(--green-600)', fontWeight: 600 }}>{listing.seller_name}</Link>
             </div>
             <div className="listing-detail-date">
               Listed {new Date(listing.created_at).toLocaleDateString()}

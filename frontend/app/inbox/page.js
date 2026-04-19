@@ -125,7 +125,9 @@ export default function InboxPage() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                      {activeChat.other_user?.username}
+                      <a href={`/seller/${activeChat.other_user?.username}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                        {activeChat.other_user?.username}
+                      </a>
                     </div>
                     <div className={`presence-text ${activeChat.other_user?.is_online ? 'is-online' : ''}`}>
                       {formatLastActive(activeChat.other_user?.last_active)}

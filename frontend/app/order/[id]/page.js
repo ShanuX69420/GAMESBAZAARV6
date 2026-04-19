@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder } from '@/lib/api';
+import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview } from '@/lib/api';
 import ChatBox from '@/components/ChatBox';
 
 export default function OrderDetailPage() {
@@ -21,6 +21,10 @@ export default function OrderDetailPage() {
   const [deliveryNote, setDeliveryNote] = useState('');
   const [disputeModal, setDisputeModal] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewHover, setReviewHover] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const actionRef = useRef(false);
 
   useEffect(() => {
@@ -92,6 +96,21 @@ export default function OrderDetailPage() {
       await refundOrder(id);
       setSuccess('Order refunded. Buyer has been credited.');
     });
+  }
+
+  async function handleReview(e) {
+    e.preventDefault();
+    if (reviewRating === 0) return;
+    setError('');
+    setSuccess('');
+    try {
+      await createReview(id, reviewRating, reviewComment);
+      setReviewSubmitted(true);
+      setSuccess('Review submitted! Thank you for your feedback.');
+      await loadOrder();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   if (loading || loadingOrder) {
@@ -183,7 +202,13 @@ export default function OrderDetailPage() {
             </div>
             <div className="order-info-item">
               <span className="order-info-label">{isBuyer ? 'SELLER' : 'BUYER'}</span>
-              <span className="order-info-value">{otherUser}</span>
+              <span className="order-info-value">
+                {isBuyer ? (
+                  <Link href={`/seller/${order.seller_name}`} style={{ color: 'var(--green-600)' }}>{otherUser}</Link>
+                ) : (
+                  otherUser
+                )}
+              </span>
             </div>
             <div className="order-info-item">
               <span className="order-info-label">QUANTITY</span>
@@ -301,6 +326,53 @@ export default function OrderDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Review Section — Buyer can review completed orders */}
+          {isBuyer && order.status === 'completed' && !order.has_review && !reviewSubmitted && (
+            <div className="order-detail-actions">
+              <h3 className="order-detail-section-title">⭐ Leave a Review</h3>
+              <form onSubmit={handleReview} className="review-form">
+                <div className="review-stars-input">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      className={`review-star-btn ${star <= (reviewHover || reviewRating) ? 'active' : ''}`}
+                      onClick={() => setReviewRating(star)}
+                      onMouseEnter={() => setReviewHover(star)}
+                      onMouseLeave={() => setReviewHover(0)}
+                    >
+                      ★
+                    </button>
+                  ))}
+                  {reviewRating > 0 && (
+                    <span className="review-rating-text">
+                      {reviewRating === 1 ? 'Poor' : reviewRating === 2 ? 'Fair' : reviewRating === 3 ? 'Good' : reviewRating === 4 ? 'Great' : 'Excellent'}
+                    </span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <textarea
+                    className="form-textarea"
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Tell others about your experience (optional)"
+                    rows={3}
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary" disabled={reviewRating === 0}>
+                  Submit Review
+                </button>
+              </form>
+            </div>
+          )}
+          {isBuyer && (order.has_review || reviewSubmitted) && (
+            <div className="order-detail-actions">
+              <div className="order-completed-msg" style={{ padding: '8px 0' }}>
+                ⭐ You've reviewed this order. Thank you!
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right: Chat */}

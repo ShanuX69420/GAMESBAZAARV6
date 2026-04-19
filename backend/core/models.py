@@ -516,3 +516,28 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.pk} — {self.listing_title} — {self.get_status_display()}"
+
+
+# ── Reviews ──────────────────────────────────────────────────────────────────
+
+class Review(models.Model):
+    """Buyer review of a seller after a completed order."""
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='review')
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews_given',
+    )
+    seller = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews_received',
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        help_text='1-5 star rating',
+    )
+    comment = models.TextField(blank=True, default='', help_text='Optional review text')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.reviewer.username} → {self.seller.username}: {self.rating}★"

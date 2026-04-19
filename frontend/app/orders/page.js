@@ -142,7 +142,7 @@ export default function OrdersPage() {
                 <div className="order-card-info">
                   <div className="order-card-title">{order.listing_title}</div>
                   <div className="order-card-meta">
-                    <span>Seller: <strong>{order.seller_name}</strong></span>
+                    <span>Seller: <Link href={`/seller/${order.seller_name}`} style={{ color: 'var(--green-600)', fontWeight: 600 }}>{order.seller_name}</Link></span>
                     <span>Qty: {order.quantity}</span>
                     <span>Unit: PKR {order.unit_price}</span>
                   </div>

@@ -8,7 +8,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
-    TopUpRequest, Order, SellerCommissionOverride,
+    TopUpRequest, Order, SellerCommissionOverride, Review,
 )
 from .services import (
     apply_wallet_delta_once,
@@ -389,3 +389,11 @@ class WalletTransactionAdmin(HiddenModelAdmin):
     list_display = ['wallet', 'transaction_type', 'amount', 'balance_after', 'created_at']
     list_filter = ['transaction_type']
     search_fields = ['wallet__user__username', 'description']
+
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ['id', 'reviewer', 'seller', 'rating', 'order', 'created_at']
+    list_filter = ['rating']
+    search_fields = ['reviewer__username', 'seller__username', 'comment']
+    raw_id_fields = ['order', 'reviewer', 'seller']

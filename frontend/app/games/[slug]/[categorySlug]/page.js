@@ -175,7 +175,7 @@ export default function GameCategoryPage() {
                 <div className="listing-row-info">
                   <div className="listing-row-title">{listing.title}</div>
                   <div className="listing-row-meta">
-                    {listing.seller_name}
+                    <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/seller/${listing.seller_name}`; }} style={{ color: 'var(--green-600)', cursor: 'pointer' }}>{listing.seller_name}</span>
                     {listing.filter_display && Object.entries(listing.filter_display).map(([name, value]) => (
                       <span key={name} className="listing-row-tag">{value}</span>
                     ))}

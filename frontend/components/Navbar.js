@@ -93,7 +93,9 @@ export default function Navbar() {
                       Logout
                     </button>
                   </li>
-                  <li className="nav-user-badge">{user.username}</li>
+                  <li className="nav-user-badge">
+                    <Link href={user.is_seller ? `/seller/${user.username}` : '/dashboard'}>{user.username}</Link>
+                  </li>
                 </>
               ) : (
                 <>
@@ -131,6 +133,9 @@ export default function Navbar() {
                   <Link href="/my-listings" onClick={() => setMenuOpen(false)}>My Listings</Link>
                 </>
               )}
+              <Link href={user.is_seller ? `/seller/${user.username}` : '/dashboard'} onClick={() => setMenuOpen(false)}>
+                My Profile
+              </Link>
               <Link href="/wallet" onClick={() => setMenuOpen(false)}>Wallet</Link>
               <Link href="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</Link>
               <a href="#" onClick={(e) => { e.preventDefault(); logout(); setMenuOpen(false); }}>

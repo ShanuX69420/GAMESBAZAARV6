@@ -10,7 +10,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order,
-    SellerCommissionOverride,
+    SellerCommissionOverride, Review,
 )
 from .services import create_private_media_ticket
 
@@ -491,6 +491,7 @@ class OrderSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     listing_id = serializers.IntegerField(source='listing.id', read_only=True, default=None)
     conversation_id = serializers.IntegerField(source='conversation.id', read_only=True, default=None)
+    has_review = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -501,11 +502,35 @@ class OrderSerializer(serializers.ModelSerializer):
             'commission_rate', 'commission_amount', 'seller_amount',
             'status', 'status_display',
             'delivery_note', 'dispute_reason',
-            'conversation_id',
+            'conversation_id', 'has_review',
             'created_at', 'updated_at',
         ]
+
+    def get_has_review(self, obj):
+        return hasattr(obj, 'review') and obj.review is not None
 
 
 class BuyListingSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1, default=1)
+
+
+# ── Review Serializers ───────────────────────────────────────────────────────
+
+class ReviewSerializer(serializers.ModelSerializer):
+    reviewer_name = serializers.CharField(source='reviewer.username', read_only=True)
+    listing_title = serializers.CharField(source='order.listing_title', read_only=True)
+
+    class Meta:
+        model = Review
+        fields = [
+            'id', 'order', 'reviewer_name', 'seller',
+            'rating', 'comment', 'listing_title', 'created_at',
+        ]
+        read_only_fields = ['order', 'seller', 'reviewer_name', 'listing_title', 'created_at']
+
+
+class CreateReviewSerializer(serializers.Serializer):
+    order_id = serializers.IntegerField()
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(required=False, default='', max_length=2000)

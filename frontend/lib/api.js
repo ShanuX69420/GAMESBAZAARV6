@@ -366,3 +366,28 @@ export async function refundOrder(id) {
   if (!res.ok) throw new Error(data.error || 'Failed to refund order');
   return data;
 }
+
+// ── Reviews API ─────────────────────────────────────────────────────────────
+
+export async function createReview(orderId, rating, comment = '') {
+  const res = await authFetch(`${API_BASE}/api/reviews/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ order_id: orderId, rating, comment }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to submit review');
+  return data;
+}
+
+export async function getSellerReviews(username) {
+  const res = await fetch(`${API_BASE}/api/reviews/seller/${username}/`);
+  if (!res.ok) throw new Error('Failed to get reviews');
+  return res.json();
+}
+
+export async function getSellerProfile(username) {
+  const res = await fetch(`${API_BASE}/api/seller/profile/${username}/`);
+  if (!res.ok) throw new Error('Failed to get seller profile');
+  return res.json();
+}

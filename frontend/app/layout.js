@@ -1,4 +1,5 @@
 import './globals.css';
+import './reviews.css';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { AuthProvider } from '@/lib/auth';

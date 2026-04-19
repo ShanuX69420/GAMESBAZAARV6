@@ -381,7 +381,9 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
           </div>
           <div>
             <div className="chatbox-header-name">
-              {convo?.other_user?.username || sellerName || 'Chat'}
+              <a href={`/seller/${convo?.other_user?.username || sellerName}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                {convo?.other_user?.username || sellerName || 'Chat'}
+              </a>
             </div>
             {convo?.other_user?.last_active && (
               <div className={`presence-text ${convo.other_user.is_online ? 'is-online' : ''}`}>
