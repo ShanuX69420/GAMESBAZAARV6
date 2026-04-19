@@ -1,3 +1,5 @@
+import warnings
+
 from PIL import Image, UnidentifiedImageError
 from django.core import signing
 from django.utils import timezone
@@ -7,6 +9,9 @@ from .models import Wallet, WalletTransaction
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
 MAX_IMAGE_UPLOAD_SIZE = 5 * 1024 * 1024
+MAX_IMAGE_WIDTH = 6000
+MAX_IMAGE_HEIGHT = 6000
+MAX_IMAGE_PIXELS = 24_000_000
 MAX_CHAT_MESSAGE_LENGTH = 2000
 CHAT_MESSAGE_EMPTY_ERROR = 'Message cannot be empty.'
 CHAT_MESSAGE_NOT_TEXT_ERROR = 'Message must be text.'
@@ -17,6 +22,8 @@ CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
 PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
+
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 def get_or_create_locked_wallet(user):
@@ -69,9 +76,18 @@ def validate_uploaded_image(image):
         return 'Image too large. Max 5MB.'
 
     try:
-        with Image.open(image) as img:
-            img.verify()
-    except (UnidentifiedImageError, OSError):
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(image) as img:
+                width, height = img.size
+                if (
+                    width > MAX_IMAGE_WIDTH or
+                    height > MAX_IMAGE_HEIGHT or
+                    width * height > MAX_IMAGE_PIXELS
+                ):
+                    return 'Image dimensions too large.'
+                img.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
         return 'Invalid image file.'
     finally:
         image.seek(0)

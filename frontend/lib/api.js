@@ -97,8 +97,8 @@ export async function createListing(listingData) {
   return data;
 }
 
-export async function getMyListings() {
-  const res = await authFetch(`${API_BASE}/api/listings/mine/`, {
+export async function getMyListings(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/listings/mine/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get listings');

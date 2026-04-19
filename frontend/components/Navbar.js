@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getUnreadCount, sendHeartbeat } from '@/lib/api';
 
+const UNREAD_POLL_INTERVAL_MS = 15000;
+
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, loading, logout } = useAuth();
@@ -27,16 +29,25 @@ export default function Navbar() {
   useEffect(() => {
     if (!user) { setUnread(0); prevUnread.current = 0; return; }
     fetchUnread();
-    // Poll every 3s — this is the source of truth for new conversations
-    const interval = setInterval(fetchUnread, 3000);
+    // Poll as a fallback; WebSocket chatUpdate events still refresh immediately.
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchUnread();
+      }
+    }, UNREAD_POLL_INTERVAL_MS);
 
     // Also react to chatUpdate events (from WebSocket) for instant updates
     const handleChatUpdate = () => fetchUnread();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchUnread();
+    };
     window.addEventListener('chatUpdate', handleChatUpdate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('chatUpdate', handleChatUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user, fetchUnread]);
 

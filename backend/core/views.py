@@ -1,5 +1,7 @@
 from decimal import Decimal
 import mimetypes
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -111,6 +113,21 @@ def get_pagination_payload(total_count, limit, offset):
 
 
 # ── Public Game / Category / Filter views ────────────────────────────────────
+
+def broadcast_chat_message(message, request):
+    """Broadcast a REST-created message to any open WebSocket clients."""
+    channel_layer = get_channel_layer()
+    message_data = dict(MessageSerializer(message, context={'request': request}).data)
+    if channel_layer is not None:
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{message.conversation_id}',
+            {
+                'type': 'chat.message',
+                'message': message_data,
+            },
+        )
+    return message_data
+
 
 class GameListView(generics.ListAPIView):
     """GET /api/games/ — List all active games."""
@@ -360,7 +377,15 @@ class MyListingsView(generics.ListAPIView):
         ).select_related('game_category__game', 'game_category__category')
 
     def list(self, request, *args, **kwargs):
-        listings = list(self.get_queryset())
+        listings_qs = self.get_queryset()
+        limit, offset = get_pagination_params(request)
+        total_count = listings_qs.count()
+        listings = list(listings_qs[offset:offset + limit])
+        summary = listings_qs.aggregate(
+            active_count=Count('id', filter=Q(status='active')),
+            sold_count=Count('id', filter=Q(status='sold')),
+        )
+        summary['total_count'] = total_count
         serializer = self.get_serializer(
             listings,
             many=True,
@@ -369,7 +394,11 @@ class MyListingsView(generics.ListAPIView):
                 'filter_option_display_map': build_listing_filter_display_map(listings),
             },
         )
-        return Response(serializer.data)
+        return Response({
+            'listings': serializer.data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+            'summary': summary,
+        })
 
 
 class ListingDetailView(APIView):
@@ -489,12 +518,13 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
 
         # Send initial message if provided
         if initial_message:
-            Message.objects.create(
+            message = Message.objects.create(
                 conversation=conversation,
                 sender=request.user,
                 content=initial_message,
             )
             conversation.save()  # Update updated_at
+            broadcast_chat_message(message, request)
 
         data = ConversationDetailSerializer(conversation, context={'request': request}).data
         return Response(data, status=201)
@@ -565,7 +595,7 @@ class SendMessageView(APIView):
         )
         conversation.save()  # Update updated_at
 
-        data = MessageSerializer(message, context={'request': request}).data
+        data = broadcast_chat_message(message, request)
         return Response(data, status=201)
 
 
@@ -601,7 +631,7 @@ class SendImageView(ScopedPostThrottleMixin, APIView):
         )
         conversation.save()
 
-        data = MessageSerializer(message, context={'request': request}).data
+        data = broadcast_chat_message(message, request)
         return Response(data, status=201)
 
 

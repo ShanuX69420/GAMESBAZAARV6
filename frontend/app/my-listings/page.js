@@ -6,11 +6,16 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMyListings, updateListing, deleteListing } from '@/lib/api';
 
+const MY_LISTING_PAGE_SIZE = 48;
+
 export default function MyListingsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [listings, setListings] = useState([]);
+  const [listingPagination, setListingPagination] = useState(null);
+  const [listingSummary, setListingSummary] = useState(null);
   const [loadingListings, setLoadingListings] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', price: '', quantity: '', status: '' });
@@ -26,14 +31,26 @@ export default function MyListingsPage() {
     if (user && user.is_seller) loadListings();
   }, [user]);
 
-  async function loadListings() {
+  async function loadListings(offset = 0, append = false) {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingListings(true);
+    }
     try {
-      const data = await getMyListings();
-      setListings(data);
+      const data = await getMyListings({
+        limit: MY_LISTING_PAGE_SIZE,
+        offset,
+      });
+      const nextListings = data.listings || [];
+      setListings(prev => append ? [...prev, ...nextListings] : nextListings);
+      setListingPagination(data.pagination || null);
+      setListingSummary(data.summary || null);
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingListings(false);
+      setLoadingMore(false);
     }
   }
 
@@ -97,8 +114,9 @@ export default function MyListingsPage() {
 
   if (!user.is_seller) return null;
 
-  const activeCount = listings.filter(l => l.status === 'active').length;
-  const soldCount = listings.filter(l => l.status === 'sold').length;
+  const activeCount = listingSummary?.active_count ?? listings.filter(l => l.status === 'active').length;
+  const soldCount = listingSummary?.sold_count ?? listings.filter(l => l.status === 'sold').length;
+  const totalCount = listingSummary?.total_count ?? listingPagination?.count ?? listings.length;
 
   return (
     <div className="container">
@@ -126,7 +144,7 @@ export default function MyListingsPage() {
         <div className="stat-card">
           <div className="stat-icon">📦</div>
           <div className="stat-info">
-            <div className="stat-value">{listings.length}</div>
+            <div className="stat-value">{totalCount}</div>
             <div className="stat-label">Total Listings</div>
           </div>
         </div>
@@ -153,6 +171,7 @@ export default function MyListingsPage() {
           </Link>
         </div>
       ) : (
+        <>
         <div className="listings-table-wrap">
           <table className="listings-table">
             <thead>
@@ -205,6 +224,17 @@ export default function MyListingsPage() {
             </tbody>
           </table>
         </div>
+        {listingPagination?.next_offset !== null && listingPagination?.next_offset !== undefined && (
+          <button
+            className="btn btn-outline btn-full"
+            style={{ marginTop: '16px' }}
+            onClick={() => loadListings(listingPagination.next_offset, true)}
+            disabled={loadingMore}
+          >
+            {loadingMore ? 'Loading...' : 'Load More'}
+          </button>
+        )}
+        </>
       )}
 
       {/* Edit Listing Modal */}

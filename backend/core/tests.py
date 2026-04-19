@@ -25,9 +25,9 @@ from .models import (
 )
 
 
-def make_image_file(name='proof.png', image_format='PNG', content_type='image/png'):
+def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
     buffer = BytesIO()
-    image = Image.new('RGB', (2, 2), color='green')
+    image = Image.new('RGB', size, color='green')
     image.save(buffer, format=image_format)
     return SimpleUploadedFile(name, buffer.getvalue(), content_type=content_type)
 
@@ -309,6 +309,21 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'Image too large. Max 5MB.')
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-large').exists())
+
+    def test_rejects_payment_proof_with_oversized_dimensions(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'transaction_id': 'too-wide',
+                'payment_proof': make_image_file(size=(6001, 1)),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Image dimensions too large.')
+        self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-wide').exists())
 
 
 THROTTLE_TEST_REST_FRAMEWORK = {
@@ -645,6 +660,63 @@ class GameCategoryListingPaginationTests(TestCase):
         self.assertEqual(len(second_page.data['listings']), 1)
         self.assertEqual(second_page.data['listing_pagination']['next_offset'], None)
         self.assertEqual(second_page.data['listing_pagination']['previous_offset'], 0)
+
+
+class MyListingsPaginationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.other_seller = User.objects.create_user(username='other_seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        game = Game.objects.create(name='Test Game', slug='test-game')
+        category = Category.objects.create(name='Accounts', slug='accounts')
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+
+        for index in range(5):
+            Listing.objects.create(
+                seller=self.seller,
+                game_category=self.game_category,
+                title=f'My listing {index}',
+                price=Decimal('10.00'),
+                quantity=1,
+                status='sold' if index == 0 else 'active',
+            )
+        Listing.objects.create(
+            seller=self.other_seller,
+            game_category=self.game_category,
+            title='Other seller listing',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+    def test_my_listings_are_paginated_with_summary(self):
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/listings/mine/?limit=2')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['listings']), 2)
+        self.assertEqual(response.data['pagination'], {
+            'count': 5,
+            'limit': 2,
+            'offset': 0,
+            'next_offset': 2,
+            'previous_offset': None,
+        })
+        self.assertEqual(response.data['summary'], {
+            'active_count': 4,
+            'sold_count': 1,
+            'total_count': 5,
+        })
+
+        second_page = self.client.get('/api/listings/mine/?limit=2&offset=2')
+
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(len(second_page.data['listings']), 2)
+        self.assertEqual(second_page.data['pagination']['next_offset'], 4)
+        self.assertEqual(second_page.data['pagination']['previous_offset'], 0)
 
 
 class AccessControlTests(TestCase):
@@ -1146,6 +1218,80 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             self.assertFalse(connected)
 
         async_to_sync(run_wrong_conversation_rejection)()
+
+    def test_rest_message_send_broadcasts_to_open_websocket(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket
+
+        def post_message():
+            client = APIClient()
+            client.force_authenticate(user=self.buyer)
+            return client.post(
+                f'/api/chat/{self.conversation.id}/send/',
+                {'content': 'hello from rest'},
+                format='json',
+            )
+
+        async def run_rest_broadcast_flow():
+            ticket = create_chat_ws_ticket(self.seller, self.conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            response = await sync_to_async(post_message, thread_sensitive=True)()
+            self.assertEqual(response.status_code, 201)
+
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'new_message')
+            self.assertEqual(event['message']['content'], 'hello from rest')
+            self.assertEqual(event['message']['sender_id'], self.buyer.id)
+            self.assertFalse(event['message']['is_mine'])
+            await communicator.disconnect()
+
+        async_to_sync(run_rest_broadcast_flow)()
+
+    def test_rest_image_send_broadcasts_to_open_websocket(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket
+
+        def post_image():
+            client = APIClient()
+            client.force_authenticate(user=self.buyer)
+            return client.post(
+                f'/api/chat/{self.conversation.id}/send-image/',
+                {'image': make_image_file(name='rest-chat.png')},
+                format='multipart',
+            )
+
+        async def run_image_broadcast_flow():
+            ticket = create_chat_ws_ticket(self.seller, self.conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            response = await sync_to_async(post_image, thread_sensitive=True)()
+            self.assertEqual(response.status_code, 201)
+
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'new_message')
+            self.assertEqual(event['message']['sender_id'], self.buyer.id)
+            self.assertTrue(event['message']['image_url'])
+            self.assertFalse(event['message']['is_mine'])
+            await communicator.disconnect()
+
+        async_to_sync(run_image_broadcast_flow)()
 
     def test_websocket_rejects_overlong_message(self):
         from asgiref.sync import async_to_sync
