@@ -35,7 +35,10 @@ from .services import (
     CHAT_WS_TICKET_MAX_AGE_SECONDS,
     create_chat_ws_ticket,
     decode_private_media_ticket,
+    apply_wallet_delta_once,
     get_or_create_locked_wallet,
+    record_platform_ledger_once,
+    ALLOWED_IMAGE_CONTENT_TYPES,
     validate_chat_message_content,
     validate_uploaded_image,
 )
@@ -82,7 +85,13 @@ def private_file_response(file_field):
     except (FileNotFoundError, OSError):
         raise Http404
     content_type = mimetypes.guess_type(file_field.name)[0] or 'application/octet-stream'
-    return FileResponse(opened_file, content_type=content_type)
+    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        opened_file.close()
+        raise Http404
+    response = FileResponse(opened_file, content_type=content_type)
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 def get_pagination_params(request, default_limit=DEFAULT_LISTING_PAGE_SIZE, max_limit=MAX_LISTING_PAGE_SIZE):
@@ -551,15 +560,51 @@ class ConversationDetailView(APIView):
             default_limit=DEFAULT_MESSAGE_PAGE_SIZE,
             max_limit=MAX_MESSAGE_PAGE_SIZE,
         )
-        messages_qs = conversation.messages.select_related('sender').order_by('-created_at', '-pk')
+        messages_qs = conversation.messages.select_related('sender').order_by('-pk')
         total_count = messages_qs.count()
-        messages = list(reversed(list(messages_qs[offset:offset + limit])))
+        before_id = None
+        if request.query_params.get('before_id') not in (None, ''):
+            try:
+                before_id = int(request.query_params.get('before_id'))
+            except (TypeError, ValueError):
+                return Response({'error': 'before_id must be a valid message id.'}, status=400)
+            if before_id <= 0:
+                return Response({'error': 'before_id must be a valid message id.'}, status=400)
+
+        if before_id is not None:
+            page_qs = messages_qs.filter(pk__lt=before_id)
+            page_desc = list(page_qs[:limit + 1])
+            has_more = len(page_desc) > limit
+            page_desc = page_desc[:limit]
+            messages = list(reversed(page_desc))
+            pagination = {
+                'count': total_count,
+                'limit': limit,
+                'before_id': before_id,
+                'next_before_id': page_desc[-1].pk if has_more and page_desc else None,
+                'has_more': has_more,
+            }
+        elif 'offset' in request.query_params:
+            messages = list(reversed(list(messages_qs[offset:offset + limit])))
+            pagination = get_pagination_payload(total_count, limit, offset)
+        else:
+            page_desc = list(messages_qs[:limit + 1])
+            has_more = len(page_desc) > limit
+            page_desc = page_desc[:limit]
+            messages = list(reversed(page_desc))
+            pagination = {
+                'count': total_count,
+                'limit': limit,
+                'before_id': None,
+                'next_before_id': page_desc[-1].pk if has_more and page_desc else None,
+                'has_more': has_more,
+            }
 
         data = ConversationDetailSerializer(
             conversation,
             context={'request': request, 'messages': messages},
         ).data
-        data['message_pagination'] = get_pagination_payload(total_count, limit, offset)
+        data['message_pagination'] = pagination
         return Response(data)
 
 
@@ -1049,6 +1094,12 @@ class ConfirmOrderView(APIView):
                     description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     reference_id=f'order_{order.pk}',
                 )
+                record_platform_ledger_once(
+                    entry_type='commission_collected',
+                    amount=order.commission_amount,
+                    description=f'Commission collected: {order.listing_title} (x{order.quantity})',
+                    reference_id=f'order_{order.pk}',
+                )
 
             order.status = 'completed'
             order.save(update_fields=['status', 'updated_at'])
@@ -1078,6 +1129,78 @@ class DisputeOrderView(APIView):
             order.status = 'disputed'
             order.dispute_reason = reason
             order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
+
+        return Response(OrderSerializer(order).data)
+
+
+class ResolveDisputeView(APIView):
+    """POST /api/admin/orders/<id>/resolve-dispute/ - Staff resolves a disputed order."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk):
+        resolution_action = request.data.get('resolution_action')
+        if resolution_action not in ('refund_buyer', 'pay_seller'):
+            return Response({
+                'error': 'resolution_action must be refund_buyer or pay_seller.',
+            }, status=400)
+
+        with db_transaction.atomic():
+            order = get_object_or_404(
+                Order.objects.select_for_update().select_related('buyer', 'seller'),
+                pk=pk,
+            )
+
+            if order.status != 'disputed':
+                return Response({'error': 'Only disputed orders can be resolved.'}, status=400)
+
+            if resolution_action == 'refund_buyer':
+                apply_wallet_delta_once(
+                    order.buyer,
+                    delta=order.total_amount,
+                    transaction_type='refund',
+                    amount=order.total_amount,
+                    description=f'Dispute resolved (buyer): {order.listing_title}',
+                    reference_id=f'order_{order.pk}',
+                )
+
+                if order.listing_id:
+                    listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
+                    if listing and listing.quantity is not None:
+                        listing.quantity += order.quantity
+                        if listing.status == 'sold':
+                            listing.status = 'active'
+                        listing.save(update_fields=['quantity', 'status'])
+
+                order.status = 'cancelled'
+            else:
+                apply_wallet_delta_once(
+                    order.seller,
+                    delta=order.seller_amount,
+                    transaction_type='sale',
+                    amount=order.seller_amount,
+                    description=f'Dispute resolved (seller): {order.listing_title}',
+                    reference_id=f'order_{order.pk}',
+                )
+
+                if order.commission_amount > 0:
+                    apply_wallet_delta_once(
+                        order.seller,
+                        delta=0,
+                        transaction_type='commission',
+                        amount=order.commission_amount,
+                        description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                        reference_id=f'order_{order.pk}',
+                    )
+                    record_platform_ledger_once(
+                        entry_type='commission_collected',
+                        amount=order.commission_amount,
+                        description=f'Commission collected: {order.listing_title}',
+                        reference_id=f'order_{order.pk}',
+                    )
+
+                order.status = 'completed'
+
+            order.save(update_fields=['status', 'updated_at'])
 
         return Response(OrderSerializer(order).data)
 
@@ -1120,6 +1243,13 @@ class RefundOrderView(APIView):
                     description=f'Refund issued: {order.listing_title} (x{order.quantity})',
                     reference_id=f'order_{order.pk}',
                 )
+                if order.commission_amount > 0:
+                    record_platform_ledger_once(
+                        entry_type='commission_reversed',
+                        amount=-order.commission_amount,
+                        description=f'Commission reversed: {order.listing_title} (x{order.quantity})',
+                        reference_id=f'order_{order.pk}',
+                    )
 
             # Refund buyer the full amount
             buyer_wallet = get_or_create_locked_wallet(order.buyer)

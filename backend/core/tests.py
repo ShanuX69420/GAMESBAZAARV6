@@ -21,7 +21,7 @@ from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
     Listing, Message, Order,
-    SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
+    PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
 
 
@@ -52,8 +52,8 @@ class PurchaseFlowTests(TestCase):
         self.buyer_wallet.save(update_fields=['balance'])
 
         game = Game.objects.create(name='Test Game', slug='test-game')
-        category = Category.objects.create(name='Accounts', slug='accounts')
-        self.game_category = GameCategory.objects.create(game=game, category=category)
+        self.category = Category.objects.create(name='Accounts', slug='accounts')
+        self.game_category = GameCategory.objects.create(game=game, category=self.category)
 
         self.client.force_authenticate(user=self.buyer)
 
@@ -88,6 +88,93 @@ class PurchaseFlowTests(TestCase):
 
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('75.00'))
+
+    def test_confirm_order_records_platform_commission_ledger(self):
+        self.category.commission_rate = Decimal('10.00')
+        self.category.save(update_fields=['commission_rate'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Commissioned item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+
+        order_id = buy_response.data['id']
+        confirm_response = self.client.post(
+            f'/api/orders/{order_id}/confirm/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order_id}',
+        )
+        self.assertEqual(entry.amount, Decimal('5.00'))
+
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(seller_wallet.balance, Decimal('45.00'))
+
+    def test_completed_order_refund_reverses_platform_commission_ledger(self):
+        self.category.commission_rate = Decimal('10.00')
+        self.category.save(update_fields=['commission_rate'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Refunded commissioned item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+        order_id = buy_response.data['id']
+
+        confirm_response = self.client.post(
+            f'/api/orders/{order_id}/confirm/',
+            {},
+            format='json',
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+
+        self.client.force_authenticate(user=self.seller)
+        refund_response = self.client.post(
+            f'/api/orders/{order_id}/refund/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(refund_response.status_code, 200)
+        collected = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order_id}',
+        )
+        reversed_entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_reversed',
+            reference_id=f'order_{order_id}',
+        )
+        self.assertEqual(collected.amount, Decimal('5.00'))
+        self.assertEqual(reversed_entry.amount, Decimal('-5.00'))
+
+        self.buyer_wallet.refresh_from_db()
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
 
     def test_create_listing_rejects_non_positive_price(self):
         self.client.force_authenticate(user=self.seller)
@@ -247,6 +334,9 @@ class TopUpProofUploadTests(TestCase):
         self.client.force_authenticate(user=None)
         proof_response = self.client.get(path_with_query(response.data['payment_proof_url']))
         self.assertEqual(proof_response.status_code, 200)
+        self.assertEqual(proof_response['Content-Type'], 'image/png')
+        self.assertEqual(proof_response['X-Content-Type-Options'], 'nosniff')
+        self.assertEqual(proof_response['Cache-Control'], 'private, no-store')
 
         other_user = User.objects.create_user(username='other_buyer', password='password123')
         self.client.force_authenticate(user=other_user)
@@ -271,6 +361,25 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'Invalid image type.')
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='invalid-type').exists())
+
+    def test_rejects_svg_payment_proof(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'transaction_id': 'svg-proof',
+                'payment_proof': SimpleUploadedFile(
+                    'proof.svg',
+                    b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+                    content_type='image/svg+xml',
+                ),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Invalid image type.')
+        self.assertFalse(TopUpRequest.objects.filter(transaction_id='svg-proof').exists())
 
     def test_rejects_payment_proof_with_fake_image_bytes(self):
         response = self.client.post(
@@ -986,9 +1095,21 @@ class AccessControlTests(TestCase):
         self.assertEqual(response.data['messages'][0]['content'], 'msg-50')
         self.assertEqual(response.data['messages'][-1]['content'], 'msg-59')
         self.assertEqual(response.data['message_pagination']['count'], 60)
-        self.assertEqual(response.data['message_pagination']['next_offset'], 10)
+        self.assertEqual(
+            response.data['message_pagination']['next_before_id'],
+            response.data['messages'][0]['id'],
+        )
 
-        older_response = self.client.get(f'/api/chat/{self.conversation.id}/?limit=10&offset=10')
+        Message.objects.create(
+            conversation=self.conversation,
+            sender=self.seller,
+            content='msg-60',
+        )
+
+        before_id = response.data['message_pagination']['next_before_id']
+        older_response = self.client.get(
+            f'/api/chat/{self.conversation.id}/?limit=10&before_id={before_id}'
+        )
 
         self.assertEqual(older_response.status_code, 200)
         self.assertEqual(older_response.data['messages'][0]['content'], 'msg-40')
@@ -1365,6 +1486,161 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
         self.assertFalse(Message.objects.filter(content='too fast').exists())
 
 
+class DisputeResolutionApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = User.objects.create_superuser(
+            username='admin',
+            email='admin@example.com',
+            password='password123',
+        )
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
+        self.seller_wallet = Wallet.objects.get(user=self.seller)
+
+        game = Game.objects.create(name='Test Game', slug='test-game')
+        category = Category.objects.create(
+            name='Accounts',
+            slug='accounts',
+            commission_rate=Decimal('10.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+
+    def create_order(self, status='disputed'):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Disputed item',
+            price=Decimal('100.00'),
+            quantity=0,
+            status='sold',
+        )
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=1,
+            unit_price=Decimal('100.00'),
+            total_amount=Decimal('100.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('10.00'),
+            seller_amount=Decimal('90.00'),
+            status=status,
+        )
+
+    def test_non_staff_cannot_resolve_dispute(self):
+        order = self.create_order()
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'disputed')
+
+    def test_resolve_dispute_rejects_invalid_action(self):
+        order = self.create_order()
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'invalid'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('resolution_action', response.data['error'])
+
+    def test_resolve_dispute_refunds_buyer_and_restores_stock(self):
+        order = self.create_order()
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        order.listing.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+
+        self.assertEqual(order.status, 'cancelled')
+        self.assertEqual(order.listing.quantity, 1)
+        self.assertEqual(order.listing.status, 'active')
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.buyer_wallet,
+                transaction_type='refund',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+
+    def test_resolve_dispute_pays_seller_and_records_commission(self):
+        order = self.create_order()
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'pay_seller'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+
+        self.assertEqual(order.status, 'completed')
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+        self.assertEqual(self.seller_wallet.balance, Decimal('90.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='commission',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(entry.amount, Decimal('10.00'))
+
+    def test_resolve_dispute_rejects_non_disputed_order(self):
+        order = self.create_order(status='pending')
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Only disputed orders can be resolved.')
+
+
 class AdminMoneyActionTests(TestCase):
     def setUp(self):
         self.site = AdminSite()
@@ -1511,6 +1787,11 @@ class AdminMoneyActionTests(TestCase):
             ).count(),
             1,
         )
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(entry.amount, Decimal('10.00'))
 
 
 class ConcurrentPurchaseFlowTests(TransactionTestCase):

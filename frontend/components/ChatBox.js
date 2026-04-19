@@ -43,8 +43,8 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     const el = messagesContainerRef.current;
     if (!el) return;
     isNearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (el.scrollTop < 80 && messagePagination?.next_offset !== null &&
-        messagePagination?.next_offset !== undefined && !loadingOlderRef.current) {
+    if (el.scrollTop < 80 && messagePagination?.next_before_id !== null &&
+        messagePagination?.next_before_id !== undefined && !loadingOlderRef.current) {
       loadOlderMessages();
     }
   }
@@ -90,7 +90,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   const loadMessages = useCallback(async () => {
     if (!activeConvoId) return;
     try {
-      const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE, offset: 0 });
+      const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE });
       if (!mountedRef.current) return;
       setConvo(data);
       setMessages(data.messages || []);
@@ -105,8 +105,8 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   }, [loadMessages]);
 
   async function loadOlderMessages() {
-    if (!activeConvoId || messagePagination?.next_offset === null ||
-        messagePagination?.next_offset === undefined || loadingOlderRef.current) return;
+    if (!activeConvoId || messagePagination?.next_before_id === null ||
+        messagePagination?.next_before_id === undefined || loadingOlderRef.current) return;
     const el = messagesContainerRef.current;
     const previousHeight = el?.scrollHeight || 0;
     const previousTop = el?.scrollTop || 0;
@@ -115,7 +115,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     try {
       const data = await getConversation(activeConvoId, {
         limit: MESSAGE_PAGE_SIZE,
-        offset: messagePagination.next_offset,
+        beforeId: messagePagination.next_before_id,
       });
       if (!mountedRef.current) return;
       setMessages(prev => {

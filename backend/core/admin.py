@@ -7,9 +7,14 @@ from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
-    Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
+    Wallet, WalletTransaction, PlatformLedgerEntry,
+    TopUpRequest, Order, SellerCommissionOverride,
 )
-from .services import apply_wallet_delta_once, approve_topup_request
+from .services import (
+    apply_wallet_delta_once,
+    approve_topup_request,
+    record_platform_ledger_once,
+)
 
 
 # ── Inlines ──────────────────────────────────────────────────────────────────
@@ -253,6 +258,12 @@ class OrderAdmin(admin.ModelAdmin):
                         description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                         reference_id=f'order_{order.pk}',
                     )
+                    record_platform_ledger_once(
+                        entry_type='commission_collected',
+                        amount=order.commission_amount,
+                        description=f'Commission collected: {order.listing_title}',
+                        reference_id=f'order_{order.pk}',
+                    )
 
                 order.status = 'completed'
                 order.save(update_fields=['status', 'updated_at'])
@@ -276,6 +287,20 @@ class WalletAdmin(admin.ModelAdmin):
 
 
 # ── Hidden from Sidebar (still accessible via links) ────────────────────────
+
+@admin.register(PlatformLedgerEntry)
+class PlatformLedgerEntryAdmin(admin.ModelAdmin):
+    list_display = ['entry_type', 'amount', 'reference_id', 'created_at']
+    list_filter = ['entry_type']
+    search_fields = ['reference_id', 'description']
+    readonly_fields = ['entry_type', 'amount', 'description', 'reference_id', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 class HiddenModelAdmin(admin.ModelAdmin):
     """Base class for models that should not appear in the sidebar."""

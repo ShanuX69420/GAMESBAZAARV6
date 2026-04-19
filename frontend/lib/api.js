@@ -1,9 +1,12 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+let refreshAuthPromise = null;
 
-function paginationQuery({ limit, offset } = {}) {
+function paginationQuery({ limit, offset, beforeId, before_id } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));
   if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  const cursor = beforeId ?? before_id;
+  if (cursor !== undefined && cursor !== null) params.set('before_id', String(cursor));
   const query = params.toString();
   return query ? `?${query}` : '';
 }
@@ -38,13 +41,21 @@ function authHeaders() {
 }
 
 async function refreshAuthCookies() {
-  const res = await fetch(`${API_BASE}/api/auth/refresh/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({}),
-  });
-  return res.ok;
+  if (!refreshAuthPromise) {
+    refreshAuthPromise = fetch(`${API_BASE}/api/auth/refresh/`, {
+      method: 'POST',
+      headers: authHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({}),
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshAuthPromise = null;
+      });
+  }
+
+  return refreshAuthPromise;
 }
 
 async function authFetch(url, options = {}, retry = true) {

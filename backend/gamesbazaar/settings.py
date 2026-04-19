@@ -33,10 +33,9 @@ def env_list(name, default=None):
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-gamesbazaar-dev-key-change-in-production',
-)
+DEV_SECRET_KEY = 'django-insecure-gamesbazaar-dev-key-change-in-production'
+
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', DEV_SECRET_KEY)
 
 DEBUG = env_bool('DJANGO_DEBUG', True)
 
@@ -44,6 +43,20 @@ ALLOWED_HOSTS = env_list(
     'DJANGO_ALLOWED_HOSTS',
     ['*'] if DEBUG else [],
 )
+
+if not DEBUG:
+    if not os.environ.get('DJANGO_SECRET_KEY') or SECRET_KEY == DEV_SECRET_KEY:
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY must be set to a unique production value when DJANGO_DEBUG=False.'
+        )
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            'DJANGO_ALLOWED_HOSTS must list production hostnames when DJANGO_DEBUG=False.'
+        )
+    if '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured(
+            'DJANGO_ALLOWED_HOSTS cannot contain "*" when DJANGO_DEBUG=False.'
+        )
 
 INSTALLED_APPS = [
     'daphne',

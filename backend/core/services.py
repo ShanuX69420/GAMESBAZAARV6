@@ -4,10 +4,11 @@ from PIL import Image, UnidentifiedImageError
 from django.core import signing
 from django.utils import timezone
 
-from .models import Wallet, WalletTransaction
+from .models import PlatformLedgerEntry, Wallet, WalletTransaction
 
 
-ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
+ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
 MAX_IMAGE_UPLOAD_SIZE = 5 * 1024 * 1024
 MAX_IMAGE_WIDTH = 6000
 MAX_IMAGE_HEIGHT = 6000
@@ -54,6 +55,22 @@ def apply_wallet_delta_once(user, *, delta, transaction_type, amount, descriptio
     return wallet, True
 
 
+def record_platform_ledger_once(*, entry_type, amount, description, reference_id):
+    """Record a platform ledger entry once per entry type/reference pair."""
+    if not amount:
+        return None, False
+
+    entry, created = PlatformLedgerEntry.objects.get_or_create(
+        entry_type=entry_type,
+        reference_id=reference_id,
+        defaults={
+            'amount': amount,
+            'description': description,
+        },
+    )
+    return entry, created
+
+
 def approve_topup_request(topup):
     apply_wallet_delta_once(
         topup.user,
@@ -79,6 +96,8 @@ def validate_uploaded_image(image):
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
             with Image.open(image) as img:
+                if img.format not in ALLOWED_IMAGE_FORMATS:
+                    return 'Invalid image type.'
                 width, height = img.size
                 if (
                     width > MAX_IMAGE_WIDTH or

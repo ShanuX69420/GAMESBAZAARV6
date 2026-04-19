@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -210,6 +211,17 @@ class Listing(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['game_category', 'status', '-created_at'],
+                name='listing_gc_status_created_idx',
+            ),
+            models.Index(
+                fields=['seller', '-created_at'],
+                name='listing_seller_created_idx',
+            ),
+            GinIndex(fields=['filter_values'], name='listing_filter_values_gin'),
+        ]
         constraints = [
             models.CheckConstraint(
                 check=models.Q(price__gt=Decimal('0.00')),
@@ -254,6 +266,16 @@ class Message(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        indexes = [
+            models.Index(
+                fields=['conversation', '-id'],
+                name='message_convo_id_desc_idx',
+            ),
+            models.Index(
+                fields=['conversation', 'is_read', 'sender'],
+                name='message_unread_sender_idx',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.sender.username}: {self.content[:40] or '[image]'}"
@@ -331,6 +353,12 @@ class WalletTransaction(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['wallet', '-created_at'],
+                name='wallet_tx_wallet_created_idx',
+            ),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['wallet', 'transaction_type', 'reference_id'],
@@ -341,6 +369,48 @@ class WalletTransaction(models.Model):
 
     def __str__(self):
         return f"{self.wallet.user.username} — {self.get_transaction_type_display()} — PKR {self.amount}"
+
+
+class PlatformLedgerEntry(models.Model):
+    """Signed ledger entries for platform-owned money such as commissions."""
+    ENTRY_TYPE_CHOICES = [
+        ('commission_collected', 'Commission Collected'),
+        ('commission_reversed', 'Commission Reversed'),
+    ]
+
+    entry_type = models.CharField(max_length=40, choices=ENTRY_TYPE_CHOICES)
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text='Signed amount. Positive credits platform revenue, negative reverses it.',
+    )
+    description = models.CharField(max_length=500, blank=True, default='')
+    reference_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Order ID or other external reference.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['entry_type', 'reference_id'],
+                name='platform_ledger_ref_idx',
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['entry_type', 'reference_id'],
+                condition=~models.Q(reference_id=''),
+                name='uniq_platform_ledger_type_reference',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_entry_type_display()} - PKR {self.amount}"
 
 
 class TopUpRequest(models.Model):
@@ -367,6 +437,16 @@ class TopUpRequest(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['user', '-created_at'],
+                name='topup_user_created_idx',
+            ),
+            models.Index(
+                fields=['status', '-created_at'],
+                name='topup_status_created_idx',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.username} — PKR {self.amount} — {self.get_status_display()}"
@@ -415,6 +495,24 @@ class Order(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['buyer', '-created_at'],
+                name='order_buyer_created_idx',
+            ),
+            models.Index(
+                fields=['seller', '-created_at'],
+                name='order_seller_created_idx',
+            ),
+            models.Index(
+                fields=['seller', 'status'],
+                name='order_seller_status_idx',
+            ),
+            models.Index(
+                fields=['status', '-created_at'],
+                name='order_status_created_idx',
+            ),
+        ]
 
     def __str__(self):
         return f"Order #{self.pk} — {self.listing_title} — {self.get_status_display()}"
