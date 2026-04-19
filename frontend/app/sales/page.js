@@ -6,11 +6,16 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMySales, deliverOrder } from '@/lib/api';
 
+const SALES_PAGE_SIZE = 20;
+
 export default function SalesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [sales, setSales] = useState([]);
+  const [salesSummary, setSalesSummary] = useState(null);
+  const [pagination, setPagination] = useState(null);
   const [loadingSales, setLoadingSales] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [deliverModal, setDeliverModal] = useState(null);
   const [deliveryNote, setDeliveryNote] = useState('');
@@ -26,14 +31,22 @@ export default function SalesPage() {
     if (user && user.is_seller) loadSales();
   }, [user]);
 
-  async function loadSales() {
+  async function loadSales({ append = false, offset = 0 } = {}) {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingSales(true);
+    }
     try {
-      const data = await getMySales();
-      setSales(data);
+      const data = await getMySales({ limit: SALES_PAGE_SIZE, offset });
+      setSales(prev => append ? [...prev, ...(data.sales || [])] : (data.sales || []));
+      setSalesSummary(data.summary || null);
+      setPagination(data.pagination || null);
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingSales(false);
+      setLoadingMore(false);
     }
   }
 
@@ -75,11 +88,12 @@ export default function SalesPage() {
 
   if (!user.is_seller) return null;
 
-  const pendingCount = sales.filter(s => s.status === 'pending').length;
-  const completedCount = sales.filter(s => s.status === 'completed').length;
-  const totalRevenue = sales
-    .filter(s => s.status === 'completed')
-    .reduce((sum, s) => sum + parseFloat(s.seller_amount), 0);
+  const pendingCount = salesSummary?.pending_count ?? sales.filter(s => s.status === 'pending').length;
+  const completedCount = salesSummary?.completed_count ?? sales.filter(s => s.status === 'completed').length;
+  const totalRevenue = Number(
+    salesSummary?.total_revenue ??
+    sales.filter(s => s.status === 'completed').reduce((sum, s) => sum + parseFloat(s.seller_amount), 0)
+  );
 
   return (
     <div className="container">
@@ -197,6 +211,15 @@ export default function SalesPage() {
               </div>
             </div>
           ))}
+          {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+            <button
+              className="btn btn-outline btn-full"
+              onClick={() => loadSales({ append: true, offset: pagination.next_offset })}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading...' : 'Load More Sales'}
+            </button>
+          )}
         </div>
       )}
 

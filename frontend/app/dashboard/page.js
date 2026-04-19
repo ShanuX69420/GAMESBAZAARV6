@@ -12,7 +12,7 @@ export default function DashboardPage() {
   const [sellerData, setSellerData] = useState(null);
   const [listings, setListings] = useState([]);
   const [walletData, setWalletData] = useState(null);
-  const [sales, setSales] = useState([]);
+  const [salesSummary, setSalesSummary] = useState(null);
   const [applicationNote, setApplicationNote] = useState('');
   const [applyError, setApplyError] = useState('');
   const [applying, setApplying] = useState(false);
@@ -26,7 +26,7 @@ export default function DashboardPage() {
       getSellerStatus().then(setSellerData).catch(() => {});
       getWallet().then(setWalletData).catch(() => {});
       getMyListings().then(setListings).catch(() => {});
-      getMySales().then(setSales).catch(() => {});
+      getMySales({ limit: 1, offset: 0 }).then(data => setSalesSummary(data.summary)).catch(() => {});
     }
   }, [user, loading, router]);
 
@@ -54,7 +54,7 @@ export default function DashboardPage() {
     );
   }
 
-  const pendingSales = sales.filter(s => s.status === 'pending').length;
+  const pendingSales = salesSummary?.pending_count ?? 0;
 
   return (
     <div className="container">

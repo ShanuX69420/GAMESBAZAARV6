@@ -6,11 +6,15 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMyOrders, confirmOrder, disputeOrder } from '@/lib/api';
 
+const ORDER_PAGE_SIZE = 20;
+
 export default function OrdersPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState([]);
+  const [pagination, setPagination] = useState(null);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [disputeModal, setDisputeModal] = useState(null);
   const [disputeReason, setDisputeReason] = useState('');
@@ -25,14 +29,21 @@ export default function OrdersPage() {
     if (user) loadOrders();
   }, [user]);
 
-  async function loadOrders() {
+  async function loadOrders({ append = false, offset = 0 } = {}) {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingOrders(true);
+    }
     try {
-      const data = await getMyOrders();
-      setOrders(data);
+      const data = await getMyOrders({ limit: ORDER_PAGE_SIZE, offset });
+      setOrders(prev => append ? [...prev, ...(data.orders || [])] : (data.orders || []));
+      setPagination(data.pagination || null);
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingOrders(false);
+      setLoadingMore(false);
     }
   }
 
@@ -180,6 +191,15 @@ export default function OrdersPage() {
               </div>
             </div>
           ))}
+          {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+            <button
+              className="btn btn-outline btn-full"
+              onClick={() => loadOrders({ append: true, offset: pagination.next_offset })}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading...' : 'Load More Purchases'}
+            </button>
+          )}
         </div>
       )}
 

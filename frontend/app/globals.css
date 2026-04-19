@@ -1261,6 +1261,13 @@ img {
   margin: auto 0;
 }
 
+.chat-loading-older {
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  padding: 8px 0 12px;
+}
+
 /* ── Chat Messages (FunPay-style) ──────────────────────────────────────────── */
 
 .chat-date-separator {
@@ -1328,6 +1335,15 @@ img {
   padding: 0;
   border-top: 1px solid var(--border-color);
   background: var(--bg-primary);
+}
+
+.chatbox-error {
+  padding: 8px 16px;
+  border-top: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .chatbox-attach-btn {

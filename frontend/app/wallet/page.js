@@ -6,10 +6,13 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getWallet, requestTopUp, getTopUpRequests } from '@/lib/api';
 
+const TRANSACTION_PAGE_SIZE = 20;
+
 export default function WalletPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [walletData, setWalletData] = useState(null);
+  const [transactionPagination, setTransactionPagination] = useState(null);
   const [topUpRequests, setTopUpRequests] = useState([]);
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
@@ -17,6 +20,7 @@ export default function WalletPage() {
   const [txnId, setTxnId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -33,13 +37,37 @@ export default function WalletPage() {
   async function loadData() {
     try {
       const [wallet, topups] = await Promise.all([
-        getWallet(),
+        getWallet({ limit: TRANSACTION_PAGE_SIZE, offset: 0 }),
         getTopUpRequests(),
       ]);
       setWalletData(wallet);
+      setTransactionPagination(wallet.transaction_pagination || null);
       setTopUpRequests(topups);
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function loadMoreTransactions() {
+    if (!transactionPagination?.next_offset || loadingMoreTransactions) return;
+    setLoadingMoreTransactions(true);
+    try {
+      const wallet = await getWallet({
+        limit: TRANSACTION_PAGE_SIZE,
+        offset: transactionPagination.next_offset,
+      });
+      setWalletData(prev => ({
+        ...wallet,
+        transactions: [
+          ...(prev?.transactions || []),
+          ...(wallet.transactions || []),
+        ],
+      }));
+      setTransactionPagination(wallet.transaction_pagination || null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMoreTransactions(false);
     }
   }
 
@@ -188,6 +216,16 @@ export default function WalletPage() {
                 ))}
               </tbody>
             </table>
+            {transactionPagination?.next_offset !== null && transactionPagination?.next_offset !== undefined && (
+              <button
+                className="btn btn-outline btn-full"
+                style={{ marginTop: '16px' }}
+                onClick={loadMoreTransactions}
+                disabled={loadingMoreTransactions}
+              >
+                {loadingMoreTransactions ? 'Loading...' : 'Load More Transactions'}
+              </button>
+            )}
           </div>
         </section>
       )}

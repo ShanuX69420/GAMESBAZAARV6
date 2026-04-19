@@ -12,23 +12,30 @@ import {
 } from '@/lib/api';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000';
+const MESSAGE_PAGE_SIZE = 50;
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
 
 export default function ChatBox({ conversationId, sellerId, sellerName, onConversationStart, compact = false }) {
   const { user } = useAuth();
   const [convo, setConvo] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [messagePagination, setMessagePagination] = useState(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [activeConvoId, setActiveConvoId] = useState(conversationId);
   const [connected, setConnected] = useState(false);
   const [pendingImage, setPendingImage] = useState(null); // { file, preview }
   const [imageUploading, setImageUploading] = useState(false);
+  const [chatError, setChatError] = useState('');
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const errorTimerRef = useRef(null);
   const reconnectAttempts = useRef(0);
   const isNearBottom = useRef(true);
+  const loadingOlderRef = useRef(false);
   const mountedRef = useRef(true);
   const fileInputRef = useRef(null);
 
@@ -36,6 +43,10 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     const el = messagesContainerRef.current;
     if (!el) return;
     isNearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (el.scrollTop < 80 && messagePagination?.next_offset !== null &&
+        messagePagination?.next_offset !== undefined && !loadingOlderRef.current) {
+      loadOlderMessages();
+    }
   }
 
   function scrollToBottom(instant = false) {
@@ -44,6 +55,14 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     if (instant || isNearBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
+  }
+
+  function showChatError(message) {
+    setChatError(message);
+    clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) setChatError('');
+    }, 4000);
   }
 
   // Scroll when messages change (after DOM renders)
@@ -71,10 +90,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   const loadMessages = useCallback(async () => {
     if (!activeConvoId) return;
     try {
-      const data = await getConversation(activeConvoId);
+      const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE, offset: 0 });
       if (!mountedRef.current) return;
       setConvo(data);
       setMessages(data.messages || []);
+      setMessagePagination(data.message_pagination || null);
       requestAnimationFrame(() => scrollToBottom(true));
     } catch { }
   }, [activeConvoId]);
@@ -83,6 +103,38 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
+
+  async function loadOlderMessages() {
+    if (!activeConvoId || messagePagination?.next_offset === null ||
+        messagePagination?.next_offset === undefined || loadingOlderRef.current) return;
+    const el = messagesContainerRef.current;
+    const previousHeight = el?.scrollHeight || 0;
+    const previousTop = el?.scrollTop || 0;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const data = await getConversation(activeConvoId, {
+        limit: MESSAGE_PAGE_SIZE,
+        offset: messagePagination.next_offset,
+      });
+      if (!mountedRef.current) return;
+      setMessages(prev => {
+        const existing = new Set(prev.map(m => m.id));
+        const older = (data.messages || []).filter(m => !existing.has(m.id));
+        return [...older, ...prev];
+      });
+      setMessagePagination(data.message_pagination || null);
+      requestAnimationFrame(() => {
+        const nextEl = messagesContainerRef.current;
+        if (nextEl) {
+          nextEl.scrollTop = nextEl.scrollHeight - previousHeight + previousTop;
+        }
+      });
+    } catch { } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }
 
   // WebSocket with auto-reconnect
   useEffect(() => {
@@ -137,7 +189,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
               if (prev.some(m => m.id === data.message.id)) return prev;
               return [...prev, data.message];
             });
+            setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
+            setChatError('');
             window.dispatchEvent(new Event('chatUpdate'));
+          } else if (data.type === 'error') {
+            showChatError(data.error || 'Message could not be sent.');
           }
         } catch { }
       };
@@ -154,6 +210,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     return () => {
       mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
+      clearTimeout(errorTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
@@ -205,6 +262,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         if (prev.some(m => m.id === data.id)) return prev;
         return [...prev, { ...data, is_mine: true }];
       });
+      setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
       window.dispatchEvent(new Event('chatUpdate'));
       cancelPreview();
     } catch (err) {
@@ -219,6 +277,10 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     if (!input.trim()) return;
 
     const messageText = input.trim();
+    if (messageText.length > MAX_CHAT_MESSAGE_LENGTH) {
+      showChatError(`Message cannot be longer than ${MAX_CHAT_MESSAGE_LENGTH} characters.`);
+      return;
+    }
     setSending(true);
     setInput('');
 
@@ -228,6 +290,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         setActiveConvoId(data.id);
         setConvo(data);
         setMessages(data.messages || []);
+        setMessagePagination(data.message_pagination || null);
         if (onConversationStart) onConversationStart(data.id);
         requestAnimationFrame(() => scrollToBottom(true));
       } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -238,6 +301,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       }
     } catch (err) {
       setInput(messageText);
+      showChatError(err.message || 'Message could not be sent.');
     } finally {
       setSending(false);
     }
@@ -333,6 +397,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
+        {loadingOlder && (
+          <div className="chat-loading-older">
+            Loading older messages...
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="chatbox-empty-msg">
             No messages yet. Say hello!
@@ -365,6 +434,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       )}
 
       {/* Input Area */}
+      {chatError && <div className="chatbox-error">{chatError}</div>}
       <form className="chatbox-input" onSubmit={handleSend} onPaste={handlePaste}>
         <input type="hidden" />
         <input
@@ -379,6 +449,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Message..."
+          maxLength={MAX_CHAT_MESSAGE_LENGTH}
           disabled={sending}
         />
         <button

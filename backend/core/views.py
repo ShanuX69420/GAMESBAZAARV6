@@ -4,12 +4,15 @@ from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core import signing
 from django.http import FileResponse, Http404
-from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery
+from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db import transaction as db_transaction
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
@@ -26,16 +29,25 @@ from .serializers import (
     OrderSerializer, BuyListingSerializer,
 )
 from .services import (
+    CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_WS_TICKET_MAX_AGE_SECONDS,
     create_chat_ws_ticket,
     decode_private_media_ticket,
     get_or_create_locked_wallet,
+    validate_chat_message_content,
     validate_uploaded_image,
 )
+from .authentication import enforce_trusted_origin
 
 
 DEFAULT_LISTING_PAGE_SIZE = 48
 MAX_LISTING_PAGE_SIZE = 100
+DEFAULT_MESSAGE_PAGE_SIZE = 50
+MAX_MESSAGE_PAGE_SIZE = 100
+DEFAULT_TRANSACTION_PAGE_SIZE = 25
+MAX_TRANSACTION_PAGE_SIZE = 100
+DEFAULT_ORDER_PAGE_SIZE = 20
+MAX_ORDER_PAGE_SIZE = 100
 
 
 class ScopedPostThrottleMixin:
@@ -167,16 +179,103 @@ class GameCategoryDetailView(APIView):
 
 # ── Auth views ───────────────────────────────────────────────────────────────
 
+def set_auth_cookie(response, name, value, max_age):
+    response.set_cookie(
+        name,
+        str(value),
+        max_age=max_age,
+        httponly=settings.JWT_AUTH_COOKIE_HTTP_ONLY,
+        secure=settings.JWT_AUTH_COOKIE_SECURE,
+        samesite=settings.JWT_AUTH_COOKIE_SAMESITE,
+        path=settings.JWT_AUTH_COOKIE_PATH,
+    )
+
+
+def set_jwt_auth_cookies(response, access=None, refresh=None):
+    if access:
+        set_auth_cookie(
+            response,
+            settings.JWT_AUTH_COOKIE_ACCESS,
+            access,
+            int(api_settings.ACCESS_TOKEN_LIFETIME.total_seconds()),
+        )
+    if refresh:
+        set_auth_cookie(
+            response,
+            settings.JWT_AUTH_COOKIE_REFRESH,
+            refresh,
+            int(api_settings.REFRESH_TOKEN_LIFETIME.total_seconds()),
+        )
+
+
+def clear_jwt_auth_cookies(response):
+    for cookie_name in (settings.JWT_AUTH_COOKIE_ACCESS, settings.JWT_AUTH_COOKIE_REFRESH):
+        response.delete_cookie(
+            cookie_name,
+            path=settings.JWT_AUTH_COOKIE_PATH,
+            samesite=settings.JWT_AUTH_COOKIE_SAMESITE,
+        )
+
+
 class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
+    authentication_classes = []
     throttle_scope = 'auth_login'
+
+    def post(self, request, *args, **kwargs):
+        enforce_trusted_origin(request)
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            set_jwt_auth_cookies(
+                response,
+                access=response.data.get('access'),
+                refresh=response.data.get('refresh'),
+            )
+        return response
 
 
 class RefreshTokenView(ScopedPostThrottleMixin, TokenRefreshView):
+    authentication_classes = []
     throttle_scope = 'auth_refresh'
+
+    def post(self, request, *args, **kwargs):
+        enforce_trusted_origin(request)
+        data = request.data.copy()
+        if not data.get('refresh'):
+            cookie_refresh = request.COOKIES.get(settings.JWT_AUTH_COOKIE_REFRESH)
+            if cookie_refresh:
+                data['refresh'] = cookie_refresh
+
+        serializer = self.get_serializer(data=data)
+
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as exc:
+            raise InvalidToken(exc.args[0])
+
+        response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+        set_jwt_auth_cookies(
+            response,
+            access=serializer.validated_data.get('access'),
+            refresh=serializer.validated_data.get('refresh'),
+        )
+        return response
+
+
+class LogoutView(APIView):
+    """POST /api/auth/logout/ - Clear auth cookies."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        response = Response({'message': 'Logged out.'})
+        clear_jwt_auth_cookies(response)
+        return response
 
 
 class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
     """POST /api/auth/register/ — Register a new user."""
+    authentication_classes = []
     serializer_class = RegisterSerializer
     throttle_scope = 'auth_register'
 
@@ -354,12 +453,25 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
 
     def post(self, request):
         other_user_id = request.data.get('user_id')
-        initial_message = request.data.get('message', '').strip()
+        initial_message, validation_error = validate_chat_message_content(
+            request.data.get('message', ''),
+            allow_empty=True,
+        )
+        if validation_error and validation_error != CHAT_MESSAGE_EMPTY_ERROR:
+            return Response({'error': validation_error}, status=400)
 
-        if not other_user_id:
+        if other_user_id in (None, ''):
             return Response({'error': 'user_id is required.'}, status=400)
 
-        if int(other_user_id) == request.user.id:
+        try:
+            other_user_id = int(other_user_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'user_id must be a valid user id.'}, status=400)
+
+        if other_user_id <= 0:
+            return Response({'error': 'user_id must be a valid user id.'}, status=400)
+
+        if other_user_id == request.user.id:
             return Response({'error': 'Cannot chat with yourself.'}, status=400)
 
         other_user = get_object_or_404(User, id=other_user_id)
@@ -394,7 +506,7 @@ class ConversationDetailView(APIView):
 
     def get(self, request, pk):
         conversation = get_object_or_404(
-            Conversation.objects.prefetch_related('participants', 'messages__sender'),
+            Conversation.objects.prefetch_related('participants'),
             pk=pk,
             participants=request.user,
         )
@@ -404,7 +516,20 @@ class ConversationDetailView(APIView):
             sender=request.user
         ).update(is_read=True)
 
-        data = ConversationDetailSerializer(conversation, context={'request': request}).data
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_MESSAGE_PAGE_SIZE,
+            max_limit=MAX_MESSAGE_PAGE_SIZE,
+        )
+        messages_qs = conversation.messages.select_related('sender').order_by('-created_at', '-pk')
+        total_count = messages_qs.count()
+        messages = list(reversed(list(messages_qs[offset:offset + limit])))
+
+        data = ConversationDetailSerializer(
+            conversation,
+            context={'request': request, 'messages': messages},
+        ).data
+        data['message_pagination'] = get_pagination_payload(total_count, limit, offset)
         return Response(data)
 
 
@@ -429,9 +554,9 @@ class SendMessageView(APIView):
             Conversation, pk=pk, participants=request.user
         )
 
-        content = request.data.get('content', '').strip()
-        if not content:
-            return Response({'error': 'Message cannot be empty.'}, status=400)
+        content, validation_error = validate_chat_message_content(request.data.get('content', ''))
+        if validation_error:
+            return Response({'error': validation_error}, status=400)
 
         message = Message.objects.create(
             conversation=conversation,
@@ -462,7 +587,12 @@ class SendImageView(ScopedPostThrottleMixin, APIView):
         if validation_error:
             return Response({'error': validation_error}, status=400)
 
-        content = request.data.get('content', '').strip()
+        content, validation_error = validate_chat_message_content(
+            request.data.get('content', ''),
+            allow_empty=True,
+        )
+        if validation_error and validation_error != CHAT_MESSAGE_EMPTY_ERROR:
+            return Response({'error': validation_error}, status=400)
         message = Message.objects.create(
             conversation=conversation,
             sender=request.user,
@@ -536,10 +666,18 @@ class WalletView(APIView):
 
     def get(self, request):
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
-        transactions = wallet.transactions.all()[:20]
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=20,
+            max_limit=MAX_TRANSACTION_PAGE_SIZE,
+        )
+        transactions_qs = wallet.transactions.all()
+        total_count = transactions_qs.count()
+        transactions = transactions_qs[offset:offset + limit]
         return Response({
             'balance': str(wallet.balance),
             'transactions': WalletTransactionSerializer(transactions, many=True).data,
+            'transaction_pagination': get_pagination_payload(total_count, limit, offset),
         })
 
 
@@ -549,8 +687,18 @@ class WalletTransactionsView(APIView):
 
     def get(self, request):
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
-        transactions = wallet.transactions.all()
-        return Response(WalletTransactionSerializer(transactions, many=True).data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_TRANSACTION_PAGE_SIZE,
+            max_limit=MAX_TRANSACTION_PAGE_SIZE,
+        )
+        transactions_qs = wallet.transactions.all()
+        total_count = transactions_qs.count()
+        transactions = transactions_qs[offset:offset + limit]
+        return Response({
+            'transactions': WalletTransactionSerializer(transactions, many=True).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
 
 
 class TopUpRequestView(ScopedPostThrottleMixin, APIView):
@@ -730,10 +878,20 @@ class MyOrdersView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        orders = Order.objects.filter(
+        orders_qs = Order.objects.filter(
             buyer=request.user
         ).select_related('listing', 'seller', 'conversation')
-        return Response(OrderSerializer(orders, many=True).data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_ORDER_PAGE_SIZE,
+            max_limit=MAX_ORDER_PAGE_SIZE,
+        )
+        total_count = orders_qs.count()
+        orders = orders_qs[offset:offset + limit]
+        return Response({
+            'orders': OrderSerializer(orders, many=True).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
 
 
 class MySalesView(APIView):
@@ -741,10 +899,27 @@ class MySalesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        orders = Order.objects.filter(
+        orders_qs = Order.objects.filter(
             seller=request.user
         ).select_related('listing', 'buyer', 'conversation')
-        return Response(OrderSerializer(orders, many=True).data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_ORDER_PAGE_SIZE,
+            max_limit=MAX_ORDER_PAGE_SIZE,
+        )
+        total_count = orders_qs.count()
+        orders = orders_qs[offset:offset + limit]
+        summary = Order.objects.filter(seller=request.user).aggregate(
+            pending_count=Count('id', filter=Q(status='pending')),
+            completed_count=Count('id', filter=Q(status='completed')),
+            total_revenue=Sum('seller_amount', filter=Q(status='completed')),
+        )
+        summary['total_revenue'] = str(summary['total_revenue'] or Decimal('0.00'))
+        return Response({
+            'sales': OrderSerializer(orders, many=True).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+            'summary': summary,
+        })
 
 
 class OrderDetailView(APIView):

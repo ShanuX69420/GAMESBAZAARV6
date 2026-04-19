@@ -4,6 +4,7 @@ from threading import Barrier, Thread
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -18,7 +19,8 @@ from rest_framework.test import APIClient
 
 from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
-    Category, Conversation, Filter, FilterOption, Game, GameCategory, Listing, Message, Order,
+    Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
+    Listing, Message, Order,
     SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
 
@@ -106,6 +108,116 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('price', response.data)
         self.assertFalse(Listing.objects.filter(title='Invalid price item').exists())
+
+    def test_create_listing_accepts_valid_filter_values(self):
+        rank_filter = Filter.objects.create(name='Rank', filter_type='button')
+        FilterOption.objects.create(filter=rank_filter, label='Gold', value='gold')
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=rank_filter)
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Filtered listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {
+                    str(rank_filter.id): ' gold ',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        listing = Listing.objects.get(title='Filtered listing')
+        self.assertEqual(listing.filter_values, {str(rank_filter.id): 'gold'})
+
+    def test_create_listing_rejects_unassigned_filter_value(self):
+        region_filter = Filter.objects.create(name='Region', filter_type='dropdown')
+        FilterOption.objects.create(filter=region_filter, label='Asia', value='asia')
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Bad filter listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {
+                    str(region_filter.id): 'asia',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('filter_values', response.data)
+        self.assertFalse(Listing.objects.filter(title='Bad filter listing').exists())
+
+    def test_create_listing_rejects_invalid_filter_option(self):
+        rank_filter = Filter.objects.create(name='Rank', filter_type='button')
+        FilterOption.objects.create(filter=rank_filter, label='Gold', value='gold')
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=rank_filter)
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Bad option listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {
+                    str(rank_filter.id): 'fake-rank',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('filter_values', response.data)
+        self.assertFalse(Listing.objects.filter(title='Bad option listing').exists())
+
+    def test_create_listing_rejects_malformed_filter_values(self):
+        self.client.force_authenticate(user=self.seller)
+
+        list_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'List filter listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': ['not', 'an', 'object'],
+            },
+            format='json',
+        )
+        non_numeric_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Non numeric filter listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {
+                    'rank': 'gold',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(list_response.status_code, 400)
+        self.assertEqual(non_numeric_response.status_code, 400)
+        self.assertIn('filter_values', list_response.data)
+        self.assertIn('filter_values', non_numeric_response.data)
+        self.assertFalse(Listing.objects.filter(title__contains='filter listing').exists())
 
 
 class TopUpProofUploadTests(TestCase):
@@ -333,6 +445,106 @@ class RegistrationPasswordValidationTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(username='strongbuyer').exists())
+
+
+class CookieJWTAuthTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='cookiebuyer',
+            email='cookiebuyer@example.com',
+            password='password123',
+        )
+
+    def login(self):
+        return self.client.post(
+            '/api/auth/login/',
+            {'username': 'cookiebuyer', 'password': 'password123'},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+    def test_login_sets_httponly_auth_cookies(self):
+        response = self.login()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+
+        access_cookie = response.cookies[settings.JWT_AUTH_COOKIE_ACCESS]
+        refresh_cookie = response.cookies[settings.JWT_AUTH_COOKIE_REFRESH]
+        for cookie in (access_cookie, refresh_cookie):
+            self.assertTrue(cookie['httponly'])
+            self.assertFalse(cookie['secure'])
+            self.assertEqual(cookie['samesite'], 'Lax')
+            self.assertEqual(cookie['path'], settings.JWT_AUTH_COOKIE_PATH)
+
+    def test_me_works_from_access_cookie(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+
+        response = self.client.get('/api/auth/me/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['username'], 'cookiebuyer')
+
+    def test_refresh_works_from_refresh_cookie(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+        self.client.cookies[settings.JWT_AUTH_COOKIE_ACCESS] = 'not-a-valid-access-token'
+
+        response = self.client.post(
+            '/api/auth/refresh/',
+            {},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, response.cookies)
+        self.assertIn(settings.JWT_AUTH_COOKIE_REFRESH, response.cookies)
+
+    def test_logout_clears_auth_cookies(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+
+        response = self.client.post(
+            '/api/auth/logout/',
+            {},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        for cookie_name in (settings.JWT_AUTH_COOKIE_ACCESS, settings.JWT_AUTH_COOKIE_REFRESH):
+            self.assertIn(cookie_name, response.cookies)
+            self.assertEqual(response.cookies[cookie_name].value, '')
+            self.assertEqual(response.cookies[cookie_name]['max-age'], 0)
+
+    def test_bearer_token_auth_still_works(self):
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        access = AccessToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
+
+        response = self.client.get('/api/auth/me/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['username'], 'cookiebuyer')
+
+    def test_cookie_auth_rejects_untrusted_origin_for_unsafe_request(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+
+        response = self.client.post(
+            '/api/heartbeat/',
+            {},
+            format='json',
+            HTTP_ORIGIN='https://evil.example',
+        )
+
+        self.assertEqual(response.status_code, 403)
 
 
 class CommissionRateValidationTests(TestCase):
@@ -602,6 +814,59 @@ class AccessControlTests(TestCase):
         self.assertEqual(image_response.status_code, 404)
         self.assertFalse(Message.objects.filter(content='not your chat').exists())
 
+    def test_chat_text_message_rejects_overlong_content(self):
+        from .services import MAX_CHAT_MESSAGE_LENGTH
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send/',
+            {'content': 'x' * (MAX_CHAT_MESSAGE_LENGTH + 1)},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.data)
+        self.assertFalse(Message.objects.filter(conversation=self.conversation).exists())
+
+        start_response = self.client.post(
+            '/api/chat/start/',
+            {
+                'user_id': self.seller.id,
+                'message': 'x' * (MAX_CHAT_MESSAGE_LENGTH + 1),
+            },
+            format='json',
+        )
+
+        self.assertEqual(start_response.status_code, 400)
+        self.assertIn('error', start_response.data)
+        self.assertFalse(Message.objects.filter(conversation=self.conversation).exists())
+
+    def test_start_conversation_rejects_invalid_user_id(self):
+        self.client.force_authenticate(user=self.buyer)
+        before_count = Conversation.objects.count()
+
+        non_numeric_response = self.client.post(
+            '/api/chat/start/',
+            {'user_id': 'abc', 'message': 'hello'},
+            format='json',
+        )
+        zero_response = self.client.post(
+            '/api/chat/start/',
+            {'user_id': 0, 'message': 'hello'},
+            format='json',
+        )
+        negative_response = self.client.post(
+            '/api/chat/start/',
+            {'user_id': -1, 'message': 'hello'},
+            format='json',
+        )
+
+        self.assertEqual(non_numeric_response.status_code, 400)
+        self.assertEqual(zero_response.status_code, 400)
+        self.assertEqual(negative_response.status_code, 400)
+        self.assertEqual(Conversation.objects.count(), before_count)
+        self.assertFalse(Message.objects.filter(content='hello').exists())
+
     def test_chat_image_is_served_through_private_endpoint(self):
         message = Message.objects.create(
             conversation=self.conversation,
@@ -632,6 +897,30 @@ class AccessControlTests(TestCase):
         self.client.force_authenticate(user=self.seller)
         participant_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
         self.assertEqual(participant_response.status_code, 200)
+
+    def test_conversation_detail_messages_are_paginated_from_latest(self):
+        for index in range(60):
+            Message.objects.create(
+                conversation=self.conversation,
+                sender=self.seller if index % 2 else self.buyer,
+                content=f'msg-{index:02d}',
+            )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get(f'/api/chat/{self.conversation.id}/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['messages']), 10)
+        self.assertEqual(response.data['messages'][0]['content'], 'msg-50')
+        self.assertEqual(response.data['messages'][-1]['content'], 'msg-59')
+        self.assertEqual(response.data['message_pagination']['count'], 60)
+        self.assertEqual(response.data['message_pagination']['next_offset'], 10)
+
+        older_response = self.client.get(f'/api/chat/{self.conversation.id}/?limit=10&offset=10')
+
+        self.assertEqual(older_response.status_code, 200)
+        self.assertEqual(older_response.data['messages'][0]['content'], 'msg-40')
+        self.assertEqual(older_response.data['messages'][-1]['content'], 'msg-49')
 
     def test_conversation_list_includes_last_message_and_unread_count(self):
         Message.objects.create(
@@ -711,6 +1000,75 @@ class AccessControlTests(TestCase):
         self.assertEqual(intruder_response.status_code, 404)
 
 
+class HistoryPaginationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+
+    def create_order(self, index, status='pending', seller_amount=Decimal('10.00')):
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing_title=f'Order {index}',
+            quantity=1,
+            unit_price=Decimal('10.00'),
+            total_amount=Decimal('10.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=seller_amount,
+            status=status,
+        )
+
+    def test_wallet_transactions_are_paginated(self):
+        wallet = Wallet.objects.get(user=self.buyer)
+        for index in range(30):
+            WalletTransaction.objects.create(
+                wallet=wallet,
+                transaction_type='refund',
+                amount=Decimal('1.00'),
+                balance_after=Decimal(index),
+                reference_id=f'tx-{index}',
+            )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/wallet/transactions/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['transactions']), 10)
+        self.assertEqual(response.data['pagination']['count'], 30)
+        self.assertEqual(response.data['pagination']['next_offset'], 10)
+
+    def test_buyer_orders_are_paginated(self):
+        for index in range(25):
+            self.create_order(index)
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/orders/mine/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['orders']), 10)
+        self.assertEqual(response.data['pagination']['count'], 25)
+        self.assertEqual(response.data['pagination']['next_offset'], 10)
+
+    def test_seller_sales_are_paginated_with_summary(self):
+        for index in range(5):
+            self.create_order(index, status='pending')
+        for index in range(5, 8):
+            self.create_order(index, status='completed', seller_amount=Decimal('10.00'))
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/orders/sales/?limit=4')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['sales']), 4)
+        self.assertEqual(response.data['pagination']['count'], 8)
+        self.assertEqual(response.data['pagination']['next_offset'], 4)
+        self.assertEqual(response.data['summary']['pending_count'], 5)
+        self.assertEqual(response.data['summary']['completed_count'], 3)
+        self.assertEqual(response.data['summary']['total_revenue'], '30.00')
+
+
 class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
     reset_sequences = True
 
@@ -788,6 +1146,77 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             self.assertFalse(connected)
 
         async_to_sync(run_wrong_conversation_rejection)()
+
+    def test_websocket_rejects_overlong_message(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import MAX_CHAT_MESSAGE_LENGTH, create_chat_ws_ticket
+
+        async def run_overlong_message_rejection():
+            ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to({
+                'type': 'chat_message',
+                'content': 'x' * (MAX_CHAT_MESSAGE_LENGTH + 1),
+            })
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'error')
+            self.assertEqual(event['code'], 'message_too_long')
+            await communicator.disconnect()
+
+        async_to_sync(run_overlong_message_rejection)()
+
+        self.assertFalse(Message.objects.filter(conversation=self.conversation).exists())
+
+    def test_websocket_rate_limits_message_bursts(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import CHAT_WS_MESSAGE_LIMIT, create_chat_ws_ticket
+
+        async def run_rate_limit_rejection():
+            ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            for index in range(CHAT_WS_MESSAGE_LIMIT):
+                await communicator.send_json_to({
+                    'type': 'chat_message',
+                    'content': f'msg-{index}',
+                })
+                event = await communicator.receive_json_from()
+                self.assertEqual(event['type'], 'new_message')
+                self.assertEqual(event['message']['content'], f'msg-{index}')
+
+            await communicator.send_json_to({
+                'type': 'chat_message',
+                'content': 'too fast',
+            })
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'error')
+            self.assertEqual(event['code'], 'rate_limited')
+            await communicator.disconnect()
+
+        async_to_sync(run_rate_limit_rejection)()
+
+        self.assertEqual(
+            Message.objects.filter(conversation=self.conversation).count(),
+            CHAT_WS_MESSAGE_LIMIT,
+        )
+        self.assertFalse(Message.objects.filter(content='too fast').exists())
 
 
 class AdminMoneyActionTests(TestCase):

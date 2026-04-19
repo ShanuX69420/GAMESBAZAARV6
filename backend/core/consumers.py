@@ -2,11 +2,20 @@
 WebSocket consumer for real-time chat.
 """
 
-import json
+from collections import deque
+from time import monotonic
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from .models import Conversation, Message
+from .services import (
+    CHAT_MESSAGE_EMPTY_ERROR,
+    CHAT_MESSAGE_NOT_TEXT_ERROR,
+    CHAT_MESSAGE_TOO_LONG_ERROR,
+    CHAT_WS_MESSAGE_LIMIT,
+    CHAT_WS_MESSAGE_WINDOW_SECONDS,
+    validate_chat_message_content,
+)
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
@@ -33,6 +42,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
         # Join the conversation's channel group
         self.room_group_name = f'chat_{self.conversation_id}'
+        self.message_timestamps = deque()
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
@@ -45,11 +55,26 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content):
         """Handle incoming message from WebSocket client."""
+        if not isinstance(content, dict):
+            await self.send_chat_error('invalid_message', 'Message must be a JSON object.')
+            return
+
         message_type = content.get('type')
 
         if message_type == 'chat_message':
-            text = content.get('content', '').strip()
-            if not text:
+            text, validation_error = validate_chat_message_content(content.get('content', ''))
+            if validation_error == CHAT_MESSAGE_EMPTY_ERROR:
+                return
+
+            if self.is_message_rate_limited():
+                await self.send_chat_error(
+                    'rate_limited',
+                    'You are sending messages too quickly. Please wait a moment.',
+                )
+                return
+
+            if validation_error:
+                await self.send_chat_error(self.error_code_for(validation_error), validation_error)
                 return
 
             # Save to database
@@ -83,6 +108,32 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         })
 
     # ── Database helpers ─────────────────────────────────────────────────────
+
+    def is_message_rate_limited(self):
+        now = monotonic()
+        window_start = now - CHAT_WS_MESSAGE_WINDOW_SECONDS
+        while self.message_timestamps and self.message_timestamps[0] <= window_start:
+            self.message_timestamps.popleft()
+
+        if len(self.message_timestamps) >= CHAT_WS_MESSAGE_LIMIT:
+            return True
+
+        self.message_timestamps.append(now)
+        return False
+
+    def error_code_for(self, validation_error):
+        if validation_error == CHAT_MESSAGE_TOO_LONG_ERROR:
+            return 'message_too_long'
+        if validation_error == CHAT_MESSAGE_NOT_TEXT_ERROR:
+            return 'invalid_message'
+        return 'message_rejected'
+
+    async def send_chat_error(self, code, message):
+        await self.send_json({
+            'type': 'error',
+            'code': code,
+            'error': message,
+        })
 
     @database_sync_to_async
     def check_participant(self):

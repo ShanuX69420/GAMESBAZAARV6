@@ -7,6 +7,12 @@ from .models import Wallet, WalletTransaction
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
 MAX_IMAGE_UPLOAD_SIZE = 5 * 1024 * 1024
+MAX_CHAT_MESSAGE_LENGTH = 2000
+CHAT_MESSAGE_EMPTY_ERROR = 'Message cannot be empty.'
+CHAT_MESSAGE_NOT_TEXT_ERROR = 'Message must be text.'
+CHAT_MESSAGE_TOO_LONG_ERROR = f'Message cannot be longer than {MAX_CHAT_MESSAGE_LENGTH} characters.'
+CHAT_WS_MESSAGE_LIMIT = 20
+CHAT_WS_MESSAGE_WINDOW_SECONDS = 60
 CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
@@ -71,6 +77,24 @@ def validate_uploaded_image(image):
         image.seek(0)
 
     return None
+
+
+def validate_chat_message_content(content, *, allow_empty=False):
+    """Return normalized chat text plus a validation error string, if any."""
+    if content is None:
+        text = ''
+    elif isinstance(content, str):
+        text = content.strip()
+    else:
+        return '', CHAT_MESSAGE_NOT_TEXT_ERROR
+
+    if not text and not allow_empty:
+        return text, CHAT_MESSAGE_EMPTY_ERROR
+
+    if len(text) > MAX_CHAT_MESSAGE_LENGTH:
+        return text, CHAT_MESSAGE_TOO_LONG_ERROR
+
+    return text, None
 
 
 def create_chat_ws_ticket(user, conversation_id):

@@ -1,4 +1,12 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+function paginationQuery({ limit, offset } = {}) {
+  const params = new URLSearchParams();
+  if (limit !== undefined && limit !== null) params.set('limit', String(limit));
+  if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
 
 // ── Public API (server-side) ────────────────────────────────────────────────
 
@@ -23,21 +31,41 @@ export async function fetchGameCategory(gameSlug, categorySlug, filterParams = '
 
 // ── Authenticated API (client-side) ─────────────────────────────────────────
 
-function getToken() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('gb_access_token');
-}
-
 function authHeaders() {
-  const token = getToken();
   return {
     'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 }
 
+async function refreshAuthCookies() {
+  const res = await fetch(`${API_BASE}/api/auth/refresh/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({}),
+  });
+  return res.ok;
+}
+
+async function authFetch(url, options = {}, retry = true) {
+  const res = await fetch(url, {
+    credentials: 'include',
+    ...options,
+  });
+  if (res.status !== 401 || !retry) {
+    return res;
+  }
+
+  const refreshed = await refreshAuthCookies();
+  if (!refreshed) {
+    return res;
+  }
+
+  return authFetch(url, options, false);
+}
+
 export async function applyAsSeller(note) {
-  const res = await fetch(`${API_BASE}/api/seller/apply/`, {
+  const res = await authFetch(`${API_BASE}/api/seller/apply/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ note }),
@@ -48,7 +76,7 @@ export async function applyAsSeller(note) {
 }
 
 export async function getSellerStatus() {
-  const res = await fetch(`${API_BASE}/api/seller/status/`, {
+  const res = await authFetch(`${API_BASE}/api/seller/status/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get seller status');
@@ -56,7 +84,7 @@ export async function getSellerStatus() {
 }
 
 export async function createListing(listingData) {
-  const res = await fetch(`${API_BASE}/api/listings/`, {
+  const res = await authFetch(`${API_BASE}/api/listings/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(listingData),
@@ -70,7 +98,7 @@ export async function createListing(listingData) {
 }
 
 export async function getMyListings() {
-  const res = await fetch(`${API_BASE}/api/listings/mine/`, {
+  const res = await authFetch(`${API_BASE}/api/listings/mine/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get listings');
@@ -86,7 +114,7 @@ export async function getListingDetail(id) {
 }
 
 export async function updateListing(id, data) {
-  const res = await fetch(`${API_BASE}/api/listings/${id}/`, {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(data),
@@ -100,7 +128,7 @@ export async function updateListing(id, data) {
 }
 
 export async function deleteListing(id) {
-  const res = await fetch(`${API_BASE}/api/listings/${id}/`, {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
@@ -113,7 +141,7 @@ export async function deleteListing(id) {
 // ── Chat API ────────────────────────────────────────────────────────────────
 
 export async function getConversations() {
-  const res = await fetch(`${API_BASE}/api/chat/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get conversations');
@@ -121,7 +149,7 @@ export async function getConversations() {
 }
 
 export async function startConversation(userId, message = '') {
-  const res = await fetch(`${API_BASE}/api/chat/start/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/start/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ user_id: userId, message }),
@@ -131,8 +159,8 @@ export async function startConversation(userId, message = '') {
   return data;
 }
 
-export async function getConversation(id) {
-  const res = await fetch(`${API_BASE}/api/chat/${id}/`, {
+export async function getConversation(id, pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/chat/${id}/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get conversation');
@@ -140,7 +168,7 @@ export async function getConversation(id) {
 }
 
 export async function getChatWebSocketTicket(conversationId) {
-  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/ws-ticket/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/${conversationId}/ws-ticket/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({}),
@@ -151,7 +179,7 @@ export async function getChatWebSocketTicket(conversationId) {
 }
 
 export async function sendMessage(conversationId, content) {
-  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/send/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/${conversationId}/send/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ content }),
@@ -162,7 +190,7 @@ export async function sendMessage(conversationId, content) {
 }
 
 export async function getUnreadCount() {
-  const res = await fetch(`${API_BASE}/api/chat/unread/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/unread/`, {
     headers: authHeaders(),
   });
   if (!res.ok) return { unread_count: 0 };
@@ -170,14 +198,12 @@ export async function getUnreadCount() {
 }
 
 export async function sendImageMessage(conversationId, imageFile, content = '') {
-  const token = getToken();
   const formData = new FormData();
   formData.append('image', imageFile);
   if (content) formData.append('content', content);
 
-  const res = await fetch(`${API_BASE}/api/chat/${conversationId}/send-image/`, {
+  const res = await authFetch(`${API_BASE}/api/chat/${conversationId}/send-image/`, {
     method: 'POST',
-    headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
     body: formData,
   });
   const data = await res.json();
@@ -188,7 +214,7 @@ export async function sendImageMessage(conversationId, imageFile, content = '') 
 // ── Presence API ────────────────────────────────────────────────────────────
 
 export async function sendHeartbeat() {
-  const res = await fetch(`${API_BASE}/api/heartbeat/`, {
+  const res = await authFetch(`${API_BASE}/api/heartbeat/`, {
     method: 'POST',
     headers: authHeaders(),
   });
@@ -209,16 +235,16 @@ export function formatLastActive(isoString) {
 
 // ── Wallet API ──────────────────────────────────────────────────────────────
 
-export async function getWallet() {
-  const res = await fetch(`${API_BASE}/api/wallet/`, {
+export async function getWallet(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/wallet/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get wallet');
   return res.json();
 }
 
-export async function getWalletTransactions() {
-  const res = await fetch(`${API_BASE}/api/wallet/transactions/`, {
+export async function getWalletTransactions(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/wallet/transactions/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get transactions');
@@ -226,16 +252,14 @@ export async function getWalletTransactions() {
 }
 
 export async function requestTopUp(amount, paymentMethod = '', transactionId = '', paymentProof = null) {
-  const token = getToken();
   const formData = new FormData();
   formData.append('amount', amount);
   if (paymentMethod) formData.append('payment_method', paymentMethod);
   if (transactionId) formData.append('transaction_id', transactionId);
   if (paymentProof) formData.append('payment_proof', paymentProof);
 
-  const res = await fetch(`${API_BASE}/api/wallet/top-up/`, {
+  const res = await authFetch(`${API_BASE}/api/wallet/top-up/`, {
     method: 'POST',
-    headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
     body: formData,
   });
   const data = await res.json();
@@ -244,7 +268,7 @@ export async function requestTopUp(amount, paymentMethod = '', transactionId = '
 }
 
 export async function getTopUpRequests() {
-  const res = await fetch(`${API_BASE}/api/wallet/top-up/`, {
+  const res = await authFetch(`${API_BASE}/api/wallet/top-up/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get top-up requests');
@@ -254,7 +278,7 @@ export async function getTopUpRequests() {
 // ── Orders API ──────────────────────────────────────────────────────────────
 
 export async function buyListing(listingId, quantity = 1) {
-  const res = await fetch(`${API_BASE}/api/orders/buy/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/buy/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ listing_id: listingId, quantity }),
@@ -264,16 +288,16 @@ export async function buyListing(listingId, quantity = 1) {
   return data;
 }
 
-export async function getMyOrders() {
-  const res = await fetch(`${API_BASE}/api/orders/mine/`, {
+export async function getMyOrders(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/orders/mine/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get orders');
   return res.json();
 }
 
-export async function getMySales() {
-  const res = await fetch(`${API_BASE}/api/orders/sales/`, {
+export async function getMySales(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/orders/sales/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get sales');
@@ -281,7 +305,7 @@ export async function getMySales() {
 }
 
 export async function getOrderDetail(id) {
-  const res = await fetch(`${API_BASE}/api/orders/${id}/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${id}/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get order');
@@ -289,7 +313,7 @@ export async function getOrderDetail(id) {
 }
 
 export async function deliverOrder(id, deliveryNote = '') {
-  const res = await fetch(`${API_BASE}/api/orders/${id}/deliver/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${id}/deliver/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ delivery_note: deliveryNote }),
@@ -300,7 +324,7 @@ export async function deliverOrder(id, deliveryNote = '') {
 }
 
 export async function confirmOrder(id) {
-  const res = await fetch(`${API_BASE}/api/orders/${id}/confirm/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${id}/confirm/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({}),
@@ -311,7 +335,7 @@ export async function confirmOrder(id) {
 }
 
 export async function disputeOrder(id, reason) {
-  const res = await fetch(`${API_BASE}/api/orders/${id}/dispute/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${id}/dispute/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ reason }),
@@ -322,7 +346,7 @@ export async function disputeOrder(id, reason) {
 }
 
 export async function refundOrder(id) {
-  const res = await fetch(`${API_BASE}/api/orders/${id}/refund/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${id}/refund/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({}),

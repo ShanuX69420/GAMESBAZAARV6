@@ -245,6 +245,63 @@ class CreateListingSerializer(serializers.ModelSerializer):
         except GameCategory.DoesNotExist:
             raise serializers.ValidationError('Invalid game/category combination.')
         attrs['game_category'] = gc
+
+        raw_filter_values = attrs.get('filter_values', {})
+        if raw_filter_values in (None, ''):
+            raw_filter_values = {}
+
+        if not isinstance(raw_filter_values, dict):
+            raise serializers.ValidationError({
+                'filter_values': 'Filter values must be an object.',
+            })
+
+        assigned_filter_ids = set(
+            GameCategoryFilter.objects.filter(game_category=gc).values_list('filter_id', flat=True)
+        )
+        cleaned_filter_values = {}
+        requested_pairs = set()
+
+        for raw_filter_id, raw_option_value in raw_filter_values.items():
+            if raw_option_value in (None, ''):
+                continue
+
+            try:
+                filter_id = int(raw_filter_id)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({
+                    'filter_values': 'Filter ids must be numeric.',
+                })
+
+            if filter_id <= 0 or filter_id not in assigned_filter_ids:
+                raise serializers.ValidationError({
+                    'filter_values': 'Invalid filter for this game/category.',
+                })
+
+            if not isinstance(raw_option_value, str):
+                raise serializers.ValidationError({
+                    'filter_values': 'Filter option values must be text.',
+                })
+
+            option_value = raw_option_value.strip()
+            if not option_value:
+                continue
+
+            cleaned_filter_values[str(filter_id)] = option_value
+            requested_pairs.add((filter_id, option_value))
+
+        if requested_pairs:
+            valid_pairs = set(
+                FilterOption.objects.filter(
+                    filter_id__in={filter_id for filter_id, _ in requested_pairs},
+                    value__in={option_value for _, option_value in requested_pairs},
+                ).values_list('filter_id', 'value')
+            )
+            if requested_pairs - valid_pairs:
+                raise serializers.ValidationError({
+                    'filter_values': 'Invalid option for this filter.',
+                })
+
+        attrs['filter_values'] = cleaned_filter_values
         return attrs
 
     def create(self, validated_data):
@@ -371,7 +428,9 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_messages(self, obj):
-        msgs = obj.messages.select_related('sender').all()
+        msgs = self.context.get('messages')
+        if msgs is None:
+            msgs = obj.messages.select_related('sender').all()
         return MessageSerializer(msgs, many=True, context=self.context).data
 
 
