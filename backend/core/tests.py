@@ -89,6 +89,32 @@ class PurchaseFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('75.00'))
 
+    def test_cannot_buy_with_negative_quantity(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Negative quantity item',
+            price=Decimal('10.00'),
+            quantity=5,
+            status='active',
+        )
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': -10},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('quantity', response.data)
+        self.assertFalse(Order.objects.filter(listing=listing).exists())
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 5)
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
     def test_confirm_order_records_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
         self.category.save(update_fields=['commission_rate'])
@@ -513,11 +539,13 @@ class ApiThrottleBehaviorTests(TestCase):
             '/api/auth/login/',
             {'username': 'buyer', 'password': 'wrong-password'},
             format='json',
+            HTTP_ORIGIN='http://localhost:3000',
         )
         second = self.client.post(
             '/api/auth/login/',
             {'username': 'buyer', 'password': 'wrong-password'},
             format='json',
+            HTTP_ORIGIN='http://localhost:3000',
         )
 
         self.assertEqual(first.status_code, 401)
@@ -669,6 +697,31 @@ class CookieJWTAuthTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_cookie_auth_rejects_missing_origin_and_referer_for_unsafe_request(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+
+        response = self.client.post(
+            '/api/heartbeat/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_cookie_auth_allows_trusted_referer_when_origin_is_missing(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+
+        response = self.client.post(
+            '/api/heartbeat/',
+            {},
+            format='json',
+            HTTP_REFERER='http://localhost:3000/account',
+        )
+
+        self.assertEqual(response.status_code, 200)
 
 
 class CommissionRateValidationTests(TestCase):
