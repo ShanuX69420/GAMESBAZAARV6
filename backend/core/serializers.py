@@ -40,7 +40,10 @@ def build_listing_filter_display_map(listings):
 
 
 def build_private_media_url(request, view_name, object_id, kind):
-    ticket = create_private_media_ticket(kind, object_id)
+    viewer_user_id = None
+    if request and request.user.is_authenticated:
+        viewer_user_id = request.user.pk
+    ticket = create_private_media_ticket(kind, object_id, viewer_user_id=viewer_user_id)
     path = f"{reverse(view_name, args=[object_id])}?{urlencode({'ticket': ticket})}"
     if request:
         return request.build_absolute_uri(path)

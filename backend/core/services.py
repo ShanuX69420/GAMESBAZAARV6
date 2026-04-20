@@ -151,13 +151,17 @@ def decode_chat_ws_ticket(ticket, max_age=CHAT_WS_TICKET_MAX_AGE_SECONDS):
     }
 
 
-def create_private_media_ticket(kind, object_id):
-    """Create a short-lived bearer ticket for a protected uploaded file."""
+def create_private_media_ticket(kind, object_id, *, viewer_user_id=None):
+    """Create a short-lived ticket scoped to one viewer for protected media."""
+    payload = {
+        'kind': kind,
+        'object_id': int(object_id),
+    }
+    if viewer_user_id is not None:
+        payload['viewer_user_id'] = int(viewer_user_id)
+
     return signing.dumps(
-        {
-            'kind': kind,
-            'object_id': int(object_id),
-        },
+        payload,
         salt=PRIVATE_MEDIA_TICKET_SALT,
     )
 
@@ -167,4 +171,5 @@ def decode_private_media_ticket(ticket, max_age=PRIVATE_MEDIA_TICKET_MAX_AGE_SEC
     return {
         'kind': str(payload['kind']),
         'object_id': int(payload['object_id']),
+        'viewer_user_id': int(payload['viewer_user_id']),
     }

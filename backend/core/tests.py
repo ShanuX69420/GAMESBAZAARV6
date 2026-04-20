@@ -14,6 +14,7 @@ from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.test import RequestFactory, TestCase, TransactionTestCase
 from django.urls import resolve
+from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
@@ -357,15 +358,25 @@ class TopUpProofUploadTests(TestCase):
         self.assertIn(f'/api/wallet/top-up/{topup.pk}/proof/', response.data['payment_proof_url'])
         self.assertNotIn('/media/', response.data['payment_proof_url'])
 
-        self.client.force_authenticate(user=None)
         proof_response = self.client.get(path_with_query(response.data['payment_proof_url']))
         self.assertEqual(proof_response.status_code, 200)
         self.assertEqual(proof_response['Content-Type'], 'image/png')
         self.assertEqual(proof_response['X-Content-Type-Options'], 'nosniff')
         self.assertEqual(proof_response['Cache-Control'], 'private, no-store')
 
+        self.client.force_authenticate(user=None)
+        unauthenticated_signed_response = self.client.get(
+            path_with_query(response.data['payment_proof_url'])
+        )
+        self.assertEqual(unauthenticated_signed_response.status_code, 404)
+
         other_user = User.objects.create_user(username='other_buyer', password='password123')
         self.client.force_authenticate(user=other_user)
+        signed_other_user_response = self.client.get(
+            path_with_query(response.data['payment_proof_url'])
+        )
+        self.assertEqual(signed_other_user_response.status_code, 404)
+
         unsigned_response = self.client.get(f'/api/wallet/top-up/{topup.pk}/proof/')
         self.assertEqual(unsigned_response.status_code, 404)
 
@@ -490,6 +501,32 @@ class ApiThrottleConfigurationTests(TestCase):
             with self.subTest(path=path):
                 view_class = resolve(path).func.view_class
                 self.assertEqual(view_class.throttle_scope, scope)
+
+
+class ApiPermissionConfigurationTests(TestCase):
+    def test_default_api_permission_is_authenticated(self):
+        self.assertEqual(
+            settings.REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'],
+            ['rest_framework.permissions.IsAuthenticated'],
+        )
+
+    def test_public_endpoints_are_explicitly_marked_public(self):
+        cases = [
+            '/api/games/',
+            '/api/games/test-game/',
+            '/api/games/test-game/accounts/',
+            '/api/auth/login/',
+            '/api/auth/refresh/',
+            '/api/auth/register/',
+            '/api/reviews/seller/seller/',
+            '/api/seller/profile/seller/',
+            '/api/search/',
+        ]
+
+        for path in cases:
+            with self.subTest(path=path):
+                view_class = resolve(path).func.view_class
+                self.assertIn(permissions.AllowAny, view_class.permission_classes)
 
 
 class ApiThrottleBehaviorTests(TestCase):
@@ -656,6 +693,31 @@ class CookieJWTAuthTests(TestCase):
         self.assertIn('access', response.data)
         self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, response.cookies)
         self.assertIn(settings.JWT_AUTH_COOKIE_REFRESH, response.cookies)
+
+    def test_refresh_rotation_blacklists_old_refresh_token(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+        old_refresh = login_response.data['refresh']
+
+        first_refresh = self.client.post(
+            '/api/auth/refresh/',
+            {},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(first_refresh.status_code, 200)
+        self.assertIn('refresh', first_refresh.data)
+        self.assertNotEqual(first_refresh.data['refresh'], old_refresh)
+
+        old_refresh_reuse = self.client.post(
+            '/api/auth/refresh/',
+            {'refresh': old_refresh},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(old_refresh_reuse.status_code, 401)
 
     def test_logout_clears_auth_cookies(self):
         login_response = self.login()
@@ -1120,11 +1182,17 @@ class AccessControlTests(TestCase):
         self.assertIn(f'/api/chat/messages/{message.pk}/image/', image_url)
         self.assertNotIn('/media/', image_url)
 
-        self.client.force_authenticate(user=None)
         signed_response = self.client.get(path_with_query(image_url))
         self.assertEqual(signed_response.status_code, 200)
 
+        self.client.force_authenticate(user=None)
+        unauthenticated_signed_response = self.client.get(path_with_query(image_url))
+        self.assertEqual(unauthenticated_signed_response.status_code, 404)
+
         self.client.force_authenticate(user=self.intruder)
+        signed_response = self.client.get(path_with_query(image_url))
+        self.assertEqual(signed_response.status_code, 404)
+
         unsigned_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
         self.assertEqual(unsigned_response.status_code, 404)
 
@@ -1218,6 +1286,52 @@ class AccessControlTests(TestCase):
         self.assertEqual(response.data[0]['id'], old_conversation.id)
         self.assertEqual(response.data[0]['last_message']['content'], 'old chat is newest now')
         self.assertEqual(response.data[1]['id'], newer_conversation.id)
+
+    def test_conversation_list_supports_pagination(self):
+        third_seller = User.objects.create_user(
+            username='third_seller',
+            password='password123',
+        )
+        conversations = []
+        for seller in (self.seller, self.other_seller, third_seller):
+            conversation = (
+                self.conversation
+                if seller == self.seller else Conversation.objects.create()
+            )
+            if seller != self.seller:
+                conversation.participants.add(self.buyer, seller)
+            Message.objects.create(
+                conversation=conversation,
+                sender=seller,
+                content=f'message from {seller.username}',
+            )
+            conversations.append(conversation)
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/chat/?limit=2')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['conversations']), 2)
+        self.assertEqual(response.data['pagination']['count'], len(conversations))
+        self.assertEqual(response.data['pagination']['next_offset'], 2)
+
+    def test_conversation_list_can_filter_by_other_user(self):
+        other_conversation = Conversation.objects.create()
+        other_conversation.participants.add(self.buyer, self.other_seller)
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get(
+            f'/api/chat/?other_user_id={self.other_seller.id}&limit=1'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(len(response.data['conversations']), 1)
+        self.assertEqual(response.data['conversations'][0]['id'], other_conversation.id)
+        self.assertEqual(
+            response.data['conversations'][0]['other_user']['id'],
+            self.other_seller.id,
+        )
 
     def test_chat_websocket_ticket_is_scoped_to_participant_and_conversation(self):
         from .services import CHAT_WS_TICKET_MAX_AGE_SECONDS, decode_chat_ws_ticket
@@ -2399,17 +2513,19 @@ class ReviewTests(TestCase):
         response = self.client.get('/api/reviews/seller/seller/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['rating'], 4)
-        self.assertEqual(response.data[0]['comment'], 'Good seller')
-        self.assertEqual(response.data[0]['reviewer_name'], 'buyer')
-        self.assertEqual(response.data[0]['listing_title'], 'Test Listing')
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(len(response.data['reviews']), 1)
+        self.assertEqual(response.data['reviews'][0]['rating'], 4)
+        self.assertEqual(response.data['reviews'][0]['comment'], 'Good seller')
+        self.assertEqual(response.data['reviews'][0]['reviewer_name'], 'buyer')
+        self.assertEqual(response.data['reviews'][0]['listing_title'], 'Test Listing')
 
     def test_seller_reviews_endpoint_returns_empty_for_no_reviews(self):
         response = self.client.get('/api/reviews/seller/seller/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, [])
+        self.assertEqual(response.data['reviews'], [])
+        self.assertEqual(response.data['pagination']['count'], 0)
 
     def test_seller_reviews_endpoint_returns_404_for_unknown_user(self):
         response = self.client.get('/api/reviews/seller/nonexistent/')
@@ -2428,7 +2544,40 @@ class ReviewTests(TestCase):
         response = self.client.get('/api/reviews/seller/seller/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data['reviews']), 1)
+
+    def test_seller_reviews_endpoint_is_paginated(self):
+        for index in range(25):
+            buyer = User.objects.create_user(
+                username=f'review_buyer_{index}',
+                password='password123',
+            )
+            order = Order.objects.create(
+                buyer=buyer,
+                seller=self.seller,
+                listing=self.listing,
+                listing_title=self.listing.title,
+                quantity=1,
+                unit_price=Decimal('50.00'),
+                total_amount=Decimal('50.00'),
+                commission_rate=Decimal('10.00'),
+                commission_amount=Decimal('5.00'),
+                seller_amount=Decimal('45.00'),
+                status='completed',
+            )
+            Review.objects.create(
+                order=order,
+                reviewer=buyer,
+                seller=self.seller,
+                rating=5,
+            )
+
+        response = self.client.get('/api/reviews/seller/seller/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['reviews']), 10)
+        self.assertEqual(response.data['pagination']['count'], 25)
+        self.assertEqual(response.data['pagination']['next_offset'], 10)
 
     # â”€â”€ SellerProfileView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

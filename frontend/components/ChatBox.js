@@ -73,8 +73,9 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   // On mount: look up existing conversation with seller
   useEffect(() => {
     if (activeConvoId || !sellerId || !user) return;
-    getConversations()
-      .then(convos => {
+    getConversations({ otherUserId: sellerId, limit: 1 })
+      .then(data => {
+        const convos = data.conversations || data;
         const existing = convos.find(c => c.other_user?.id === sellerId);
         if (existing && mountedRef.current) setActiveConvoId(existing.id);
       })

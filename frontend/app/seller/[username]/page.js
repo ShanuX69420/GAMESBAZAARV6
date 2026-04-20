@@ -5,12 +5,16 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getSellerProfile, getSellerReviews, formatLastActive } from '@/lib/api';
 
+const REVIEW_PAGE_SIZE = 20;
+
 export default function SellerProfilePage() {
   const params = useParams();
   const { username } = params;
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [reviewPagination, setReviewPagination] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -18,17 +22,36 @@ export default function SellerProfilePage() {
   }, [username]);
 
   async function loadData() {
+    setLoading(true);
     try {
       const [profileData, reviewsData] = await Promise.all([
         getSellerProfile(username),
-        getSellerReviews(username),
+        getSellerReviews(username, { limit: REVIEW_PAGE_SIZE }),
       ]);
       setProfile(profileData);
-      setReviews(reviewsData);
+      setReviews(reviewsData.reviews || []);
+      setReviewPagination(reviewsData.pagination || null);
     } catch (err) {
       setError('Seller not found.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreReviews() {
+    if (!reviewPagination?.next_offset || loadingMoreReviews) return;
+    setLoadingMoreReviews(true);
+    try {
+      const reviewsData = await getSellerReviews(username, {
+        limit: REVIEW_PAGE_SIZE,
+        offset: reviewPagination.next_offset,
+      });
+      setReviews(prev => [...prev, ...(reviewsData.reviews || [])]);
+      setReviewPagination(reviewsData.pagination || null);
+    } catch {
+      setError('Could not load more reviews.');
+    } finally {
+      setLoadingMoreReviews(false);
     }
   }
 
@@ -120,7 +143,7 @@ export default function SellerProfilePage() {
       {/* Reviews */}
       <section className="section" style={{ marginTop: '24px' }}>
         <h2 className="page-title" style={{ fontSize: '1.2rem', marginBottom: '16px' }}>
-          Reviews ({reviews.length})
+          Reviews ({reviewPagination?.count ?? profile.review_count ?? reviews.length})
         </h2>
         {reviews.length === 0 ? (
           <div className="empty-state">
@@ -150,6 +173,16 @@ export default function SellerProfilePage() {
                 )}
               </div>
             ))}
+            {reviewPagination?.next_offset !== null && reviewPagination?.next_offset !== undefined && (
+              <button
+                type="button"
+                className="btn btn-outline btn-full"
+                onClick={loadMoreReviews}
+                disabled={loadingMoreReviews}
+              >
+                {loadingMoreReviews ? 'Loading...' : 'Load More'}
+              </button>
+            )}
           </div>
         )}
       </section>

@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core import signing
 from django.http import FileResponse, Http404
-from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db import transaction as db_transaction
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
@@ -49,12 +49,16 @@ from .authentication import enforce_trusted_origin
 
 DEFAULT_LISTING_PAGE_SIZE = 48
 MAX_LISTING_PAGE_SIZE = 100
+DEFAULT_CONVERSATION_PAGE_SIZE = 30
+MAX_CONVERSATION_PAGE_SIZE = 100
 DEFAULT_MESSAGE_PAGE_SIZE = 50
 MAX_MESSAGE_PAGE_SIZE = 100
 DEFAULT_TRANSACTION_PAGE_SIZE = 25
 MAX_TRANSACTION_PAGE_SIZE = 100
 DEFAULT_ORDER_PAGE_SIZE = 20
 MAX_ORDER_PAGE_SIZE = 100
+DEFAULT_REVIEW_PAGE_SIZE = 20
+MAX_REVIEW_PAGE_SIZE = 100
 
 
 class ScopedPostThrottleMixin:
@@ -76,7 +80,12 @@ def has_valid_private_media_ticket(request, *, kind, object_id):
         payload = decode_private_media_ticket(ticket)
     except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError, ValueError):
         return False
-    return payload['kind'] == kind and payload['object_id'] == int(object_id)
+    return (
+        request.user.is_authenticated and
+        payload['kind'] == kind and
+        payload['object_id'] == int(object_id) and
+        payload['viewer_user_id'] == request.user.id
+    )
 
 
 def private_file_response(file_field):
@@ -143,12 +152,14 @@ def broadcast_chat_message(message, request):
 class GameListView(generics.ListAPIView):
     """GET /api/games/ — List all active games."""
     serializer_class = GameListSerializer
+    permission_classes = [permissions.AllowAny]
     queryset = Game.objects.filter(is_active=True).prefetch_related('game_categories')
 
 
 class GameDetailView(generics.RetrieveAPIView):
     """GET /api/games/{slug}/ — Game detail with its categories."""
     serializer_class = GameDetailSerializer
+    permission_classes = [permissions.AllowAny]
     lookup_field = 'slug'
     queryset = Game.objects.filter(is_active=True).prefetch_related(
         'game_categories__category'
@@ -157,6 +168,8 @@ class GameDetailView(generics.RetrieveAPIView):
 
 class GameCategoryDetailView(APIView):
     """GET /api/games/{game_slug}/{category_slug}/ — Category with filters + listings."""
+
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request, game_slug, category_slug):
         game_category = get_object_or_404(
@@ -247,6 +260,7 @@ def clear_jwt_auth_cookies(response):
 
 class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
     authentication_classes = []
+    permission_classes = [permissions.AllowAny]
     throttle_scope = 'auth_login'
 
     def post(self, request, *args, **kwargs):
@@ -263,6 +277,7 @@ class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
 
 class RefreshTokenView(ScopedPostThrottleMixin, TokenRefreshView):
     authentication_classes = []
+    permission_classes = [permissions.AllowAny]
     throttle_scope = 'auth_refresh'
 
     def post(self, request, *args, **kwargs):
@@ -304,6 +319,7 @@ class LogoutView(APIView):
 class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
     """POST /api/auth/register/ — Register a new user."""
     authentication_classes = []
+    permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
     throttle_scope = 'auth_register'
 
@@ -417,11 +433,9 @@ class ListingDetailView(APIView):
     PUT /api/listings/{id}/ — Edit listing (owner only).
     DELETE /api/listings/{id}/ — Delete listing (owner only).
     """
-    permission_classes = []
-
     def get_permissions(self):
         if self.request.method == 'GET':
-            return []
+            return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
 
     def get(self, request, pk):
@@ -463,12 +477,21 @@ class ConversationListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        conversations_qs = Conversation.objects.filter(participants=request.user)
+        other_user_id = request.query_params.get('other_user_id')
+        if other_user_id not in (None, ''):
+            try:
+                other_user_id = int(other_user_id)
+            except (TypeError, ValueError):
+                return Response({'error': 'other_user_id must be a valid user id.'}, status=400)
+            if other_user_id <= 0 or other_user_id == request.user.id:
+                return Response({'error': 'other_user_id must be a valid user id.'}, status=400)
+            conversations_qs = conversations_qs.filter(participants__id=other_user_id)
+
         latest_message = Message.objects.filter(
             conversation=OuterRef('pk')
         ).order_by('-created_at', '-pk')
-        conversations = Conversation.objects.filter(
-            participants=request.user
-        ).annotate(
+        conversations = conversations_qs.annotate(
             unread_messages_count=Count(
                 'messages',
                 filter=Q(messages__is_read=False) & ~Q(messages__sender=request.user),
@@ -479,6 +502,24 @@ class ConversationListView(APIView):
         ).prefetch_related(
             Prefetch('participants', queryset=User.objects.select_related('profile')),
         ).order_by(F('latest_message_created_at').desc(nulls_last=True), '-updated_at', '-pk')
+
+        if any(param in request.query_params for param in ('limit', 'offset', 'other_user_id')):
+            limit, offset = get_pagination_params(
+                request,
+                default_limit=DEFAULT_CONVERSATION_PAGE_SIZE,
+                max_limit=MAX_CONVERSATION_PAGE_SIZE,
+            )
+            total_count = conversations_qs.count()
+            page = list(conversations[offset:offset + limit])
+            return Response({
+                'conversations': ConversationListSerializer(
+                    page,
+                    many=True,
+                    context={'request': request},
+                ).data,
+                'pagination': get_pagination_payload(total_count, limit, offset),
+            })
+
         data = ConversationListSerializer(conversations, many=True,
                                            context={'request': request}).data
         return Response(data)
@@ -1312,19 +1353,29 @@ class CreateReviewView(APIView):
 
 class SellerReviewsView(APIView):
     """GET /api/reviews/seller/<username>/ — Get all reviews for a seller."""
-    permission_classes = []
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request, username):
         seller = get_object_or_404(User, username=username)
-        reviews = Review.objects.filter(
+        reviews_qs = Review.objects.filter(
             seller=seller
         ).select_related('reviewer', 'order')
-        return Response(ReviewSerializer(reviews, many=True).data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_REVIEW_PAGE_SIZE,
+            max_limit=MAX_REVIEW_PAGE_SIZE,
+        )
+        total_count = reviews_qs.count()
+        reviews = reviews_qs[offset:offset + limit]
+        return Response({
+            'reviews': ReviewSerializer(reviews, many=True).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
 
 
 class SellerProfileView(APIView):
     """GET /api/seller/profile/<username>/ — Public seller profile with stats."""
-    permission_classes = []
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request, username):
         seller = get_object_or_404(User, username=username)
@@ -1333,13 +1384,15 @@ class SellerProfileView(APIView):
         if profile.seller_status != 'approved':
             return Response({'error': 'Seller not found.'}, status=404)
 
-        # Get reviews
-        reviews = Review.objects.filter(seller=seller)
-        review_count = reviews.count()
-        avg_rating = None
-        if review_count > 0:
-            total = sum(r.rating for r in reviews)
-            avg_rating = round(total / review_count, 1)
+        review_stats = Review.objects.filter(seller=seller).aggregate(
+            review_count=Count('id'),
+            avg_rating=Avg('rating'),
+        )
+        review_count = review_stats['review_count']
+        avg_rating = (
+            round(float(review_stats['avg_rating']), 1)
+            if review_stats['avg_rating'] is not None else None
+        )
 
         # Get completed sales count
         completed_sales = Order.objects.filter(
@@ -1372,7 +1425,7 @@ class SellerProfileView(APIView):
 
 class SearchView(APIView):
     """GET /api/search/?q=<query> — Search game-categories."""
-    permission_classes = []
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         query = request.query_params.get('q', '').strip()
@@ -1406,4 +1459,3 @@ class SearchView(APIView):
             })
 
         return Response({'query': query, 'results': results})
-

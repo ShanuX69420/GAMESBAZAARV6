@@ -6,13 +6,18 @@ import { useAuth } from '@/lib/auth';
 import { getConversations, formatLastActive } from '@/lib/api';
 import ChatBox from '@/components/ChatBox';
 
+const CONVERSATION_PAGE_SIZE = 30;
+
 export default function InboxPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [conversations, setConversations] = useState([]);
+  const [conversationPagination, setConversationPagination] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeChatId, setActiveChatId] = useState(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const loadedLimitRef = useRef(CONVERSATION_PAGE_SIZE);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -20,11 +25,41 @@ export default function InboxPage() {
 
   const fetchConvos = useCallback(() => {
     if (!user) return;
-    getConversations()
-      .then(data => setConversations(sortConversationsByActivity(data)))
+    getConversations({ limit: loadedLimitRef.current })
+      .then(data => {
+        const nextConversations = data.conversations || data;
+        setConversations(sortConversationsByActivity(nextConversations));
+        setConversationPagination(data.pagination || null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [user]);
+
+  async function loadMoreConversations() {
+    if (!conversationPagination?.next_offset || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await getConversations({
+        limit: CONVERSATION_PAGE_SIZE,
+        offset: conversationPagination.next_offset,
+      });
+      const nextConversations = data.conversations || [];
+      setConversations(prev => {
+        const byId = new Map(prev.map(convo => [convo.id, convo]));
+        nextConversations.forEach(convo => byId.set(convo.id, convo));
+        const merged = sortConversationsByActivity([...byId.values()]);
+        loadedLimitRef.current = Math.max(
+          CONVERSATION_PAGE_SIZE,
+          data.pagination?.next_offset ?? merged.length
+        );
+        return merged;
+      });
+      setConversationPagination(data.pagination || null);
+    } catch {
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -110,6 +145,18 @@ export default function InboxPage() {
                 </div>
               </div>
             ))}
+            {conversationPagination?.next_offset !== null &&
+              conversationPagination?.next_offset !== undefined && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-full"
+                  style={{ margin: '12px' }}
+                  onClick={loadMoreConversations}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading...' : 'Load More'}
+                </button>
+              )}
           </div>
 
           <div className="inbox-chatpanel">

@@ -1,12 +1,14 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 let refreshAuthPromise = null;
 
-function paginationQuery({ limit, offset, beforeId, before_id } = {}) {
+function paginationQuery({ limit, offset, beforeId, before_id, otherUserId, other_user_id } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));
   if (offset !== undefined && offset !== null) params.set('offset', String(offset));
   const cursor = beforeId ?? before_id;
   if (cursor !== undefined && cursor !== null) params.set('before_id', String(cursor));
+  const participant = otherUserId ?? other_user_id;
+  if (participant !== undefined && participant !== null) params.set('other_user_id', String(participant));
   const query = params.toString();
   return query ? `?${query}` : '';
 }
@@ -151,8 +153,8 @@ export async function deleteListing(id) {
 
 // ── Chat API ────────────────────────────────────────────────────────────────
 
-export async function getConversations() {
-  const res = await authFetch(`${API_BASE}/api/chat/`, {
+export async function getConversations(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/chat/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get conversations');
@@ -380,8 +382,8 @@ export async function createReview(orderId, rating, comment = '') {
   return data;
 }
 
-export async function getSellerReviews(username) {
-  const res = await fetch(`${API_BASE}/api/reviews/seller/${username}/`);
+export async function getSellerReviews(username, pagination = {}) {
+  const res = await fetch(`${API_BASE}/api/reviews/seller/${username}/${paginationQuery(pagination)}`);
   if (!res.ok) throw new Error('Failed to get reviews');
   return res.json();
 }
