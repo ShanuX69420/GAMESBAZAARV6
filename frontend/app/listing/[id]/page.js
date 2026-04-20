@@ -5,9 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { buyListing, getWallet } from '@/lib/api';
+import { API_BASE } from '@/lib/config';
 import ChatBox from '@/components/ChatBox';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 export default function ListingDetailPage() {
   const params = useParams();
@@ -213,4 +212,3 @@ export default function ListingDetailPage() {
     </div>
   );
 }
-

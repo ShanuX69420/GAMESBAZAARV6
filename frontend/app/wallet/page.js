@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { getWallet, requestTopUp, getTopUpRequests } from '@/lib/api';
 
 const TRANSACTION_PAGE_SIZE = 20;
+const TOPUP_PAGE_SIZE = 20;
 
 export default function WalletPage() {
   const { user, loading } = useAuth();
@@ -14,6 +15,7 @@ export default function WalletPage() {
   const [walletData, setWalletData] = useState(null);
   const [transactionPagination, setTransactionPagination] = useState(null);
   const [topUpRequests, setTopUpRequests] = useState([]);
+  const [topUpPagination, setTopUpPagination] = useState(null);
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -21,6 +23,7 @@ export default function WalletPage() {
   const [proofFile, setProofFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
+  const [loadingMoreTopUps, setLoadingMoreTopUps] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -38,11 +41,12 @@ export default function WalletPage() {
     try {
       const [wallet, topups] = await Promise.all([
         getWallet({ limit: TRANSACTION_PAGE_SIZE, offset: 0 }),
-        getTopUpRequests(),
+        getTopUpRequests({ limit: TOPUP_PAGE_SIZE, offset: 0 }),
       ]);
       setWalletData(wallet);
       setTransactionPagination(wallet.transaction_pagination || null);
-      setTopUpRequests(topups);
+      setTopUpRequests(topups.topup_requests || []);
+      setTopUpPagination(topups.pagination || null);
     } catch (err) {
       console.error(err);
     }
@@ -68,6 +72,26 @@ export default function WalletPage() {
       console.error(err);
     } finally {
       setLoadingMoreTransactions(false);
+    }
+  }
+
+  async function loadMoreTopUps() {
+    if (!topUpPagination?.next_offset || loadingMoreTopUps) return;
+    setLoadingMoreTopUps(true);
+    try {
+      const topups = await getTopUpRequests({
+        limit: TOPUP_PAGE_SIZE,
+        offset: topUpPagination.next_offset,
+      });
+      setTopUpRequests(prev => [
+        ...prev,
+        ...(topups.topup_requests || []),
+      ]);
+      setTopUpPagination(topups.pagination || null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMoreTopUps(false);
     }
   }
 
@@ -216,14 +240,14 @@ export default function WalletPage() {
                 ))}
               </tbody>
             </table>
-            {transactionPagination?.next_offset !== null && transactionPagination?.next_offset !== undefined && (
+            {topUpPagination?.next_offset !== null && topUpPagination?.next_offset !== undefined && (
               <button
                 className="btn btn-outline btn-full"
                 style={{ marginTop: '16px' }}
-                onClick={loadMoreTransactions}
-                disabled={loadingMoreTransactions}
+                onClick={loadMoreTopUps}
+                disabled={loadingMoreTopUps}
               >
-                {loadingMoreTransactions ? 'Loading...' : 'Load More Transactions'}
+                {loadingMoreTopUps ? 'Loading...' : 'Load More Top-Ups'}
               </button>
             )}
           </div>
@@ -263,6 +287,16 @@ export default function WalletPage() {
                 ))}
               </tbody>
             </table>
+            {transactionPagination?.next_offset !== null && transactionPagination?.next_offset !== undefined && (
+              <button
+                className="btn btn-outline btn-full"
+                style={{ marginTop: '16px' }}
+                onClick={loadMoreTransactions}
+                disabled={loadingMoreTransactions}
+              >
+                {loadingMoreTransactions ? 'Loading...' : 'Load More Transactions'}
+              </button>
+            )}
           </div>
         ) : (
           <div className="empty-state">

@@ -478,6 +478,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'auth_refresh': '1/min',
         'auth_register': '1/min',
         'chat_start': '1/min',
+        'chat_message': '1/min',
         'chat_upload': '1/min',
         'topup_request': '1/min',
         'heartbeat': '1/min',
@@ -492,6 +493,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/auth/refresh/': 'auth_refresh',
             '/api/auth/register/': 'auth_register',
             '/api/chat/start/': 'chat_start',
+            '/api/chat/1/send/': 'chat_message',
             '/api/chat/1/send-image/': 'chat_upload',
             '/api/wallet/top-up/': 'topup_request',
             '/api/heartbeat/': 'heartbeat',
@@ -598,6 +600,52 @@ class ApiThrottleBehaviorTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
 
+    def test_chat_message_send_is_rate_limited_per_authenticated_user(self):
+        buyer = User.objects.create_user(username='buyer', password='password123')
+        seller = User.objects.create_user(username='seller', password='password123')
+        conversation = Conversation.objects.create()
+        conversation.participants.add(buyer, seller)
+        self.client.force_authenticate(user=buyer)
+
+        first = self.client.post(
+            f'/api/chat/{conversation.id}/send/',
+            {'content': 'hello'},
+            format='json',
+        )
+        second = self.client.post(
+            f'/api/chat/{conversation.id}/send/',
+            {'content': 'again'},
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 429)
+
+
+class HeartbeatUpdateTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='buyer', password='password123')
+        self.client.force_authenticate(user=self.user)
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_repeated_heartbeat_does_not_rewrite_recent_last_active(self):
+        first = self.client.post('/api/heartbeat/', {}, format='json')
+        self.user.profile.refresh_from_db()
+        first_last_active = self.user.profile.last_active
+
+        second = self.client.post('/api/heartbeat/', {}, format='json')
+        self.user.profile.refresh_from_db()
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(first.data['updated'])
+        self.assertFalse(second.data['updated'])
+        self.assertEqual(self.user.profile.last_active, first_last_active)
+
 
 class RegistrationPasswordValidationTests(TestCase):
     def setUp(self):
@@ -657,8 +705,9 @@ class CookieJWTAuthTests(TestCase):
         response = self.login()
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('access', response.data)
-        self.assertIn('refresh', response.data)
+        self.assertEqual(response.data, {'message': 'Logged in.'})
+        self.assertNotIn('access', response.data)
+        self.assertNotIn('refresh', response.data)
 
         access_cookie = response.cookies[settings.JWT_AUTH_COOKIE_ACCESS]
         refresh_cookie = response.cookies[settings.JWT_AUTH_COOKIE_REFRESH]
@@ -690,14 +739,16 @@ class CookieJWTAuthTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('access', response.data)
+        self.assertEqual(response.data, {'message': 'Token refreshed.'})
+        self.assertNotIn('access', response.data)
+        self.assertNotIn('refresh', response.data)
         self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, response.cookies)
         self.assertIn(settings.JWT_AUTH_COOKIE_REFRESH, response.cookies)
 
     def test_refresh_rotation_blacklists_old_refresh_token(self):
         login_response = self.login()
         self.assertEqual(login_response.status_code, 200)
-        old_refresh = login_response.data['refresh']
+        old_refresh = login_response.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value
 
         first_refresh = self.client.post(
             '/api/auth/refresh/',
@@ -707,8 +758,12 @@ class CookieJWTAuthTests(TestCase):
         )
 
         self.assertEqual(first_refresh.status_code, 200)
-        self.assertIn('refresh', first_refresh.data)
-        self.assertNotEqual(first_refresh.data['refresh'], old_refresh)
+        self.assertNotIn('refresh', first_refresh.data)
+        self.assertIn(settings.JWT_AUTH_COOKIE_REFRESH, first_refresh.cookies)
+        self.assertNotEqual(
+            first_refresh.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value,
+            old_refresh,
+        )
 
         old_refresh_reuse = self.client.post(
             '/api/auth/refresh/',
@@ -833,6 +888,29 @@ class CommissionRateValidationTests(TestCase):
                     commission_rate=rate,
                 )
                 category.full_clean()
+
+
+class TopUpAmountValidationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='buyer', password='password123')
+
+    def test_topup_amount_must_be_at_least_one(self):
+        for amount in (Decimal('0.00'), Decimal('-0.01')):
+            with self.subTest(amount=amount):
+                topup = TopUpRequest(user=self.user, amount=amount)
+                with self.assertRaises(ValidationError):
+                    topup.full_clean()
+                with self.assertRaises(IntegrityError):
+                    with db_transaction.atomic():
+                        TopUpRequest.objects.create(user=self.user, amount=amount)
+
+    def test_topup_amount_minimum_boundary_is_valid(self):
+        topup = TopUpRequest(user=self.user, amount=Decimal('1.00'))
+
+        topup.full_clean()
+        topup.save()
+
+        self.assertEqual(topup.amount, Decimal('1.00'))
 
 
 class GameCategoryListingPaginationTests(TestCase):
@@ -1396,6 +1474,28 @@ class HistoryPaginationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['transactions']), 10)
+        self.assertEqual(response.data['pagination']['count'], 30)
+        self.assertEqual(response.data['pagination']['next_offset'], 10)
+
+    def test_topup_requests_are_paginated_for_current_user(self):
+        other_user = User.objects.create_user(username='other', password='password123')
+        for index in range(30):
+            TopUpRequest.objects.create(
+                user=self.buyer,
+                amount=Decimal('100.00'),
+                transaction_id=f'buyer-topup-{index}',
+            )
+        TopUpRequest.objects.create(
+            user=other_user,
+            amount=Decimal('100.00'),
+            transaction_id='other-topup',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/wallet/top-up/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['topup_requests']), 10)
         self.assertEqual(response.data['pagination']['count'], 30)
         self.assertEqual(response.data['pagination']['next_offset'], 10)
 
@@ -2296,7 +2396,7 @@ class ReviewTests(TestCase):
             status='completed',
         )
 
-    # â”€â”€ CreateReviewView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # CreateReviewView tests
 
     def test_buyer_can_review_completed_order(self):
         self.client.force_authenticate(user=self.buyer)
@@ -2475,7 +2575,7 @@ class ReviewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    # â”€â”€ has_review flag on OrderSerializer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # OrderSerializer has_review flag
 
     def test_order_has_review_false_before_review(self):
         self.client.force_authenticate(user=self.buyer)
@@ -2499,7 +2599,7 @@ class ReviewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['has_review'])
 
-    # â”€â”€ SellerReviewsView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # SellerReviewsView tests
 
     def test_seller_reviews_endpoint_lists_reviews(self):
         Review.objects.create(
@@ -2579,7 +2679,7 @@ class ReviewTests(TestCase):
         self.assertEqual(response.data['pagination']['count'], 25)
         self.assertEqual(response.data['pagination']['next_offset'], 10)
 
-    # â”€â”€ SellerProfileView tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # SellerProfileView tests
 
     def test_seller_profile_returns_correct_stats(self):
         Review.objects.create(
@@ -2661,7 +2761,7 @@ class ReviewTests(TestCase):
 
 
 class SearchTests(TestCase):
-    """Tests for GET /api/search/?q=<query> â€” game-category search."""
+    """Tests for GET /api/search/?q=<query> - game-category search."""
 
     def setUp(self):
         self.client = APIClient()
@@ -2702,7 +2802,7 @@ class SearchTests(TestCase):
             game=self.inactive_game, category=self.accounts,
         )
 
-    # â”€â”€ Search by game name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Search by game name
 
     def test_search_by_game_name(self):
         response = self.client.get('/api/search/?q=Valorant')
@@ -2730,7 +2830,7 @@ class SearchTests(TestCase):
         names = [r['display_name'] for r in response.data['results']]
         self.assertIn('PUBG Mobile Accounts', names)
 
-    # â”€â”€ Search by game keywords / aliases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Search by game keywords / aliases
 
     def test_search_by_keyword_alias(self):
         """Searching 'gta' should find 'GTA 5 Accounts' via search_keywords."""
@@ -2755,7 +2855,7 @@ class SearchTests(TestCase):
         names = [r['display_name'] for r in response.data['results']]
         self.assertNotIn('Valorant Accounts', names)
 
-    # â”€â”€ Search by category name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Search by category name
 
     def test_search_by_category_name(self):
         response = self.client.get('/api/search/?q=Accounts')
@@ -2776,7 +2876,7 @@ class SearchTests(TestCase):
         names = [r['display_name'] for r in response.data['results']]
         self.assertIn('Valorant Boosting', names)
 
-    # â”€â”€ Exclusions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Exclusions
 
     def test_search_excludes_inactive_games(self):
         response = self.client.get('/api/search/?q=Inactive')
@@ -2793,7 +2893,7 @@ class SearchTests(TestCase):
         game_names = [r['game_name'] for r in response.data['results']]
         self.assertNotIn('Inactive Game', game_names)
 
-    # â”€â”€ Empty / short queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Empty / short queries
 
     def test_search_empty_query_returns_empty(self):
         response = self.client.get('/api/search/?q=')
@@ -2826,7 +2926,7 @@ class SearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'], [])
 
-    # â”€â”€ Response structure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Response structure
 
     def test_search_response_structure(self):
         response = self.client.get('/api/search/?q=Valorant')
@@ -2857,7 +2957,7 @@ class SearchTests(TestCase):
         self.assertEqual(result['category_name'], 'Accounts')
         self.assertEqual(result['category_slug'], 'accounts')
 
-    # â”€â”€ Results limit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Results limit
 
     def test_search_results_limited_to_fifty(self):
         """At most 50 results should be returned."""
@@ -2871,7 +2971,7 @@ class SearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertLessEqual(len(response.data['results']), 50)
 
-    # â”€â”€ Public access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Public access
 
     def test_search_is_public(self):
         """Search endpoint should work without authentication."""
@@ -2881,7 +2981,7 @@ class SearchTests(TestCase):
         self.assertIn('results', response.data)
         self.assertGreater(len(response.data['results']), 0)
 
-    # â”€â”€ No duplicates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # No duplicates
 
     def test_search_no_duplicate_results(self):
         """A game-category matching both game name and category name should appear once."""

@@ -154,6 +154,7 @@ REST_FRAMEWORK = {
         'auth_refresh': '30/min',
         'auth_register': '5/hour',
         'chat_start': '20/min',
+        'chat_message': '60/min',
         'chat_upload': '20/min',
         'topup_request': '10/hour',
         'heartbeat': '120/hour',

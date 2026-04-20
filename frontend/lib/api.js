@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_BASE } from '@/lib/config';
 let refreshAuthPromise = null;
 
 function paginationQuery({ limit, offset, beforeId, before_id, otherUserId, other_user_id } = {}) {
@@ -280,8 +280,8 @@ export async function requestTopUp(amount, paymentMethod = '', transactionId = '
   return data;
 }
 
-export async function getTopUpRequests() {
-  const res = await authFetch(`${API_BASE}/api/wallet/top-up/`, {
+export async function getTopUpRequests(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/wallet/top-up/${paginationQuery(pagination)}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get top-up requests');

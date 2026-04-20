@@ -16,6 +16,7 @@ from django.core import signing
 from django.http import FileResponse, Http404
 from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db import transaction as db_transaction
+from django.utils import timezone
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
@@ -55,10 +56,13 @@ DEFAULT_MESSAGE_PAGE_SIZE = 50
 MAX_MESSAGE_PAGE_SIZE = 100
 DEFAULT_TRANSACTION_PAGE_SIZE = 25
 MAX_TRANSACTION_PAGE_SIZE = 100
+DEFAULT_TOPUP_REQUEST_PAGE_SIZE = 20
+MAX_TOPUP_REQUEST_PAGE_SIZE = 100
 DEFAULT_ORDER_PAGE_SIZE = 20
 MAX_ORDER_PAGE_SIZE = 100
 DEFAULT_REVIEW_PAGE_SIZE = 20
 MAX_REVIEW_PAGE_SIZE = 100
+HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS = 30
 
 
 class ScopedPostThrottleMixin:
@@ -267,11 +271,14 @@ class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
         enforce_trusted_origin(request)
         response = super().post(request, *args, **kwargs)
         if response.status_code == status.HTTP_200_OK:
+            access = response.data.get('access')
+            refresh = response.data.get('refresh')
             set_jwt_auth_cookies(
                 response,
-                access=response.data.get('access'),
-                refresh=response.data.get('refresh'),
+                access=access,
+                refresh=refresh,
             )
+            response.data = {'message': 'Logged in.'}
         return response
 
 
@@ -295,7 +302,7 @@ class RefreshTokenView(ScopedPostThrottleMixin, TokenRefreshView):
         except TokenError as exc:
             raise InvalidToken(exc.args[0])
 
-        response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+        response = Response({'message': 'Token refreshed.'}, status=status.HTTP_200_OK)
         set_jwt_auth_cookies(
             response,
             access=serializer.validated_data.get('access'),
@@ -663,9 +670,10 @@ class ChatWebSocketTicketView(APIView):
         })
 
 
-class SendMessageView(APIView):
+class SendMessageView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/{id}/send/ — Send a message in a conversation."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'chat_message'
 
     def post(self, request, pk):
         conversation = get_object_or_404(
@@ -769,11 +777,16 @@ class HeartbeatView(ScopedPostThrottleMixin, APIView):
     throttle_scope = 'heartbeat'
 
     def post(self, request):
-        from django.utils import timezone
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        profile.last_active = timezone.now()
-        profile.save(update_fields=['last_active'])
-        return Response({'status': 'ok'})
+        now = timezone.now()
+        should_update = (
+            profile.last_active is None or
+            (now - profile.last_active).total_seconds() >= HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS
+        )
+        if should_update:
+            profile.last_active = now
+            profile.save(update_fields=['last_active'])
+        return Response({'status': 'ok', 'updated': should_update})
 
 
 # ── Wallet views ──────────────────────────────────────────────────────────────
@@ -828,8 +841,21 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
 
     def get(self, request):
         requests_qs = TopUpRequest.objects.filter(user=request.user)
-        return Response(TopUpRequestSerializer(requests_qs, many=True,
-                                               context={'request': request}).data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_TOPUP_REQUEST_PAGE_SIZE,
+            max_limit=MAX_TOPUP_REQUEST_PAGE_SIZE,
+        )
+        total_count = requests_qs.count()
+        topup_requests = requests_qs[offset:offset + limit]
+        return Response({
+            'topup_requests': TopUpRequestSerializer(
+                topup_requests,
+                many=True,
+                context={'request': request},
+            ).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
 
     def post(self, request):
         serializer = CreateTopUpRequestSerializer(data=request.data)

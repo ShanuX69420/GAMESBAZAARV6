@@ -428,7 +428,11 @@ class TopUpRequest(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                              related_name='topup_requests')
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('1.00'))],
+    )
     payment_method = models.CharField(max_length=200, blank=True, default='',
                                        help_text='e.g., JazzCash, EasyPaisa, Bank Transfer')
     payment_proof = models.ImageField(upload_to='topup_proofs/', blank=True, null=True,
@@ -450,6 +454,12 @@ class TopUpRequest(models.Model):
             models.Index(
                 fields=['status', '-created_at'],
                 name='topup_status_created_idx',
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(amount__gte=Decimal('1.00')),
+                name='topup_amount_min_1',
             ),
         ]
 

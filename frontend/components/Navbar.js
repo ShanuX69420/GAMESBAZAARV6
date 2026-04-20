@@ -8,6 +8,7 @@ import { getUnreadCount, sendHeartbeat, searchMarketplace } from '@/lib/api';
 
 const UNREAD_POLL_INTERVAL_MS = 15000;
 const SEARCH_DEBOUNCE_MS = 300;
+const HEARTBEAT_INTERVAL_MS = 60000;
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -24,6 +25,7 @@ export default function Navbar() {
   const searchRef = useRef(null);
   const mobileSearchRef = useRef(null);
   const debounceRef = useRef(null);
+  const searchRequestRef = useRef(0);
 
   const fetchUnread = useCallback(() => {
     if (!user) return;
@@ -63,17 +65,22 @@ export default function Navbar() {
     };
   }, [user, fetchUnread]);
 
-  // Heartbeat — keep user online while site is open (every 60s)
+  // Heartbeat - keep user online while the site is open.
   useEffect(() => {
     if (!user) return;
     sendHeartbeat();
-    const hb = setInterval(() => sendHeartbeat(), 60000);
-    return () => clearInterval(hb);
+    const hb = setInterval(() => sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      clearInterval(hb);
+    };
   }, [user]);
 
   // ── Search logic ──────────────────────────────────────────────────────
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
     if (!searchQuery || searchQuery.length < 2) {
       setSearchResults(null);
       setSearchLoading(false);
@@ -83,12 +90,16 @@ export default function Navbar() {
     debounceRef.current = setTimeout(async () => {
       try {
         const data = await searchMarketplace(searchQuery);
+        if (searchRequestRef.current !== requestId) return;
         setSearchResults(data);
         setSearchOpen(true);
       } catch {
+        if (searchRequestRef.current !== requestId) return;
         setSearchResults(null);
       } finally {
-        setSearchLoading(false);
+        if (searchRequestRef.current === requestId) {
+          setSearchLoading(false);
+        }
       }
     }, SEARCH_DEBOUNCE_MS);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
