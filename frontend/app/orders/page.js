@@ -169,6 +169,7 @@ export default function OrdersPage() {
                 </Link>
                 {(order.status === 'pending' || order.status === 'delivered') && (
                   <>
+                    {order.status === 'delivered' && (
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => handleConfirm(order.id)}
@@ -176,6 +177,7 @@ export default function OrdersPage() {
                     >
                       {actionLoading === order.id ? 'Processing...' : '✅ Confirm Received'}
                     </button>
+                    )}
                     <button
                       className="btn btn-outline btn-sm"
                       onClick={() => { setDisputeModal(order.id); setDisputeReason(''); }}

@@ -24,6 +24,7 @@ from .models import (
     Listing, Message, Order, Review,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
+from .serializers import WalletTransactionSerializer
 
 
 def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
@@ -136,6 +137,10 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(buy_response.status_code, 201)
 
         order_id = buy_response.data['id']
+        order = Order.objects.get(pk=order_id)
+        order.status = 'delivered'
+        order.save(update_fields=['status'])
+
         confirm_response = self.client.post(
             f'/api/orders/{order_id}/confirm/',
             {},
@@ -151,6 +156,20 @@ class PurchaseFlowTests(TestCase):
 
         seller_wallet = Wallet.objects.get(user=self.seller)
         self.assertEqual(seller_wallet.balance, Decimal('45.00'))
+        sale_tx = WalletTransaction.objects.get(
+            wallet=seller_wallet,
+            transaction_type='sale',
+            reference_id=f'order_{order_id}',
+        )
+        commission_tx = WalletTransaction.objects.get(
+            wallet=seller_wallet,
+            transaction_type='commission',
+            reference_id=f'order_{order_id}',
+        )
+        self.assertEqual(sale_tx.amount, Decimal('50.00'))
+        self.assertEqual(sale_tx.balance_after, Decimal('50.00'))
+        self.assertEqual(commission_tx.amount, Decimal('5.00'))
+        self.assertEqual(commission_tx.balance_after, Decimal('45.00'))
 
     def test_completed_order_refund_reverses_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
@@ -171,6 +190,9 @@ class PurchaseFlowTests(TestCase):
         )
         self.assertEqual(buy_response.status_code, 201)
         order_id = buy_response.data['id']
+        order = Order.objects.get(pk=order_id)
+        order.status = 'delivered'
+        order.save(update_fields=['status'])
 
         confirm_response = self.client.post(
             f'/api/orders/{order_id}/confirm/',
@@ -202,6 +224,22 @@ class PurchaseFlowTests(TestCase):
         seller_wallet = Wallet.objects.get(user=self.seller)
         self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
         self.assertEqual(seller_wallet.balance, Decimal('0.00'))
+        seller_refund_tx = WalletTransaction.objects.get(
+            wallet=seller_wallet,
+            transaction_type='refund',
+            reference_id=f'order_{order_id}',
+        )
+        buyer_refund_tx = WalletTransaction.objects.get(
+            wallet=self.buyer_wallet,
+            transaction_type='refund',
+            reference_id=f'order_{order_id}',
+        )
+        seller_refund_data = WalletTransactionSerializer(seller_refund_tx).data
+        buyer_refund_data = WalletTransactionSerializer(buyer_refund_tx).data
+        self.assertTrue(seller_refund_data['is_debit'])
+        self.assertEqual(seller_refund_data['display_amount'], '45.00')
+        self.assertFalse(buyer_refund_data['is_debit'])
+        self.assertEqual(buyer_refund_data['display_amount'], '50.00')
 
     def test_create_listing_rejects_non_positive_price(self):
         self.client.force_authenticate(user=self.seller)
@@ -482,6 +520,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'chat_upload': '1/min',
         'topup_request': '1/min',
         'heartbeat': '1/min',
+        'search': '1/min',
     },
 }
 
@@ -497,6 +536,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/chat/1/send-image/': 'chat_upload',
             '/api/wallet/top-up/': 'topup_request',
             '/api/heartbeat/': 'heartbeat',
+            '/api/search/': 'search',
         }
 
         for path, scope in cases.items():
@@ -619,6 +659,13 @@ class ApiThrottleBehaviorTests(TestCase):
         )
 
         self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 429)
+
+    def test_search_is_rate_limited(self):
+        first = self.client.get('/api/search/?q=Valorant')
+        second = self.client.get('/api/search/?q=Valorant')
+
+        self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
 
 
@@ -1167,6 +1214,21 @@ class AccessControlTests(TestCase):
 
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
+
+    def test_buyer_cannot_confirm_pending_order(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            f'/api/orders/{self.order.id}/confirm/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'pending')
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
 
     def test_chat_non_participant_cannot_read_or_send(self):
         self.client.force_authenticate(user=self.intruder)
@@ -1872,22 +1934,20 @@ class DisputeResolutionApiTests(TestCase):
         self.assertEqual(order.status, 'completed')
         self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
         self.assertEqual(self.seller_wallet.balance, Decimal('90.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
+        sale_tx = WalletTransaction.objects.get(
+            wallet=self.seller_wallet,
+            transaction_type='sale',
+            reference_id=f'order_{order.pk}',
         )
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='commission',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
+        commission_tx = WalletTransaction.objects.get(
+            wallet=self.seller_wallet,
+            transaction_type='commission',
+            reference_id=f'order_{order.pk}',
         )
+        self.assertEqual(sale_tx.amount, Decimal('100.00'))
+        self.assertEqual(sale_tx.balance_after, Decimal('100.00'))
+        self.assertEqual(commission_tx.amount, Decimal('10.00'))
+        self.assertEqual(commission_tx.balance_after, Decimal('90.00'))
         entry = PlatformLedgerEntry.objects.get(
             entry_type='commission_collected',
             reference_id=f'order_{order.pk}',
@@ -2038,22 +2098,20 @@ class AdminMoneyActionTests(TestCase):
         self.seller_wallet.refresh_from_db()
         self.assertEqual(order.status, 'completed')
         self.assertEqual(self.seller_wallet.balance, Decimal('90.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
+        sale_tx = WalletTransaction.objects.get(
+            wallet=self.seller_wallet,
+            transaction_type='sale',
+            reference_id=f'order_{order.pk}',
         )
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='commission',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
+        commission_tx = WalletTransaction.objects.get(
+            wallet=self.seller_wallet,
+            transaction_type='commission',
+            reference_id=f'order_{order.pk}',
         )
+        self.assertEqual(sale_tx.amount, Decimal('100.00'))
+        self.assertEqual(sale_tx.balance_after, Decimal('100.00'))
+        self.assertEqual(commission_tx.amount, Decimal('10.00'))
+        self.assertEqual(commission_tx.balance_after, Decimal('90.00'))
         entry = PlatformLedgerEntry.objects.get(
             entry_type='commission_collected',
             reference_id=f'order_{order.pk}',
@@ -2122,6 +2180,55 @@ class ConcurrentPurchaseFlowTests(TransactionTestCase):
 
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('75.00'))
+
+
+class ConcurrentConversationCreationTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+
+    def test_concurrent_start_conversation_creates_one_private_thread(self):
+        barrier = Barrier(2)
+        results = [None, None]
+
+        def post(index):
+            client = APIClient()
+            client.force_authenticate(user=self.buyer)
+            try:
+                barrier.wait(timeout=5)
+                response = client.post(
+                    '/api/chat/start/',
+                    {
+                        'user_id': self.seller.id,
+                        'message': f'hello {index}',
+                    },
+                    format='json',
+                )
+                results[index] = response.status_code
+            except Exception as exc:
+                results[index] = exc
+            finally:
+                connections.close_all()
+
+        threads = [Thread(target=post, args=(index,)) for index in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertEqual(results.count(201), 2, results)
+        conversations = Conversation.objects.filter(
+            participants=self.buyer
+        ).filter(
+            participants=self.seller
+        ).distinct()
+        self.assertEqual(conversations.count(), 1)
+        self.assertEqual(
+            Message.objects.filter(conversation=conversations.get()).count(),
+            2,
+        )
 
 
 class ConcurrentOrderStateTransitionTests(TransactionTestCase):
@@ -2246,7 +2353,7 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             1,
         )
 
-    def test_concurrent_deliver_and_confirm_cannot_reopen_paid_order(self):
+    def test_concurrent_deliver_and_confirm_never_confirms_before_delivery(self):
         order = self.create_order(status='pending')
 
         results = self.post_pairs_concurrently([
@@ -2263,21 +2370,24 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
         ])
 
         self.assertIn(results[0], (200, 400), results)
-        self.assertEqual(results[1], 200, results)
+        self.assertIn(results[1], (200, 400), results)
+        self.assertIn(200, results)
 
         order.refresh_from_db()
-        self.assertEqual(order.status, 'completed')
+        sale_count = WalletTransaction.objects.filter(
+            wallet=self.seller_wallet,
+            transaction_type='sale',
+            reference_id=f'order_{order.id}',
+        ).count()
 
         self.seller_wallet.refresh_from_db()
-        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.id}',
-            ).count(),
-            1,
-        )
+        if sale_count:
+            self.assertEqual(order.status, 'completed')
+            self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+        else:
+            self.assertEqual(order.status, 'delivered')
+            self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertLessEqual(sale_count, 1)
 
     def test_concurrent_dispute_and_confirm_cannot_dispute_paid_order(self):
         order = self.create_order(status='pending')
@@ -2299,19 +2409,16 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
         self.assertEqual(results.count(400), 1, results)
 
         order.refresh_from_db()
-        sale_count = WalletTransaction.objects.filter(
-            wallet=self.seller_wallet,
-            transaction_type='sale',
-            reference_id=f'order_{order.id}',
-        ).count()
-
         self.seller_wallet.refresh_from_db()
-        if sale_count:
-            self.assertEqual(order.status, 'completed')
-            self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-        else:
-            self.assertEqual(order.status, 'disputed')
-            self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertEqual(order.status, 'disputed')
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.id}',
+            ).exists()
+        )
 
     def test_concurrent_refund_reverses_completed_order_once(self):
         order = self.create_order(status='completed')
@@ -2764,6 +2871,7 @@ class SearchTests(TestCase):
     """Tests for GET /api/search/?q=<query> - game-category search."""
 
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
 
         # Create games
@@ -2913,6 +3021,12 @@ class SearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['query'], 'V')
         self.assertEqual(response.data['results'], [])
+
+    def test_search_rejects_overlong_query(self):
+        response = self.client.get('/api/search/?q=' + 'x' * 81)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.data)
 
     def test_search_no_match_returns_empty(self):
         response = self.client.get('/api/search/?q=zzzznonexistent')

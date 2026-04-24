@@ -270,21 +270,25 @@ export default function WalletPage() {
                 </tr>
               </thead>
               <tbody>
-                {walletData.transactions.map((txn) => (
-                  <tr key={txn.id}>
-                    <td>
-                      <span className={`txn-type txn-${txn.transaction_type}`}>
-                        {txn.transaction_type_display}
-                      </span>
-                    </td>
-                    <td className={`txn-amount ${['purchase', 'commission'].includes(txn.transaction_type) ? 'txn-debit' : 'txn-credit'}`}>
-                      {['purchase', 'commission'].includes(txn.transaction_type) ? '-' : '+'}PKR {txn.amount}
-                    </td>
-                    <td>PKR {txn.balance_after}</td>
-                    <td className="txn-desc">{txn.description}</td>
-                    <td>{new Date(txn.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
+                {walletData.transactions.map((txn) => {
+                  const isDebit = Boolean(txn.is_debit);
+                  const displayAmount = txn.display_amount ?? txn.amount;
+                  return (
+                    <tr key={txn.id}>
+                      <td>
+                        <span className={`txn-type txn-${txn.transaction_type}`}>
+                          {txn.transaction_type_display}
+                        </span>
+                      </td>
+                      <td className={`txn-amount ${isDebit ? 'txn-debit' : 'txn-credit'}`}>
+                        {isDebit ? '-' : '+'}PKR {displayAmount}
+                      </td>
+                      <td>PKR {txn.balance_after}</td>
+                      <td className="txn-desc">{txn.description}</td>
+                      <td>{new Date(txn.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {transactionPagination?.next_offset !== null && transactionPagination?.next_offset !== undefined && (

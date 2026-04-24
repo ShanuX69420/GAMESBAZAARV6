@@ -140,6 +140,28 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Cache. DRF throttles use Django's default cache, so production must use a
+# shared backend instead of per-process local memory.
+CACHE_REDIS_URL = os.environ.get('CACHE_REDIS_URL') or os.environ.get('CHANNEL_REDIS_URL')
+if CACHE_REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': CACHE_REDIS_URL,
+        },
+    }
+elif DEBUG:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'gamesbazaar-dev',
+        },
+    }
+else:
+    raise ImproperlyConfigured(
+        'CACHE_REDIS_URL or CHANNEL_REDIS_URL is required when DJANGO_DEBUG=False.'
+    )
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -158,6 +180,7 @@ REST_FRAMEWORK = {
         'chat_upload': '20/min',
         'topup_request': '10/hour',
         'heartbeat': '120/hour',
+        'search': '120/min',
     },
 }
 

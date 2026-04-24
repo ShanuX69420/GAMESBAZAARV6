@@ -23,6 +23,7 @@ CORS_ALLOWED_ORIGINS=https://www.example.com
 CSRF_TRUSTED_ORIGINS=https://www.example.com
 
 CHANNEL_REDIS_URL=redis://replace-with-redis-host:6379/0
+CACHE_REDIS_URL=redis://replace-with-redis-host:6379/1
 JWT_AUTH_COOKIE_SECURE=True
 SESSION_COOKIE_SECURE=True
 CSRF_COOKIE_SECURE=True
@@ -37,6 +38,7 @@ Notes:
 - `DJANGO_ALLOWED_HOSTS` must list only real backend hostnames. Do not use `*`.
 - `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` must list the frontend origin exactly, including `https://`.
 - `CHANNEL_REDIS_URL` is required when `DJANGO_DEBUG=False` because chat uses Channels.
+- `CACHE_REDIS_URL` should point to shared Redis for rate limiting. If omitted, the backend falls back to `CHANNEL_REDIS_URL`.
 - Keep `JWT_AUTH_COOKIE_SECURE=True` so auth cookies are only sent over HTTPS.
 
 ## Frontend Environment

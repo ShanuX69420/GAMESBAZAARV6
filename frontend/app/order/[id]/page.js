@@ -276,6 +276,7 @@ export default function OrderDetailPage() {
               {/* Buyer actions */}
               {isBuyer && (order.status === 'pending' || order.status === 'delivered') && (
                 <>
+                  {order.status === 'delivered' && (
                   <button
                     className="btn btn-primary"
                     onClick={handleConfirm}
@@ -283,6 +284,7 @@ export default function OrderDetailPage() {
                   >
                     {actionLoading ? 'Processing...' : '✅ Confirm Received'}
                   </button>
+                  )}
                   <button
                     className="btn btn-outline"
                     onClick={() => { setDisputeModal(true); setDisputeReason(''); }}

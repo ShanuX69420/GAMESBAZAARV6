@@ -55,6 +55,49 @@ def apply_wallet_delta_once(user, *, delta, transaction_type, amount, descriptio
     return wallet, True
 
 
+def release_order_funds_to_seller_once(order, *, sale_description, commission_description, ledger_description):
+    """Credit gross sale proceeds, then debit commission, once per order."""
+    wallet = get_or_create_locked_wallet(order.seller)
+    reference_id = f'order_{order.pk}'
+    if WalletTransaction.objects.filter(
+        wallet=wallet,
+        transaction_type='sale',
+        reference_id=reference_id,
+    ).exists():
+        return wallet, False
+
+    wallet.balance += order.total_amount
+    wallet.save(update_fields=['balance', 'updated_at'])
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        transaction_type='sale',
+        amount=order.total_amount,
+        balance_after=wallet.balance,
+        description=sale_description,
+        reference_id=reference_id,
+    )
+
+    if order.commission_amount > 0:
+        wallet.balance -= order.commission_amount
+        wallet.save(update_fields=['balance', 'updated_at'])
+        WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type='commission',
+            amount=order.commission_amount,
+            balance_after=wallet.balance,
+            description=commission_description,
+            reference_id=reference_id,
+        )
+        record_platform_ledger_once(
+            entry_type='commission_collected',
+            amount=order.commission_amount,
+            description=ledger_description,
+            reference_id=reference_id,
+        )
+
+    return wallet, True
+
+
 def record_platform_ledger_once(*, entry_type, amount, description, reference_id):
     """Record a platform ledger entry once per entry type/reference pair."""
     if not amount:

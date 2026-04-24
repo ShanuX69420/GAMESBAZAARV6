@@ -449,14 +449,31 @@ class WalletTransactionSerializer(serializers.ModelSerializer):
     transaction_type_display = serializers.CharField(
         source='get_transaction_type_display', read_only=True
     )
+    signed_amount = serializers.SerializerMethodField()
+    display_amount = serializers.SerializerMethodField()
+    is_debit = serializers.SerializerMethodField()
 
     class Meta:
         model = WalletTransaction
         fields = [
             'id', 'transaction_type', 'transaction_type_display',
-            'amount', 'balance_after', 'description', 'reference_id',
-            'created_at',
+            'amount', 'signed_amount', 'display_amount', 'is_debit',
+            'balance_after', 'description', 'reference_id', 'created_at',
         ]
+
+    def get_signed_amount(self, obj):
+        amount = obj.amount
+        if obj.transaction_type in ('purchase', 'commission'):
+            amount = -abs(amount)
+        elif obj.transaction_type == 'refund' and obj.description.startswith('Refund issued:'):
+            amount = -abs(amount)
+        return str(amount)
+
+    def get_display_amount(self, obj):
+        return str(abs(Decimal(self.get_signed_amount(obj))))
+
+    def get_is_debit(self, obj):
+        return Decimal(self.get_signed_amount(obj)) < 0
 
 
 class TopUpRequestSerializer(serializers.ModelSerializer):

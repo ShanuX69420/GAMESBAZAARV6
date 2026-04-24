@@ -13,7 +13,7 @@ from .models import (
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
-    record_platform_ledger_once,
+    release_order_funds_to_seller_once,
 )
 
 
@@ -246,30 +246,12 @@ class OrderAdmin(admin.ModelAdmin):
                 if order.status != 'disputed':
                     continue
 
-                apply_wallet_delta_once(
-                    order.seller,
-                    delta=order.seller_amount,
-                    transaction_type='sale',
-                    amount=order.seller_amount,
-                    description=f'Dispute resolved (seller): {order.listing_title}',
-                    reference_id=f'order_{order.pk}',
+                release_order_funds_to_seller_once(
+                    order,
+                    sale_description=f'Dispute resolved (seller): {order.listing_title}',
+                    commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                    ledger_description=f'Commission collected: {order.listing_title}',
                 )
-
-                if order.commission_amount > 0:
-                    apply_wallet_delta_once(
-                        order.seller,
-                        delta=0,
-                        transaction_type='commission',
-                        amount=order.commission_amount,
-                        description=f'Commission ({order.commission_rate}%): {order.listing_title}',
-                        reference_id=f'order_{order.pk}',
-                    )
-                    record_platform_ledger_once(
-                        entry_type='commission_collected',
-                        amount=order.commission_amount,
-                        description=f'Commission collected: {order.listing_title}',
-                        reference_id=f'order_{order.pk}',
-                    )
 
                 order.status = 'completed'
                 order.save(update_fields=['status', 'updated_at'])

@@ -1,4 +1,5 @@
 from decimal import Decimal
+import hashlib
 import mimetypes
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -10,6 +11,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core import signing
@@ -40,6 +42,7 @@ from .services import (
     decode_private_media_ticket,
     apply_wallet_delta_once,
     get_or_create_locked_wallet,
+    release_order_funds_to_seller_once,
     record_platform_ledger_once,
     ALLOWED_IMAGE_CONTENT_TYPES,
     validate_chat_message_content,
@@ -63,6 +66,9 @@ MAX_ORDER_PAGE_SIZE = 100
 DEFAULT_REVIEW_PAGE_SIZE = 20
 MAX_REVIEW_PAGE_SIZE = 100
 HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS = 30
+MAX_SEARCH_QUERY_LENGTH = 80
+SEARCH_CACHE_SECONDS = 60
+SEARCH_RESULT_LIMIT = 50
 
 
 class ScopedPostThrottleMixin:
@@ -151,6 +157,24 @@ def broadcast_chat_message(message, request):
             },
         )
     return message_data
+
+
+def get_or_create_private_conversation(user, other_user):
+    """Create a two-person conversation while serializing concurrent creators."""
+    user_ids = sorted([user.pk, other_user.pk])
+    with db_transaction.atomic():
+        list(User.objects.select_for_update().filter(pk__in=user_ids).order_by('pk'))
+        conversation = Conversation.objects.filter(
+            participants=user
+        ).filter(
+            participants=other_user
+        ).first()
+        if conversation:
+            return conversation, False
+
+        conversation = Conversation.objects.create()
+        conversation.participants.add(user, other_user)
+        return conversation, True
 
 
 class GameListView(generics.ListAPIView):
@@ -564,16 +588,7 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
 
         other_user = get_object_or_404(User, id=other_user_id)
 
-        # Find existing conversation between these two users
-        conversation = Conversation.objects.filter(
-            participants=request.user
-        ).filter(
-            participants=other_user
-        ).first()
-
-        if not conversation:
-            conversation = Conversation.objects.create()
-            conversation.participants.add(request.user, other_user)
+        conversation, _ = get_or_create_private_conversation(request.user, other_user)
 
         # Send initial message if provided
         if initial_message:
@@ -1000,16 +1015,7 @@ class BuyListingView(APIView):
                     listing.status = 'sold'
                 listing.save(update_fields=['quantity', 'status'])
 
-            # Auto-create or find conversation for the order
-            conversation = Conversation.objects.filter(
-                participants=request.user
-            ).filter(
-                participants=listing.seller
-            ).first()
-
-            if not conversation:
-                conversation = Conversation.objects.create()
-                conversation.participants.add(request.user, listing.seller)
+            conversation, _ = get_or_create_private_conversation(request.user, listing.seller)
 
             order.conversation = conversation
             order.save(update_fields=['conversation'])
@@ -1081,15 +1087,7 @@ class OrderDetailView(APIView):
 
         # Auto-link conversation if missing
         if not order.conversation:
-            conversation = Conversation.objects.filter(
-                participants=order.buyer
-            ).filter(
-                participants=order.seller
-            ).first()
-
-            if not conversation:
-                conversation = Conversation.objects.create()
-                conversation.participants.add(order.buyer, order.seller)
+            conversation, _ = get_or_create_private_conversation(order.buyer, order.seller)
 
             order.conversation = conversation
             order.save(update_fields=['conversation'])
@@ -1135,40 +1133,15 @@ class ConfirmOrderView(APIView):
             if order.status == 'completed':
                 return Response(OrderSerializer(order).data)
 
-            if order.status not in ('pending', 'delivered'):
+            if order.status != 'delivered':
                 return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
 
-            # Release funds to seller (minus commission)
-            seller_wallet = get_or_create_locked_wallet(order.seller)
-            seller_wallet.balance += order.seller_amount
-            seller_wallet.save(update_fields=['balance', 'updated_at'])
-
-            # Log sale transaction for seller
-            WalletTransaction.objects.create(
-                wallet=seller_wallet,
-                transaction_type='sale',
-                amount=order.seller_amount,
-                balance_after=seller_wallet.balance,
-                description=f'Sale completed: {order.listing_title} (x{order.quantity})',
-                reference_id=f'order_{order.pk}',
+            release_order_funds_to_seller_once(
+                order,
+                sale_description=f'Sale completed: {order.listing_title} (x{order.quantity})',
+                commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
-
-            # Log commission transaction for seller
-            if order.commission_amount > 0:
-                WalletTransaction.objects.create(
-                    wallet=seller_wallet,
-                    transaction_type='commission',
-                    amount=order.commission_amount,
-                    balance_after=seller_wallet.balance,
-                    description=f'Commission ({order.commission_rate}%): {order.listing_title}',
-                    reference_id=f'order_{order.pk}',
-                )
-                record_platform_ledger_once(
-                    entry_type='commission_collected',
-                    amount=order.commission_amount,
-                    description=f'Commission collected: {order.listing_title} (x{order.quantity})',
-                    reference_id=f'order_{order.pk}',
-                )
 
             order.status = 'completed'
             order.save(update_fields=['status', 'updated_at'])
@@ -1242,31 +1215,12 @@ class ResolveDisputeView(APIView):
 
                 order.status = 'cancelled'
             else:
-                apply_wallet_delta_once(
-                    order.seller,
-                    delta=order.seller_amount,
-                    transaction_type='sale',
-                    amount=order.seller_amount,
-                    description=f'Dispute resolved (seller): {order.listing_title}',
-                    reference_id=f'order_{order.pk}',
+                release_order_funds_to_seller_once(
+                    order,
+                    sale_description=f'Dispute resolved (seller): {order.listing_title}',
+                    commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                    ledger_description=f'Commission collected: {order.listing_title}',
                 )
-
-                if order.commission_amount > 0:
-                    apply_wallet_delta_once(
-                        order.seller,
-                        delta=0,
-                        transaction_type='commission',
-                        amount=order.commission_amount,
-                        description=f'Commission ({order.commission_rate}%): {order.listing_title}',
-                        reference_id=f'order_{order.pk}',
-                    )
-                    record_platform_ledger_once(
-                        entry_type='commission_collected',
-                        amount=order.commission_amount,
-                        description=f'Commission collected: {order.listing_title}',
-                        reference_id=f'order_{order.pk}',
-                    )
-
                 order.status = 'completed'
 
             order.save(update_fields=['status', 'updated_at'])
@@ -1452,11 +1406,25 @@ class SellerProfileView(APIView):
 class SearchView(APIView):
     """GET /api/search/?q=<query> — Search game-categories."""
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'search'
 
     def get(self, request):
         query = request.query_params.get('q', '').strip()
         if not query or len(query) < 2:
             return Response({'query': query, 'results': []})
+        if len(query) > MAX_SEARCH_QUERY_LENGTH:
+            return Response({
+                'error': f'Search query cannot be longer than {MAX_SEARCH_QUERY_LENGTH} characters.',
+            }, status=400)
+
+        normalized_query = ' '.join(query.split()).casefold()
+        cache_key = 'search:v1:' + hashlib.sha256(
+            normalized_query.encode('utf-8')
+        ).hexdigest()
+        cached_results = cache.get(cache_key)
+        if cached_results is not None:
+            return Response({'query': query, 'results': cached_results})
 
         # Search GameCategory via game name, game keywords, or category name
         game_categories = GameCategory.objects.filter(
@@ -1467,7 +1435,7 @@ class SearchView(APIView):
             Q(category__name__icontains=query)
         ).select_related('game', 'category').order_by(
             'game__order', 'game__name', 'order', 'category__name'
-        )[:50]
+        )[:SEARCH_RESULT_LIMIT]
 
         results = []
         for gc in game_categories:
@@ -1484,4 +1452,5 @@ class SearchView(APIView):
                 'category_slug': gc.category.slug,
             })
 
+        cache.set(cache_key, results, SEARCH_CACHE_SECONDS)
         return Response({'query': query, 'results': results})
