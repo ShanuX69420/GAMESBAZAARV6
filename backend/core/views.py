@@ -19,6 +19,7 @@ from django.http import FileResponse, Http404
 from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db import transaction as db_transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
@@ -143,6 +144,15 @@ def get_pagination_payload(total_count, limit, offset):
         'next_offset': next_offset,
         'previous_offset': previous_offset,
     }
+
+
+def parse_query_date(value):
+    if not value:
+        return None
+    try:
+        return parse_date(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def create_notification(*, recipient, notification_type, title, message='', order=None, review=None):
@@ -928,6 +938,12 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
 
         # Handle payment proof image upload
         payment_proof = request.FILES.get('payment_proof')
+        if not payment_proof:
+            return Response(
+                {'payment_proof': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if payment_proof:
             validation_error = validate_uploaded_image(payment_proof)
             if validation_error:
@@ -1119,13 +1135,43 @@ class BuyListingView(APIView):
 
 
 class MyOrdersView(APIView):
-    """GET /api/orders/mine/ — Orders where I'm the buyer."""
+    """GET /api/orders/mine/ — Orders where I'm the buyer.
+    Query params: status, search, date_from, date_to, limit, offset
+    """
     permission_classes = [permissions.IsAuthenticated]
+
+    def _apply_filters(self, request, orders_qs):
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter:
+            orders_qs = orders_qs.filter(status=status_filter)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            orders_qs = orders_qs.filter(
+                Q(listing_title__icontains=search) | Q(seller__username__icontains=search)
+            )
+
+        date_from = request.query_params.get('date_from', '').strip()
+        if date_from:
+            parsed_date = parse_query_date(date_from)
+            if parsed_date:
+                orders_qs = orders_qs.filter(created_at__date__gte=parsed_date)
+
+        date_to = request.query_params.get('date_to', '').strip()
+        if date_to:
+            parsed_date = parse_query_date(date_to)
+            if parsed_date:
+                orders_qs = orders_qs.filter(created_at__date__lte=parsed_date)
+
+        return orders_qs
 
     def get(self, request):
         orders_qs = Order.objects.filter(
             buyer=request.user
         ).select_related('listing', 'seller', 'conversation')
+
+        orders_qs = self._apply_filters(request, orders_qs)
+
         limit, offset = get_pagination_params(
             request,
             default_limit=DEFAULT_ORDER_PAGE_SIZE,
@@ -1133,20 +1179,57 @@ class MyOrdersView(APIView):
         )
         total_count = orders_qs.count()
         orders = orders_qs[offset:offset + limit]
+        # Status counts (unfiltered) for tab badges
+        status_counts = Order.objects.filter(buyer=request.user).values('status').annotate(
+            count=Count('id')
+        )
+        counts = {item['status']: item['count'] for item in status_counts}
+
         return Response({
             'orders': OrderSerializer(orders, many=True).data,
             'pagination': get_pagination_payload(total_count, limit, offset),
+            'status_counts': counts,
         })
 
 
 class MySalesView(APIView):
-    """GET /api/orders/sales/ — Orders where I'm the seller."""
+    """GET /api/orders/sales/ — Orders where I'm the seller.
+    Query params: status, search, date_from, date_to, limit, offset
+    """
     permission_classes = [permissions.IsAuthenticated]
+
+    def _apply_filters(self, request, orders_qs):
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter:
+            orders_qs = orders_qs.filter(status=status_filter)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            orders_qs = orders_qs.filter(
+                Q(listing_title__icontains=search) | Q(buyer__username__icontains=search)
+            )
+
+        date_from = request.query_params.get('date_from', '').strip()
+        if date_from:
+            parsed_date = parse_query_date(date_from)
+            if parsed_date:
+                orders_qs = orders_qs.filter(created_at__date__gte=parsed_date)
+
+        date_to = request.query_params.get('date_to', '').strip()
+        if date_to:
+            parsed_date = parse_query_date(date_to)
+            if parsed_date:
+                orders_qs = orders_qs.filter(created_at__date__lte=parsed_date)
+
+        return orders_qs
 
     def get(self, request):
         orders_qs = Order.objects.filter(
             seller=request.user
         ).select_related('listing', 'buyer', 'conversation')
+
+        orders_qs = self._apply_filters(request, orders_qs)
+
         limit, offset = get_pagination_params(
             request,
             default_limit=DEFAULT_ORDER_PAGE_SIZE,
@@ -1154,16 +1237,23 @@ class MySalesView(APIView):
         )
         total_count = orders_qs.count()
         orders = orders_qs[offset:offset + limit]
+        # Status counts (unfiltered) for tab badges
+        status_counts = Order.objects.filter(seller=request.user).values('status').annotate(
+            count=Count('id')
+        )
+        counts = {item['status']: item['count'] for item in status_counts}
         summary = Order.objects.filter(seller=request.user).aggregate(
             pending_count=Count('id', filter=Q(status='pending')),
             completed_count=Count('id', filter=Q(status='completed')),
             total_revenue=Sum('seller_amount', filter=Q(status='completed')),
         )
         summary['total_revenue'] = str(summary['total_revenue'] or Decimal('0.00'))
+
         return Response({
             'sales': OrderSerializer(orders, many=True).data,
             'pagination': get_pagination_payload(total_count, limit, offset),
             'summary': summary,
+            'status_counts': counts,
         })
 
 

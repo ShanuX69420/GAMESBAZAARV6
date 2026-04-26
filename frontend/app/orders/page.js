@@ -1,84 +1,89 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getMyOrders, confirmOrder, disputeOrder } from '@/lib/api';
+import { getMyOrders } from '@/lib/api';
 
 const ORDER_PAGE_SIZE = 20;
+
+const STATUS_TABS = [
+  { key: '', label: 'All Orders', icon: '📋' },
+  { key: 'pending', label: 'Pending', icon: '⏳' },
+  { key: 'delivered', label: 'Delivered', icon: '📦' },
+  { key: 'completed', label: 'Completed', icon: '✅' },
+  { key: 'disputed', label: 'Disputed', icon: '⚠️' },
+  { key: 'cancelled', label: 'Cancelled', icon: '❌' },
+];
 
 export default function OrdersPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [pagination, setPagination] = useState(null);
+  const [statusCounts, setStatusCounts] = useState({});
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [actionLoading, setActionLoading] = useState(null);
-  const [disputeModal, setDisputeModal] = useState(null);
-  const [disputeReason, setDisputeReason] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+
+  // Filter state
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
 
-  useEffect(() => {
-    if (user) loadOrders();
-  }, [user]);
-
-  async function loadOrders({ append = false, offset = 0 } = {}) {
+  const loadOrders = useCallback(async ({ append = false, offset = 0 } = {}) => {
+    const requestId = ++latestRequestId.current;
     if (append) {
       setLoadingMore(true);
     } else {
       setLoadingOrders(true);
     }
     try {
-      const data = await getMyOrders({ limit: ORDER_PAGE_SIZE, offset });
+      const data = await getMyOrders({
+        limit: ORDER_PAGE_SIZE,
+        offset,
+        status: statusFilter || undefined,
+        search: debouncedSearchQuery || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      });
+      if (requestId !== latestRequestId.current) return;
       setOrders(prev => append ? [...prev, ...(data.orders || [])] : (data.orders || []));
       setPagination(data.pagination || null);
+      if (data.status_counts) setStatusCounts(data.status_counts);
     } catch (err) {
-      console.error(err);
+      if (requestId === latestRequestId.current) console.error(err);
     } finally {
-      setLoadingOrders(false);
-      setLoadingMore(false);
+      if (requestId === latestRequestId.current) {
+        setLoadingOrders(false);
+        setLoadingMore(false);
+      }
     }
+  }, [statusFilter, debouncedSearchQuery, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (user) loadOrders();
+  }, [user, loadOrders]);
+
+  function handleSearchChange(e) {
+    const val = e.target.value;
+    setSearchQuery(val);
   }
 
-  async function handleConfirm(orderId) {
-    setError('');
-    setSuccess('');
-    setActionLoading(orderId);
-    try {
-      await confirmOrder(orderId);
-      setSuccess('Order confirmed! Funds released to seller.');
-      await loadOrders();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function handleDispute(orderId) {
-    if (!disputeReason.trim()) return;
-    setError('');
-    setSuccess('');
-    setActionLoading(orderId);
-    try {
-      await disputeOrder(orderId, disputeReason);
-      setSuccess('Dispute opened. Admin will review your case.');
-      setDisputeModal(null);
-      setDisputeReason('');
-      await loadOrders();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
+  // Debounce search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   function getStatusIcon(status) {
     switch (status) {
@@ -90,6 +95,25 @@ export default function OrdersPage() {
       default: return '📋';
     }
   }
+
+  function formatDateTime(isoString) {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-PK', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    }) + ', ' + d.toLocaleTimeString('en-PK', {
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  }
+
+  function clearFilters() {
+    setStatusFilter('');
+    setSearchQuery('');
+    setDebouncedSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+  }
+
+  const hasActiveFilters = statusFilter || searchQuery || dateFrom || dateTo;
 
   if (loading || !user) {
     return (
@@ -106,15 +130,85 @@ export default function OrdersPage() {
         <p className="page-subtitle">Track your purchases</p>
       </div>
 
-      {success && <div className="alert alert-success">{success}</div>}
-      {error && <div className="alert alert-error">{error}</div>}
+      {/* Filter Toolbar */}
+      <div className="orders-filter-toolbar">
+        {/* Status Tabs */}
+        <div className="orders-status-tabs">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`orders-status-tab ${statusFilter === tab.key ? 'active' : ''}`}
+              onClick={() => setStatusFilter(tab.key)}
+            >
+              <span className="orders-tab-icon">{tab.icon}</span>
+              <span className="orders-tab-label">{tab.label}</span>
+              {['pending', 'delivered', 'disputed'].includes(tab.key) && statusCounts[tab.key] > 0 && (
+                <span className="orders-tab-count">{statusCounts[tab.key]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Search & Date Filters */}
+        <div className="orders-filter-row">
+          <div className="orders-search-wrap">
+            <span className="orders-search-icon">🔍</span>
+            <input
+              type="text"
+              className="orders-search-input"
+              placeholder="Search by title or seller..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+            />
+            {searchQuery && (
+              <button
+                className="orders-search-clear"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearchQuery('');
+                }}
+              >✕</button>
+            )}
+          </div>
+          <div className="orders-date-filters">
+            <div className="orders-date-field">
+              <label className="orders-date-label">From</label>
+              <input
+                type="date"
+                className="orders-date-input"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="orders-date-field">
+              <label className="orders-date-label">To</label>
+              <input
+                type="date"
+                className="orders-date-input"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
+          </div>
+          {hasActiveFilters && (
+            <button className="orders-clear-filters" onClick={clearFilters}>
+              ✕ Clear All
+            </button>
+          )}
+        </div>
+      </div>
 
       {loadingOrders ? (
         <div className="loading"><div className="loading-spinner"></div> Loading orders...</div>
       ) : orders.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🛒</div>
-          <p>No purchases yet. Browse listings to make your first purchase!</p>
+          <p>{hasActiveFilters ? 'No orders match your filters.' : 'No purchases yet. Browse listings to make your first purchase!'}</p>
+          {hasActiveFilters && (
+            <button className="btn btn-outline btn-sm" onClick={clearFilters} style={{ marginTop: 12 }}>
+              Clear Filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="orders-list">
@@ -132,9 +226,7 @@ export default function OrdersPage() {
                   </span>
                 </div>
                 <div className="order-card-date">
-                  {new Date(order.created_at).toLocaleDateString('en-PK', {
-                    day: 'numeric', month: 'short', year: 'numeric',
-                  })}
+                  {formatDateTime(order.created_at)}
                 </div>
               </div>
 
@@ -146,50 +238,17 @@ export default function OrdersPage() {
                     <span>Qty: {order.quantity}</span>
                     <span>Unit: PKR {order.unit_price}</span>
                   </div>
-                  {order.delivery_note && (
-                    <div className="order-delivery-note">
-                      <strong>📝 Delivery Note:</strong> {order.delivery_note}
-                    </div>
-                  )}
-                  {order.dispute_reason && (
-                    <div className="order-dispute-note">
-                      <strong>⚠️ Dispute:</strong> {order.dispute_reason}
-                    </div>
-                  )}
                 </div>
                 <div className="order-card-price">
                   <div className="order-total">PKR {order.total_amount}</div>
                 </div>
               </div>
 
-              {/* Action buttons */}
+              {/* Details */}
               <div className="order-card-actions">
                 <Link href={`/order/${order.id}`} className="btn btn-outline btn-sm">
                   📋 View Order
                 </Link>
-                {(order.status === 'pending' || order.status === 'delivered') && (
-                  <>
-                    {order.status === 'delivered' && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleConfirm(order.id)}
-                      disabled={actionLoading === order.id}
-                    >
-                      {actionLoading === order.id ? 'Processing...' : '✅ Confirm Received'}
-                    </button>
-                    )}
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => { setDisputeModal(order.id); setDisputeReason(''); }}
-                      disabled={actionLoading === order.id}
-                    >
-                      ⚠️ Open Dispute
-                    </button>
-                  </>
-                )}
-                {order.status === 'completed' && (
-                  <span className="order-completed-msg">✅ Order completed successfully</span>
-                )}
               </div>
             </div>
           ))}
@@ -205,40 +264,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Dispute Modal */}
-      {disputeModal && (
-        <div className="image-preview-overlay" onClick={() => setDisputeModal(null)}>
-          <div className="image-preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="image-preview-header">
-              <span>Open Dispute</span>
-              <button className="image-preview-close" onClick={() => setDisputeModal(null)}>✕</button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div className="form-group">
-                <label className="form-label">Reason for dispute *</label>
-                <textarea
-                  className="form-textarea"
-                  value={disputeReason}
-                  onChange={(e) => setDisputeReason(e.target.value)}
-                  placeholder="Describe the issue..."
-                  rows={4}
-                  required
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                <button className="btn btn-outline" onClick={() => setDisputeModal(null)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => handleDispute(disputeModal)}
-                  disabled={!disputeReason.trim() || actionLoading}
-                >
-                  {actionLoading ? 'Submitting...' : 'Submit Dispute'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

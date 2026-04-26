@@ -513,6 +513,55 @@ class TopUpProofUploadTests(TestCase):
         unsigned_response = self.client.get(f'/api/wallet/top-up/{topup.pk}/proof/')
         self.assertEqual(unsigned_response.status_code, 404)
 
+    def test_rejects_missing_transaction_reference(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'payment_method': 'Bank Transfer',
+                'payment_proof': make_image_file(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('transaction_id', response.data)
+        self.assertFalse(TopUpRequest.objects.exists())
+
+    def test_rejects_missing_payment_proof(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'payment_method': 'Bank Transfer',
+                'transaction_id': 'missing-proof',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['payment_proof'], ['This field is required.'])
+        self.assertFalse(TopUpRequest.objects.filter(transaction_id='missing-proof').exists())
+
+    def test_rejects_topup_amount_over_ten_thousand(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '10000.01',
+                'payment_method': 'Bank Transfer',
+                'transaction_id': 'too-much',
+                'payment_proof': make_image_file(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data['amount'][0],
+            'Max is 10000. Please contact support if you want to add more.',
+        )
+        self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-much').exists())
+
     def test_rejects_payment_proof_with_invalid_content_type(self):
         response = self.client.post(
             '/api/wallet/top-up/',
@@ -1668,6 +1717,15 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.data['pagination']['count'], 25)
         self.assertEqual(response.data['pagination']['next_offset'], 10)
 
+    def test_buyer_orders_ignore_invalid_date_filters(self):
+        self.create_order(1)
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/orders/mine/?date_from=not-a-date&date_to=also-bad')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pagination']['count'], 1)
+
     def test_seller_sales_are_paginated_with_summary(self):
         for index in range(5):
             self.create_order(index, status='pending')
@@ -1684,6 +1742,15 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.data['summary']['pending_count'], 5)
         self.assertEqual(response.data['summary']['completed_count'], 3)
         self.assertEqual(response.data['summary']['total_revenue'], '30.00')
+
+    def test_seller_sales_ignore_invalid_date_filters(self):
+        self.create_order(1)
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/orders/sales/?date_from=not-a-date&date_to=also-bad')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pagination']['count'], 1)
 
 
 class ChatWebSocketTicketIntegrationTests(TransactionTestCase):

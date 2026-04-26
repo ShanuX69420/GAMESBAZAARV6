@@ -563,9 +563,17 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
 
 
 class CreateTopUpRequestSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1)
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal('1.00'),
+        max_value=Decimal('10000.00'),
+        error_messages={
+            'max_value': 'Max is 10000. Please contact support if you want to add more.',
+        },
+    )
     payment_method = serializers.CharField(max_length=200, required=False, default='')
-    transaction_id = serializers.CharField(max_length=200, required=False, default='')
+    transaction_id = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
 
 
 # ── Order Serializers ────────────────────────────────────────────────────────

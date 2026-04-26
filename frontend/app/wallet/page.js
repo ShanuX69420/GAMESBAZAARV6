@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getWallet, requestTopUp, getTopUpRequests } from '@/lib/api';
 
 const TRANSACTION_PAGE_SIZE = 20;
 const TOPUP_PAGE_SIZE = 20;
+const MAX_TOP_UP_AMOUNT = 10000;
+const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to add more.';
 
 export default function WalletPage() {
   const { user, loading } = useAuth();
@@ -18,7 +19,7 @@ export default function WalletPage() {
   const [topUpPagination, setTopUpPagination] = useState(null);
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('JazzCash');
   const [txnId, setTxnId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -95,16 +96,39 @@ export default function WalletPage() {
     }
   }
 
+  function handleTopUpAmountChange(e) {
+    const value = e.target.value;
+    setTopUpAmount(value);
+    if (Number(value) > MAX_TOP_UP_AMOUNT) {
+      setSuccess('');
+      setError(MAX_TOP_UP_MESSAGE);
+    } else if (error === MAX_TOP_UP_MESSAGE) {
+      setError('');
+    }
+  }
+
   async function handleTopUp(e) {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (Number(topUpAmount) > MAX_TOP_UP_AMOUNT) {
+      setError(MAX_TOP_UP_MESSAGE);
+      return;
+    }
+    if (!txnId.trim()) {
+      setError('Transaction ID / reference is required.');
+      return;
+    }
+    if (!proofFile) {
+      setError('Payment proof screenshot is required.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await requestTopUp(topUpAmount, paymentMethod, txnId, proofFile);
+      await requestTopUp(topUpAmount, paymentMethod, txnId.trim(), proofFile);
       setSuccess('Top-up request submitted! Admin will review it shortly.');
       setTopUpAmount('');
-      setPaymentMethod('');
+      setPaymentMethod('JazzCash');
       setTxnId('');
       setProofFile(null);
       setShowTopUp(false);
@@ -115,6 +139,8 @@ export default function WalletPage() {
       setSubmitting(false);
     }
   }
+
+  const amountOverLimit = Number(topUpAmount) > MAX_TOP_UP_AMOUNT;
 
   if (loading || !user) {
     return (
@@ -141,7 +167,6 @@ export default function WalletPage() {
           <button className="btn btn-primary" onClick={() => setShowTopUp(!showTopUp)}>
             {showTopUp ? 'Cancel' : '+ Add Funds'}
           </button>
-          <Link href="/orders" className="btn btn-outline">📦 My Orders</Link>
         </div>
       </div>
 
@@ -164,12 +189,15 @@ export default function WalletPage() {
                 type="number"
                 className="form-input"
                 value={topUpAmount}
-                onChange={(e) => setTopUpAmount(e.target.value)}
+                onChange={handleTopUpAmountChange}
                 placeholder="e.g. 1000"
                 min="1"
                 step="0.01"
                 required
               />
+              {amountOverLimit && (
+                <span className="form-hint form-error-text">{MAX_TOP_UP_MESSAGE}</span>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Payment Method</label>
@@ -177,31 +205,32 @@ export default function WalletPage() {
                 className="form-input"
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
+                required
               >
-                <option value="">Select method...</option>
                 <option value="JazzCash">JazzCash</option>
                 <option value="EasyPaisa">EasyPaisa</option>
                 <option value="Bank Transfer">Bank Transfer</option>
-                <option value="Other">Other</option>
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Transaction ID / Reference</label>
+              <label className="form-label">Transaction ID / Reference *</label>
               <input
                 type="text"
                 className="form-input"
                 value={txnId}
                 onChange={(e) => setTxnId(e.target.value)}
                 placeholder="Your payment reference number"
+                required
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Payment Proof (Screenshot)</label>
+              <label className="form-label">Payment Proof (Screenshot) *</label>
               <input
                 type="file"
                 className="form-input"
                 accept="image/*"
                 onChange={(e) => setProofFile(e.target.files[0] || null)}
+                required
               />
             </div>
             <button type="submit" className="btn btn-primary" disabled={submitting}>

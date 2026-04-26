@@ -276,7 +276,15 @@ export async function requestTopUp(amount, paymentMethod = '', transactionId = '
     body: formData,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.amount?.[0] || 'Top-up request failed');
+  if (!res.ok) {
+    throw new Error(
+      data.error ||
+      data.amount?.[0] ||
+      data.transaction_id?.[0] ||
+      data.payment_proof?.[0] ||
+      'Top-up request failed'
+    );
+  }
   return data;
 }
 
@@ -301,16 +309,32 @@ export async function buyListing(listingId, quantity = 1) {
   return data;
 }
 
-export async function getMyOrders(pagination = {}) {
-  const res = await authFetch(`${API_BASE}/api/orders/mine/${paginationQuery(pagination)}`, {
+export async function getMyOrders({ limit, offset, status, search, date_from, date_to } = {}) {
+  const params = new URLSearchParams();
+  if (limit !== undefined && limit !== null) params.set('limit', String(limit));
+  if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+  if (date_from) params.set('date_from', date_from);
+  if (date_to) params.set('date_to', date_to);
+  const query = params.toString();
+  const res = await authFetch(`${API_BASE}/api/orders/mine/${query ? '?' + query : ''}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get orders');
   return res.json();
 }
 
-export async function getMySales(pagination = {}) {
-  const res = await authFetch(`${API_BASE}/api/orders/sales/${paginationQuery(pagination)}`, {
+export async function getMySales({ limit, offset, status, search, date_from, date_to } = {}) {
+  const params = new URLSearchParams();
+  if (limit !== undefined && limit !== null) params.set('limit', String(limit));
+  if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+  if (date_from) params.set('date_from', date_from);
+  if (date_to) params.set('date_to', date_to);
+  const query = params.toString();
+  const res = await authFetch(`${API_BASE}/api/orders/sales/${query ? '?' + query : ''}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get sales');

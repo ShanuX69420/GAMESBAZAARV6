@@ -1,71 +1,90 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getMySales, deliverOrder } from '@/lib/api';
+import { getMySales } from '@/lib/api';
 
 const SALES_PAGE_SIZE = 20;
+
+const STATUS_TABS = [
+  { key: '', label: 'All Sales', icon: '📋' },
+  { key: 'pending', label: 'Pending', icon: '⏳' },
+  { key: 'delivered', label: 'Delivered', icon: '📦' },
+  { key: 'completed', label: 'Completed', icon: '✅' },
+  { key: 'disputed', label: 'Disputed', icon: '⚠️' },
+  { key: 'cancelled', label: 'Cancelled', icon: '❌' },
+];
 
 export default function SalesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [sales, setSales] = useState([]);
-  const [salesSummary, setSalesSummary] = useState(null);
   const [pagination, setPagination] = useState(null);
+  const [statusCounts, setStatusCounts] = useState({});
   const [loadingSales, setLoadingSales] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [actionLoading, setActionLoading] = useState(null);
-  const [deliverModal, setDeliverModal] = useState(null);
-  const [deliveryNote, setDeliveryNote] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+
+  // Filter state
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
     if (!loading && user && !user.is_seller) router.push('/dashboard');
   }, [user, loading, router]);
 
-  useEffect(() => {
-    if (user && user.is_seller) loadSales();
-  }, [user]);
-
-  async function loadSales({ append = false, offset = 0 } = {}) {
+  const loadSales = useCallback(async ({ append = false, offset = 0 } = {}) => {
+    const requestId = ++latestRequestId.current;
     if (append) {
       setLoadingMore(true);
     } else {
       setLoadingSales(true);
     }
     try {
-      const data = await getMySales({ limit: SALES_PAGE_SIZE, offset });
+      const data = await getMySales({
+        limit: SALES_PAGE_SIZE,
+        offset,
+        status: statusFilter || undefined,
+        search: debouncedSearchQuery || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      });
+      if (requestId !== latestRequestId.current) return;
       setSales(prev => append ? [...prev, ...(data.sales || [])] : (data.sales || []));
-      setSalesSummary(data.summary || null);
       setPagination(data.pagination || null);
+      if (data.status_counts) setStatusCounts(data.status_counts);
     } catch (err) {
-      console.error(err);
+      if (requestId === latestRequestId.current) console.error(err);
     } finally {
-      setLoadingSales(false);
-      setLoadingMore(false);
+      if (requestId === latestRequestId.current) {
+        setLoadingSales(false);
+        setLoadingMore(false);
+      }
     }
+  }, [statusFilter, debouncedSearchQuery, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (user && user.is_seller) loadSales();
+  }, [user, loadSales]);
+
+  function handleSearchChange(e) {
+    const val = e.target.value;
+    setSearchQuery(val);
   }
 
-  async function handleDeliver(orderId) {
-    setError('');
-    setSuccess('');
-    setActionLoading(orderId);
-    try {
-      await deliverOrder(orderId, deliveryNote);
-      setSuccess('Order marked as delivered!');
-      setDeliverModal(null);
-      setDeliveryNote('');
-      await loadSales();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
+  // Debounce search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   function getStatusIcon(status) {
     switch (status) {
@@ -78,6 +97,25 @@ export default function SalesPage() {
     }
   }
 
+  function formatDateTime(isoString) {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-PK', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    }) + ', ' + d.toLocaleTimeString('en-PK', {
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  }
+
+  function clearFilters() {
+    setStatusFilter('');
+    setSearchQuery('');
+    setDebouncedSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+  }
+
+  const hasActiveFilters = statusFilter || searchQuery || dateFrom || dateTo;
+
   if (loading || !user) {
     return (
       <div className="container">
@@ -88,54 +126,92 @@ export default function SalesPage() {
 
   if (!user.is_seller) return null;
 
-  const pendingCount = salesSummary?.pending_count ?? sales.filter(s => s.status === 'pending').length;
-  const completedCount = salesSummary?.completed_count ?? sales.filter(s => s.status === 'completed').length;
-  const totalRevenue = Number(
-    salesSummary?.total_revenue ??
-    sales.filter(s => s.status === 'completed').reduce((sum, s) => sum + parseFloat(s.seller_amount), 0)
-  );
-
   return (
     <div className="container">
       <div className="page-header">
         <h1 className="page-title">💼 My Sales</h1>
-        <p className="page-subtitle">Manage your sales and deliveries</p>
+        <p className="page-subtitle">View your sales and order status</p>
       </div>
 
-      {/* Sales Stats */}
-      <div className="dashboard-stats">
-        <div className="stat-card">
-          <div className="stat-icon">⏳</div>
-          <div className="stat-info">
-            <div className="stat-value">{pendingCount}</div>
-            <div className="stat-label">Pending Deliveries</div>
-          </div>
+      {/* Filter Toolbar */}
+      <div className="orders-filter-toolbar">
+        {/* Status Tabs */}
+        <div className="orders-status-tabs">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`orders-status-tab ${statusFilter === tab.key ? 'active' : ''}`}
+              onClick={() => setStatusFilter(tab.key)}
+            >
+              <span className="orders-tab-icon">{tab.icon}</span>
+              <span className="orders-tab-label">{tab.label}</span>
+              {['pending', 'delivered', 'disputed'].includes(tab.key) && statusCounts[tab.key] > 0 && (
+                <span className="orders-tab-count">{statusCounts[tab.key]}</span>
+              )}
+            </button>
+          ))}
         </div>
-        <div className="stat-card">
-          <div className="stat-icon">✅</div>
-          <div className="stat-info">
-            <div className="stat-value">{completedCount}</div>
-            <div className="stat-label">Completed Sales</div>
+
+        {/* Search & Date Filters */}
+        <div className="orders-filter-row">
+          <div className="orders-search-wrap">
+            <span className="orders-search-icon">🔍</span>
+            <input
+              type="text"
+              className="orders-search-input"
+              placeholder="Search by title or buyer..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+            />
+            {searchQuery && (
+              <button
+                className="orders-search-clear"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearchQuery('');
+                }}
+              >✕</button>
+            )}
           </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">💰</div>
-          <div className="stat-info">
-            <div className="stat-value">PKR {totalRevenue.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
-            <div className="stat-label">Total Revenue</div>
+          <div className="orders-date-filters">
+            <div className="orders-date-field">
+              <label className="orders-date-label">From</label>
+              <input
+                type="date"
+                className="orders-date-input"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="orders-date-field">
+              <label className="orders-date-label">To</label>
+              <input
+                type="date"
+                className="orders-date-input"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
           </div>
+          {hasActiveFilters && (
+            <button className="orders-clear-filters" onClick={clearFilters}>
+              ✕ Clear All
+            </button>
+          )}
         </div>
       </div>
-
-      {success && <div className="alert alert-success">{success}</div>}
-      {error && <div className="alert alert-error">{error}</div>}
 
       {loadingSales ? (
         <div className="loading"><div className="loading-spinner"></div> Loading sales...</div>
       ) : sales.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">💼</div>
-          <p>No sales yet. When buyers purchase your listings, they'll appear here.</p>
+          <p>{hasActiveFilters ? 'No sales match your filters.' : 'No sales yet. When buyers purchase your listings, they\'ll appear here.'}</p>
+          {hasActiveFilters && (
+            <button className="btn btn-outline btn-sm" onClick={clearFilters} style={{ marginTop: 12 }}>
+              Clear Filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="orders-list">
@@ -153,9 +229,7 @@ export default function SalesPage() {
                   </span>
                 </div>
                 <div className="order-card-date">
-                  {new Date(sale.created_at).toLocaleDateString('en-PK', {
-                    day: 'numeric', month: 'short', year: 'numeric',
-                  })}
+                  {formatDateTime(sale.created_at)}
                 </div>
               </div>
 
@@ -165,18 +239,7 @@ export default function SalesPage() {
                   <div className="order-card-meta">
                     <span>Buyer: <strong>{sale.buyer_name}</strong></span>
                     <span>Qty: {sale.quantity}</span>
-                    <span>Commission: {sale.commission_rate}%</span>
                   </div>
-                  {sale.delivery_note && (
-                    <div className="order-delivery-note">
-                      <strong>📝 Delivery Note:</strong> {sale.delivery_note}
-                    </div>
-                  )}
-                  {sale.dispute_reason && (
-                    <div className="order-dispute-note">
-                      <strong>⚠️ Dispute:</strong> {sale.dispute_reason}
-                    </div>
-                  )}
                 </div>
                 <div className="order-card-price">
                   <div className="order-total">PKR {sale.seller_amount}</div>
@@ -186,27 +249,15 @@ export default function SalesPage() {
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Details */}
               <div className="order-card-actions">
                 <Link href={`/order/${sale.id}`} className="btn btn-outline btn-sm">
                   📋 View Order
                 </Link>
-                {sale.status === 'pending' && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => { setDeliverModal(sale.id); setDeliveryNote(''); }}
-                    disabled={actionLoading === sale.id}
-                  >
-                    📦 Deliver
-                  </button>
-                )}
                 {sale.status === 'delivered' && (
                   <span className="order-completed-msg" style={{ color: 'var(--text-tertiary)' }}>
                     ⏳ Waiting for buyer to confirm
                   </span>
-                )}
-                {sale.status === 'completed' && (
-                  <span className="order-completed-msg">✅ Funds received</span>
                 )}
               </div>
             </div>
@@ -220,40 +271,6 @@ export default function SalesPage() {
               {loadingMore ? 'Loading...' : 'Load More Sales'}
             </button>
           )}
-        </div>
-      )}
-
-      {/* Deliver Modal */}
-      {deliverModal && (
-        <div className="image-preview-overlay" onClick={() => setDeliverModal(null)}>
-          <div className="image-preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="image-preview-header">
-              <span>Deliver Sale #{deliverModal}</span>
-              <button className="image-preview-close" onClick={() => setDeliverModal(null)}>✕</button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div className="form-group">
-                <label className="form-label">Delivery Details (optional)</label>
-                <textarea
-                  className="form-textarea"
-                  value={deliveryNote}
-                  onChange={(e) => setDeliveryNote(e.target.value)}
-                  placeholder="Account credentials, activation code, download link, etc..."
-                  rows={4}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                <button className="btn btn-outline" onClick={() => setDeliverModal(null)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => handleDeliver(deliverModal)}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? 'Delivering...' : '📦 Mark as Delivered'}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </div>
