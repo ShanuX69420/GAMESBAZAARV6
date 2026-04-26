@@ -13,12 +13,17 @@ export default function CreateListingPage() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [allowAutoDelivery, setAllowAutoDelivery] = useState(false);
   const [filters, setFilters] = useState([]);
   const [filterValues, setFilterValues] = useState({});
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState('1-2 Hours');
+  const [isAutoDelivery, setIsAutoDelivery] = useState(false);
+  const [autoDeliveryData, setAutoDeliveryData] = useState('');
+  const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,14 +47,17 @@ export default function CreateListingPage() {
         .then(data => {
           setCategories(data.categories || []);
           setSelectedCategory(null);
+          setAllowAutoDelivery(false);
           setFilters([]);
           setFilterValues({});
+          setIsAutoDelivery(false);
+          setAutoDeliveryData('');
         })
         .catch(() => {});
     }
   }, [selectedGame]);
 
-  // Fetch filters when category is selected
+  // Fetch filters + auto delivery permission when category is selected
   useEffect(() => {
     if (selectedGame && selectedCategory) {
       fetch(`${API_BASE}/api/games/${selectedGame.slug}/${selectedCategory.slug}/`)
@@ -57,14 +65,46 @@ export default function CreateListingPage() {
         .then(data => {
           setFilters(data.filters || []);
           setFilterValues({});
+          setAllowAutoDelivery(data.allow_auto_delivery || false);
+          // Reset auto delivery if not allowed
+          if (!data.allow_auto_delivery) {
+            setIsAutoDelivery(false);
+            setAutoDeliveryData('');
+          }
         })
         .catch(() => {});
     }
   }, [selectedGame, selectedCategory]);
 
+  // When toggling auto delivery, adjust delivery time
+  useEffect(() => {
+    if (isAutoDelivery) {
+      setDeliveryTime('Instant');
+    } else {
+      setDeliveryTime('1-2 Hours');
+    }
+  }, [isAutoDelivery]);
+
+  function hasFilterValue(filter) {
+    const value = filterValues[filter.id];
+    return typeof value === 'string' ? value.trim() !== '' : value !== undefined && value !== null;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+
+    if (!selectedGame || !selectedCategory) {
+      setError('Please select a game and category.');
+      return;
+    }
+
+    const missingFilters = filters.filter(filter => !hasFilterValue(filter));
+    if (missingFilters.length > 0) {
+      setError(`Please select all required filters: ${missingFilters.map(filter => filter.name).join(', ')}.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const listingData = {
@@ -73,7 +113,11 @@ export default function CreateListingPage() {
         title,
         description,
         price: parseFloat(price),
+        delivery_time: isAutoDelivery ? 'Instant' : deliveryTime,
         filter_values: filterValues,
+        is_auto_delivery: isAutoDelivery,
+        auto_delivery_data: isAutoDelivery ? autoDeliveryData : '',
+        delivery_instructions: deliveryInstructions,
       };
       // Only include quantity if the seller set it
       if (quantity !== '') {
@@ -184,6 +228,7 @@ export default function CreateListingPage() {
                         ...filterValues,
                         [filter.id]: e.target.value || undefined,
                       })}
+                      required
                     >
                       <option value="">Select {filter.name}</option>
                       {filter.options.map(opt => (
@@ -236,25 +281,116 @@ export default function CreateListingPage() {
                 />
               </div>
 
+              {/* Stock Quantity — hidden for auto delivery */}
+              {!isAutoDelivery && (
+                <div className="form-group">
+                  <label className="form-label">Stock Quantity (Optional)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="Leave empty for unlimited"
+                    min="1"
+                    step="1"
+                  />
+                  <span className="form-hint">
+                    Leave empty for an evergreen listing that never goes out of stock.
+                    Set a number to auto-deactivate after that many sales.
+                  </span>
+                </div>
+              )}
+
+              {/* Auto Delivery Toggle */}
+              {allowAutoDelivery && (
+                <div className="form-group">
+                  <div className="auto-delivery-toggle-wrap">
+                    <label className="auto-delivery-toggle" htmlFor="auto-delivery-toggle">
+                      <input
+                        type="checkbox"
+                        id="auto-delivery-toggle"
+                        checked={isAutoDelivery}
+                        onChange={(e) => setIsAutoDelivery(e.target.checked)}
+                      />
+                      <span className="auto-delivery-toggle-slider"></span>
+                      <span className="auto-delivery-toggle-label">
+                        <svg className="auto-delivery-flash" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                        </svg>
+                        Automated Delivery
+                      </span>
+                    </label>
+                    <span className="form-hint" style={{ marginTop: '6px' }}>
+                      Enable to automatically deliver digital content to buyers upon purchase.
+                      Delivery time is set to Instant.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto Delivery Data */}
+              {isAutoDelivery && (
+                <div className="form-group">
+                  <label className="form-label">
+                    <svg className="auto-delivery-flash" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', verticalAlign: '-2px' }}>
+                      <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                    </svg>
+                    Delivery Content
+                    {autoDeliveryData.trim() && (
+                      <span className="auto-delivery-count">
+                        — {autoDeliveryData.split('\n').filter(l => l.trim()).length} item{autoDeliveryData.split('\n').filter(l => l.trim()).length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    value={autoDeliveryData}
+                    onChange={(e) => setAutoDeliveryData(e.target.value)}
+                    placeholder={"Enter one item per line. Each line = 1 stock unit.\n\nExample:\nuser1@email.com:password123\nuser2@email.com:password456\nACTIVATION-KEY-XXXX-YYYY"}
+                    rows={8}
+                    required
+                  />
+                  <span className="form-hint" style={{ color: '#D97706' }}>
+                    ⚡ Each line = 1 stock item. Stock quantity is set automatically. Items are delivered one per purchase.
+                  </span>
+                </div>
+              )}
+
+              {/* Delivery Time (hidden when auto delivery is on) */}
+              {!isAutoDelivery && (
+                <div className="form-group">
+                  <label className="form-label">Delivery Time</label>
+                  <select
+                    className="form-input"
+                    value={deliveryTime}
+                    onChange={(e) => setDeliveryTime(e.target.value)}
+                  >
+                    <option value="1-2 Hours">1-2 Hours</option>
+                    <option value="2-6 Hours">2-6 Hours</option>
+                    <option value="6-12 Hours">6-12 Hours</option>
+                    <option value="12-24 Hours">12-24 Hours</option>
+                    <option value="1-3 Days">1-3 Days</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Delivery Instructions (optional, for all listing types) */}
               <div className="form-group">
-                <label className="form-label">Stock Quantity (Optional)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="Leave empty for unlimited"
-                  min="1"
-                  step="1"
+                <label className="form-label">Delivery Instructions (Optional)</label>
+                <textarea
+                  className="form-textarea"
+                  value={deliveryInstructions}
+                  onChange={(e) => setDeliveryInstructions(e.target.value)}
+                  placeholder="Optional note shown to buyers, e.g., 'Please change the password immediately after receiving the account'"
+                  rows={3}
                 />
                 <span className="form-hint">
-                  Leave empty for an evergreen listing that never goes out of stock.
-                  Set a number to auto-deactivate after that many sales.
+                  This note will be visible to every buyer when they purchase.
                 </span>
               </div>
 
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
-                {submitting ? 'Creating...' : 'Create Listing'}
+                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : 'Create Listing'}
               </button>
             </>
           )}

@@ -78,6 +78,10 @@ class GameCategory(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='game_categories')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='game_categories')
     order = models.PositiveIntegerField(default=0, help_text='Display order within the game')
+    allow_auto_delivery = models.BooleanField(
+        default=False,
+        help_text='Allow sellers to create automated delivery listings in this game+category.',
+    )
 
     class Meta:
         ordering = ['order']
@@ -211,6 +215,22 @@ class Listing(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     # Stores filter values as JSON: {"filter_id": "option_value", ...}
     filter_values = models.JSONField(default=dict, blank=True)
+    delivery_time = models.CharField(
+        max_length=50, default='1-2 Hours', blank=True,
+        help_text='Estimated delivery time (e.g., Instant, 1-2 Hours, 24 Hours)',
+    )
+    is_auto_delivery = models.BooleanField(
+        default=False,
+        help_text='If True, delivery data is sent automatically to buyers upon purchase.',
+    )
+    auto_delivery_data = models.TextField(
+        blank=True, default='',
+        help_text='Content delivered automatically to the buyer (e.g., account credentials, keys, codes).',
+    )
+    delivery_instructions = models.TextField(
+        blank=True, default='',
+        help_text='Optional instructions shown to every buyer (e.g., "Change password after receiving").',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

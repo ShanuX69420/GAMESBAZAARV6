@@ -125,6 +125,7 @@ class GameCategoryDetailSerializer(serializers.Serializer):
     game = serializers.SerializerMethodField()
     category = CategorySerializer()
     filters = serializers.SerializerMethodField()
+    allow_auto_delivery = serializers.BooleanField(read_only=True)
 
     def get_game(self, obj):
         return {
@@ -194,6 +195,8 @@ class SellerApplicationSerializer(serializers.Serializer):
 class ListingSerializer(serializers.ModelSerializer):
     seller_id = serializers.IntegerField(source='seller.id', read_only=True)
     seller_name = serializers.CharField(source='seller.username', read_only=True)
+    seller_is_online = serializers.SerializerMethodField()
+    seller_last_active = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.category.name', read_only=True)
     filter_display = serializers.SerializerMethodField()
@@ -202,9 +205,21 @@ class ListingSerializer(serializers.ModelSerializer):
         model = Listing
         fields = [
             'id', 'title', 'description', 'price', 'quantity', 'status',
-            'seller_id', 'seller_name', 'game_name', 'category_name',
-            'filter_values', 'filter_display', 'created_at',
+            'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
+            'game_name', 'category_name',
+            'filter_values', 'filter_display', 'delivery_time',
+            'is_auto_delivery', 'delivery_instructions', 'created_at',
         ]
+
+    def get_seller_is_online(self, obj):
+        profile = getattr(obj.seller, 'profile', None)
+        return profile.is_online if profile else False
+
+    def get_seller_last_active(self, obj):
+        profile = getattr(obj.seller, 'profile', None)
+        if profile and profile.last_active:
+            return profile.last_active.isoformat()
+        return None
 
     def get_filter_display(self, obj):
         """Convert filter_values {filter_id: option_value} to human-readable labels."""
@@ -233,10 +248,15 @@ class CreateListingSerializer(serializers.ModelSerializer):
     category_slug = serializers.SlugField(write_only=True)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
+    is_auto_delivery = serializers.BooleanField(required=False, default=False)
+    auto_delivery_data = serializers.CharField(required=False, default='', allow_blank=True)
+    delivery_instructions = serializers.CharField(required=False, default='', allow_blank=True)
 
     class Meta:
         model = Listing
-        fields = ['game_slug', 'category_slug', 'title', 'description', 'price', 'quantity', 'filter_values']
+        fields = ['game_slug', 'category_slug', 'title', 'description', 'price', 'quantity',
+                  'delivery_time', 'filter_values', 'is_auto_delivery', 'auto_delivery_data',
+                  'delivery_instructions']
 
     def validate(self, attrs):
         game_slug = attrs.pop('game_slug')
@@ -249,6 +269,37 @@ class CreateListingSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Invalid game/category combination.')
         attrs['game_category'] = gc
 
+        # Validate auto-delivery
+        is_auto = attrs.get('is_auto_delivery', False)
+        if is_auto:
+            if not gc.allow_auto_delivery:
+                raise serializers.ValidationError({
+                    'is_auto_delivery': 'Automated delivery is not allowed for this category.',
+                })
+            auto_data = attrs.get('auto_delivery_data', '').strip()
+            if not auto_data:
+                raise serializers.ValidationError({
+                    'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
+                })
+            attrs['auto_delivery_data'] = auto_data
+            # Force instant delivery for auto-delivery listings
+            attrs['delivery_time'] = 'Instant'
+            # Quantity = number of non-empty lines (each line = 1 deliverable item)
+            lines = [line for line in auto_data.split('\n') if line.strip()]
+            if len(lines) == 0:
+                raise serializers.ValidationError({
+                    'auto_delivery_data': 'Please enter at least one item.',
+                })
+            attrs['quantity'] = len(lines)
+        else:
+            # Manual listings cannot select Instant delivery
+            delivery_time = attrs.get('delivery_time', '1-2 Hours')
+            if delivery_time == 'Instant':
+                raise serializers.ValidationError({
+                    'delivery_time': 'Instant delivery is only available for automated delivery listings.',
+                })
+            attrs['auto_delivery_data'] = ''
+
         raw_filter_values = attrs.get('filter_values', {})
         if raw_filter_values in (None, ''):
             raw_filter_values = {}
@@ -258,9 +309,12 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 'filter_values': 'Filter values must be an object.',
             })
 
-        assigned_filter_ids = set(
-            GameCategoryFilter.objects.filter(game_category=gc).values_list('filter_id', flat=True)
+        assigned_filters = list(
+            GameCategoryFilter.objects.filter(game_category=gc)
+            .select_related('filter')
+            .order_by('order', 'filter__name')
         )
+        assigned_filter_ids = {gcf.filter_id for gcf in assigned_filters}
         cleaned_filter_values = {}
         requested_pairs = set()
 
@@ -304,6 +358,19 @@ class CreateListingSerializer(serializers.ModelSerializer):
                     'filter_values': 'Invalid option for this filter.',
                 })
 
+        missing_filter_names = [
+            gcf.filter.name
+            for gcf in assigned_filters
+            if str(gcf.filter_id) not in cleaned_filter_values
+        ]
+        if missing_filter_names:
+            raise serializers.ValidationError({
+                'filter_values': (
+                    'Please select all required filters: '
+                    f'{", ".join(missing_filter_names)}.'
+                ),
+            })
+
         attrs['filter_values'] = cleaned_filter_values
         return attrs
 
@@ -318,7 +385,7 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Listing
-        fields = ['title', 'description', 'price', 'quantity', 'status']
+        fields = ['title', 'description', 'price', 'quantity', 'delivery_time', 'status']
 
 
 # ── Chat Serializers ─────────────────────────────────────────────────────────
@@ -512,6 +579,9 @@ class OrderSerializer(serializers.ModelSerializer):
     listing_id = serializers.IntegerField(source='listing.id', read_only=True, default=None)
     conversation_id = serializers.IntegerField(source='conversation.id', read_only=True, default=None)
     has_review = serializers.SerializerMethodField()
+    is_auto_delivery = serializers.SerializerMethodField()
+    auto_delivery_data = serializers.SerializerMethodField()
+    delivery_instructions = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -523,11 +593,32 @@ class OrderSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'delivery_note', 'dispute_reason',
             'conversation_id', 'has_review',
+            'is_auto_delivery', 'auto_delivery_data',
+            'delivery_instructions',
             'created_at', 'updated_at',
         ]
 
     def get_has_review(self, obj):
         return hasattr(obj, 'review') and obj.review is not None
+
+    def get_is_auto_delivery(self, obj):
+        """Check if the original listing was an auto-delivery listing."""
+        if obj.listing:
+            return obj.listing.is_auto_delivery
+        return False
+
+    def get_auto_delivery_data(self, obj):
+        """Return auto delivery data from the delivery_note for auto orders."""
+        # Auto delivery data is stored in delivery_note on the order
+        if obj.delivery_note and obj.listing and obj.listing.is_auto_delivery:
+            return obj.delivery_note
+        return None
+
+    def get_delivery_instructions(self, obj):
+        """Return delivery instructions from the listing, if any."""
+        if obj.listing and obj.listing.delivery_instructions:
+            return obj.listing.delivery_instructions
+        return None
 
 
 class BuyListingSerializer(serializers.Serializer):

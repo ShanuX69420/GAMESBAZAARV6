@@ -117,6 +117,77 @@ class PurchaseFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
 
+    def test_auto_delivery_short_data_does_not_debit_wallet(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Mismatched auto stock',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data='code-one',
+        )
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 2},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Only 1 item remaining for auto-delivery.')
+        self.assertFalse(Order.objects.filter(listing=listing).exists())
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 2)
+        self.assertEqual(listing.status, 'active')
+        self.assertEqual(listing.auto_delivery_data, 'code-one')
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
+    def test_refund_auto_delivery_does_not_restore_consumed_stock(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Auto delivery item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data='code-one',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+        self.assertEqual(buy_response.data['status'], 'delivered')
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 0)
+        self.assertEqual(listing.status, 'sold')
+        self.assertEqual(listing.auto_delivery_data, '')
+
+        self.client.force_authenticate(user=self.seller)
+        refund_response = self.client.post(
+            f"/api/orders/{buy_response.data['id']}/refund/",
+            {},
+            format='json',
+        )
+
+        self.assertEqual(refund_response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 0)
+        self.assertEqual(listing.status, 'sold')
+        self.assertEqual(listing.auto_delivery_data, '')
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
     def test_confirm_order_records_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
         self.category.save(update_fields=['commission_rate'])
@@ -285,6 +356,30 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(response.status_code, 201)
         listing = Listing.objects.get(title='Filtered listing')
         self.assertEqual(listing.filter_values, {str(rank_filter.id): 'gold'})
+
+    def test_create_listing_rejects_missing_assigned_filter_values(self):
+        platform_filter = Filter.objects.create(name='Platform', filter_type='dropdown')
+        FilterOption.objects.create(filter=platform_filter, label='Steam', value='steam')
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=platform_filter)
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Missing platform listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('filter_values', response.data)
+        self.assertIn('Platform', str(response.data['filter_values']))
+        self.assertFalse(Listing.objects.filter(title='Missing platform listing').exists())
 
     def test_create_listing_rejects_unassigned_filter_value(self):
         region_filter = Filter.objects.create(name='Region', filter_type='dropdown')
@@ -1915,6 +2010,45 @@ class DisputeResolutionApiTests(TestCase):
             ).count(),
             1,
         )
+
+    def test_resolve_dispute_refund_does_not_restore_auto_delivery_stock(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Disputed auto delivery item',
+            price=Decimal('100.00'),
+            quantity=0,
+            status='sold',
+            is_auto_delivery=True,
+            auto_delivery_data='',
+        )
+        order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=1,
+            unit_price=Decimal('100.00'),
+            total_amount=Decimal('100.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('10.00'),
+            seller_amount=Decimal('90.00'),
+            status='disputed',
+            delivery_note='code-one',
+        )
+        self.client.force_authenticate(user=self.staff)
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 0)
+        self.assertEqual(listing.status, 'sold')
+        self.assertEqual(listing.auto_delivery_data, '')
 
     def test_resolve_dispute_pays_seller_and_records_commission(self):
         order = self.create_order()

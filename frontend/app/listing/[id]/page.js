@@ -109,6 +109,13 @@ export default function ListingDetailPage() {
               <p>{listing.description}</p>
             </div>
           )}
+
+          {listing.delivery_instructions && (
+            <div className="listing-detail-desc" style={{ marginTop: '16px' }}>
+              <h3>📋 Delivery Instructions</h3>
+              <p style={{ color: 'var(--text-secondary)' }}>{listing.delivery_instructions}</p>
+            </div>
+          )}
         </div>
 
         {/* Right side: price card + buy + chat */}
@@ -121,6 +128,24 @@ export default function ListingDetailPage() {
             <div className="listing-detail-date">
               Listed {new Date(listing.created_at).toLocaleDateString()}
             </div>
+
+            {/* Delivery Time */}
+            {listing.is_auto_delivery ? (
+              <div className="instant-delivery-badge">
+                <svg className="instant-delivery-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                </svg>
+                Instant Delivery
+              </div>
+            ) : listing.delivery_time && (
+              <div className="listing-delivery-time">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                {listing.delivery_time}
+              </div>
+            )}
 
             {/* Stock */}
             {listing.quantity !== null && listing.quantity > 0 && (

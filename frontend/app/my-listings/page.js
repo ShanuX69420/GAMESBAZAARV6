@@ -190,6 +190,11 @@ export default function MyListingsPage() {
                 <tr key={listing.id}>
                   <td>
                     <Link href={`/listing/${listing.id}`} className="listing-link">
+                      {listing.is_auto_delivery && (
+                        <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '4px', verticalAlign: '-2px' }}>
+                          <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                        </svg>
+                      )}
                       {listing.title}
                     </Link>
                   </td>

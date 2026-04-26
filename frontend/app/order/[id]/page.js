@@ -223,10 +223,31 @@ export default function OrderDetailPage() {
           {/* Delivery note */}
           {order.delivery_note && (
             <div className="order-detail-section">
-              <h3 className="order-detail-section-title">📝 Delivery Details</h3>
-              <div className="order-delivery-note" style={{ margin: 0 }}>
+              <h3 className="order-detail-section-title">
+                {order.is_auto_delivery ? (
+                  <>
+                    <svg className="instant-delivery-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', verticalAlign: '-3px' }}>
+                      <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                    </svg>
+                    Auto-Delivered Content
+                  </>
+                ) : '📝 Delivery Details'}
+              </h3>
+              <div className={`order-delivery-note ${order.is_auto_delivery ? 'order-auto-delivery-note' : ''}`} style={{ margin: 0 }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
                   {order.delivery_note}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* Delivery Instructions */}
+          {order.delivery_instructions && (
+            <div className="order-detail-section">
+              <h3 className="order-detail-section-title">📋 Seller Instructions</h3>
+              <div className="order-delivery-note" style={{ margin: 0, background: '#F0F9FF', borderColor: '#BAE6FD', color: '#0C4A6E' }}>
+                <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+                  {order.delivery_instructions}
                 </pre>
               </div>
             </div>

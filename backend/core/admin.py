@@ -25,7 +25,7 @@ class GameCategoryInline(admin.TabularInline):
     model = GameCategory
     extra = 1
     autocomplete_fields = ['category']
-    fields = ['category', 'order', 'manage_filters_link']
+    fields = ['category', 'order', 'allow_auto_delivery', 'manage_filters_link']
     readonly_fields = ['manage_filters_link']
 
     @admin.display(description='Filters')
@@ -227,7 +227,7 @@ class OrderAdmin(admin.ModelAdmin):
                 # Restore stock if listing still exists and has finite stock.
                 if order.listing_id:
                     listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
-                    if listing and listing.quantity is not None:
+                    if listing and listing.quantity is not None and not listing.is_auto_delivery:
                         listing.quantity += order.quantity
                         if listing.status == 'sold':
                             listing.status = 'active'
@@ -311,9 +311,9 @@ class HiddenModelAdmin(admin.ModelAdmin):
 
 @admin.register(GameCategory)
 class GameCategoryAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'order', 'filter_count']
-    list_filter = ['game']
-    list_editable = ['order']
+    list_display = ['__str__', 'order', 'allow_auto_delivery', 'filter_count']
+    list_filter = ['game', 'allow_auto_delivery']
+    list_editable = ['order', 'allow_auto_delivery']
     search_fields = ['game__name', 'category__name']
     autocomplete_fields = ['game', 'category']
     inlines = [GameCategoryFilterInline]

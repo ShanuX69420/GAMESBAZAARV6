@@ -232,7 +232,7 @@ class GameCategoryDetailView(APIView):
         listings_qs = Listing.objects.filter(
             game_category=game_category,
             status='active',
-        ).select_related('seller', 'game_category__game', 'game_category__category')
+        ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
 
         # Apply filter params from query string: ?filter_{filter_id}={option_value}
         for key, value in request.query_params.items():
@@ -243,6 +243,15 @@ class GameCategoryDetailView(APIView):
                 listings_qs = listings_qs.filter(
                     filter_values__contains={filter_id: value}
                 )
+
+        # Instant delivery filter: only show auto-delivery listings
+        if request.query_params.get('instant_delivery') == 'true':
+            listings_qs = listings_qs.filter(is_auto_delivery=True)
+
+        # Search filter: filter by title
+        search_q = request.query_params.get('search', '').strip()
+        if search_q:
+            listings_qs = listings_qs.filter(title__icontains=search_q)
 
         total_count = listings_qs.count()
         limit, offset = get_pagination_params(request)
@@ -278,6 +287,7 @@ class GameCategoryDetailView(APIView):
                 'name': gc.category.name,
                 'icon': gc.category.icon,
                 'listing_count': gc.listing_count,
+                'allow_auto_delivery': gc.allow_auto_delivery,
             }
             for gc in sibling_gcs
         ]
@@ -471,7 +481,7 @@ class MyListingsView(generics.ListAPIView):
     def get_queryset(self):
         return Listing.objects.filter(
             seller=self.request.user
-        ).select_related('game_category__game', 'game_category__category')
+        ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
 
     def list(self, request, *args, **kwargs):
         listings_qs = self.get_queryset()
@@ -1007,6 +1017,23 @@ class BuyListingView(APIView):
             if total <= 0:
                 return Response({'error': 'Invalid listing price.'}, status=400)
 
+            is_auto = listing.is_auto_delivery
+            if is_auto:
+                all_lines = [line for line in listing.auto_delivery_data.splitlines() if line.strip()]
+                if len(all_lines) < qty:
+                    item_label = 'item' if len(all_lines) == 1 else 'items'
+                    return Response({'error': f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'}, status=400)
+                delivered_lines = all_lines[:qty]
+                remaining_lines = all_lines[qty:]
+                delivery_note = '\n'.join(delivered_lines)
+                # Append delivery instructions if seller provided them
+                if listing.delivery_instructions.strip():
+                    delivery_note += '\n\n--- Seller Instructions ---\n' + listing.delivery_instructions.strip()
+                initial_status = 'delivered'
+            else:
+                initial_status = 'pending'
+                delivery_note = ''
+
             wallet = get_or_create_locked_wallet(request.user)
 
             if wallet.balance < total:
@@ -1017,9 +1044,26 @@ class BuyListingView(APIView):
             commission = (total * rate / Decimal('100')).quantize(Decimal('0.01'))
             seller_receives = total - commission
 
-            # Deduct from buyer
+            # Deduct from buyer only after all purchase validations have passed.
             wallet.balance -= total
             wallet.save(update_fields=['balance', 'updated_at'])
+
+            if is_auto:
+                # Update the listing's remaining auto_delivery_data and quantity
+                listing.auto_delivery_data = '\n'.join(remaining_lines)
+                listing.quantity = len(remaining_lines)
+                if listing.quantity <= 0:
+                    listing.quantity = 0
+                    listing.status = 'sold'
+                listing.save(update_fields=['auto_delivery_data', 'quantity', 'status'])
+            else:
+                # Reduce listing stock only if not evergreen (quantity is not null)
+                if listing.quantity is not None:
+                    listing.quantity -= qty
+                    if listing.quantity <= 0:
+                        listing.quantity = 0
+                        listing.status = 'sold'
+                    listing.save(update_fields=['quantity', 'status'])
 
             # Create order
             order = Order.objects.create(
@@ -1033,7 +1077,8 @@ class BuyListingView(APIView):
                 commission_rate=rate,
                 commission_amount=commission,
                 seller_amount=seller_receives,
-                status='pending',
+                status=initial_status,
+                delivery_note=delivery_note,
             )
 
             # Log transaction
@@ -1045,14 +1090,6 @@ class BuyListingView(APIView):
                 description=f'Purchase: {listing.title} (x{qty})',
                 reference_id=f'order_{order.pk}',
             )
-
-            # Reduce listing stock only if not evergreen (quantity is not null)
-            if listing.quantity is not None:
-                listing.quantity -= qty
-                if listing.quantity <= 0:
-                    listing.quantity = 0
-                    listing.status = 'sold'
-                listing.save(update_fields=['quantity', 'status'])
 
             conversation, _ = get_or_create_private_conversation(request.user, listing.seller)
 
@@ -1067,6 +1104,16 @@ class BuyListingView(APIView):
                 message=f'{request.user.username} purchased "{listing.title}" (x{qty}) for PKR {total}.',
                 order=order,
             )
+
+            # For auto-delivery, also notify buyer that it's delivered
+            if is_auto:
+                create_notification(
+                    recipient=request.user,
+                    notification_type='order_delivered',
+                    title='Your order has been automatically delivered!',
+                    message=f'Your order "{listing.title}" has been automatically delivered. Check your order for the delivery details.',
+                    order=order,
+                )
 
         return Response(OrderSerializer(order).data, status=201)
 
@@ -1282,7 +1329,7 @@ class ResolveDisputeView(APIView):
 
                 if order.listing_id:
                     listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
-                    if listing and listing.quantity is not None:
+                    if listing and listing.quantity is not None and not listing.is_auto_delivery:
                         listing.quantity += order.quantity
                         if listing.status == 'sold':
                             listing.status = 'active'
@@ -1353,7 +1400,7 @@ class RefundOrderView(APIView):
             listing = None
             if order.listing_id:
                 listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
-                if listing and listing.quantity is None:
+                if listing and (listing.quantity is None or listing.is_auto_delivery):
                     listing = None
 
             # If order was completed, seller already received funds — deduct from seller
