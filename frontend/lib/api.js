@@ -402,3 +402,32 @@ export async function searchMarketplace(query) {
   if (!res.ok) throw new Error('Search failed');
   return res.json();
 }
+
+// -- Notifications API --
+
+export async function getNotifications(opts = {}) {
+  const qs = paginationQuery(opts);
+  const res = await authFetch(`${API_BASE}/api/notifications/${qs}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get notifications');
+  return res.json();
+}
+
+export async function markNotificationRead(notificationId = 'all') {
+  const res = await authFetch(`${API_BASE}/api/notifications/read/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ notification_id: notificationId }),
+  });
+  if (!res.ok) throw new Error('Failed to mark notification read');
+  return res.json();
+}
+
+export async function getNotificationUnreadCount() {
+  const res = await authFetch(`${API_BASE}/api/notifications/unread-count/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get notification count');
+  return res.json();
+}

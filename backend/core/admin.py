@@ -9,6 +9,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, Order, SellerCommissionOverride, Review,
+    Notification,
 )
 from .services import (
     apply_wallet_delta_once,
@@ -385,3 +386,12 @@ class ReviewAdmin(admin.ModelAdmin):
     list_filter = ['rating']
     search_fields = ['reviewer__username', 'seller__username', 'comment']
     raw_id_fields = ['order', 'reviewer', 'seller']
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ['id', 'recipient', 'notification_type', 'title', 'is_read', 'created_at']
+    list_filter = ['notification_type', 'is_read']
+    search_fields = ['recipient__username', 'title', 'message']
+    raw_id_fields = ['recipient', 'order', 'review']
+    readonly_fields = ['created_at']

@@ -556,3 +556,54 @@ class Review(models.Model):
 
     def __str__(self):
         return f"{self.reviewer.username} → {self.seller.username}: {self.rating}★"
+
+
+# ── Notifications ────────────────────────────────────────────────────────────
+
+class Notification(models.Model):
+    """In-app notification for a user."""
+    TYPE_CHOICES = [
+        ('new_order', 'New Order'),                    # Seller: someone bought your listing
+        ('order_delivered', 'Order Delivered'),         # Buyer: seller marked as delivered
+        ('order_confirmed', 'Order Confirmed'),        # Seller: buyer confirmed delivery
+        ('order_disputed', 'Order Disputed'),          # Seller: buyer opened a dispute
+        ('order_cancelled', 'Order Cancelled'),        # Buyer/Seller: order cancelled/refunded
+        ('new_review', 'New Review'),                  # Seller: buyer left a review
+    ]
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='notifications',
+    )
+    notification_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    title = models.CharField(max_length=300)
+    message = models.TextField(blank=True, default='')
+    is_read = models.BooleanField(default=False)
+
+    # Optional links to related objects
+    order = models.ForeignKey(
+        'Order', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='notifications',
+    )
+    review = models.ForeignKey(
+        'Review', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='notifications',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['recipient', '-created_at'],
+                name='notif_recipient_created_idx',
+            ),
+            models.Index(
+                fields=['recipient', 'is_read', '-created_at'],
+                name='notif_recipient_unread_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient.username}: {self.title}"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
 
@@ -9,6 +9,7 @@ const LISTING_PAGE_SIZE = 48;
 
 export default function GameCategoryPage() {
   const params = useParams();
+  const router = useRouter();
   const { slug, categorySlug } = params;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,8 +52,9 @@ export default function GameCategoryPage() {
   }, [slug, categorySlug]);
 
   useEffect(() => {
-    fetchData(activeFilters, 0, false);
-  }, [fetchData, activeFilters]);
+    setActiveFilters({});
+    fetchData({}, 0, false);
+  }, [fetchData]);
 
   function handleFilterChange(filterId, value) {
     setActiveFilters(prev => ({
@@ -68,6 +70,20 @@ export default function GameCategoryPage() {
     }));
   }
 
+  // Re-fetch when filters change
+  useEffect(() => {
+    if (data) {
+      fetchData(activeFilters, 0, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilters]);
+
+  function handleCategorySwitch(catSlug) {
+    if (catSlug !== categorySlug) {
+      router.push(`/games/${slug}/${catSlug}`);
+    }
+  }
+
   if (loading && !data) {
     return (
       <div className="container">
@@ -78,7 +94,7 @@ export default function GameCategoryPage() {
 
   if (!data) return null;
 
-  const { game, category, filters, listings } = data;
+  const { game, category, filters, listings, all_categories } = data;
   const pagination = data.listing_pagination;
   const listingCount = pagination?.count ?? listings?.length ?? 0;
 
@@ -89,25 +105,35 @@ export default function GameCategoryPage() {
         <div className="breadcrumb">
           <a href="/">Home</a>
           <span className="breadcrumb-sep">›</span>
-          <a href={`/games/${game.slug}`}>{game.name}</a>
-          <span className="breadcrumb-sep">›</span>
-          <span>{category.name}</span>
+          <span>{game.name}</span>
         </div>
 
         <div className="game-header">
-          <div className="game-header-icon">
-            {category.icon || '📦'}
-          </div>
           <div className="game-header-info">
-            <h1>{game.name} — {category.name}</h1>
-            {category.description && <p>{category.description}</p>}
+            <h1>{game.name} {category.name}</h1>
           </div>
         </div>
       </div>
 
+      {/* Category Tabs */}
+      {all_categories && all_categories.length > 1 && (
+        <div className="category-tabs">
+          {all_categories.map((cat) => (
+            <button
+              key={cat.slug}
+              className={`category-tab ${cat.slug === categorySlug ? 'category-tab-active' : ''}`}
+              onClick={() => handleCategorySwitch(cat.slug)}
+            >
+              <span className="category-tab-name">{cat.name}</span>
+              <span className="category-tab-count">{cat.listing_count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Filters */}
       {filters.length > 0 && (
-        <section className="section">
+        <section className="section" style={{ paddingTop: 0 }}>
           <div className="section-header">
             <h2 className="section-title">Filters</h2>
             {Object.values(activeFilters).some(v => v) && (
@@ -157,7 +183,7 @@ export default function GameCategoryPage() {
       )}
 
       {/* Listings */}
-      <section className="section">
+      <section className="section" style={{ paddingTop: filters.length > 0 ? 0 : undefined }}>
         <div className="section-header">
           <h2 className="section-title">
             {listingCount} Listing{listingCount !== 1 ? 's' : ''}

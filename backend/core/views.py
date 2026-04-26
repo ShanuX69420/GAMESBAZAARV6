@@ -22,7 +22,7 @@ from django.utils import timezone
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
-    Review,
+    Review, Notification,
 )
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
@@ -34,6 +34,7 @@ from .serializers import (
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     OrderSerializer, BuyListingSerializer,
     ReviewSerializer, CreateReviewSerializer,
+    NotificationSerializer,
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
@@ -69,6 +70,8 @@ HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS = 30
 MAX_SEARCH_QUERY_LENGTH = 80
 SEARCH_CACHE_SECONDS = 60
 SEARCH_RESULT_LIMIT = 50
+DEFAULT_NOTIFICATION_PAGE_SIZE = 30
+MAX_NOTIFICATION_PAGE_SIZE = 100
 
 
 class ScopedPostThrottleMixin:
@@ -140,6 +143,18 @@ def get_pagination_payload(total_count, limit, offset):
         'next_offset': next_offset,
         'previous_offset': previous_offset,
     }
+
+
+def create_notification(*, recipient, notification_type, title, message='', order=None, review=None):
+    """Create a notification for a user."""
+    return Notification.objects.create(
+        recipient=recipient,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        order=order,
+        review=review,
+    )
 
 
 # ── Public Game / Category / Filter views ────────────────────────────────────
@@ -243,6 +258,30 @@ class GameCategoryDetailView(APIView):
         ).data
         cat_data['listings'] = listings_data
         cat_data['listing_pagination'] = get_pagination_payload(total_count, limit, offset)
+
+        # Include all sibling categories (same game) with active listing counts
+        sibling_gcs = GameCategory.objects.filter(
+            game=game_category.game,
+            game__is_active=True,
+        ).select_related('category').order_by('order', 'category__name')
+
+        from django.db.models import Count, Q
+        sibling_gcs = sibling_gcs.annotate(
+            listing_count=Count(
+                'listings',
+                filter=Q(listings__status='active'),
+            )
+        )
+        cat_data['all_categories'] = [
+            {
+                'slug': gc.category.slug,
+                'name': gc.category.name,
+                'icon': gc.category.icon,
+                'listing_count': gc.listing_count,
+            }
+            for gc in sibling_gcs
+        ]
+
         return Response(cat_data)
 
 
@@ -1020,6 +1059,15 @@ class BuyListingView(APIView):
             order.conversation = conversation
             order.save(update_fields=['conversation'])
 
+            # Notify seller about new order
+            create_notification(
+                recipient=listing.seller,
+                notification_type='new_order',
+                title=f'New order from {request.user.username}',
+                message=f'{request.user.username} purchased "{listing.title}" (x{qty}) for PKR {total}.',
+                order=order,
+            )
+
         return Response(OrderSerializer(order).data, status=201)
 
 
@@ -1115,6 +1163,15 @@ class DeliverOrderView(APIView):
             order.delivery_note = delivery_note
             order.save(update_fields=['status', 'delivery_note', 'updated_at'])
 
+            # Notify buyer that seller delivered
+            create_notification(
+                recipient=order.buyer,
+                notification_type='order_delivered',
+                title='Your order has been delivered',
+                message=f'{request.user.username} marked order "{order.listing_title}" as delivered.',
+                order=order,
+            )
+
         return Response(OrderSerializer(order).data)
 
 
@@ -1146,6 +1203,15 @@ class ConfirmOrderView(APIView):
             order.status = 'completed'
             order.save(update_fields=['status', 'updated_at'])
 
+            # Notify seller that buyer confirmed
+            create_notification(
+                recipient=order.seller,
+                notification_type='order_confirmed',
+                title='Order confirmed — funds released!',
+                message=f'{request.user.username} confirmed delivery of "{order.listing_title}". PKR {order.seller_amount} has been credited to your wallet.',
+                order=order,
+            )
+
         return Response(OrderSerializer(order).data)
 
 
@@ -1171,6 +1237,15 @@ class DisputeOrderView(APIView):
             order.status = 'disputed'
             order.dispute_reason = reason
             order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
+
+            # Notify seller about dispute
+            create_notification(
+                recipient=order.seller,
+                notification_type='order_disputed',
+                title='Order disputed by buyer',
+                message=f'{request.user.username} has disputed order "{order.listing_title}". Reason: {reason}',
+                order=order,
+            )
 
         return Response(OrderSerializer(order).data)
 
@@ -1214,6 +1289,22 @@ class ResolveDisputeView(APIView):
                         listing.save(update_fields=['quantity', 'status'])
 
                 order.status = 'cancelled'
+
+                # Notify both parties
+                create_notification(
+                    recipient=order.buyer,
+                    notification_type='order_cancelled',
+                    title='Dispute resolved — refund issued',
+                    message=f'Your dispute for "{order.listing_title}" has been resolved. PKR {order.total_amount} has been refunded to your wallet.',
+                    order=order,
+                )
+                create_notification(
+                    recipient=order.seller,
+                    notification_type='order_cancelled',
+                    title='Dispute resolved — order cancelled',
+                    message=f'The dispute for "{order.listing_title}" has been resolved in favour of the buyer. The order has been cancelled.',
+                    order=order,
+                )
             else:
                 release_order_funds_to_seller_once(
                     order,
@@ -1222,6 +1313,22 @@ class ResolveDisputeView(APIView):
                     ledger_description=f'Commission collected: {order.listing_title}',
                 )
                 order.status = 'completed'
+
+                # Notify both parties
+                create_notification(
+                    recipient=order.seller,
+                    notification_type='order_confirmed',
+                    title='Dispute resolved — funds released!',
+                    message=f'The dispute for "{order.listing_title}" has been resolved in your favour. PKR {order.seller_amount} has been credited.',
+                    order=order,
+                )
+                create_notification(
+                    recipient=order.buyer,
+                    notification_type='order_confirmed',
+                    title='Dispute resolved — order completed',
+                    message=f'The dispute for "{order.listing_title}" has been resolved. The order is now marked as completed.',
+                    order=order,
+                )
 
             order.save(update_fields=['status', 'updated_at'])
 
@@ -1298,6 +1405,15 @@ class RefundOrderView(APIView):
             order.status = 'cancelled'
             order.save(update_fields=['status', 'updated_at'])
 
+            # Notify buyer about the refund
+            create_notification(
+                recipient=order.buyer,
+                notification_type='order_cancelled',
+                title='Refund received',
+                message=f'{order.seller.username} has refunded your order "{order.listing_title}". PKR {order.total_amount} has been credited to your wallet.',
+                order=order,
+            )
+
         return Response(OrderSerializer(order).data)
 
 
@@ -1326,6 +1442,16 @@ class CreateReviewView(APIView):
             seller=order.seller,
             rating=data['rating'],
             comment=data.get('comment', ''),
+        )
+
+        # Notify seller about new review
+        create_notification(
+            recipient=order.seller,
+            notification_type='new_review',
+            title=f'New {data["rating"]}★ review from {request.user.username}',
+            message=f'{request.user.username} left a {data["rating"]}-star review for "{order.listing_title}".' + (f' "{data.get("comment", "")}"' if data.get('comment') else ''),
+            order=order,
+            review=review,
         )
 
         return Response(ReviewSerializer(review).data, status=201)
@@ -1454,3 +1580,65 @@ class SearchView(APIView):
 
         cache.set(cache_key, results, SEARCH_CACHE_SECONDS)
         return Response({'query': query, 'results': results})
+
+
+# ── Notifications ────────────────────────────────────────────────────────────
+
+class NotificationListView(APIView):
+    """GET /api/notifications/ — List user's notifications (paginated)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        qs = Notification.objects.filter(recipient=request.user)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_NOTIFICATION_PAGE_SIZE,
+            max_limit=MAX_NOTIFICATION_PAGE_SIZE,
+        )
+        total_count = qs.count()
+        unread_count = qs.filter(is_read=False).count()
+        notifications = qs[offset:offset + limit]
+        return Response({
+            'notifications': NotificationSerializer(notifications, many=True).data,
+            'unread_count': unread_count,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
+
+
+class NotificationMarkReadView(APIView):
+    """POST /api/notifications/read/ — Mark notification(s) as read."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        notification_id = request.data.get('notification_id')
+
+        if notification_id == 'all':
+            # Mark all unread notifications as read
+            updated = Notification.objects.filter(
+                recipient=request.user,
+                is_read=False,
+            ).update(is_read=True)
+            return Response({'marked_read': updated})
+        elif notification_id:
+            # Mark a single notification as read
+            notification = get_object_or_404(
+                Notification, pk=notification_id, recipient=request.user,
+            )
+            if not notification.is_read:
+                notification.is_read = True
+                notification.save(update_fields=['is_read'])
+            return Response({'marked_read': 1})
+        else:
+            return Response({'error': 'notification_id is required.'}, status=400)
+
+
+class NotificationUnreadCountView(APIView):
+    """GET /api/notifications/unread-count/ — Unread notification count."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        count = Notification.objects.filter(
+            recipient=request.user,
+            is_read=False,
+        ).count()
+        return Response({'unread_count': count})

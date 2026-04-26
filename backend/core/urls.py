@@ -64,4 +64,9 @@ urlpatterns = [
 
     # Search
     path('search/', views.SearchView.as_view(), name='search'),
+
+    # Notifications
+    path('notifications/', views.NotificationListView.as_view(), name='notification-list'),
+    path('notifications/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
+    path('notifications/unread-count/', views.NotificationUnreadCountView.as_view(), name='notification-unread-count'),
 ]

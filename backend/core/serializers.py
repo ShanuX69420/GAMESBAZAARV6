@@ -10,7 +10,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order,
-    SellerCommissionOverride, Review,
+    SellerCommissionOverride, Review, Notification,
 )
 from .services import create_private_media_ticket
 
@@ -554,3 +554,17 @@ class CreateReviewSerializer(serializers.Serializer):
     order_id = serializers.IntegerField()
     rating = serializers.IntegerField(min_value=1, max_value=5)
     comment = serializers.CharField(required=False, default='', max_length=2000)
+
+
+# ── Notification Serializers ───────────────────────────────────────────────────
+
+class NotificationSerializer(serializers.ModelSerializer):
+    order_id = serializers.IntegerField(read_only=True)
+    review_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'notification_type', 'title', 'message',
+            'is_read', 'order_id', 'review_id', 'created_at',
+        ]

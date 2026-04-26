@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 from io import BytesIO
 from threading import Barrier, Thread
 from urllib.parse import urlsplit
@@ -21,7 +21,7 @@ from rest_framework.test import APIClient
 from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    Listing, Message, Order, Review,
+    Listing, Message, Notification, Order, Review,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
 from .serializers import WalletTransactionSerializer
@@ -3104,4 +3104,260 @@ class SearchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         ids = [r['id'] for r in response.data['results']]
         self.assertEqual(len(ids), len(set(ids)), 'Duplicate result IDs found')
+
+
+
+# ── Notification Tests ────────────────────────────────────────────────────────
+
+class NotificationTests(TestCase):
+    """Tests for the notification system."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='notif_buyer', password='testpass123')
+        self.seller = User.objects.create_user(username='notif_seller', password='testpass123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save()
+
+        # Create wallet with balance for buyer
+        wallet, _ = Wallet.objects.get_or_create(user=self.buyer)
+        wallet.balance = Decimal('10000.00')
+        wallet.save()
+
+        # Create game, category, game-category, and listing
+        game = Game.objects.create(name='TestGame', slug='testgame')
+        cat = Category.objects.create(name='Accounts', slug='accounts')
+        gc = GameCategory.objects.create(game=game, category=cat)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=gc,
+            title='Test Listing',
+            description='test',
+            price=Decimal('100.00'),
+            status='active',
+            quantity=10,
+        )
+
+    # ── Notification creation on order events ─────────────────────────────
+
+    def test_buy_creates_notification_for_seller(self):
+        """Buying a listing should create a new_order notification for the seller."""
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        self.assertEqual(response.status_code, 201)
+
+        notif = Notification.objects.filter(recipient=self.seller, notification_type='new_order').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('notif_buyer', notif.title)
+        self.assertIsNotNone(notif.order)
+
+    def test_deliver_creates_notification_for_buyer(self):
+        """Delivering an order should create an order_delivered notification for the buyer."""
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/deliver/', {'delivery_note': 'Here it is'})
+
+        notif = Notification.objects.filter(recipient=self.buyer, notification_type='order_delivered').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('delivered', notif.title.lower())
+
+    def test_confirm_creates_notification_for_seller(self):
+        """Confirming an order should create an order_confirmed notification for the seller."""
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/deliver/')
+
+        self.client.force_authenticate(user=self.buyer)
+        self.client.post(f'/api/orders/{order_id}/confirm/')
+
+        notif = Notification.objects.filter(recipient=self.seller, notification_type='order_confirmed').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('confirmed', notif.title.lower())
+
+    def test_dispute_creates_notification_for_seller(self):
+        """Disputing an order should create an order_disputed notification for the seller."""
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.post(f'/api/orders/{order_id}/dispute/', {'reason': 'Scam'})
+
+        notif = Notification.objects.filter(recipient=self.seller, notification_type='order_disputed').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('disputed', notif.title.lower())
+
+    def test_review_creates_notification_for_seller(self):
+        """Leaving a review should create a new_review notification for the seller."""
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/deliver/')
+
+        self.client.force_authenticate(user=self.buyer)
+        self.client.post(f'/api/orders/{order_id}/confirm/')
+
+        self.client.post('/api/reviews/', {'order_id': order_id, 'rating': 5, 'comment': 'Great!'})
+
+        notif = Notification.objects.filter(recipient=self.seller, notification_type='new_review').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('5', notif.title)
+
+    # ── Notification API endpoints ────────────────────────────────────────
+
+    def test_notification_list_requires_auth(self):
+        """Notification list should require authentication."""
+        response = self.client.get('/api/notifications/')
+        self.assertEqual(response.status_code, 401)
+
+    def test_notification_list_returns_user_notifications(self):
+        """Notification list should return only the authenticated user's notifications."""
+        Notification.objects.create(
+            recipient=self.seller, notification_type='new_order',
+            title='Test notif', message='Test',
+        )
+        Notification.objects.create(
+            recipient=self.buyer, notification_type='order_delivered',
+            title='Other notif', message='Other',
+        )
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['notifications']), 1)
+        self.assertEqual(response.data['notifications'][0]['title'], 'Test notif')
+
+    def test_notification_list_includes_unread_count(self):
+        """Notification list should include unread_count."""
+        Notification.objects.create(
+            recipient=self.buyer, notification_type='new_order', title='N1',
+        )
+        Notification.objects.create(
+            recipient=self.buyer, notification_type='new_order', title='N2', is_read=True,
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['unread_count'], 1)
+
+    def test_mark_single_notification_read(self):
+        """POST notification_id should mark that specific notification as read."""
+        notif = Notification.objects.create(
+            recipient=self.buyer, notification_type='new_order', title='Test',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post('/api/notifications/read/', {'notification_id': notif.id})
+
+        self.assertEqual(response.status_code, 200)
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
+
+    def test_mark_all_notifications_read(self):
+        """POST notification_id='all' should mark all unread notifications as read."""
+        Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='N1')
+        Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='N2')
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post('/api/notifications/read/', {'notification_id': 'all'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Notification.objects.filter(recipient=self.buyer, is_read=False).count(), 0)
+
+    def test_unread_count_endpoint(self):
+        """GET /api/notifications/unread-count/ should return unread notification count."""
+        Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='N1')
+        Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='N2')
+        Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='N3', is_read=True)
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/notifications/unread-count/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['unread_count'], 2)
+
+    def test_notification_serializer_fields(self):
+        """Notification response should include expected fields."""
+        Notification.objects.create(
+            recipient=self.buyer, notification_type='new_order',
+            title='Test', message='A message',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/notifications/')
+
+        notif = response.data['notifications'][0]
+        expected_fields = {'id', 'notification_type', 'title', 'message', 'is_read', 'order_id', 'review_id', 'created_at'}
+        self.assertEqual(set(notif.keys()), expected_fields)
+
+    def test_cannot_mark_other_users_notification_read(self):
+        """User should not be able to mark another user's notification as read."""
+        notif = Notification.objects.create(
+            recipient=self.seller, notification_type='new_order', title='Test',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post('/api/notifications/read/', {'notification_id': notif.id})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_notification_list_pagination(self):
+        """Notification list should support pagination."""
+        for i in range(5):
+            Notification.objects.create(
+                recipient=self.buyer, notification_type='new_order', title=f'N{i}',
+            )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/notifications/?limit=2&offset=0')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['notifications']), 2)
+        self.assertEqual(response.data['pagination']['count'], 5)
+        self.assertIsNotNone(response.data['pagination']['next_offset'])
+
+    def test_notification_ordered_by_newest_first(self):
+        """Notifications should be ordered by created_at descending (newest first)."""
+        n1 = Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='First')
+        # Ensure different created_at by updating directly
+        from django.utils import timezone
+        import datetime
+        Notification.objects.filter(pk=n1.pk).update(
+            created_at=timezone.now() - datetime.timedelta(minutes=5)
+        )
+        n2 = Notification.objects.create(recipient=self.buyer, notification_type='new_order', title='Second')
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/notifications/')
+
+        self.assertEqual(response.data['notifications'][0]['title'], 'Second')
+        self.assertEqual(response.data['notifications'][1]['title'], 'First')
+
+
+    def test_refund_creates_notification_for_buyer(self):
+        """Seller refunding an order should create an order_cancelled notification for the buyer."""
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        # Seller refunds
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/refund/')
+
+        notif = Notification.objects.filter(
+            recipient=self.buyer, notification_type='order_cancelled'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertIn('refund', notif.title.lower())
+        self.assertIn('wallet', notif.message.lower())
 
