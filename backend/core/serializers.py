@@ -1,7 +1,11 @@
 from decimal import Decimal
 from urllib.parse import urlencode
 from rest_framework import serializers
-from django.contrib.auth.models import User
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.settings import api_settings
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
@@ -142,6 +146,7 @@ class GameCategoryDetailSerializer(serializers.Serializer):
 # ── Auth Serializers ─────────────────────────────────────────────────────────
 
 class RegisterSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=True)
     password = serializers.CharField(write_only=True, min_length=6)
     password2 = serializers.CharField(write_only=True, min_length=6)
 
@@ -150,7 +155,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'email', 'password', 'password2']
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        value = User.objects.normalize_email(value.strip())
+        if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError('A user with this email already exists.')
         return value
 
@@ -168,6 +174,43 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data.pop('password2')
         user = User.objects.create_user(**validated_data)
         return user
+
+
+class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    username_field = 'email'
+
+    def validate(self, attrs):
+        email = User.objects.normalize_email(attrs.get('email', '').strip())
+        password = attrs.get('password')
+        user = User.objects.filter(email__iexact=email).order_by('id').first()
+
+        self.user = None
+        if user is not None:
+            authenticate_kwargs = {
+                User.USERNAME_FIELD: user.get_username(),
+                'password': password,
+            }
+            request = self.context.get('request')
+            if request is not None:
+                authenticate_kwargs['request'] = request
+            self.user = authenticate(**authenticate_kwargs)
+
+        if not api_settings.USER_AUTHENTICATION_RULE(self.user):
+            raise AuthenticationFailed(
+                self.error_messages['no_active_account'],
+                'no_active_account',
+            )
+
+        refresh = self.get_token(self.user)
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+
+        if api_settings.UPDATE_LAST_LOGIN:
+            update_last_login(None, self.user)
+
+        return data
 
 
 class UserSerializer(serializers.ModelSerializer):

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -24,7 +24,7 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      const userData = await login(username, password);
+      const userData = await login(email, password);
       router.push(userData?.is_seller ? '/dashboard' : '/');
     } catch (err) {
       setError(err.message || 'Invalid credentials');
@@ -52,13 +52,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">
-              <label className="form-label">Username</label>
+              <label className="form-label">Email</label>
               <input
-                type="text"
+                type="email"
                 className="form-input"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
                 required
               />
             </div>

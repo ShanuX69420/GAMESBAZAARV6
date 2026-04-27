@@ -27,7 +27,7 @@ from .models import (
 )
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
-    RegisterSerializer, UserSerializer, SellerApplicationSerializer,
+    RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
     build_listing_filter_display_map,
     ListingSerializer, CreateListingSerializer,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
@@ -348,6 +348,7 @@ def clear_jwt_auth_cookies(response):
 class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
+    serializer_class = EmailTokenObtainPairSerializer
     throttle_scope = 'auth_login'
 
     def post(self, request, *args, **kwargs):

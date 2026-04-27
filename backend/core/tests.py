@@ -756,17 +756,21 @@ class ApiThrottleBehaviorTests(TestCase):
         self.assertEqual(second.status_code, 429)
 
     def test_login_is_rate_limited(self):
-        User.objects.create_user(username='buyer', password='password123')
+        User.objects.create_user(
+            username='buyer',
+            email='buyer@example.com',
+            password='password123',
+        )
 
         first = self.client.post(
             '/api/auth/login/',
-            {'username': 'buyer', 'password': 'wrong-password'},
+            {'email': 'buyer@example.com', 'password': 'wrong-password'},
             format='json',
             HTTP_ORIGIN='http://localhost:3000',
         )
         second = self.client.post(
             '/api/auth/login/',
-            {'username': 'buyer', 'password': 'wrong-password'},
+            {'email': 'buyer@example.com', 'password': 'wrong-password'},
             format='json',
             HTTP_ORIGIN='http://localhost:3000',
         )
@@ -887,7 +891,7 @@ class CookieJWTAuthTests(TestCase):
     def login(self):
         return self.client.post(
             '/api/auth/login/',
-            {'username': 'cookiebuyer', 'password': 'password123'},
+            {'email': 'cookiebuyer@example.com', 'password': 'password123'},
             format='json',
             HTTP_ORIGIN='http://localhost:3000',
         )

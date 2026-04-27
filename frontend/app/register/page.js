@@ -60,14 +60,14 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">
-              <label className="form-label">Username</label>
+              <label className="form-label">Display name</label>
               <input
                 type="text"
                 name="username"
                 className="form-input"
                 value={formData.username}
                 onChange={handleChange}
-                placeholder="Choose a username"
+                placeholder="Choose your public name"
                 required
               />
             </div>
