@@ -1,6 +1,10 @@
 import { API_BASE } from '@/lib/config';
 let refreshAuthPromise = null;
 
+function pathSegment(value) {
+  return encodeURIComponent(String(value));
+}
+
 function paginationQuery({ limit, offset, beforeId, before_id, otherUserId, other_user_id } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));
@@ -22,13 +26,13 @@ export async function fetchGames() {
 }
 
 export async function fetchGame(slug) {
-  const res = await fetch(`${API_BASE}/api/games/${slug}/`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/games/${pathSegment(slug)}/`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch game');
   return res.json();
 }
 
 export async function fetchGameCategory(gameSlug, categorySlug, filterParams = '') {
-  const url = `${API_BASE}/api/games/${gameSlug}/${categorySlug}/${filterParams ? '?' + filterParams : ''}`;
+  const url = `${API_BASE}/api/games/${pathSegment(gameSlug)}/${pathSegment(categorySlug)}/${filterParams ? '?' + filterParams : ''}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch game category');
   return res.json();
@@ -424,13 +428,13 @@ export async function createReview(orderId, rating, comment = '') {
 }
 
 export async function getSellerReviews(username, pagination = {}) {
-  const res = await fetch(`${API_BASE}/api/reviews/seller/${username}/${paginationQuery(pagination)}`);
+  const res = await fetch(`${API_BASE}/api/reviews/seller/${pathSegment(username)}/${paginationQuery(pagination)}`);
   if (!res.ok) throw new Error('Failed to get reviews');
   return res.json();
 }
 
 export async function getSellerProfile(username) {
-  const res = await fetch(`${API_BASE}/api/seller/profile/${username}/`);
+  const res = await fetch(`${API_BASE}/api/seller/profile/${pathSegment(username)}/`);
   if (!res.ok) throw new Error('Failed to get seller profile');
   return res.json();
 }

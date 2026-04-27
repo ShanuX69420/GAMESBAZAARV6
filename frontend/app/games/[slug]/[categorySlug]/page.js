@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
+import {
+  buildGameCategoryListingUrl,
+  buildSellerListingsPath,
+  buildSellerProfilePath,
+} from '@/lib/marketplaceUrls';
 
 const LISTING_PAGE_SIZE = 48;
 
@@ -28,27 +33,17 @@ export default function GameCategoryPage() {
       setLoading(true);
     }
     try {
-      const query = new URLSearchParams({
-        limit: String(LISTING_PAGE_SIZE),
-        offset: String(offset),
+      const url = buildGameCategoryListingUrl({
+        apiBase: API_BASE,
+        gameSlug: slug,
+        categorySlug,
+        limit: LISTING_PAGE_SIZE,
+        offset,
+        filters,
+        instantOnly,
+        search,
+        seller: sellerFilter,
       });
-      Object.entries(filters)
-        .filter(([, value]) => value)
-        .forEach(([key, value]) => query.set(`filter_${key}`, value));
-
-      if (instantOnly) {
-        query.set('instant_delivery', 'true');
-      }
-
-      if (search) {
-        query.set('search', search);
-      }
-
-      if (sellerFilter) {
-        query.set('seller', sellerFilter);
-      }
-
-      const url = `${API_BASE}/api/games/${slug}/${categorySlug}/?${query.toString()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const nextData = await res.json();
@@ -106,10 +101,7 @@ export default function GameCategoryPage() {
 
   function handleCategorySwitch(catSlug) {
     if (catSlug !== categorySlug) {
-      const sellerQ = sellerFilter
-        ? `?${new URLSearchParams({ seller: sellerFilter }).toString()}`
-        : '';
-      router.push(`/games/${slug}/${catSlug}${sellerQ}`);
+      router.push(buildSellerListingsPath({ gameSlug: slug, categorySlug: catSlug, seller: sellerFilter }));
     }
   }
 
@@ -133,8 +125,8 @@ export default function GameCategoryPage() {
       {/* Seller Filter Banner */}
       {sellerFilter && (
         <div className="seller-filter-banner">
-          <span>Showing listings by <Link href={`/seller/${encodeURIComponent(sellerFilter)}`} className="seller-filter-link">{sellerFilter}</Link></span>
-          <Link href={`/games/${slug}/${categorySlug}`} className="seller-filter-clear">× Clear filter</Link>
+          <span>Showing listings by <Link href={buildSellerProfilePath(sellerFilter)} className="seller-filter-link">{sellerFilter}</Link></span>
+          <Link href={buildSellerListingsPath({ gameSlug: slug, categorySlug })} className="seller-filter-clear">× Clear filter</Link>
         </div>
       )}
 
@@ -305,7 +297,7 @@ export default function GameCategoryPage() {
                     </div>
                     <span
                       className="listing-card-seller-name"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/seller/${listing.seller_name}`; }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = buildSellerProfilePath(listing.seller_name); }}
                     >
                       {listing.seller_name}
                     </span>

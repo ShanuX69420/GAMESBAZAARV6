@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSellerProfile, getSellerReviews, formatLastActive, startConversation } from '@/lib/api';
+import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 
 const REVIEW_PAGE_SIZE = 20;
 
@@ -195,7 +196,11 @@ export default function SellerProfilePage() {
               {profile.games.map((game) => (
                 <Link
                   key={game.game_slug}
-                  href={`/games/${game.game_slug}/${game.categories[0]?.slug || ''}?${new URLSearchParams({ seller: profile.username }).toString()}`}
+                  href={buildSellerListingsPath({
+                    gameSlug: game.game_slug,
+                    categorySlug: game.categories[0]?.slug || '',
+                    seller: profile.username,
+                  })}
                   className="sp-game-tile"
                 >
                   <div className="sp-game-tile-header">

@@ -3797,6 +3797,60 @@ class AccountSecurityFlowTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('username', response.data)
 
+    def test_profile_update_records_username_change_and_enforces_cooldown(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.put(
+            '/api/auth/profile/',
+            {'username': 'secureuser2'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.username, 'secureuser2')
+        self.assertIsNotNone(self.user.profile.username_changed_at)
+        self.assertEqual(response.data['user']['username'], 'secureuser2')
+
+        cooldown_response = self.client.put(
+            '/api/auth/profile/',
+            {'username': 'secureuser3'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(cooldown_response.status_code, 400)
+        self.assertIn('username', cooldown_response.data)
+        self.assertIn('once every 90 days', str(cooldown_response.data['username'][0]))
+
+    def test_email_change_rejects_current_or_existing_email(self):
+        User.objects.create_user(
+            username='othersecure',
+            email='other-secure@example.com',
+            password='OriginalPass123!x',
+        )
+        self.client.force_authenticate(user=self.user)
+
+        current_response = self.client.post(
+            '/api/auth/email/request-change/',
+            {'new_email': 'secure@example.com'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        existing_response = self.client.post(
+            '/api/auth/email/request-change/',
+            {'new_email': 'other-secure@example.com'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(current_response.status_code, 400)
+        self.assertEqual(existing_response.status_code, 400)
+        self.assertIn('current email', str(current_response.data['new_email'][0]))
+        self.assertIn('already exists', str(existing_response.data['new_email'][0]))
+
     def test_change_password_rejects_same_password(self):
         self.client.force_authenticate(user=self.user)
 
@@ -3813,4 +3867,42 @@ class AccountSecurityFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('different', response.data['error'])
+
+    def test_avatar_upload_and_remove_update_user_profile(self):
+        self.client.force_authenticate(user=self.user)
+
+        upload_response = self.client.post(
+            '/api/auth/avatar/',
+            {'avatar': make_image_file(name='avatar.png')},
+            format='multipart',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(upload_response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertTrue(self.user.profile.avatar.name.startswith('avatars/'))
+        self.assertIn('/media/avatars/', upload_response.data['user']['avatar_url'])
+
+        remove_response = self.client.delete(
+            '/api/auth/avatar/',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(remove_response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertFalse(self.user.profile.avatar)
+        self.assertIsNone(remove_response.data['user']['avatar_url'])
+
+    def test_avatar_upload_rejects_missing_image(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/auth/avatar/',
+            {},
+            format='multipart',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'No image provided.')
 

@@ -1595,7 +1595,7 @@ class MySalesView(APIView):
             completed_count=Count('id', filter=Q(status='completed')),
             total_revenue=Sum('seller_amount', filter=Q(status='completed')),
         )
-        summary['total_revenue'] = str(summary['total_revenue'] or Decimal('0.00'))
+        summary['total_revenue'] = format(summary['total_revenue'] or Decimal('0.00'), '.2f')
 
         return Response({
             'sales': OrderSerializer(orders, many=True).data,
