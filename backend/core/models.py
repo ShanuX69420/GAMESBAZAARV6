@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
+from django.db.models.functions import Lower, Trim
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
@@ -485,7 +486,19 @@ class TopUpRequest(models.Model):
                 check=models.Q(amount__gte=Decimal('1.00')),
                 name='topup_amount_min_1',
             ),
+            models.UniqueConstraint(
+                Lower(Trim('payment_method')),
+                Lower(Trim('transaction_id')),
+                condition=models.Q(status__in=['pending', 'approved']) &
+                          ~models.Q(transaction_id=''),
+                name='uniq_active_topup_method_txid_ci',
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        self.payment_method = (self.payment_method or '').strip()
+        self.transaction_id = (self.transaction_id or '').strip()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.username} — PKR {self.amount} — {self.get_status_display()}"

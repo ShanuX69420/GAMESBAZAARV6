@@ -2,8 +2,6 @@
 WebSocket consumer for real-time chat.
 """
 
-from collections import deque
-from time import monotonic
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
@@ -12,8 +10,7 @@ from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_MESSAGE_NOT_TEXT_ERROR,
     CHAT_MESSAGE_TOO_LONG_ERROR,
-    CHAT_WS_MESSAGE_LIMIT,
-    CHAT_WS_MESSAGE_WINDOW_SECONDS,
+    consume_chat_ws_message_quota,
     validate_chat_message_content,
 )
 
@@ -42,7 +39,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
         # Join the conversation's channel group
         self.room_group_name = f'chat_{self.conversation_id}'
-        self.message_timestamps = deque()
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
@@ -66,7 +62,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             if validation_error == CHAT_MESSAGE_EMPTY_ERROR:
                 return
 
-            if self.is_message_rate_limited():
+            if await self.is_message_rate_limited():
                 await self.send_chat_error(
                     'rate_limited',
                     'You are sending messages too quickly. Please wait a moment.',
@@ -109,17 +105,9 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     # ── Database helpers ─────────────────────────────────────────────────────
 
+    @database_sync_to_async
     def is_message_rate_limited(self):
-        now = monotonic()
-        window_start = now - CHAT_WS_MESSAGE_WINDOW_SECONDS
-        while self.message_timestamps and self.message_timestamps[0] <= window_start:
-            self.message_timestamps.popleft()
-
-        if len(self.message_timestamps) >= CHAT_WS_MESSAGE_LIMIT:
-            return True
-
-        self.message_timestamps.append(now)
-        return False
+        return not consume_chat_ws_message_quota(self.user.id, self.conversation_id)
 
     def error_code_for(self, validation_error):
         if validation_error == CHAT_MESSAGE_TOO_LONG_ERROR:

@@ -17,7 +17,7 @@ from django.contrib.auth.models import User
 from django.core import signing
 from django.http import FileResponse, Http404
 from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum
-from django.db import transaction as db_transaction
+from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from .models import (
@@ -621,7 +621,14 @@ class ConfirmEmailChangeView(ScopedPostThrottleMixin, APIView):
             )
 
         request.user.email = new_email
-        request.user.save(update_fields=['email'])
+        try:
+            with db_transaction.atomic():
+                request.user.save(update_fields=['email'])
+        except IntegrityError:
+            return Response(
+                {'error': 'This email is already taken by another user.'},
+                status=400,
+            )
         consume_email_change_token(token)
 
         return Response({
@@ -1083,6 +1090,8 @@ class ConversationDetailView(APIView):
 class ChatWebSocketTicketView(APIView):
     """POST /api/chat/{id}/ws-ticket/ — Issue a short-lived chat WebSocket ticket."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'chat_ws_ticket'
 
     def post(self, request, pk):
         conversation = get_object_or_404(Conversation, pk=pk, participants=request.user)
@@ -1297,13 +1306,20 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
             if validation_error:
                 return Response({'error': validation_error}, status=400)
 
-        topup = TopUpRequest.objects.create(
-            user=request.user,
-            amount=data['amount'],
-            payment_method=data.get('payment_method', ''),
-            transaction_id=data.get('transaction_id', ''),
-            payment_proof=payment_proof,
-        )
+        try:
+            with db_transaction.atomic():
+                topup = TopUpRequest.objects.create(
+                    user=request.user,
+                    amount=data['amount'],
+                    payment_method=data.get('payment_method', ''),
+                    transaction_id=data.get('transaction_id', ''),
+                    payment_proof=payment_proof,
+                )
+        except IntegrityError:
+            return Response(
+                {'transaction_id': ['This transaction reference has already been submitted.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             TopUpRequestSerializer(topup, context={'request': request}).data,

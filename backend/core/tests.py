@@ -467,6 +467,54 @@ class PurchaseFlowTests(TestCase):
         self.assertIn('filter_values', non_numeric_response.data)
         self.assertFalse(Listing.objects.filter(title__contains='filter listing').exists())
 
+    def test_update_listing_rejects_instant_delivery_for_manual_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Manual delivery item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            delivery_time='1-2 Hours',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/',
+            {'delivery_time': 'Instant'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('delivery_time', response.data)
+        listing.refresh_from_db()
+        self.assertEqual(listing.delivery_time, '1-2 Hours')
+
+    def test_update_listing_rejects_reactivating_empty_auto_delivery_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Empty auto delivery item',
+            price=Decimal('10.00'),
+            quantity=0,
+            status='sold',
+            is_auto_delivery=True,
+            auto_delivery_data='',
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/',
+            {'status': 'active'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('status', response.data)
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, 'sold')
+
 
 class TopUpProofUploadTests(TestCase):
     def setUp(self):
@@ -543,6 +591,32 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['payment_proof'], ['This field is required.'])
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='missing-proof').exists())
+
+    def test_rejects_duplicate_active_transaction_reference(self):
+        TopUpRequest.objects.create(
+            user=self.user,
+            amount=Decimal('100.00'),
+            payment_method='Bank Transfer',
+            transaction_id='duplicate-ref',
+        )
+
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'payment_method': ' bank transfer ',
+                'transaction_id': ' DUPLICATE-REF ',
+                'payment_proof': make_image_file(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('transaction_id', response.data)
+        self.assertEqual(
+            TopUpRequest.objects.filter(transaction_id__iexact='duplicate-ref').count(),
+            1,
+        )
 
     def test_rejects_topup_amount_over_ten_thousand(self):
         response = self.client.post(
@@ -661,6 +735,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'auth_refresh': '1/min',
         'auth_register': '1/min',
         'chat_start': '1/min',
+        'chat_ws_ticket': '1/min',
         'chat_message': '1/min',
         'chat_upload': '1/min',
         'topup_request': '1/min',
@@ -677,6 +752,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/auth/refresh/': 'auth_refresh',
             '/api/auth/register/': 'auth_register',
             '/api/chat/start/': 'chat_start',
+            '/api/chat/1/ws-ticket/': 'chat_ws_ticket',
             '/api/chat/1/send/': 'chat_message',
             '/api/chat/1/send-image/': 'chat_upload',
             '/api/wallet/top-up/': 'topup_request',
@@ -810,6 +886,27 @@ class ApiThrottleBehaviorTests(TestCase):
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 429)
 
+    def test_chat_websocket_ticket_is_rate_limited_per_authenticated_user(self):
+        buyer = User.objects.create_user(username='ticket_buyer', password='password123')
+        seller = User.objects.create_user(username='ticket_seller', password='password123')
+        conversation = Conversation.objects.create()
+        conversation.participants.add(buyer, seller)
+        self.client.force_authenticate(user=buyer)
+
+        first = self.client.post(
+            f'/api/chat/{conversation.id}/ws-ticket/',
+            {},
+            format='json',
+        )
+        second = self.client.post(
+            f'/api/chat/{conversation.id}/ws-ticket/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
     def test_search_is_rate_limited(self):
         first = self.client.get('/api/search/?q=Valorant')
         second = self.client.get('/api/search/?q=Valorant')
@@ -878,6 +975,21 @@ class RegistrationPasswordValidationTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(username='strongbuyer').exists())
+
+    def test_user_email_unique_constraint_is_case_insensitive(self):
+        User.objects.create_user(
+            username='casebuyer',
+            email='unique-case@example.com',
+            password='password123',
+        )
+
+        with self.assertRaises(IntegrityError):
+            with db_transaction.atomic():
+                User.objects.create_user(
+                    username='casebuyer2',
+                    email=' UNIQUE-CASE@example.com ',
+                    password='password123',
+                )
 
 
 class CookieJWTAuthTests(TestCase):
@@ -1848,6 +1960,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
+        cache.clear()
         self.buyer = User.objects.create_user(username='buyer', password='password123')
         self.seller = User.objects.create_user(username='seller', password='password123')
         self.intruder = User.objects.create_user(username='intruder', password='password123')
@@ -1855,6 +1968,9 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
         self.conversation.participants.add(self.buyer, self.seller)
         self.other_conversation = Conversation.objects.create()
         self.other_conversation.participants.add(self.buyer, self.intruder)
+
+    def tearDown(self):
+        cache.clear()
 
     def test_websocket_accepts_scoped_ticket_and_rejects_raw_jwt(self):
         from asgiref.sync import async_to_sync
@@ -2066,6 +2182,57 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             CHAT_WS_MESSAGE_LIMIT,
         )
         self.assertFalse(Message.objects.filter(content='too fast').exists())
+
+    def test_websocket_rate_limit_is_shared_across_connections(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from gamesbazaar.asgi import application
+
+        from .services import CHAT_WS_MESSAGE_LIMIT, create_chat_ws_ticket
+
+        async def run_shared_rate_limit_rejection():
+            first_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            first = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={first_ticket}',
+            )
+            connected, _ = await first.connect()
+            self.assertTrue(connected)
+
+            for index in range(CHAT_WS_MESSAGE_LIMIT):
+                await first.send_json_to({
+                    'type': 'chat_message',
+                    'content': f'shared-{index}',
+                })
+                event = await first.receive_json_from()
+                self.assertEqual(event['type'], 'new_message')
+
+            await first.disconnect()
+
+            second_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            second = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={second_ticket}',
+            )
+            connected, _ = await second.connect()
+            self.assertTrue(connected)
+
+            await second.send_json_to({
+                'type': 'chat_message',
+                'content': 'too fast after reconnect',
+            })
+            event = await second.receive_json_from()
+            self.assertEqual(event['type'], 'error')
+            self.assertEqual(event['code'], 'rate_limited')
+            await second.disconnect()
+
+        async_to_sync(run_shared_rate_limit_rejection)()
+
+        self.assertEqual(
+            Message.objects.filter(conversation=self.conversation).count(),
+            CHAT_WS_MESSAGE_LIMIT,
+        )
+        self.assertFalse(Message.objects.filter(content='too fast after reconnect').exists())
 
 
 class DisputeResolutionApiTests(TestCase):
@@ -2351,6 +2518,23 @@ class AdminMoneyActionTests(TestCase):
             ).count(),
             1,
         )
+
+    def test_active_topup_transaction_reference_is_unique_per_method(self):
+        TopUpRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('100.00'),
+            payment_method='Bank Transfer',
+            transaction_id='admin-topup',
+        )
+
+        with self.assertRaises(IntegrityError):
+            with db_transaction.atomic():
+                TopUpRequest.objects.create(
+                    user=self.seller,
+                    amount=Decimal('100.00'),
+                    payment_method=' bank transfer ',
+                    transaction_id='ADMIN-TOPUP',
+                )
 
     def test_admin_refund_and_cancel_is_idempotent(self):
         order = self.create_order(status='disputed')

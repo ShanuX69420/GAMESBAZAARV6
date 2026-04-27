@@ -8,6 +8,7 @@ import {
   getConversation,
   getConversations,
   startConversation,
+  sendMessage,
   sendImageMessage,
   formatLastActive,
 } from '@/lib/api';
@@ -299,6 +300,17 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
           type: 'chat_message',
           content: messageText,
         }));
+      } else if (activeConvoId) {
+        const data = await sendMessage(activeConvoId, messageText);
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.id)) return prev;
+          return [...prev, { ...data, is_mine: true }];
+        });
+        setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
+        window.dispatchEvent(new Event('chatUpdate'));
+      } else {
+        setInput(messageText);
+        showChatError('Chat is still connecting. Please try again.');
       }
     } catch (err) {
       setInput(messageText);

@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import warnings
+from time import time
 
 from PIL import Image, UnidentifiedImageError
 from django.core.cache import cache
@@ -23,6 +24,7 @@ CHAT_MESSAGE_NOT_TEXT_ERROR = 'Message must be text.'
 CHAT_MESSAGE_TOO_LONG_ERROR = f'Message cannot be longer than {MAX_CHAT_MESSAGE_LENGTH} characters.'
 CHAT_WS_MESSAGE_LIMIT = 20
 CHAT_WS_MESSAGE_WINDOW_SECONDS = 60
+CHAT_WS_RATE_LIMIT_CACHE_PREFIX = 'chat-ws-rate'
 CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
@@ -177,6 +179,22 @@ def validate_chat_message_content(content, *, allow_empty=False):
         return text, CHAT_MESSAGE_TOO_LONG_ERROR
 
     return text, None
+
+
+def consume_chat_ws_message_quota(user_id, conversation_id):
+    bucket = int(time() // CHAT_WS_MESSAGE_WINDOW_SECONDS)
+    cache_key = (
+        f'core:{CHAT_WS_RATE_LIMIT_CACHE_PREFIX}:'
+        f'{int(user_id)}:{int(conversation_id)}:{bucket}'
+    )
+    timeout = CHAT_WS_MESSAGE_WINDOW_SECONDS + 5
+    cache.add(cache_key, 0, timeout=timeout)
+    try:
+        count = cache.incr(cache_key)
+    except ValueError:
+        cache.set(cache_key, 1, timeout=timeout)
+        count = 1
+    return count <= CHAT_WS_MESSAGE_LIMIT
 
 
 def create_chat_ws_ticket(user, conversation_id):

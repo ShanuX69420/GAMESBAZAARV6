@@ -8,6 +8,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
@@ -172,8 +173,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password2')
-        user = User.objects.create_user(**validated_data)
-        return user
+        try:
+            with transaction.atomic():
+                return User.objects.create_user(**validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({
+                'email': 'A user with this email already exists.',
+            })
 
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -528,6 +534,37 @@ class UpdateListingSerializer(serializers.ModelSerializer):
         model = Listing
         fields = ['title', 'description', 'price', 'quantity', 'delivery_time', 'status']
 
+    def validate(self, attrs):
+        listing = self.instance
+        next_status = attrs.get('status', listing.status)
+        next_quantity = attrs.get('quantity', listing.quantity)
+        next_delivery_time = attrs.get('delivery_time', listing.delivery_time)
+
+        if listing.is_auto_delivery:
+            if 'quantity' in attrs and next_quantity != listing.quantity:
+                raise serializers.ValidationError({
+                    'quantity': 'Automated delivery stock is controlled by delivery data.',
+                })
+
+            available_items = [
+                line for line in listing.auto_delivery_data.splitlines()
+                if line.strip()
+            ]
+            if next_status == 'active' and (
+                not next_quantity or len(available_items) != next_quantity
+            ):
+                raise serializers.ValidationError({
+                    'status': 'Add automated delivery data before activating this listing.',
+                })
+
+            attrs['delivery_time'] = 'Instant'
+        elif next_delivery_time == 'Instant':
+            raise serializers.ValidationError({
+                'delivery_time': 'Instant delivery is only available for automated delivery listings.',
+            })
+
+        return attrs
+
 
 # ── Chat Serializers ─────────────────────────────────────────────────────────
 
@@ -729,8 +766,25 @@ class CreateTopUpRequestSerializer(serializers.Serializer):
             'max_value': 'Max is 10000. Please contact support if you want to add more.',
         },
     )
-    payment_method = serializers.CharField(max_length=200, required=False, default='')
+    payment_method = serializers.CharField(max_length=200, required=False, default='', allow_blank=True)
     transaction_id = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True)
+
+    def validate(self, attrs):
+        payment_method = attrs.get('payment_method', '').strip()
+        transaction_id = attrs['transaction_id'].strip()
+
+        if TopUpRequest.objects.filter(
+            status__in=['pending', 'approved'],
+            payment_method__iexact=payment_method,
+            transaction_id__iexact=transaction_id,
+        ).exists():
+            raise serializers.ValidationError({
+                'transaction_id': 'This transaction reference has already been submitted.',
+            })
+
+        attrs['payment_method'] = payment_method
+        attrs['transaction_id'] = transaction_id
+        return attrs
 
 
 # ── Order Serializers ────────────────────────────────────────────────────────
