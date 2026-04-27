@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
 
@@ -11,6 +11,8 @@ export default function GameCategoryPage() {
   const params = useParams();
   const router = useRouter();
   const { slug, categorySlug } = params;
+  const searchParams = useSearchParams();
+  const sellerFilter = searchParams.get('seller') || '';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -42,6 +44,10 @@ export default function GameCategoryPage() {
         query.set('search', search);
       }
 
+      if (sellerFilter) {
+        query.set('seller', sellerFilter);
+      }
+
       const url = `${API_BASE}/api/games/${slug}/${categorySlug}/?${query.toString()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
@@ -60,7 +66,7 @@ export default function GameCategoryPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [slug, categorySlug]);
+  }, [slug, categorySlug, sellerFilter]);
 
   useEffect(() => {
     setActiveFilters({});
@@ -100,7 +106,10 @@ export default function GameCategoryPage() {
 
   function handleCategorySwitch(catSlug) {
     if (catSlug !== categorySlug) {
-      router.push(`/games/${slug}/${catSlug}`);
+      const sellerQ = sellerFilter
+        ? `?${new URLSearchParams({ seller: sellerFilter }).toString()}`
+        : '';
+      router.push(`/games/${slug}/${catSlug}${sellerQ}`);
     }
   }
 
@@ -121,6 +130,14 @@ export default function GameCategoryPage() {
 
   return (
     <div className="container">
+      {/* Seller Filter Banner */}
+      {sellerFilter && (
+        <div className="seller-filter-banner">
+          <span>Showing listings by <Link href={`/seller/${encodeURIComponent(sellerFilter)}`} className="seller-filter-link">{sellerFilter}</Link></span>
+          <Link href={`/games/${slug}/${categorySlug}`} className="seller-filter-clear">× Clear filter</Link>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="page-header">
         <div className="breadcrumb">

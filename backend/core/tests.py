@@ -1159,6 +1159,54 @@ class GameCategoryListingPaginationTests(TestCase):
         self.assertEqual(second_page.data['listing_pagination']['next_offset'], None)
         self.assertEqual(second_page.data['listing_pagination']['previous_offset'], 0)
 
+    def test_seller_filter_scopes_sibling_category_counts(self):
+        other_seller = User.objects.create_user(username='other_seller', password='password123')
+        other_seller.profile.seller_status = 'approved'
+        other_seller.profile.save(update_fields=['seller_status'])
+        boosting = Category.objects.create(name='Boosting', slug='boosting')
+        boosting_game_category = GameCategory.objects.create(
+            game=self.game,
+            category=boosting,
+            order=2,
+        )
+
+        for index in range(2):
+            Listing.objects.create(
+                seller=other_seller,
+                game_category=self.game_category,
+                title=f'Other Seller Account {index}',
+                price=Decimal('12.00'),
+                quantity=1,
+                status='active',
+            )
+        Listing.objects.create(
+            seller=self.seller,
+            game_category=boosting_game_category,
+            title='Seller Boosting',
+            price=Decimal('15.00'),
+            quantity=1,
+            status='active',
+        )
+        Listing.objects.create(
+            seller=other_seller,
+            game_category=boosting_game_category,
+            title='Other Seller Boosting',
+            price=Decimal('20.00'),
+            quantity=1,
+            status='active',
+        )
+
+        response = self.client.get('/api/games/test-game/accounts/?seller=seller')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['listing_pagination']['count'], 3)
+        category_counts = {
+            category['slug']: category['listing_count']
+            for category in response.data['all_categories']
+        }
+        self.assertEqual(category_counts['accounts'], 3)
+        self.assertEqual(category_counts['boosting'], 1)
+
 
 class MyListingsPaginationTests(TestCase):
     def setUp(self):

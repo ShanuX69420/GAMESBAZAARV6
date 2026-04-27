@@ -1009,6 +1009,41 @@ img {
   color: var(--text-tertiary);
 }
 
+/* Seller Filter Banner */
+.seller-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--green-50);
+  border: 1px solid var(--green-200);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.seller-filter-link {
+  font-weight: 700;
+  color: var(--green-700) !important;
+}
+
+.seller-filter-link:hover {
+  text-decoration: underline !important;
+}
+
+.seller-filter-clear {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-tertiary) !important;
+  white-space: nowrap;
+}
+
+.seller-filter-clear:hover {
+  color: var(--red-500) !important;
+}
+
 .game-header {
   display: flex;
   align-items: center;

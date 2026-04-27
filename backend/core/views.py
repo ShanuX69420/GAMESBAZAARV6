@@ -275,6 +275,11 @@ class GameCategoryDetailView(APIView):
         if search_q:
             listings_qs = listings_qs.filter(title__icontains=search_q)
 
+        # Seller filter: only show listings from a specific seller
+        seller_username = request.query_params.get('seller', '').strip()
+        if seller_username:
+            listings_qs = listings_qs.filter(seller__username=seller_username)
+
         total_count = listings_qs.count()
         limit, offset = get_pagination_params(request)
         listings = list(listings_qs[offset:offset + limit])
@@ -297,10 +302,14 @@ class GameCategoryDetailView(APIView):
         ).select_related('category').order_by('order', 'category__name')
 
         from django.db.models import Count, Q
+        listing_count_filter = Q(listings__status='active')
+        if seller_username:
+            listing_count_filter &= Q(listings__seller__username=seller_username)
+
         sibling_gcs = sibling_gcs.annotate(
             listing_count=Count(
                 'listings',
-                filter=Q(listings__status='active'),
+                filter=listing_count_filter,
             )
         )
         cat_data['all_categories'] = [
@@ -1956,7 +1965,7 @@ class SellerReviewsView(APIView):
 
 
 class SellerProfileView(APIView):
-    """GET /api/seller/profile/<username>/ — Public seller profile with stats."""
+    """GET /api/seller/profile/<username>/ — Public seller profile with stats + game services."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, username):
@@ -1976,15 +1985,70 @@ class SellerProfileView(APIView):
             if review_stats['avg_rating'] is not None else None
         )
 
+        # Rating distribution (5→1 star counts)
+        rating_distribution = {str(i): 0 for i in range(1, 6)}
+        if review_count > 0:
+            dist_qs = (
+                Review.objects.filter(seller=seller)
+                .values('rating')
+                .annotate(count=Count('id'))
+            )
+            for row in dist_qs:
+                rating_distribution[str(row['rating'])] = row['count']
+
+        # Positive rating percentage (4+ stars)
+        positive_count = sum(
+            rating_distribution[str(i)] for i in (4, 5)
+        )
+        positive_pct = (
+            round(positive_count / review_count * 100, 1) if review_count > 0 else None
+        )
+
         # Get completed sales count
         completed_sales = Order.objects.filter(
             seller=seller, status='completed'
         ).count()
 
-        # Get active listings count
-        active_listings = Listing.objects.filter(
-            seller=seller, status='active'
+        # Active listings count
+        active_listings_count = Listing.objects.filter(
+            seller=seller, status='active',
         ).count()
+
+        # Build game services: group by game, then by category
+        cat_stats = (
+            Listing.objects.filter(seller=seller, status='active')
+            .values(
+                'game_category__game__slug',
+                'game_category__game__name',
+                'game_category__category__slug',
+                'game_category__category__name',
+                'game_category__category__icon',
+            )
+            .annotate(listing_count=Count('id'))
+            .order_by('game_category__game__name', '-listing_count')
+        )
+
+        # Group by game
+        games_map = {}
+        for row in cat_stats:
+            g_slug = row['game_category__game__slug']
+            if g_slug not in games_map:
+                games_map[g_slug] = {
+                    'game_slug': g_slug,
+                    'game_name': row['game_category__game__name'],
+                    'total_offers': 0,
+                    'categories': [],
+                }
+            games_map[g_slug]['total_offers'] += row['listing_count']
+            games_map[g_slug]['categories'].append({
+                'slug': row['game_category__category__slug'],
+                'name': row['game_category__category__name'],
+                'icon': row['game_category__category__icon'],
+                'count': row['listing_count'],
+            })
+
+        # Sort games by total offers descending
+        games = sorted(games_map.values(), key=lambda g: g['total_offers'], reverse=True)
 
         # Member since
         member_since = seller.date_joined
@@ -2000,14 +2064,18 @@ class SellerProfileView(APIView):
 
         return Response({
             'username': seller.username,
+            'user_id': seller.pk,
             'member_since': member_since,
             'is_online': is_online,
             'last_active': last_active,
             'avg_rating': avg_rating,
+            'positive_pct': positive_pct,
             'review_count': review_count,
+            'rating_distribution': rating_distribution,
             'completed_sales': completed_sales,
-            'active_listings': active_listings,
+            'active_listings': active_listings_count,
             'avatar_url': avatar_url,
+            'games': games,
         })
 
 
