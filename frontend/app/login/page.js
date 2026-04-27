@@ -15,7 +15,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/dashboard');
+      router.replace(user.is_seller ? '/dashboard' : '/');
     }
   }, [user, loading, router]);
 
@@ -24,8 +24,8 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await login(username, password);
-      router.push('/dashboard');
+      const userData = await login(username, password);
+      router.push(userData?.is_seller ? '/dashboard' : '/');
     } catch (err) {
       setError(err.message || 'Invalid credentials');
     } finally {

@@ -19,7 +19,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/dashboard');
+      router.replace('/');
     }
   }, [user, loading, router]);
 

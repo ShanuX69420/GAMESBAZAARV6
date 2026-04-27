@@ -372,13 +372,27 @@ export default function Navbar() {
                               My Listings
                             </Link>
                           )}
-                          <Link href="/dashboard" className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                            Dashboard
-                          </Link>
-                          <Link href={user.is_seller ? `/seller/${user.username}` : '/dashboard'} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                          {user.is_seller && (
+                            <Link href="/dashboard" className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                              Seller Dashboard
+                            </Link>
+                          )}
+                          {!user.is_seller && user.seller_status !== 'pending' && (
+                            <Link href="/seller/apply" className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              Become a Seller
+                            </Link>
+                          )}
+                          {user.seller_status === 'pending' && (
+                            <div className="profile-dropdown-item" style={{ color: 'var(--text-tertiary)', cursor: 'default' }}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              Application Pending
+                            </div>
+                          )}
+                          <Link href={user.is_seller ? `/seller/${user.username}` : '/'} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="7" r="4"/></svg>
-                            My Profile
+                            {user.is_seller ? 'My Profile' : 'My Account'}
                           </Link>
                           <div className="profile-dropdown-divider"></div>
                           <button className="profile-dropdown-item profile-dropdown-logout" onClick={() => { logout(); setProfileOpen(false); }}>

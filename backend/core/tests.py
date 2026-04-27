@@ -1201,8 +1201,25 @@ class MyListingsPaginationTests(TestCase):
         self.assertEqual(response.data['summary'], {
             'active_count': 4,
             'sold_count': 1,
+            'inactive_count': 0,
             'total_count': 5,
         })
+        self.assertEqual(response.data['status_counts'], {
+            'active': 4,
+            'inactive': 0,
+            'sold': 1,
+        })
+        self.assertEqual(response.data['seller_games'], [{
+            'slug': 'test-game',
+            'name': 'Test Game',
+            'listing_count': 5,
+            'categories': [{
+                'slug': 'accounts',
+                'name': 'Accounts',
+                'icon': '',
+                'listing_count': 5,
+            }],
+        }])
 
         second_page = self.client.get('/api/listings/mine/?limit=2&offset=2')
 
@@ -1210,6 +1227,27 @@ class MyListingsPaginationTests(TestCase):
         self.assertEqual(len(second_page.data['listings']), 2)
         self.assertEqual(second_page.data['pagination']['next_offset'], 4)
         self.assertEqual(second_page.data['pagination']['previous_offset'], 0)
+
+    def test_my_listings_filters_and_optional_facets(self):
+        self.client.force_authenticate(user=self.seller)
+
+        status_response = self.client.get('/api/listings/mine/?status=sold')
+
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.data['pagination']['count'], 1)
+        self.assertEqual(
+            {listing['status'] for listing in status_response.data['listings']},
+            {'sold'},
+        )
+        self.assertEqual(status_response.data['summary']['total_count'], 5)
+
+        no_facets_response = self.client.get('/api/listings/mine/?limit=2&offset=2&include_facets=0')
+
+        self.assertEqual(no_facets_response.status_code, 200)
+        self.assertEqual(len(no_facets_response.data['listings']), 2)
+        self.assertNotIn('summary', no_facets_response.data)
+        self.assertNotIn('status_counts', no_facets_response.data)
+        self.assertNotIn('seller_games', no_facets_response.data)
 
 
 class AccessControlTests(TestCase):

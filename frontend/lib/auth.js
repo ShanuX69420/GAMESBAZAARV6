@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+        return data;
       } else {
         const refreshRes = await fetch(`${API_BASE}/api/auth/refresh/`, {
           method: 'POST',
@@ -42,14 +43,17 @@ export function AuthProvider({ children }) {
             credentials: 'include',
           });
           if (retryRes.ok) {
-            setUser(await retryRes.json());
-            return;
+            const data = await retryRes.json();
+            setUser(data);
+            return data;
           }
         }
         await logout();
+        return null;
       }
     } catch {
       await logout();
+      return null;
     } finally {
       setLoading(false);
     }
@@ -70,8 +74,7 @@ export function AuthProvider({ children }) {
     if (!res.ok) {
       throw new Error(data.detail || 'Login failed');
     }
-    await fetchUser();
-    return data;
+    return fetchUser();
   };
 
   const register = async (username, email, password, password2) => {

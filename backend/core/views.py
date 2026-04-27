@@ -494,15 +494,83 @@ class MyListingsView(generics.ListAPIView):
         ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
 
     def list(self, request, *args, **kwargs):
-        listings_qs = self.get_queryset()
+        all_qs = self.get_queryset()
+        include_facets = request.query_params.get('include_facets') != '0'
+
+        summary = None
+        status_counts = None
+        seller_games = None
+        if include_facets:
+            # Summary always reflects ALL listings (unfiltered)
+            summary = all_qs.aggregate(
+                total_count=Count('id'),
+                active_count=Count('id', filter=Q(status='active')),
+                sold_count=Count('id', filter=Q(status='sold')),
+                inactive_count=Count('id', filter=Q(status='inactive')),
+            )
+
+            # Status counts for tab badges
+            status_counts = {
+                'active': summary['active_count'],
+                'inactive': summary['inactive_count'],
+                'sold': summary['sold_count'],
+            }
+
+            # Build game → categories breakdown from ALL user listings
+            gc_stats = (
+                all_qs
+                .values(
+                    'game_category__game__slug',
+                    'game_category__game__name',
+                    'game_category__category__slug',
+                    'game_category__category__name',
+                    'game_category__category__icon',
+                )
+                .annotate(listing_count=Count('id'))
+                .order_by('game_category__game__name', 'game_category__category__name')
+            )
+            games_map = {}
+            for row in gc_stats:
+                g_slug = row['game_category__game__slug']
+                g_name = row['game_category__game__name']
+                if g_slug not in games_map:
+                    games_map[g_slug] = {
+                        'slug': g_slug,
+                        'name': g_name,
+                        'listing_count': 0,
+                        'categories': [],
+                    }
+                games_map[g_slug]['listing_count'] += row['listing_count']
+                games_map[g_slug]['categories'].append({
+                    'slug': row['game_category__category__slug'],
+                    'name': row['game_category__category__name'],
+                    'icon': row['game_category__category__icon'],
+                    'listing_count': row['listing_count'],
+                })
+            seller_games = list(games_map.values())
+
+        # Apply filters
+        listings_qs = all_qs
+
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter in ('active', 'inactive', 'sold'):
+            listings_qs = listings_qs.filter(status=status_filter)
+
+        search_q = request.query_params.get('search', '').strip()
+        if search_q:
+            listings_qs = listings_qs.filter(title__icontains=search_q)
+
+        game_filter = request.query_params.get('game', '').strip()
+        if game_filter:
+            listings_qs = listings_qs.filter(game_category__game__slug=game_filter)
+
+        category_filter = request.query_params.get('category', '').strip()
+        if category_filter:
+            listings_qs = listings_qs.filter(game_category__category__slug=category_filter)
+
         limit, offset = get_pagination_params(request)
-        total_count = listings_qs.count()
+        filtered_count = listings_qs.count()
         listings = list(listings_qs[offset:offset + limit])
-        summary = listings_qs.aggregate(
-            active_count=Count('id', filter=Q(status='active')),
-            sold_count=Count('id', filter=Q(status='sold')),
-        )
-        summary['total_count'] = total_count
         serializer = self.get_serializer(
             listings,
             many=True,
@@ -511,11 +579,17 @@ class MyListingsView(generics.ListAPIView):
                 'filter_option_display_map': build_listing_filter_display_map(listings),
             },
         )
-        return Response({
+        payload = {
             'listings': serializer.data,
-            'pagination': get_pagination_payload(total_count, limit, offset),
-            'summary': summary,
-        })
+            'pagination': get_pagination_payload(filtered_count, limit, offset),
+        }
+        if include_facets:
+            payload.update({
+                'summary': summary,
+                'status_counts': status_counts,
+                'seller_games': seller_games,
+            })
+        return Response(payload)
 
 
 class ListingDetailView(APIView):
@@ -1779,3 +1853,162 @@ class NotificationUnreadCountView(APIView):
             is_read=False,
         ).count()
         return Response({'unread_count': count})
+
+
+class SellerDashboardView(APIView):
+    """GET /api/seller/dashboard/ — Comprehensive seller analytics dashboard."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        profile = request.user.profile
+        if not profile.is_seller:
+            return Response({'error': 'Not a seller.'}, status=403)
+
+        now = timezone.now()
+        thirty_days_ago = now - timezone.timedelta(days=30)
+        seven_days_ago = now - timezone.timedelta(days=7)
+
+        # ── All-time order metrics ──
+        all_orders = Order.objects.filter(seller=request.user)
+        order_stats = all_orders.aggregate(
+            total_orders=Count('id'),
+            pending_count=Count('id', filter=Q(status='pending')),
+            delivered_count=Count('id', filter=Q(status='delivered')),
+            completed_count=Count('id', filter=Q(status='completed')),
+            disputed_count=Count('id', filter=Q(status='disputed')),
+            cancelled_count=Count('id', filter=Q(status='cancelled')),
+            total_revenue=Sum('seller_amount', filter=Q(status='completed')),
+            total_commission=Sum('commission_amount', filter=Q(status='completed')),
+            total_gross=Sum('total_amount', filter=Q(status='completed')),
+        )
+
+        # ── 30-day revenue ──
+        month_stats = all_orders.filter(
+            created_at__gte=thirty_days_ago,
+        ).aggregate(
+            month_revenue=Sum('seller_amount', filter=Q(status='completed')),
+            month_orders=Count('id', filter=Q(status='completed')),
+        )
+
+        # ── 7-day revenue ──
+        week_stats = all_orders.filter(
+            created_at__gte=seven_days_ago,
+        ).aggregate(
+            week_revenue=Sum('seller_amount', filter=Q(status='completed')),
+            week_orders=Count('id', filter=Q(status='completed')),
+        )
+
+        # ── Daily revenue for last 30 days (for sparkline chart) ──
+        from django.db.models.functions import TruncDate
+        daily_revenue = list(
+            all_orders.filter(
+                created_at__gte=thirty_days_ago,
+                status='completed',
+            ).annotate(
+                day=TruncDate('created_at')
+            ).values('day').annotate(
+                revenue=Sum('seller_amount'),
+                count=Count('id'),
+            ).order_by('day')
+        )
+        daily_revenue_data = [
+            {
+                'date': entry['day'].isoformat(),
+                'revenue': str(entry['revenue']),
+                'count': entry['count'],
+            }
+            for entry in daily_revenue
+        ]
+
+        # ── Listing stats ──
+        listings = Listing.objects.filter(seller=request.user)
+        listing_stats = listings.aggregate(
+            total_listings=Count('id'),
+            active_listings=Count('id', filter=Q(status='active')),
+            inactive_listings=Count('id', filter=Q(status='inactive')),
+            sold_listings=Count('id', filter=Q(status='sold')),
+        )
+
+        # ── Review stats ──
+        reviews = Review.objects.filter(seller=request.user)
+        review_stats = reviews.aggregate(
+            total_reviews=Count('id'),
+            avg_rating=Avg('rating'),
+        )
+        rating_dist = dict(
+            reviews.values_list('rating').annotate(count=Count('id')).order_by('rating')
+        )
+
+        # ── Recent sales (last 5) ──
+        recent_sales = all_orders.filter(
+            status__in=['completed', 'delivered', 'pending'],
+        ).select_related('buyer', 'listing').order_by('-created_at')[:5]
+        recent_sales_data = [
+            {
+                'id': order.pk,
+                'listing_title': order.listing_title,
+                'buyer_name': order.buyer.username,
+                'total_amount': str(order.total_amount),
+                'seller_amount': str(order.seller_amount),
+                'status': order.status,
+                'status_display': order.get_status_display(),
+                'created_at': order.created_at.isoformat(),
+            }
+            for order in recent_sales
+        ]
+
+        # ── Top selling categories ──
+        top_categories = list(
+            all_orders.filter(status='completed').values(
+                'listing__game_category__game__name',
+                'listing__game_category__category__name',
+            ).annotate(
+                sales_count=Count('id'),
+                revenue=Sum('seller_amount'),
+            ).order_by('-sales_count')[:5]
+        )
+        top_categories_data = [
+            {
+                'game': entry['listing__game_category__game__name'] or 'Unknown',
+                'category': entry['listing__game_category__category__name'] or 'Unknown',
+                'sales_count': entry['sales_count'],
+                'revenue': str(entry['revenue']),
+            }
+            for entry in top_categories
+        ]
+
+        # ── Wallet balance ──
+        try:
+            wallet_balance = str(request.user.wallet.balance)
+        except Wallet.DoesNotExist:
+            wallet_balance = '0.00'
+
+        return Response({
+            'orders': {
+                'total': order_stats['total_orders'],
+                'pending': order_stats['pending_count'],
+                'delivered': order_stats['delivered_count'],
+                'completed': order_stats['completed_count'],
+                'disputed': order_stats['disputed_count'],
+                'cancelled': order_stats['cancelled_count'],
+            },
+            'revenue': {
+                'total': str(order_stats['total_revenue'] or '0.00'),
+                'total_gross': str(order_stats['total_gross'] or '0.00'),
+                'total_commission': str(order_stats['total_commission'] or '0.00'),
+                'month': str(month_stats['month_revenue'] or '0.00'),
+                'month_orders': month_stats['month_orders'],
+                'week': str(week_stats['week_revenue'] or '0.00'),
+                'week_orders': week_stats['week_orders'],
+            },
+            'daily_revenue': daily_revenue_data,
+            'listings': listing_stats,
+            'reviews': {
+                'total': review_stats['total_reviews'],
+                'avg_rating': round(review_stats['avg_rating'] or 0, 1),
+                'distribution': {str(i): rating_dist.get(i, 0) for i in range(1, 6)},
+            },
+            'recent_sales': recent_sales_data,
+            'top_categories': top_categories_data,
+            'wallet_balance': wallet_balance,
+        })

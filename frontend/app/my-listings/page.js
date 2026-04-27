@@ -1,12 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMyListings, updateListing, deleteListing } from '@/lib/api';
 
-const MY_LISTING_PAGE_SIZE = 48;
+const MY_LISTING_PAGE_SIZE = 24;
+
+const STATUS_TABS = [
+  { key: '', label: 'All Listings', icon: '📋' },
+  { key: 'active', label: 'Active', icon: '🟢' },
+  { key: 'inactive', label: 'Inactive', icon: '⏸️' },
+  { key: 'sold', label: 'Sold Out', icon: '🏷️' },
+];
 
 export default function MyListingsPage() {
   const { user, loading } = useAuth();
@@ -14,6 +21,8 @@ export default function MyListingsPage() {
   const [listings, setListings] = useState([]);
   const [listingPagination, setListingPagination] = useState(null);
   const [listingSummary, setListingSummary] = useState(null);
+  const [statusCounts, setStatusCounts] = useState({});
+  const [sellerGames, setSellerGames] = useState([]);
   const [loadingListings, setLoadingListings] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
@@ -22,16 +31,21 @@ export default function MyListingsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Filter state
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [gameFilter, setGameFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const latestRequestId = useRef(0);
+
   useEffect(() => {
     if (!loading && !user) router.push('/login');
     if (!loading && user && !user.is_seller) router.push('/dashboard');
   }, [user, loading, router]);
 
-  useEffect(() => {
-    if (user && user.is_seller) loadListings();
-  }, [user]);
-
-  async function loadListings(offset = 0, append = false) {
+  const loadListings = useCallback(async ({ append = false, offset = 0 } = {}) => {
+    const requestId = ++latestRequestId.current;
     if (append) {
       setLoadingMore(true);
     } else {
@@ -41,17 +55,53 @@ export default function MyListingsPage() {
       const data = await getMyListings({
         limit: MY_LISTING_PAGE_SIZE,
         offset,
+        status: statusFilter || undefined,
+        search: debouncedSearch || undefined,
+        game: gameFilter || undefined,
+        category: categoryFilter || undefined,
+        includeFacets: !append,
       });
+      if (requestId !== latestRequestId.current) return;
       const nextListings = data.listings || [];
       setListings(prev => append ? [...prev, ...nextListings] : nextListings);
       setListingPagination(data.pagination || null);
-      setListingSummary(data.summary || null);
+      if (data.summary) setListingSummary(data.summary);
+      if (data.status_counts) setStatusCounts(data.status_counts);
+      if (data.seller_games) setSellerGames(data.seller_games);
     } catch (err) {
-      console.error(err);
+      if (requestId === latestRequestId.current) console.error(err);
     } finally {
-      setLoadingListings(false);
-      setLoadingMore(false);
+      if (requestId === latestRequestId.current) {
+        setLoadingListings(false);
+        setLoadingMore(false);
+      }
     }
+  }, [statusFilter, debouncedSearch, gameFilter, categoryFilter]);
+
+  useEffect(() => {
+    if (user && user.is_seller) loadListings();
+  }, [user, loadListings]);
+
+  // Debounce search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  // When game changes, clear category filter (it may no longer be relevant)
+  function handleGameChange(slug) {
+    setGameFilter(slug);
+    setCategoryFilter('');
+  }
+
+  function clearFilters() {
+    setStatusFilter('');
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setGameFilter('');
+    setCategoryFilter('');
   }
 
   function openEditModal(listing) {
@@ -104,6 +154,20 @@ export default function MyListingsPage() {
     }
   }
 
+  async function handleQuickToggle(listing) {
+    const newStatus = listing.status === 'active' ? 'inactive' : 'active';
+    setActionLoading(listing.id);
+    setError('');
+    try {
+      await updateListing(listing.id, { status: newStatus });
+      await loadListings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   if (loading || !user) {
     return (
       <div className="container">
@@ -114,9 +178,14 @@ export default function MyListingsPage() {
 
   if (!user.is_seller) return null;
 
-  const activeCount = listingSummary?.active_count ?? listings.filter(l => l.status === 'active').length;
-  const soldCount = listingSummary?.sold_count ?? listings.filter(l => l.status === 'sold').length;
-  const totalCount = listingSummary?.total_count ?? listingPagination?.count ?? listings.length;
+  const activeCount = listingSummary?.active_count ?? 0;
+  const soldCount = listingSummary?.sold_count ?? 0;
+  const totalCount = listingSummary?.total_count ?? 0;
+  const hasActiveFilters = statusFilter || searchQuery || gameFilter || categoryFilter;
+
+  // Get categories for the currently selected game
+  const selectedGame = sellerGames.find(g => g.slug === gameFilter);
+  const availableCategories = selectedGame?.categories || [];
 
   return (
     <div className="container">
@@ -157,6 +226,105 @@ export default function MyListingsPage() {
         </div>
       </div>
 
+      {/* Filter Toolbar */}
+      <div className="orders-filter-toolbar">
+        {/* Status Tabs */}
+        <div className="orders-status-tabs">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`orders-status-tab ${statusFilter === tab.key ? 'active' : ''}`}
+              onClick={() => setStatusFilter(tab.key)}
+            >
+              <span className="orders-tab-icon">{tab.icon}</span>
+              <span className="orders-tab-label">{tab.label}</span>
+              {tab.key && statusCounts[tab.key] > 0 && (
+                <span className="orders-tab-count">{statusCounts[tab.key]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Search + Game/Category Filters */}
+        <div className="orders-filter-row">
+          <div className="orders-search-wrap">
+            <span className="orders-search-icon">🔍</span>
+            <input
+              type="text"
+              className="orders-search-input"
+              placeholder="Search listings by title..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className="orders-search-clear"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearch('');
+                }}
+              >✕</button>
+            )}
+          </div>
+
+          {/* Game Filter */}
+          {sellerGames.length > 0 && (
+            <select
+              className="ml-filter-select"
+              value={gameFilter}
+              onChange={(e) => handleGameChange(e.target.value)}
+            >
+              <option value="">All Games</option>
+              {sellerGames.map((g) => (
+                <option key={g.slug} value={g.slug}>
+                  {g.name} ({g.listing_count})
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Category Filter — only shown when a game is selected */}
+          {gameFilter && availableCategories.length > 0 && (
+            <select
+              className="ml-filter-select"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="">All Categories</option>
+              {availableCategories.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.icon} {c.name} ({c.listing_count})
+                </option>
+              ))}
+            </select>
+          )}
+
+          {hasActiveFilters && (
+            <button className="orders-clear-filters" onClick={clearFilters}>
+              ✕ Clear All
+            </button>
+          )}
+        </div>
+
+        {/* Active filter tags */}
+        {(gameFilter || categoryFilter) && (
+          <div className="ml-active-filters">
+            {gameFilter && (
+              <span className="ml-filter-tag">
+                🎮 {sellerGames.find(g => g.slug === gameFilter)?.name || gameFilter}
+                <button className="ml-filter-tag-remove" onClick={() => handleGameChange('')}>✕</button>
+              </span>
+            )}
+            {categoryFilter && (
+              <span className="ml-filter-tag">
+                📁 {availableCategories.find(c => c.slug === categoryFilter)?.name || categoryFilter}
+                <button className="ml-filter-tag-remove" onClick={() => setCategoryFilter('')}>✕</button>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {success && <div className="alert alert-success">{success}</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -165,31 +333,32 @@ export default function MyListingsPage() {
       ) : listings.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📦</div>
-          <p>No listings yet. Create your first listing to start selling!</p>
-          <Link href="/dashboard/create-listing" className="btn btn-primary" style={{ marginTop: '12px' }}>
-            + Create New Listing
-          </Link>
+          <p>{hasActiveFilters ? 'No listings match your filters.' : 'No listings yet. Create your first listing to start selling!'}</p>
+          {hasActiveFilters ? (
+            <button className="btn btn-outline btn-sm" onClick={clearFilters} style={{ marginTop: 12 }}>
+              Clear Filters
+            </button>
+          ) : (
+            <Link href="/dashboard/create-listing" className="btn btn-primary" style={{ marginTop: '12px' }}>
+              + Create New Listing
+            </Link>
+          )}
         </div>
       ) : (
         <>
-        <div className="listings-table-wrap">
-          <table className="listings-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Game</th>
-                <th>Category</th>
-                <th>Price</th>
-                <th>Stock</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listings.map((listing) => (
-                <tr key={listing.id}>
-                  <td>
-                    <Link href={`/listing/${listing.id}`} className="listing-link">
+          {/* Results count */}
+          <div className="ml-results-bar">
+            <span className="ml-results-count">
+              Showing {listings.length} of {listingPagination?.count ?? listings.length} listing{(listingPagination?.count ?? listings.length) !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <div className="ml-cards-grid">
+            {listings.map((listing) => (
+              <div key={listing.id} className={`ml-card ml-card-${listing.status}`}>
+                <div className="ml-card-header">
+                  <div className="ml-card-title-row">
+                    <Link href={`/listing/${listing.id}`} className="ml-card-title">
                       {listing.is_auto_delivery && (
                         <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '4px', verticalAlign: '-2px' }}>
                           <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
@@ -197,48 +366,83 @@ export default function MyListingsPage() {
                       )}
                       {listing.title}
                     </Link>
-                  </td>
-                  <td>{listing.game_name}</td>
-                  <td>{listing.category_name}</td>
-                  <td className="listing-price">PKR {listing.price}</td>
-                  <td>{listing.quantity === null ? '∞' : listing.quantity}</td>
-                  <td>
                     <span className={`status-pill status-${listing.status}`}>
                       {listing.status}
                     </span>
-                  </td>
-                  <td>
-                    <div className="listing-actions">
-                      <button
-                        className="btn btn-outline btn-xs"
-                        onClick={() => openEditModal(listing)}
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button
-                        className="btn btn-outline btn-xs btn-danger"
-                        onClick={() => handleDelete(listing.id)}
-                        disabled={actionLoading === listing.id}
-                      >
-                        🗑️ Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {listingPagination?.next_offset !== null && listingPagination?.next_offset !== undefined && (
-          <button
-            className="btn btn-outline btn-full"
-            style={{ marginTop: '16px' }}
-            onClick={() => loadListings(listingPagination.next_offset, true)}
-            disabled={loadingMore}
-          >
-            {loadingMore ? 'Loading...' : 'Load More'}
-          </button>
-        )}
+                  </div>
+                  <div className="ml-card-price">PKR {listing.price}</div>
+                </div>
+
+                <div className="ml-card-meta">
+                  <span className="ml-card-meta-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                    {listing.game_name}
+                  </span>
+                  <span className="ml-card-meta-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                    {listing.category_name}
+                  </span>
+                  <span className="ml-card-meta-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73L13 2.27a2 2 0 00-2 0L4 6.27A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                    Stock: {listing.quantity === null ? '∞' : listing.quantity}
+                  </span>
+                </div>
+
+                <div className="ml-card-actions">
+                  {listing.status !== 'sold' && (
+                    <button
+                      className={`ml-toggle-btn ${listing.status === 'active' ? 'ml-toggle-deactivate' : 'ml-toggle-activate'}`}
+                      onClick={() => handleQuickToggle(listing)}
+                      disabled={actionLoading === listing.id}
+                      title={listing.status === 'active' ? 'Deactivate listing' : 'Activate listing'}
+                    >
+                      {actionLoading === listing.id ? (
+                        <span className="ml-btn-spinner"></span>
+                      ) : listing.status === 'active' ? (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                          Pause
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          Activate
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    className="ml-action-btn"
+                    onClick={() => openEditModal(listing)}
+                    title="Edit listing"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit
+                  </button>
+                  <button
+                    className="ml-action-btn ml-action-danger"
+                    onClick={() => handleDelete(listing.id)}
+                    disabled={actionLoading === listing.id}
+                    title="Delete listing"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {listingPagination?.next_offset !== null && listingPagination?.next_offset !== undefined && (
+            <button
+              className="btn btn-outline btn-full"
+              style={{ marginTop: '16px' }}
+              onClick={() => loadListings({ append: true, offset: listingPagination.next_offset })}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading...' : 'Load More Listings'}
+            </button>
+          )}
         </>
       )}
 

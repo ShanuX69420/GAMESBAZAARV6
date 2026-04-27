@@ -96,6 +96,14 @@ export async function getSellerStatus() {
   return res.json();
 }
 
+export async function getSellerDashboard() {
+  const res = await authFetch(`${API_BASE}/api/seller/dashboard/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get seller dashboard');
+  return res.json();
+}
+
 export async function createListing(listingData) {
   const res = await authFetch(`${API_BASE}/api/listings/`, {
     method: 'POST',
@@ -110,8 +118,17 @@ export async function createListing(listingData) {
   return data;
 }
 
-export async function getMyListings(pagination = {}) {
-  const res = await authFetch(`${API_BASE}/api/listings/mine/${paginationQuery(pagination)}`, {
+export async function getMyListings({ limit, offset, status, search, game, category, includeFacets } = {}) {
+  const params = new URLSearchParams();
+  if (limit !== undefined && limit !== null) params.set('limit', String(limit));
+  if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+  if (game) params.set('game', game);
+  if (category) params.set('category', category);
+  if (includeFacets === false) params.set('include_facets', '0');
+  const query = params.toString();
+  const res = await authFetch(`${API_BASE}/api/listings/mine/${query ? '?' + query : ''}`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get listings');
