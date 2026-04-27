@@ -161,6 +161,10 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='profile')
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True,
+                               help_text='Profile picture (recommended: 256x256)')
+    username_changed_at = models.DateTimeField(null=True, blank=True,
+                                               help_text='Last time the username was changed')
     seller_status = models.CharField(max_length=20, choices=SELLER_STATUS_CHOICES, default='none')
     seller_application_note = models.TextField(blank=True, default='',
                                                 help_text='Why do you want to become a seller?')

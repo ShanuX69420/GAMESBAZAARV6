@@ -278,7 +278,11 @@ export default function GameCategoryPage() {
                   <div className="listing-card-seller">
                     <div className="listing-card-avatar-wrap">
                       <div className="listing-card-avatar">
-                        {listing.seller_name?.charAt(0).toUpperCase()}
+                        {listing.seller_avatar_url ? (
+                          <img src={listing.seller_avatar_url} alt={listing.seller_name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                        ) : (
+                          listing.seller_name?.charAt(0).toUpperCase()
+                        )}
                       </div>
                       <span className={`listing-card-status-dot ${listing.seller_is_online ? 'online' : 'offline'}`} />
                     </div>

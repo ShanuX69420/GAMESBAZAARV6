@@ -1,8 +1,12 @@
+import hashlib
+import secrets
 import warnings
 
 from PIL import Image, UnidentifiedImageError
+from django.core.cache import cache
 from django.core import signing
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 
 from .models import PlatformLedgerEntry, Wallet, WalletTransaction
 
@@ -216,3 +220,194 @@ def decode_private_media_ticket(ticket, max_age=PRIVATE_MEDIA_TICKET_MAX_AGE_SEC
         'object_id': int(payload['object_id']),
         'viewer_user_id': int(payload['viewer_user_id']),
     }
+
+
+# ── Email change verification ───────────────────────────────────────────────
+
+EMAIL_CHANGE_CODE_MAX_AGE = 15 * 60  # 15 minutes
+EMAIL_CHANGE_CACHE_PREFIX = 'email-change'
+USERNAME_CHANGE_COOLDOWN_DAYS = 90
+
+
+def _generate_six_digit_code():
+    return f'{secrets.randbelow(1_000_000):06d}'
+
+
+def _hash_challenge_code(challenge_id, code):
+    return hashlib.sha256(f'{challenge_id}:{code}'.encode('utf-8')).hexdigest()
+
+
+def _challenge_cache_key(prefix, challenge_id):
+    return f'core:{prefix}:{challenge_id}'
+
+
+def _create_cached_challenge(prefix, code, payload, timeout):
+    challenge_id = secrets.token_urlsafe(32)
+    cache.set(
+        _challenge_cache_key(prefix, challenge_id),
+        {
+            **payload,
+            'code_hash': _hash_challenge_code(challenge_id, code),
+        },
+        timeout=timeout,
+    )
+    return challenge_id
+
+
+def _get_cached_challenge(prefix, challenge_id):
+    if not challenge_id:
+        return None
+    return cache.get(_challenge_cache_key(prefix, challenge_id))
+
+
+def _delete_cached_challenge(prefix, challenge_id):
+    if challenge_id:
+        cache.delete(_challenge_cache_key(prefix, challenge_id))
+
+
+def _verify_cached_challenge(prefix, challenge_id, code):
+    payload = _get_cached_challenge(prefix, challenge_id)
+    if not payload:
+        return None
+    expected = payload.get('code_hash', '')
+    actual = _hash_challenge_code(challenge_id, code)
+    if not constant_time_compare(expected, actual):
+        return None
+    return payload
+
+
+def generate_email_change_code():
+    """Generate a 6-digit verification code."""
+    return _generate_six_digit_code()
+
+
+def create_email_change_token(user_id, current_code, new_email, new_code):
+    """Create an opaque email-change challenge ID stored server-side."""
+    challenge_id = secrets.token_urlsafe(32)
+    cache.set(
+        _challenge_cache_key(EMAIL_CHANGE_CACHE_PREFIX, challenge_id),
+        {
+            'user_id': user_id,
+            'new_email': new_email,
+            'current_code_hash': _hash_challenge_code(challenge_id, current_code),
+            'new_code_hash': _hash_challenge_code(challenge_id, new_code),
+        },
+        EMAIL_CHANGE_CODE_MAX_AGE,
+    )
+    return challenge_id
+
+
+def verify_email_change_token(token, current_code, new_code):
+    payload = _get_cached_challenge(EMAIL_CHANGE_CACHE_PREFIX, token)
+    if not payload:
+        return None
+
+    current_expected = payload.get('current_code_hash', '')
+    current_actual = _hash_challenge_code(token, current_code)
+    new_expected = payload.get('new_code_hash', '')
+    new_actual = _hash_challenge_code(token, new_code)
+    if not (
+        constant_time_compare(current_expected, current_actual)
+        and constant_time_compare(new_expected, new_actual)
+    ):
+        return None
+    return payload
+
+
+def consume_email_change_token(token):
+    _delete_cached_challenge(EMAIL_CHANGE_CACHE_PREFIX, token)
+
+
+def send_email_change_code(user, code):
+    """Send the verification code to the user's current email."""
+    from django.core.mail import send_mail
+    from django.conf import settings as django_settings
+
+    send_mail(
+        subject='GamesBazaar — Email Change Verification Code',
+        message=(
+            f'Hi {user.username},\n\n'
+            f'Your email change verification code is: {code}\n\n'
+            f'This code expires in 15 minutes.\n'
+            f'If you did not request this, please ignore this email.\n\n'
+            f'— GamesBazaar'
+        ),
+        from_email=django_settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )
+
+
+def send_new_email_change_code(user, new_email, code):
+    """Send the verification code to the requested new email address."""
+    from django.core.mail import send_mail
+    from django.conf import settings as django_settings
+
+    send_mail(
+        subject='GamesBazaar — Confirm Your New Email',
+        message=(
+            f'Hi {user.username},\n\n'
+            f'Use this code to confirm this email address for your GamesBazaar account: {code}\n\n'
+            f'This code expires in 15 minutes.\n'
+            f'If you did not request this, please ignore this email.\n\n'
+            f'— GamesBazaar'
+        ),
+        from_email=django_settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[new_email],
+        fail_silently=False,
+    )
+
+
+# ── Password reset ──────────────────────────────────────────────────────────
+
+PASSWORD_RESET_CODE_MAX_AGE = 15 * 60  # 15 minutes
+PASSWORD_RESET_CACHE_PREFIX = 'password-reset'
+
+
+def generate_password_reset_code():
+    """Generate a 6-digit reset code."""
+    return _generate_six_digit_code()
+
+
+def create_password_reset_token(user_id=None, code=None):
+    """Create an opaque password-reset challenge ID.
+
+    When user_id/code are omitted, no cache entry is created. This lets the
+    reset-request endpoint return an indistinguishable token for unknown emails.
+    """
+    if user_id is None or code is None:
+        return secrets.token_urlsafe(32)
+    return _create_cached_challenge(
+        PASSWORD_RESET_CACHE_PREFIX,
+        code,
+        {'user_id': user_id},
+        PASSWORD_RESET_CODE_MAX_AGE,
+    )
+
+
+def verify_password_reset_token(token, code):
+    return _verify_cached_challenge(PASSWORD_RESET_CACHE_PREFIX, token, code)
+
+
+def consume_password_reset_token(token):
+    _delete_cached_challenge(PASSWORD_RESET_CACHE_PREFIX, token)
+
+
+def send_password_reset_code(user, code):
+    """Send the password reset code to the user's email."""
+    from django.core.mail import send_mail
+    from django.conf import settings as django_settings
+
+    send_mail(
+        subject='GamesBazaar — Password Reset Code',
+        message=(
+            f'Hi {user.username},\n\n'
+            f'Your password reset code is: {code}\n\n'
+            f'This code expires in 15 minutes.\n'
+            f'If you did not request this, please ignore this email.\n\n'
+            f'— GamesBazaar'
+        ),
+        from_email=django_settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=False,
+    )

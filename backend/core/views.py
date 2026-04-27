@@ -28,6 +28,7 @@ from .models import (
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
+    UpdateProfileSerializer, ChangePasswordSerializer,
     build_listing_filter_display_map,
     ListingSerializer, CreateListingSerializer,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
@@ -49,6 +50,17 @@ from .services import (
     ALLOWED_IMAGE_CONTENT_TYPES,
     validate_chat_message_content,
     validate_uploaded_image,
+    generate_email_change_code,
+    create_email_change_token,
+    verify_email_change_token,
+    consume_email_change_token,
+    send_email_change_code,
+    send_new_email_change_code,
+    generate_password_reset_code,
+    create_password_reset_token,
+    verify_password_reset_token,
+    consume_password_reset_token,
+    send_password_reset_code,
 )
 from .authentication import enforce_trusted_origin
 
@@ -424,12 +436,264 @@ class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class RequestPasswordResetView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/password/reset-request/ — Send reset code to email."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'password_reset_request'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        email = request.data.get('email', '').strip()
+        if not email:
+            return Response({'error': 'Email is required.'}, status=400)
+
+        # Always return the same shape to prevent user enumeration.
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            token = create_password_reset_token()
+        else:
+            code = generate_password_reset_code()
+            token = create_password_reset_token(user.pk, code)
+            send_password_reset_code(user, code)
+
+        return Response({
+            'message': 'If that email exists, a reset code has been sent.',
+            'token': token,
+        })
+
+
+class ConfirmPasswordResetView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/password/reset-confirm/ — Verify code and set new password."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'password_reset_confirm'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        token = request.data.get('token', '')
+        code = request.data.get('code', '')
+        new_password = request.data.get('new_password', '')
+        new_password2 = request.data.get('new_password2', '')
+
+        if not all([token, code, new_password, new_password2]):
+            return Response({'error': 'All fields are required.'}, status=400)
+
+        if new_password != new_password2:
+            return Response({'error': 'Passwords do not match.'}, status=400)
+
+        payload = verify_password_reset_token(token, code)
+        if not payload:
+            return Response({'error': 'Reset code is invalid or expired. Please request a new one.'}, status=400)
+
+        try:
+            user = User.objects.get(pk=payload['user_id'])
+        except User.DoesNotExist:
+            consume_password_reset_token(token)
+            return Response({'error': 'Invalid token.'}, status=400)
+
+        if user.check_password(new_password):
+            return Response(
+                {'error': 'New password must be different from your current password.'},
+                status=400,
+            )
+
+        # Validate password strength
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({'error': exc.messages[0]}, status=400)
+
+        user.set_password(new_password)
+        user.save()
+        consume_password_reset_token(token)
+
+        return Response({'message': 'Password reset successfully. You can now sign in.'})
+
+
 class MeView(APIView):
     """GET /api/auth/me/ — Get current user info."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={'request': request}).data)
+
+
+class UpdateProfileView(APIView):
+    """PUT /api/auth/profile/ — Update username (90-day cooldown enforced)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request):
+        serializer = UpdateProfileSerializer(
+            data=request.data,
+            context={'user': request.user},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        new_username = serializer.validated_data['username']
+        if new_username != user.username:
+            user.username = new_username
+            user.save(update_fields=['username'])
+            # Record the change timestamp
+            profile = user.profile
+            profile.username_changed_at = timezone.now()
+            profile.save(update_fields=['username_changed_at'])
+
+        return Response({
+            'message': 'Profile updated.',
+            'user': UserSerializer(user, context={'request': request}).data,
+        })
+
+
+class RequestEmailChangeView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/email/request-change/ — Send verification codes to both emails."""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'email_change_request'
+
+    def post(self, request):
+        from .serializers import RequestEmailChangeSerializer
+        serializer = RequestEmailChangeSerializer(
+            data=request.data,
+            context={'user': request.user},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        new_email = serializer.validated_data['new_email']
+        current_code = generate_email_change_code()
+        new_code = generate_email_change_code()
+        while new_code == current_code:
+            new_code = generate_email_change_code()
+        token = create_email_change_token(request.user.pk, current_code, new_email, new_code)
+
+        send_email_change_code(request.user, current_code)
+        send_new_email_change_code(request.user, new_email, new_code)
+
+        return Response({
+            'message': 'Verification codes sent to your current and new email addresses.',
+            'token': token,
+        })
+
+
+class ConfirmEmailChangeView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/email/confirm-change/ — Verify code and update email."""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'email_change_confirm'
+
+    def post(self, request):
+        from .serializers import ConfirmEmailChangeSerializer
+        serializer = ConfirmEmailChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        token = serializer.validated_data['token']
+        current_code = serializer.validated_data['current_code']
+        new_code = serializer.validated_data['new_code']
+
+        payload = verify_email_change_token(token, current_code, new_code)
+        if not payload:
+            return Response(
+                {'error': 'Verification codes are invalid or expired. Please request new ones.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if payload['user_id'] != request.user.pk:
+            return Response({'error': 'Invalid token.'}, status=400)
+
+        new_email = payload['new_email']
+
+        # Double-check uniqueness at confirmation time
+        if User.objects.filter(email__iexact=new_email).exclude(pk=request.user.pk).exists():
+            return Response(
+                {'error': 'This email is already taken by another user.'},
+                status=400,
+            )
+
+        request.user.email = new_email
+        request.user.save(update_fields=['email'])
+        consume_email_change_token(token)
+
+        return Response({
+            'message': 'Email updated successfully.',
+            'user': UserSerializer(request.user, context={'request': request}).data,
+        })
+
+
+class ChangePasswordView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/password/ — Change password."""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'password_change'
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={'user': request.user},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        if not user.check_password(serializer.validated_data['current_password']):
+            return Response(
+                {'error': 'Current password is incorrect.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.check_password(serializer.validated_data['new_password']):
+            return Response(
+                {'error': 'New password must be different from your current password.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+
+        # Re-issue JWT cookies so the session stays valid
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+        response = Response({'message': 'Password changed successfully.'})
+        set_jwt_auth_cookies(
+            response,
+            access=str(refresh.access_token),
+            refresh=str(refresh),
+        )
+        return response
+
+
+class AvatarUploadView(APIView):
+    """POST /api/auth/avatar/ — Upload profile picture.
+       DELETE /api/auth/avatar/ — Remove profile picture.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        image = request.FILES.get('avatar')
+        if not image:
+            return Response({'error': 'No image provided.'}, status=400)
+
+        error = validate_uploaded_image(image)
+        if error:
+            return Response({'error': error}, status=400)
+
+        profile = request.user.profile
+        # Delete old avatar file if exists
+        if profile.avatar:
+            profile.avatar.delete(save=False)
+        profile.avatar = image
+        profile.save(update_fields=['avatar'])
+
+        return Response({
+            'message': 'Avatar updated.',
+            'user': UserSerializer(request.user, context={'request': request}).data,
+        })
+
+    def delete(self, request):
+        profile = request.user.profile
+        if profile.avatar:
+            profile.avatar.delete(save=False)
+            profile.avatar = None
+            profile.save(update_fields=['avatar'])
+        return Response({'message': 'Avatar removed.', 'user': UserSerializer(request.user, context={'request': request}).data})
 
 
 # ── Seller views ─────────────────────────────────────────────────────────────
@@ -1729,6 +1993,11 @@ class SellerProfileView(APIView):
         is_online = profile.is_online
         last_active = profile.last_active
 
+        # Avatar URL
+        avatar_url = None
+        if profile.avatar:
+            avatar_url = request.build_absolute_uri(profile.avatar.url)
+
         return Response({
             'username': seller.username,
             'member_since': member_since,
@@ -1738,6 +2007,7 @@ class SellerProfileView(APIView):
             'review_count': review_count,
             'completed_sales': completed_sales,
             'active_listings': active_listings,
+            'avatar_url': avatar_url,
         })
 
 

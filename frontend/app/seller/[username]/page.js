@@ -84,7 +84,11 @@ export default function SellerProfilePage() {
       {/* Profile Header */}
       <div className="seller-profile-header">
         <div className="seller-avatar">
-          {profile.username.charAt(0).toUpperCase()}
+          {profile.avatar_url ? (
+            <img src={profile.avatar_url} alt={profile.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          ) : (
+            profile.username.charAt(0).toUpperCase()
+          )}
         </div>
         <div className="seller-profile-info">
           <div className="seller-profile-name">{profile.username}</div>

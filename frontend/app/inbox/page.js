@@ -117,7 +117,11 @@ export default function InboxPage() {
                 onClick={() => selectConversation(convo)}
               >
                 <div className="inbox-avatar">
-                  {convo.other_user?.username?.[0]?.toUpperCase() || '?'}
+                  {convo.other_user?.avatar_url ? (
+                    <img src={convo.other_user.avatar_url} alt={convo.other_user.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                  ) : (
+                    convo.other_user?.username?.[0]?.toUpperCase() || '?'
+                  )}
                   {convo.other_user?.is_online && <span className="online-dot"></span>}
                 </div>
                 <div className="inbox-info">
@@ -167,7 +171,11 @@ export default function InboxPage() {
                     ←
                   </button>
                   <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
-                    {activeChat.other_user?.username?.[0]?.toUpperCase() || '?'}
+                    {activeChat.other_user?.avatar_url ? (
+                      <img src={activeChat.other_user.avatar_url} alt={activeChat.other_user.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                    ) : (
+                      activeChat.other_user?.username?.[0]?.toUpperCase() || '?'
+                    )}
                     {activeChat.other_user?.is_online && <span className="online-dot"></span>}
                   </div>
                   <div>

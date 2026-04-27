@@ -14,6 +14,13 @@ urlpatterns = [
     path('auth/refresh/', views.RefreshTokenView.as_view(), name='token-refresh'),
     path('auth/logout/', views.LogoutView.as_view(), name='logout'),
     path('auth/me/', views.MeView.as_view(), name='me'),
+    path('auth/profile/', views.UpdateProfileView.as_view(), name='update-profile'),
+    path('auth/password/', views.ChangePasswordView.as_view(), name='change-password'),
+    path('auth/password/reset-request/', views.RequestPasswordResetView.as_view(), name='request-password-reset'),
+    path('auth/password/reset-confirm/', views.ConfirmPasswordResetView.as_view(), name='confirm-password-reset'),
+    path('auth/avatar/', views.AvatarUploadView.as_view(), name='avatar-upload'),
+    path('auth/email/request-change/', views.RequestEmailChangeView.as_view(), name='request-email-change'),
+    path('auth/email/confirm-change/', views.ConfirmEmailChangeView.as_view(), name='confirm-email-change'),
 
     # Seller
     path('seller/apply/', views.SellerApplyView.as_view(), name='seller-apply'),

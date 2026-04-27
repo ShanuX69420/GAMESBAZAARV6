@@ -472,3 +472,110 @@ export async function getNotificationUnreadCount() {
   if (!res.ok) throw new Error('Failed to get notification count');
   return res.json();
 }
+
+// ── Settings API ────────────────────────────────────────────────────────────
+
+export async function updateProfile(data) {
+  const res = await authFetch(`${API_BASE}/api/auth/profile/`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(result).flat();
+    throw new Error(errors[0] || 'Failed to update profile');
+  }
+  return result;
+}
+
+export async function requestEmailChange(newEmail) {
+  const res = await authFetch(`${API_BASE}/api/auth/email/request-change/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ new_email: newEmail }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(data).flat();
+    throw new Error(errors[0] || 'Failed to request email change');
+  }
+  return data;
+}
+
+export async function confirmEmailChange(token, currentCode, newCode) {
+  const res = await authFetch(`${API_BASE}/api/auth/email/confirm-change/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ token, current_code: currentCode, new_code: newCode }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(data).flat();
+    throw new Error(errors[0] || 'Failed to confirm email change');
+  }
+  return data;
+}
+
+export async function changePassword(currentPassword, newPassword, newPassword2) {
+  const res = await authFetch(`${API_BASE}/api/auth/password/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+      new_password2: newPassword2,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(data).flat();
+    throw new Error(errors[0] || 'Failed to change password');
+  }
+  return data;
+}
+
+export async function uploadAvatar(imageFile) {
+  const formData = new FormData();
+  formData.append('avatar', imageFile);
+
+  const res = await authFetch(`${API_BASE}/api/auth/avatar/`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to upload avatar');
+  return data;
+}
+
+export async function removeAvatar() {
+  const res = await authFetch(`${API_BASE}/api/auth/avatar/`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to remove avatar');
+  return data;
+}
+
+export async function requestPasswordReset(email) {
+  const res = await fetch(`${API_BASE}/api/auth/password/reset-request/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to request password reset');
+  return data;
+}
+
+export async function confirmPasswordReset(token, code, newPassword, newPassword2) {
+  const res = await fetch(`${API_BASE}/api/auth/password/reset-confirm/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, code, new_password: newPassword, new_password2: newPassword2 }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+  return data;
+}

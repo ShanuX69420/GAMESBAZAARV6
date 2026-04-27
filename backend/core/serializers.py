@@ -217,16 +217,103 @@ class UserSerializer(serializers.ModelSerializer):
     seller_status = serializers.CharField(source='profile.seller_status', read_only=True)
     is_seller = serializers.BooleanField(source='profile.is_seller', read_only=True)
     wallet_balance = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+    username_changed_at = serializers.DateTimeField(source='profile.username_changed_at', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'seller_status', 'is_seller', 'wallet_balance']
+        fields = ['id', 'username', 'email', 'seller_status', 'is_seller', 'wallet_balance',
+                  'avatar_url', 'date_joined', 'username_changed_at']
 
     def get_wallet_balance(self, obj):
         wallet = getattr(obj, 'wallet', None)
         if wallet:
             return str(wallet.balance)
         return '0.00'
+
+    def get_avatar_url(self, obj):
+        profile = getattr(obj, 'profile', None)
+        if profile and profile.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(profile.avatar.url)
+            return profile.avatar.url
+        return None
+
+
+class UpdateProfileSerializer(serializers.Serializer):
+    """Update username only. Email uses a separate verification flow."""
+    username = serializers.CharField(max_length=150, required=True)
+
+    def validate_username(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Username cannot be blank.')
+        user = self.context.get('user')
+
+        # If unchanged, skip the cooldown check
+        if value == user.username:
+            return value
+
+        try:
+            User._meta.get_field('username').run_validators(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+
+        # 90-day cooldown
+        from .services import USERNAME_CHANGE_COOLDOWN_DAYS
+        profile = user.profile
+        if profile.username_changed_at:
+            from django.utils import timezone
+            days_since = (timezone.now() - profile.username_changed_at).days
+            if days_since < USERNAME_CHANGE_COOLDOWN_DAYS:
+                remaining = USERNAME_CHANGE_COOLDOWN_DAYS - days_since
+                raise serializers.ValidationError(
+                    f'You can only change your username once every {USERNAME_CHANGE_COOLDOWN_DAYS} days. '
+                    f'Try again in {remaining} day{"s" if remaining != 1 else ""}.'
+                )
+
+        if User.objects.filter(username__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('This username is already taken.')
+        return value
+
+
+class RequestEmailChangeSerializer(serializers.Serializer):
+    """Step 1: Request email change — sends codes to current and new email."""
+    new_email = serializers.EmailField(required=True)
+
+    def validate_new_email(self, value):
+        value = User.objects.normalize_email(value.strip())
+        user = self.context.get('user')
+        if value.lower() == user.email.lower():
+            raise serializers.ValidationError('This is already your current email.')
+        if User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+
+class ConfirmEmailChangeSerializer(serializers.Serializer):
+    """Step 2: Confirm email change with both verification codes."""
+    current_code = serializers.CharField(required=True, max_length=6, min_length=6)
+    new_code = serializers.CharField(required=True, max_length=6, min_length=6)
+    token = serializers.CharField(required=True)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Change the current user's password."""
+    current_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=6)
+    new_password2 = serializers.CharField(required=True, min_length=6)
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password2']:
+            raise serializers.ValidationError({'new_password2': 'Passwords do not match.'})
+        user = self.context.get('user')
+        try:
+            validate_password(attrs['new_password'], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'new_password': list(exc.messages)})
+        return attrs
 
 
 class SellerApplicationSerializer(serializers.Serializer):
@@ -240,6 +327,7 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_name = serializers.CharField(source='seller.username', read_only=True)
     seller_is_online = serializers.SerializerMethodField()
     seller_last_active = serializers.SerializerMethodField()
+    seller_avatar_url = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.category.name', read_only=True)
     filter_display = serializers.SerializerMethodField()
@@ -249,6 +337,7 @@ class ListingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'price', 'quantity', 'status',
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
+            'seller_avatar_url',
             'game_name', 'category_name',
             'filter_values', 'filter_display', 'delivery_time',
             'is_auto_delivery', 'delivery_instructions', 'created_at',
@@ -262,6 +351,15 @@ class ListingSerializer(serializers.ModelSerializer):
         profile = getattr(obj.seller, 'profile', None)
         if profile and profile.last_active:
             return profile.last_active.isoformat()
+        return None
+
+    def get_seller_avatar_url(self, obj):
+        profile = getattr(obj.seller, 'profile', None)
+        if profile and profile.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(profile.avatar.url)
+            return profile.avatar.url
         return None
 
     def get_filter_display(self, obj):
@@ -475,11 +573,19 @@ class ConversationListSerializer(serializers.ModelSerializer):
             )
             if other:
                 profile = getattr(other, 'profile', None)
+                avatar_url = None
+                if profile and profile.avatar:
+                    request = self.context.get('request')
+                    if request:
+                        avatar_url = request.build_absolute_uri(profile.avatar.url)
+                    else:
+                        avatar_url = profile.avatar.url
                 return {
                     'id': other.id,
                     'username': other.username,
                     'is_online': profile.is_online if profile else False,
                     'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
+                    'avatar_url': avatar_url,
                 }
         return None
 
@@ -532,11 +638,19 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
             )
             if other:
                 profile = getattr(other, 'profile', None)
+                avatar_url = None
+                if profile and profile.avatar:
+                    request = self.context.get('request')
+                    if request:
+                        avatar_url = request.build_absolute_uri(profile.avatar.url)
+                    else:
+                        avatar_url = profile.avatar.url
                 return {
                     'id': other.id,
                     'username': other.username,
                     'is_online': profile.is_online if profile else False,
                     'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
+                    'avatar_url': avatar_url,
                 }
         return None
 

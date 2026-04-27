@@ -175,6 +175,11 @@ REST_FRAMEWORK = {
         'auth_login': '10/min',
         'auth_refresh': '30/min',
         'auth_register': '5/hour',
+        'password_change': '10/hour',
+        'password_reset_request': '5/hour',
+        'password_reset_confirm': '10/hour',
+        'email_change_request': '5/hour',
+        'email_change_confirm': '10/hour',
         'chat_start': '20/min',
         'chat_message': '60/min',
         'chat_upload': '20/min',
@@ -216,6 +221,14 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
+
+# Email — console in dev, configure SMTP for production
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend',
+)
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gamesbazaar.pk')
 
 # ASGI / Channels
 ASGI_APPLICATION = 'gamesbazaar.asgi.application'

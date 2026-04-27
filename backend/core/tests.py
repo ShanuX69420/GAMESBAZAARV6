@@ -7,6 +7,7 @@ from unittest.mock import patch
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
+from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -3603,4 +3604,165 @@ class NotificationTests(TestCase):
         self.assertIsNotNone(notif)
         self.assertIn('refund', notif.title.lower())
         self.assertIn('wallet', notif.message.lower())
+
+
+class AccountSecurityFlowTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.origin = 'http://testserver'
+        self.user = User.objects.create_user(
+            username='secureuser',
+            email='secure@example.com',
+            password='OriginalPass123!x',
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def post_public(self, path, data):
+        return self.client.post(
+            path,
+            data,
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+    @patch('core.views.send_password_reset_code')
+    @patch('core.views.generate_password_reset_code', return_value='123456')
+    def test_password_reset_token_is_opaque_and_unknown_email_shape_matches(self, code_mock, send_mock):
+        existing = self.post_public(
+            '/api/auth/password/reset-request/',
+            {'email': 'secure@example.com'},
+        )
+        unknown = self.post_public(
+            '/api/auth/password/reset-request/',
+            {'email': 'missing@example.com'},
+        )
+
+        self.assertEqual(existing.status_code, 200)
+        self.assertEqual(unknown.status_code, 200)
+        self.assertEqual(set(existing.data.keys()), {'message', 'token'})
+        self.assertEqual(set(unknown.data.keys()), {'message', 'token'})
+        self.assertEqual(existing.data['message'], unknown.data['message'])
+        self.assertNotEqual(existing.data['token'], unknown.data['token'])
+        send_mock.assert_called_once()
+        code_mock.assert_called_once()
+
+        for response in (existing, unknown):
+            with self.assertRaises(signing.BadSignature):
+                signing.loads(response.data['token'], salt='core.password_reset')
+
+    @patch('core.views.send_password_reset_code')
+    @patch('core.views.generate_password_reset_code', return_value='123456')
+    def test_password_reset_rejects_same_password_and_consumes_successful_challenge(self, *_mocks):
+        request_response = self.post_public(
+            '/api/auth/password/reset-request/',
+            {'email': 'secure@example.com'},
+        )
+        token = request_response.data['token']
+
+        same_password_response = self.post_public(
+            '/api/auth/password/reset-confirm/',
+            {
+                'token': token,
+                'code': '123456',
+                'new_password': 'OriginalPass123!x',
+                'new_password2': 'OriginalPass123!x',
+            },
+        )
+        self.assertEqual(same_password_response.status_code, 400)
+        self.assertIn('different', same_password_response.data['error'])
+
+        success_response = self.post_public(
+            '/api/auth/password/reset-confirm/',
+            {
+                'token': token,
+                'code': '123456',
+                'new_password': 'BetterPass123!x',
+                'new_password2': 'BetterPass123!x',
+            },
+        )
+        self.assertEqual(success_response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('BetterPass123!x'))
+
+        replay_response = self.post_public(
+            '/api/auth/password/reset-confirm/',
+            {
+                'token': token,
+                'code': '123456',
+                'new_password': 'AnotherPass123!x',
+                'new_password2': 'AnotherPass123!x',
+            },
+        )
+        self.assertEqual(replay_response.status_code, 400)
+        self.assertIn('invalid or expired', replay_response.data['error'])
+
+    @patch('core.views.send_new_email_change_code')
+    @patch('core.views.send_email_change_code')
+    @patch('core.views.generate_email_change_code', side_effect=['111111', '222222'])
+    def test_email_change_token_is_opaque_and_requires_code(self, *_mocks):
+        self.client.force_authenticate(user=self.user)
+
+        request_response = self.client.post(
+            '/api/auth/email/request-change/',
+            {'new_email': 'new-secure@example.com'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        self.assertEqual(request_response.status_code, 200)
+        token = request_response.data['token']
+        with self.assertRaises(signing.BadSignature):
+            signing.loads(token, salt='core.email_change')
+
+        wrong_code_response = self.client.post(
+            '/api/auth/email/confirm-change/',
+            {'token': token, 'current_code': '111111', 'new_code': '000000'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        self.assertEqual(wrong_code_response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'secure@example.com')
+
+        success_response = self.client.post(
+            '/api/auth/email/confirm-change/',
+            {'token': token, 'current_code': '111111', 'new_code': '222222'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        self.assertEqual(success_response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'new-secure@example.com')
+
+    def test_username_update_uses_django_username_validator(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.put(
+            '/api/auth/profile/',
+            {'username': 'bad/name'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.data)
+
+    def test_change_password_rejects_same_password(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/auth/password/',
+            {
+                'current_password': 'OriginalPass123!x',
+                'new_password': 'OriginalPass123!x',
+                'new_password2': 'OriginalPass123!x',
+            },
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('different', response.data['error'])
 

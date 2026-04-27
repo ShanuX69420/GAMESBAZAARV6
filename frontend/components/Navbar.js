@@ -339,13 +339,21 @@ export default function Navbar() {
                   {/* Profile avatar with dropdown */}
                   <div className="nav-icon-wrapper" ref={profileRef}>
                     <button className="nav-avatar-btn" onClick={toggleProfileDropdown} aria-label="Profile menu">
-                      <span className="nav-avatar">{getInitials()}</span>
+                      {user.avatar_url ? (
+                        <img src={user.avatar_url} alt={user.username} className="nav-avatar nav-avatar-img" />
+                      ) : (
+                        <span className="nav-avatar">{getInitials()}</span>
+                      )}
                     </button>
 
                     {profileOpen && (
                       <div className="profile-dropdown">
                         <div className="profile-dropdown-header">
-                          <span className="profile-dropdown-avatar">{getInitials()}</span>
+                          {user.avatar_url ? (
+                            <img src={user.avatar_url} alt={user.username} className="profile-dropdown-avatar profile-dropdown-avatar-img" />
+                          ) : (
+                            <span className="profile-dropdown-avatar">{getInitials()}</span>
+                          )}
                           <div className="profile-dropdown-name">{user.username}</div>
                         </div>
                         <div className="profile-dropdown-body">
@@ -390,10 +398,16 @@ export default function Navbar() {
                               Application Pending
                             </div>
                           )}
-                          <Link href={user.is_seller ? `/seller/${user.username}` : '/'} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="7" r="4"/></svg>
-                            {user.is_seller ? 'My Profile' : 'My Account'}
+                          <Link href="/settings" className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            Settings
                           </Link>
+                          {user.is_seller && (
+                            <Link href={`/seller/${user.username}`} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="7" r="4"/></svg>
+                              My Profile
+                            </Link>
+                          )}
                           <div className="profile-dropdown-divider"></div>
                           <button className="profile-dropdown-item profile-dropdown-logout" onClick={() => { logout(); setProfileOpen(false); }}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" strokeLinecap="round" strokeLinejoin="round"/><polyline points="16 17 21 12 16 7" strokeLinecap="round" strokeLinejoin="round"/><line x1="21" y1="12" x2="9" y2="12" strokeLinecap="round"/></svg>
