@@ -29,6 +29,8 @@ from .models import (
 from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
     MAX_AUTO_DELIVERY_LINES,
+    MAX_DELIVERY_NOTE_LENGTH,
+    MAX_DISPUTE_REASON_LENGTH,
     WalletTransactionSerializer,
 )
 from .services import decrypt_sensitive_text, encrypt_sensitive_text
@@ -253,6 +255,41 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         self.assertTrue(detail_response.data['is_auto_delivery'])
         self.assertEqual(detail_response.data['auto_delivery_data'], 'code-one')
+
+    def test_auto_delivery_preserves_item_edge_whitespace(self):
+        self.game_category.allow_auto_delivery = True
+        self.game_category.save(update_fields=['allow_auto_delivery'])
+        self.client.force_authenticate(user=self.seller)
+
+        create_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Whitespace credential',
+                'description': 'Sensitive spacing',
+                'price': '25.00',
+                'filter_values': {},
+                'is_auto_delivery': True,
+                'auto_delivery_data': '  code-one  \ncode-two',
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, 201)
+        listing = Listing.objects.get(title='Whitespace credential')
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), '  code-one  \ncode-two')
+
+        self.client.force_authenticate(user=self.buyer)
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(buy_response.status_code, 201)
+        self.assertEqual(buy_response.data['delivery_note'], '  code-one  ')
+        listing.refresh_from_db()
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two')
 
     def test_auto_delivery_payload_limits_are_enforced(self):
         self.game_category.allow_auto_delivery = True
@@ -714,7 +751,7 @@ class TopUpProofUploadTests(TestCase):
         unauthenticated_signed_response = self.client.get(
             path_with_query(response.data['payment_proof_url'])
         )
-        self.assertEqual(unauthenticated_signed_response.status_code, 200)
+        self.assertEqual(unauthenticated_signed_response.status_code, 404)
 
         other_user = User.objects.create_user(username='other_buyer', password='password123')
         self.client.force_authenticate(user=other_user)
@@ -905,6 +942,11 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'topup_request': '1/min',
         'heartbeat': '1/min',
         'search': '1/min',
+        'avatar_upload': '1/min',
+        'seller_apply': '1/min',
+        'listing_create': '1/min',
+        'listing_mutation': '1/min',
+        'listing_restock': '1/min',
     },
 }
 
@@ -922,6 +964,11 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/wallet/top-up/': 'topup_request',
             '/api/heartbeat/': 'heartbeat',
             '/api/search/': 'search',
+            '/api/auth/avatar/': 'avatar_upload',
+            '/api/seller/apply/': 'seller_apply',
+            '/api/listings/': 'listing_create',
+            '/api/listings/1/': 'listing_mutation',
+            '/api/listings/1/restock/': 'listing_restock',
         }
 
         for path, scope in cases.items():
@@ -1728,6 +1775,53 @@ class AccessControlTests(TestCase):
         self.assertEqual(self.listing.title, 'Seller listing')
         self.assertTrue(Listing.objects.filter(pk=self.listing.pk).exists())
 
+    def test_listing_detail_hides_inactive_or_sold_listings_from_outsiders(self):
+        active_response = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(active_response.status_code, 200)
+
+        self.listing.status = 'sold'
+        self.listing.save(update_fields=['status'])
+
+        anon_response = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(anon_response.status_code, 404)
+
+        self.client.force_authenticate(user=self.buyer)
+        outsider_response = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(outsider_response.status_code, 404)
+
+        self.client.force_authenticate(user=self.seller)
+        owner_response = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(owner_response.status_code, 200)
+
+        staff = User.objects.create_user(
+            username='staff_user',
+            password='password123',
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=staff)
+        staff_response = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(staff_response.status_code, 200)
+
+    def test_order_delivery_note_and_dispute_reason_have_length_limits(self):
+        self.client.force_authenticate(user=self.seller)
+        deliver_response = self.client.post(
+            f'/api/orders/{self.order.id}/deliver/',
+            {'delivery_note': 'x' * (MAX_DELIVERY_NOTE_LENGTH + 1)},
+            format='json',
+        )
+        self.assertEqual(deliver_response.status_code, 400)
+
+        self.client.force_authenticate(user=self.buyer)
+        dispute_response = self.client.post(
+            f'/api/orders/{self.order.id}/dispute/',
+            {'reason': 'x' * (MAX_DISPUTE_REASON_LENGTH + 1)},
+            format='json',
+        )
+        self.assertEqual(dispute_response.status_code, 400)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'pending')
+
     def test_intruder_cannot_view_or_mutate_order(self):
         self.client.force_authenticate(user=self.intruder)
 
@@ -1907,7 +2001,7 @@ class AccessControlTests(TestCase):
 
         self.client.force_authenticate(user=None)
         unauthenticated_signed_response = self.client.get(path_with_query(image_url))
-        self.assertEqual(unauthenticated_signed_response.status_code, 200)
+        self.assertEqual(unauthenticated_signed_response.status_code, 404)
 
         self.client.force_authenticate(user=self.intruder)
         signed_response = self.client.get(path_with_query(image_url))

@@ -1,5 +1,6 @@
 import { API_BASE } from '@/lib/config';
 let refreshAuthPromise = null;
+const PUBLIC_CATALOG_REVALIDATE_SECONDS = 120;
 
 function pathSegment(value) {
   return encodeURIComponent(String(value));
@@ -20,20 +21,26 @@ function paginationQuery({ limit, offset, beforeId, before_id, otherUserId, othe
 // ── Public API (server-side) ────────────────────────────────────────────────
 
 export async function fetchGames() {
-  const res = await fetch(`${API_BASE}/api/games/`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/games/`, {
+    next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
+  });
   if (!res.ok) throw new Error('Failed to fetch games');
   return res.json();
 }
 
 export async function fetchGame(slug) {
-  const res = await fetch(`${API_BASE}/api/games/${pathSegment(slug)}/`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/games/${pathSegment(slug)}/`, {
+    next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
+  });
   if (!res.ok) throw new Error('Failed to fetch game');
   return res.json();
 }
 
 export async function fetchGameCategory(gameSlug, categorySlug, filterParams = '') {
   const url = `${API_BASE}/api/games/${pathSegment(gameSlug)}/${pathSegment(categorySlug)}/${filterParams ? '?' + filterParams : ''}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, {
+    next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
+  });
   if (!res.ok) throw new Error('Failed to fetch game category');
   return res.json();
 }

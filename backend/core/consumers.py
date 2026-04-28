@@ -40,7 +40,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         # Join the conversation's channel group
         self.room_group_name = f'chat_{self.conversation_id}'
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
-        await self.accept()
+        accept_subprotocol = self.scope.get('chat_accept_subprotocol')
+        if accept_subprotocol:
+            await self.accept(subprotocol=accept_subprotocol)
+        else:
+            await self.accept()
 
         # Mark unread messages as read
         await self.mark_messages_read()
@@ -157,4 +161,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def mark_message_read(self, message_id):
-        Message.objects.filter(id=message_id, is_read=False).update(is_read=True)
+        Message.objects.filter(
+            id=message_id,
+            conversation_id=self.conversation_id,
+            is_read=False,
+        ).exclude(sender=self.user).update(is_read=True)

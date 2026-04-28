@@ -26,6 +26,14 @@ class Game(models.Model):
 
     class Meta:
         ordering = ['order', 'name']
+        indexes = [
+            GinIndex(fields=['name'], name='game_name_trgm_idx', opclasses=['gin_trgm_ops']),
+            GinIndex(
+                fields=['search_keywords'],
+                name='game_search_keywords_trgm_idx',
+                opclasses=['gin_trgm_ops'],
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -53,6 +61,9 @@ class Category(models.Model):
     class Meta:
         ordering = ['name']
         verbose_name_plural = 'Categories'
+        indexes = [
+            GinIndex(fields=['name'], name='category_name_trgm_idx', opclasses=['gin_trgm_ops']),
+        ]
         constraints = [
             models.CheckConstraint(
                 check=models.Q(commission_rate__gte=Decimal('0.00')) &
@@ -251,6 +262,7 @@ class Listing(models.Model):
                 name='listing_seller_created_idx',
             ),
             GinIndex(fields=['filter_values'], name='listing_filter_values_gin'),
+            GinIndex(fields=['title'], name='listing_title_trgm_idx', opclasses=['gin_trgm_ops']),
         ]
         constraints = [
             models.CheckConstraint(
@@ -354,6 +366,14 @@ class Wallet(models.Model):
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(balance__gte=Decimal('0.00')),
+                name='wallet_balance_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.username} — PKR {self.balance}"

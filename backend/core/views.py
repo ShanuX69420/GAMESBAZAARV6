@@ -35,7 +35,7 @@ from .serializers import (
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
-    OrderSerializer, BuyListingSerializer,
+    OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer,
     NotificationSerializer,
 )
@@ -110,7 +110,9 @@ def has_valid_private_media_ticket(request, *, kind, object_id):
         payload = decode_private_media_ticket(ticket)
     except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError, ValueError):
         return False
-    if request.user.is_authenticated and request.user.id != payload['viewer_user_id']:
+    if not request.user.is_authenticated:
+        return False
+    if request.user.id != payload['viewer_user_id']:
         return False
     return (
         payload['kind'] == kind and
@@ -708,11 +710,12 @@ class ChangePasswordView(ScopedPostThrottleMixin, APIView):
         return response
 
 
-class AvatarUploadView(APIView):
+class AvatarUploadView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/avatar/ — Upload profile picture.
        DELETE /api/auth/avatar/ — Remove profile picture.
     """
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'avatar_upload'
 
     def post(self, request):
         image = request.FILES.get('avatar')
@@ -746,9 +749,10 @@ class AvatarUploadView(APIView):
 
 # ── Seller views ─────────────────────────────────────────────────────────────
 
-class SellerApplyView(APIView):
+class SellerApplyView(ScopedPostThrottleMixin, APIView):
     """POST /api/seller/apply/ — Submit a seller application."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'seller_apply'
 
     def post(self, request):
         profile = request.user.profile
@@ -784,10 +788,11 @@ class SellerStatusView(APIView):
 
 # ── Listing views ────────────────────────────────────────────────────────────
 
-class ListingCreateView(generics.CreateAPIView):
+class ListingCreateView(ScopedPostThrottleMixin, generics.CreateAPIView):
     """POST /api/listings/ — Create a listing (sellers only)."""
     serializer_class = CreateListingSerializer
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'listing_create'
 
     def perform_create(self, serializer):
         if not self.request.user.profile.is_seller:
@@ -905,21 +910,34 @@ class MyListingsView(generics.ListAPIView):
         return Response(payload)
 
 
-class ListingDetailView(APIView):
+class ListingDetailView(ScopedPostThrottleMixin, APIView):
     """GET /api/listings/{id}/ — Get listing detail.
     PUT /api/listings/{id}/ — Edit listing (owner only).
     DELETE /api/listings/{id}/ — Delete listing (owner only).
     """
+    throttle_methods = {'PUT', 'DELETE'}
+    throttle_scope = 'listing_mutation'
+
     def get_permissions(self):
         if self.request.method == 'GET':
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
 
     def get(self, request, pk):
+        listings_qs = Listing.objects.select_related(
+            'seller', 'game_category__game', 'game_category__category'
+        )
+        if request.user.is_authenticated:
+            if not request.user.is_staff:
+                listings_qs = listings_qs.filter(
+                    Q(status='active') | Q(seller=request.user)
+                )
+        else:
+            listings_qs = listings_qs.filter(status='active')
+
         listing = get_object_or_404(
-            Listing.objects.select_related(
-                'seller', 'game_category__game', 'game_category__category'
-            ), pk=pk
+            listings_qs,
+            pk=pk,
         )
         return Response(ListingSerializer(
             listing,
@@ -950,9 +968,10 @@ class ListingDetailView(APIView):
         return Response({'message': 'Listing deleted.'}, status=204)
 
 
-class AutoDeliveryRestockView(APIView):
+class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
     """POST /api/listings/{id}/restock/ - Append automated delivery stock."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'listing_restock'
 
     def post(self, request, pk):
         serializer = AutoDeliveryRestockSerializer(data=request.data)
@@ -973,9 +992,9 @@ class AutoDeliveryRestockView(APIView):
                 )
 
             existing_lines = [
-                line.strip()
+                line
                 for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
-                if line.strip()
+                if line != ''
             ]
             new_lines = serializer.validated_data['auto_delivery_data']
             combined_lines = existing_lines + new_lines
@@ -1482,7 +1501,7 @@ class BuyListingView(APIView):
             is_auto = listing.is_auto_delivery
             if is_auto:
                 auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
-                all_lines = [line for line in auto_delivery_data.splitlines() if line.strip()]
+                all_lines = [line for line in auto_delivery_data.splitlines() if line != '']
                 if len(all_lines) < qty:
                     item_label = 'item' if len(all_lines) == 1 else 'items'
                     return Response({'error': f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'}, status=400)
@@ -1747,6 +1766,9 @@ class DeliverOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
+        serializer = DeliverOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
         with db_transaction.atomic():
             order = get_object_or_404(
                 Order.objects.select_for_update(),
@@ -1757,7 +1779,7 @@ class DeliverOrderView(APIView):
             if order.status != 'pending':
                 return Response({'error': 'Order can only be delivered when pending.'}, status=400)
 
-            delivery_note = request.data.get('delivery_note', '').strip()
+            delivery_note = serializer.validated_data.get('delivery_note', '')
             order.status = 'delivered'
             order.delivery_note = encrypt_sensitive_text(delivery_note)
             order.save(update_fields=['status', 'delivery_note', 'updated_at'])
@@ -1819,9 +1841,9 @@ class DisputeOrderView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        reason = request.data.get('reason', '').strip()
-        if not reason:
-            return Response({'error': 'Please provide a reason for the dispute.'}, status=400)
+        serializer = DisputeOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data['reason']
 
         with db_transaction.atomic():
             order = get_object_or_404(

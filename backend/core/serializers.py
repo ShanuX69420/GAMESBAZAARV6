@@ -6,6 +6,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.settings import api_settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User, update_last_login
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
@@ -28,16 +29,19 @@ MAX_AUTO_DELIVERY_PAYLOAD_LENGTH = 100_000
 MAX_AUTO_DELIVERY_LINES = 1_000
 MAX_AUTO_DELIVERY_LINE_LENGTH = 2_000
 MAX_DELIVERY_INSTRUCTIONS_LENGTH = 2_000
+MAX_DELIVERY_NOTE_LENGTH = 5_000
+MAX_DISPUTE_REASON_LENGTH = 3_000
+DUMMY_PASSWORD_HASH = make_password('not-the-password')
 
 
 def clean_auto_delivery_lines(value):
-    raw_data = str(value or '').strip()
+    raw_data = '' if value is None else str(value)
     if not raw_data:
         raise serializers.ValidationError({
             'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
         })
 
-    lines = [line.strip() for line in raw_data.splitlines() if line.strip()]
+    lines = [line for line in raw_data.splitlines() if line != '']
     if not lines:
         raise serializers.ValidationError({
             'auto_delivery_data': 'Please enter at least one item.',
@@ -253,6 +257,8 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             if request is not None:
                 authenticate_kwargs['request'] = request
             self.user = authenticate(**authenticate_kwargs)
+        else:
+            check_password(password or '', DUMMY_PASSWORD_HASH)
 
         if not api_settings.USER_AUTHENTICATION_RULE(self.user):
             raise AuthenticationFailed(
@@ -454,6 +460,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
         default='',
         allow_blank=True,
         max_length=MAX_AUTO_DELIVERY_PAYLOAD_LENGTH,
+        trim_whitespace=False,
     )
     delivery_instructions = serializers.CharField(
         required=False,
@@ -602,7 +609,7 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
             available_items = [
                 line for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
-                if line.strip()
+                if line != ''
             ]
             if next_status == 'active' and (
                 not next_quantity or len(available_items) != next_quantity
@@ -626,6 +633,7 @@ class AutoDeliveryRestockSerializer(serializers.Serializer):
     auto_delivery_data = serializers.CharField(
         max_length=MAX_AUTO_DELIVERY_PAYLOAD_LENGTH,
         allow_blank=False,
+        trim_whitespace=False,
     )
     activate = serializers.BooleanField(required=False, default=True)
 
@@ -909,6 +917,22 @@ class OrderSerializer(serializers.ModelSerializer):
 class BuyListingSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1, default=1)
+
+
+class DeliverOrderSerializer(serializers.Serializer):
+    delivery_note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=MAX_DELIVERY_NOTE_LENGTH,
+        trim_whitespace=True,
+    )
+
+
+class DisputeOrderSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=MAX_DISPUTE_REASON_LENGTH,
+        trim_whitespace=True,
+    )
 
 
 # ── Review Serializers ───────────────────────────────────────────────────────

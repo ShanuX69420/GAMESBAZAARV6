@@ -153,7 +153,7 @@ class ListingAdmin(admin.ModelAdmin):
             return 'N/A'
         item_count = len([
             line for line in decrypt_sensitive_text(obj.auto_delivery_data).splitlines()
-            if line.strip()
+            if line != ''
         ])
         return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
 

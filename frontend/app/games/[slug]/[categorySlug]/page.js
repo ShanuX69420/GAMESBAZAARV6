@@ -44,7 +44,7 @@ export default function GameCategoryPage() {
         search,
         seller: sellerFilter,
       });
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url);
       if (res.ok) {
         const nextData = await res.json();
         setData(prev => {

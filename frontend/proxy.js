@@ -26,6 +26,7 @@ function buildCspHeader(nonce) {
     `style-src 'self' 'nonce-${nonce}'`,
     "style-src-attr 'unsafe-inline'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    "script-src-attr 'none'",
     `connect-src ${connectSrc}`,
     'upgrade-insecure-requests',
   ].join('; ');

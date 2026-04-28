@@ -15,6 +15,11 @@ import {
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
+const CHAT_SUBPROTOCOL = 'gb.chat';
+
+function encodeWebSocketTicket(ticket) {
+  return btoa(ticket).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 export default function ChatBox({ conversationId, sellerId, sellerName, onConversationStart, compact = false }) {
   const { user } = useAuth();
@@ -172,7 +177,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         wsRef.current.close();
       }
 
-      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/?ticket=${encodeURIComponent(ticket)}`);
+      const ticketProtocol = `gb.ticket.${encodeWebSocketTicket(ticket)}`;
+      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/`, [
+        CHAT_SUBPROTOCOL,
+        ticketProtocol,
+      ]);
       wsRef.current = ws;
 
       ws.onopen = () => {
