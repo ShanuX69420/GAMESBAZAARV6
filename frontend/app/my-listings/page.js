@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getMyListings, updateListing, deleteListing } from '@/lib/api';
+import { getMyListings, updateListing, deleteListing, restockAutoDeliveryListing } from '@/lib/api';
 
 const MY_LISTING_PAGE_SIZE = 24;
 
@@ -28,6 +28,8 @@ export default function MyListingsPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', price: '', quantity: '', status: '' });
+  const [restockModal, setRestockModal] = useState(null);
+  const [restockData, setRestockData] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -130,6 +132,39 @@ export default function MyListingsPage() {
       await updateListing(editModal, data);
       setSuccess('Listing updated successfully!');
       setEditModal(null);
+      await loadListings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  function openRestockModal(listing) {
+    setRestockModal(listing.id);
+    setRestockData('');
+    setError('');
+    setSuccess('');
+  }
+
+  async function handleRestockSave() {
+    const lines = restockData.split('\n').filter(line => line.trim());
+    if (lines.length === 0) {
+      setError('Add at least one delivery item.');
+      return;
+    }
+
+    setActionLoading(restockModal);
+    setError('');
+    setSuccess('');
+    try {
+      await restockAutoDeliveryListing(restockModal, {
+        auto_delivery_data: restockData,
+        activate: true,
+      });
+      setSuccess(`Added ${lines.length} item${lines.length === 1 ? '' : 's'} to the listing.`);
+      setRestockModal(null);
+      setRestockData('');
       await loadListings();
     } catch (err) {
       setError(err.message);
@@ -411,6 +446,17 @@ export default function MyListingsPage() {
                       )}
                     </button>
                   )}
+                  {listing.is_auto_delivery && (
+                    <button
+                      className="ml-action-btn"
+                      onClick={() => openRestockModal(listing)}
+                      disabled={actionLoading === listing.id}
+                      title="Add automated delivery stock"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                      Restock
+                    </button>
+                  )}
                   <button
                     className="ml-action-btn"
                     onClick={() => openEditModal(listing)}
@@ -518,6 +564,44 @@ export default function MyListingsPage() {
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Saving...' : '💾 Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {restockModal && (
+        <div className="image-preview-overlay" onClick={() => setRestockModal(null)}>
+          <div className="image-preview-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+            <div className="image-preview-header">
+              <span>Restock Auto Delivery</span>
+              <button className="image-preview-close" onClick={() => setRestockModal(null)}>x</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <div className="form-group">
+                <label className="form-label">Delivery items</label>
+                <textarea
+                  className="form-textarea"
+                  value={restockData}
+                  onChange={(e) => setRestockData(e.target.value)}
+                  rows={8}
+                  placeholder="One code, account, or key per line"
+                />
+                <span className="form-hint">
+                  {restockData.trim()
+                    ? `${restockData.split('\n').filter(line => line.trim()).length} item${restockData.split('\n').filter(line => line.trim()).length === 1 ? '' : 's'} ready to add`
+                    : 'Each non-empty line becomes one item in stock.'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
+                <button className="btn btn-outline" onClick={() => setRestockModal(null)}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRestockSave}
+                  disabled={actionLoading === restockModal}
+                >
+                  {actionLoading === restockModal ? 'Adding...' : 'Add Stock'}
                 </button>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { API_BASE } from '../lib/config';
 import {
   getConversations,
   getMyListings,
+  getMyOrders,
   getSellerDashboard,
   getSellerProfile,
   getSellerReviews,
@@ -52,6 +53,18 @@ describe('API client helpers', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/chat/?limit=5&before_id=42&other_user_id=seller%2Bpk%40example.com`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('encodes cursor pagination for orders', async () => {
+    await getMyOrders({ limit: 20, beforeId: 42, cursor: true });
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/orders/mine/?limit=20&before_id=42&cursor=1`,
       {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

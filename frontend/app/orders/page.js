@@ -38,7 +38,7 @@ export default function OrdersPage() {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
 
-  const loadOrders = useCallback(async ({ append = false, offset = 0 } = {}) => {
+  const loadOrders = useCallback(async ({ append = false, beforeId = null } = {}) => {
     const requestId = ++latestRequestId.current;
     if (append) {
       setLoadingMore(true);
@@ -48,7 +48,8 @@ export default function OrdersPage() {
     try {
       const data = await getMyOrders({
         limit: ORDER_PAGE_SIZE,
-        offset,
+        beforeId,
+        cursor: true,
         status: statusFilter || undefined,
         search: debouncedSearchQuery || undefined,
         date_from: dateFrom || undefined,
@@ -252,10 +253,10 @@ export default function OrdersPage() {
               </div>
             </div>
           ))}
-          {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+          {pagination?.next_before_id !== null && pagination?.next_before_id !== undefined && (
             <button
               className="btn btn-outline btn-full"
-              onClick={() => loadOrders({ append: true, offset: pagination.next_offset })}
+              onClick={() => loadOrders({ append: true, beforeId: pagination.next_before_id })}
               disabled={loadingMore}
             >
               {loadingMore ? 'Loading...' : 'Load More Purchases'}

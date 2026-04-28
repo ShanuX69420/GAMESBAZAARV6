@@ -39,7 +39,7 @@ export default function SalesPage() {
     if (!loading && user && !user.is_seller) router.push('/dashboard');
   }, [user, loading, router]);
 
-  const loadSales = useCallback(async ({ append = false, offset = 0 } = {}) => {
+  const loadSales = useCallback(async ({ append = false, beforeId = null } = {}) => {
     const requestId = ++latestRequestId.current;
     if (append) {
       setLoadingMore(true);
@@ -49,7 +49,8 @@ export default function SalesPage() {
     try {
       const data = await getMySales({
         limit: SALES_PAGE_SIZE,
-        offset,
+        beforeId,
+        cursor: true,
         status: statusFilter || undefined,
         search: debouncedSearchQuery || undefined,
         date_from: dateFrom || undefined,
@@ -262,10 +263,10 @@ export default function SalesPage() {
               </div>
             </div>
           ))}
-          {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+          {pagination?.next_before_id !== null && pagination?.next_before_id !== undefined && (
             <button
               className="btn btn-outline btn-full"
-              onClick={() => loadSales({ append: true, offset: pagination.next_offset })}
+              onClick={() => loadSales({ append: true, beforeId: pagination.next_before_id })}
               disabled={loadingMore}
             >
               {loadingMore ? 'Loading...' : 'Load More Sales'}

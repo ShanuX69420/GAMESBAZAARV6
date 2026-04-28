@@ -5,6 +5,7 @@ Django settings for gamesbazaar project.
 from pathlib import Path
 from datetime import timedelta
 import os
+import sys
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,11 +34,58 @@ def env_list(name, default=None):
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def env_key_map(name):
+    value = os.environ.get(name, '').strip()
+    if not value:
+        return {}
+
+    key_map = {}
+    for item in value.split(','):
+        if ':' not in item:
+            raise ImproperlyConfigured(
+                f'{name} entries must use key_id:fernet_key format.'
+            )
+        key_id, key_value = item.split(':', 1)
+        key_id = key_id.strip()
+        key_value = key_value.strip()
+        if not key_id or not key_value:
+            raise ImproperlyConfigured(
+                f'{name} entries must include both key id and key value.'
+            )
+        key_map[key_id] = key_value
+    return key_map
+
+
 DEV_SECRET_KEY = 'django-insecure-gamesbazaar-dev-key-change-in-production'
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', DEV_SECRET_KEY)
 
-DEBUG = env_bool('DJANGO_DEBUG', True)
+DJANGO_ENV = os.environ.get('DJANGO_ENV', '').strip().lower()
+IS_TESTING = any(arg == 'test' or arg.startswith('test_') for arg in sys.argv)
+IS_EXPLICIT_DEVELOPMENT = DJANGO_ENV in {'development', 'dev', 'local'}
+
+if 'DJANGO_DEBUG' not in os.environ and not IS_EXPLICIT_DEVELOPMENT and not IS_TESTING:
+    raise ImproperlyConfigured(
+        'DJANGO_DEBUG must be set explicitly. Use DJANGO_ENV=development for local defaults.'
+    )
+
+DEBUG = env_bool('DJANGO_DEBUG', IS_EXPLICIT_DEVELOPMENT or IS_TESTING)
+
+if DEBUG and not IS_EXPLICIT_DEVELOPMENT and not IS_TESTING:
+    raise ImproperlyConfigured(
+        'DJANGO_DEBUG=True is only allowed when DJANGO_ENV=development.'
+    )
+
+FIELD_ENCRYPTION_KEYS = env_key_map('FIELD_ENCRYPTION_KEYS')
+FIELD_ENCRYPTION_PRIMARY_KEY_ID = (
+    os.environ.get('FIELD_ENCRYPTION_PRIMARY_KEY_ID', '').strip()
+    or next(reversed(FIELD_ENCRYPTION_KEYS), '')
+)
+
+if FIELD_ENCRYPTION_PRIMARY_KEY_ID and FIELD_ENCRYPTION_PRIMARY_KEY_ID not in FIELD_ENCRYPTION_KEYS:
+    raise ImproperlyConfigured(
+        'FIELD_ENCRYPTION_PRIMARY_KEY_ID must match a key id in FIELD_ENCRYPTION_KEYS.'
+    )
 
 ALLOWED_HOSTS = env_list(
     'DJANGO_ALLOWED_HOSTS',
@@ -56,6 +104,10 @@ if not DEBUG:
     if '*' in ALLOWED_HOSTS:
         raise ImproperlyConfigured(
             'DJANGO_ALLOWED_HOSTS cannot contain "*" when DJANGO_DEBUG=False.'
+        )
+    if not FIELD_ENCRYPTION_KEYS:
+        raise ImproperlyConfigured(
+            'FIELD_ENCRYPTION_KEYS must be set when DJANGO_DEBUG=False.'
         )
 
 INSTALLED_APPS = [

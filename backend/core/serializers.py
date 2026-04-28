@@ -30,6 +30,29 @@ MAX_AUTO_DELIVERY_LINE_LENGTH = 2_000
 MAX_DELIVERY_INSTRUCTIONS_LENGTH = 2_000
 
 
+def clean_auto_delivery_lines(value):
+    raw_data = str(value or '').strip()
+    if not raw_data:
+        raise serializers.ValidationError({
+            'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
+        })
+
+    lines = [line.strip() for line in raw_data.splitlines() if line.strip()]
+    if not lines:
+        raise serializers.ValidationError({
+            'auto_delivery_data': 'Please enter at least one item.',
+        })
+    if len(lines) > MAX_AUTO_DELIVERY_LINES:
+        raise serializers.ValidationError({
+            'auto_delivery_data': f'Automated delivery inventory cannot exceed {MAX_AUTO_DELIVERY_LINES} items.',
+        })
+    if any(len(line) > MAX_AUTO_DELIVERY_LINE_LENGTH for line in lines):
+        raise serializers.ValidationError({
+            'auto_delivery_data': f'Each automated delivery item must be {MAX_AUTO_DELIVERY_LINE_LENGTH} characters or fewer.',
+        })
+    return lines
+
+
 def build_listing_filter_display_map(listings):
     pairs = set()
     for listing in listings:
@@ -463,27 +486,10 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'is_auto_delivery': 'Automated delivery is not allowed for this category.',
                 })
-            auto_data = attrs.get('auto_delivery_data', '').strip()
-            if not auto_data:
-                raise serializers.ValidationError({
-                    'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
-                })
             # Force instant delivery for auto-delivery listings
             attrs['delivery_time'] = 'Instant'
             # Quantity = number of non-empty lines (each line = 1 deliverable item)
-            lines = [line for line in auto_data.split('\n') if line.strip()]
-            if len(lines) == 0:
-                raise serializers.ValidationError({
-                    'auto_delivery_data': 'Please enter at least one item.',
-                })
-            if len(lines) > MAX_AUTO_DELIVERY_LINES:
-                raise serializers.ValidationError({
-                    'auto_delivery_data': f'Automated delivery inventory cannot exceed {MAX_AUTO_DELIVERY_LINES} items.',
-                })
-            if any(len(line) > MAX_AUTO_DELIVERY_LINE_LENGTH for line in lines):
-                raise serializers.ValidationError({
-                    'auto_delivery_data': f'Each automated delivery item must be {MAX_AUTO_DELIVERY_LINE_LENGTH} characters or fewer.',
-                })
+            lines = clean_auto_delivery_lines(attrs.get('auto_delivery_data', ''))
             attrs['auto_delivery_data'] = encrypt_sensitive_text('\n'.join(lines))
             attrs['quantity'] = len(lines)
         else:
@@ -615,6 +621,17 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
 
 # ── Chat Serializers ─────────────────────────────────────────────────────────
+
+class AutoDeliveryRestockSerializer(serializers.Serializer):
+    auto_delivery_data = serializers.CharField(
+        max_length=MAX_AUTO_DELIVERY_PAYLOAD_LENGTH,
+        allow_blank=False,
+    )
+    activate = serializers.BooleanField(required=False, default=True)
+
+    def validate_auto_delivery_data(self, value):
+        return clean_auto_delivery_lines(value)
+
 
 class MessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source='sender.username', read_only=True)
@@ -873,22 +890,19 @@ class OrderSerializer(serializers.ModelSerializer):
         return decrypt_sensitive_text(obj.delivery_note)
 
     def get_is_auto_delivery(self, obj):
-        """Check if the original listing was an auto-delivery listing."""
-        if obj.listing:
-            return obj.listing.is_auto_delivery
-        return False
+        """Return the purchase-time auto-delivery snapshot."""
+        return obj.was_auto_delivery
 
     def get_auto_delivery_data(self, obj):
         """Return auto delivery data from the delivery_note for auto orders."""
-        # Auto delivery data is stored in delivery_note on the order
-        if obj.delivery_note and obj.listing and obj.listing.is_auto_delivery:
+        if obj.delivery_note and obj.was_auto_delivery:
             return decrypt_sensitive_text(obj.delivery_note)
         return None
 
     def get_delivery_instructions(self, obj):
-        """Return delivery instructions from the listing, if any."""
-        if obj.listing and obj.listing.delivery_instructions:
-            return obj.listing.delivery_instructions
+        """Return delivery instructions captured at purchase time."""
+        if obj.delivery_instructions_snapshot:
+            return obj.delivery_instructions_snapshot
         return None
 
 

@@ -30,6 +30,7 @@ urlpatterns = [
     # Listings
     path('listings/', views.ListingCreateView.as_view(), name='listing-create'),
     path('listings/mine/', views.MyListingsView.as_view(), name='my-listings'),
+    path('listings/<int:pk>/restock/', views.AutoDeliveryRestockView.as_view(), name='listing-restock'),
     path('listings/<int:pk>/', views.ListingDetailView.as_view(), name='listing-detail'),
 
     # Chat

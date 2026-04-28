@@ -8,9 +8,12 @@ Set these values in the backend hosting environment. Do not commit the real
 values to git.
 
 ```env
+DJANGO_ENV=production
 DJANGO_DEBUG=False
 DJANGO_SECRET_KEY=replace-with-a-long-random-secret
 DJANGO_ALLOWED_HOSTS=api.example.com
+FIELD_ENCRYPTION_KEYS=prod-2026-04:replace-with-fernet-key
+FIELD_ENCRYPTION_PRIMARY_KEY_ID=prod-2026-04
 
 DB_ENGINE=django.db.backends.postgresql
 DB_NAME=gamesbazaar
@@ -33,8 +36,10 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS=True
 ```
 
 Notes:
+- `DJANGO_ENV` must be `production` in production. Use `DJANGO_ENV=development` only for local developer machines.
 - `DJANGO_DEBUG` must be `False` in production.
 - `DJANGO_SECRET_KEY` must be unique, long, and private.
+- `FIELD_ENCRYPTION_KEYS` protects stored delivery secrets. Generate a Fernet key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, keep old keys for reading old encrypted rows, and point `FIELD_ENCRYPTION_PRIMARY_KEY_ID` at the newest key.
 - `DJANGO_ALLOWED_HOSTS` must list only real backend hostnames. Do not use `*`.
 - `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` must list the frontend origin exactly, including `https://`.
 - `CHANNEL_REDIS_URL` is required when `DJANGO_DEBUG=False` because chat uses Channels.

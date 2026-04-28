@@ -533,10 +533,19 @@ class Order(models.Model):
     commission_amount = models.DecimalField(max_digits=12, decimal_places=2,
                                             help_text='Platform commission deducted')
     seller_amount = models.DecimalField(max_digits=12, decimal_places=2,
-                                        help_text='Amount seller receives after commission')
+                                         help_text='Amount seller receives after commission')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    was_auto_delivery = models.BooleanField(
+        default=False,
+        help_text='Snapshot of whether this order was fulfilled by automated delivery.',
+    )
     delivery_note = models.TextField(blank=True, default='',
                                       help_text='Seller can include delivery details')
+    delivery_instructions_snapshot = models.TextField(
+        blank=True,
+        default='',
+        help_text='Seller instructions captured at purchase time.',
+    )
     dispute_reason = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -4,6 +4,7 @@ from threading import Barrier, Thread
 from urllib.parse import urlsplit
 from unittest.mock import patch
 
+from cryptography.fernet import Fernet
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
@@ -13,7 +14,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
-from django.test import RequestFactory, TestCase, TransactionTestCase
+from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import resolve
 from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
@@ -30,7 +31,7 @@ from .serializers import (
     MAX_AUTO_DELIVERY_LINES,
     WalletTransactionSerializer,
 )
-from .services import decrypt_sensitive_text
+from .services import decrypt_sensitive_text, encrypt_sensitive_text
 
 
 def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
@@ -226,12 +227,32 @@ class PurchaseFlowTests(TestCase):
         )
 
         self.assertEqual(buy_response.status_code, 201)
-        self.assertEqual(buy_response.data['delivery_note'], 'code-one\n\n--- Seller Instructions ---\nChange the password after login.')
+        self.assertEqual(buy_response.data['delivery_note'], 'code-one')
+        self.assertEqual(buy_response.data['delivery_instructions'], 'Change the password after login.')
+        self.assertTrue(buy_response.data['is_auto_delivery'])
         order = Order.objects.get(pk=buy_response.data['id'])
         self.assertNotIn('code-one', order.delivery_note)
+        self.assertTrue(order.was_auto_delivery)
+        self.assertEqual(order.delivery_instructions_snapshot, 'Change the password after login.')
         self.assertEqual(decrypt_sensitive_text(order.delivery_note), buy_response.data['delivery_note'])
         listing.refresh_from_db()
         self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two')
+
+        listing.is_auto_delivery = False
+        listing.delivery_instructions = 'Changed later.'
+        listing.save(update_fields=['is_auto_delivery', 'delivery_instructions'])
+        self.client.force_authenticate(user=self.buyer)
+        detail_response = self.client.get(f'/api/orders/{order.pk}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.data['is_auto_delivery'])
+        self.assertEqual(detail_response.data['auto_delivery_data'], 'code-one')
+        self.assertEqual(detail_response.data['delivery_instructions'], 'Change the password after login.')
+
+        listing.delete()
+        detail_response = self.client.get(f'/api/orders/{order.pk}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.data['is_auto_delivery'])
+        self.assertEqual(detail_response.data['auto_delivery_data'], 'code-one')
 
     def test_auto_delivery_payload_limits_are_enforced(self):
         self.game_category.allow_auto_delivery = True
@@ -597,6 +618,66 @@ class PurchaseFlowTests(TestCase):
         listing.refresh_from_db()
         self.assertEqual(listing.status, 'sold')
 
+    def test_seller_can_restock_auto_delivery_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Sold auto delivery item',
+            price=Decimal('10.00'),
+            quantity=0,
+            status='sold',
+            is_auto_delivery=True,
+            auto_delivery_data='',
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            f'/api/listings/{listing.id}/restock/',
+            {'auto_delivery_data': 'code-two\ncode-three'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 2)
+        self.assertEqual(listing.status, 'active')
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two\ncode-three')
+
+    def test_restock_rejects_manual_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Manual item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=False,
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            f'/api/listings/{listing.id}/restock/',
+            {'auto_delivery_data': 'code-two'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Only automated delivery listings can be restocked here.')
+
+    def test_sensitive_text_uses_dedicated_field_key_when_configured(self):
+        legacy_encrypted = encrypt_sensitive_text('legacy-code')
+        key = Fernet.generate_key().decode('ascii')
+
+        with override_settings(
+            FIELD_ENCRYPTION_KEYS={'primary': key},
+            FIELD_ENCRYPTION_PRIMARY_KEY_ID='primary',
+        ):
+            encrypted = encrypt_sensitive_text('code-one')
+            self.assertTrue(encrypted.startswith('enc:v2:primary:'))
+            self.assertEqual(decrypt_sensitive_text(encrypted), 'code-one')
+            self.assertEqual(decrypt_sensitive_text(legacy_encrypted), 'legacy-code')
+
 
 class TopUpProofUploadTests(TestCase):
     def setUp(self):
@@ -627,6 +708,7 @@ class TopUpProofUploadTests(TestCase):
         self.assertEqual(proof_response['Content-Type'], 'image/png')
         self.assertEqual(proof_response['X-Content-Type-Options'], 'nosniff')
         self.assertEqual(proof_response['Cache-Control'], 'private, no-store')
+        self.assertEqual(proof_response['Referrer-Policy'], 'no-referrer')
 
         self.client.force_authenticate(user=None)
         unauthenticated_signed_response = self.client.get(
@@ -639,7 +721,7 @@ class TopUpProofUploadTests(TestCase):
         signed_other_user_response = self.client.get(
             path_with_query(response.data['payment_proof_url'])
         )
-        self.assertEqual(signed_other_user_response.status_code, 200)
+        self.assertEqual(signed_other_user_response.status_code, 404)
 
         unsigned_response = self.client.get(f'/api/wallet/top-up/{topup.pk}/proof/')
         self.assertEqual(unsigned_response.status_code, 404)
@@ -1200,6 +1282,37 @@ class CookieJWTAuthTests(TestCase):
             HTTP_ORIGIN='http://localhost:3000',
         )
 
+        self.assertEqual(old_refresh_reuse.status_code, 401)
+
+    def test_password_change_blacklists_existing_refresh_tokens(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+        old_refresh = login_response.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value
+
+        response = self.client.post(
+            '/api/auth/password/',
+            {
+                'current_password': 'password123',
+                'new_password': 'BetterPass123!x',
+                'new_password2': 'BetterPass123!x',
+            },
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(settings.JWT_AUTH_COOKIE_REFRESH, response.cookies)
+        self.assertNotEqual(
+            response.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value,
+            old_refresh,
+        )
+
+        old_refresh_reuse = self.client.post(
+            '/api/auth/refresh/',
+            {'refresh': old_refresh},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
         self.assertEqual(old_refresh_reuse.status_code, 401)
 
     def test_logout_clears_auth_cookies(self):
@@ -1798,7 +1911,7 @@ class AccessControlTests(TestCase):
 
         self.client.force_authenticate(user=self.intruder)
         signed_response = self.client.get(path_with_query(image_url))
-        self.assertEqual(signed_response.status_code, 200)
+        self.assertEqual(signed_response.status_code, 404)
 
         unsigned_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
         self.assertEqual(unsigned_response.status_code, 404)
@@ -1957,6 +2070,7 @@ class AccessControlTests(TestCase):
         payload = decode_chat_ws_ticket(response.data['ticket'])
         self.assertEqual(payload['user_id'], self.buyer.id)
         self.assertEqual(payload['conversation_id'], self.conversation.id)
+        self.assertTrue(payload['nonce'])
 
         self.client.force_authenticate(user=self.intruder)
         intruder_response = self.client.post(
@@ -2041,6 +2155,24 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.data['pagination']['count'], 25)
         self.assertEqual(response.data['pagination']['next_offset'], 10)
 
+    def test_buyer_orders_support_cursor_pagination_without_count(self):
+        for index in range(25):
+            self.create_order(index)
+
+        self.client.force_authenticate(user=self.buyer)
+        first_page = self.client.get('/api/orders/mine/?limit=10&cursor=1')
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(len(first_page.data['orders']), 10)
+        self.assertIsNone(first_page.data['pagination']['count'])
+        before_id = first_page.data['pagination']['next_before_id']
+        self.assertIsNotNone(before_id)
+
+        second_page = self.client.get(f'/api/orders/mine/?limit=10&before_id={before_id}')
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(len(second_page.data['orders']), 10)
+        self.assertLess(second_page.data['orders'][0]['id'], before_id)
+
     def test_buyer_orders_ignore_invalid_date_filters(self):
         self.create_order(1)
 
@@ -2118,6 +2250,13 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             self.assertEqual(event['type'], 'new_message')
             self.assertEqual(event['message']['content'], 'hello over ticket')
             await communicator.disconnect()
+
+            replay_communicator = WebsocketCommunicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            replay_connected, _ = await replay_communicator.connect()
+            self.assertFalse(replay_connected)
 
         async_to_sync(run_ticket_flow)()
 
@@ -4009,6 +4148,13 @@ class AccountSecurityFlowTests(TestCase):
     @patch('core.views.send_password_reset_code')
     @patch('core.views.generate_password_reset_code', return_value='123456')
     def test_password_reset_rejects_same_password_and_consumes_successful_challenge(self, *_mocks):
+        login_response = self.post_public(
+            '/api/auth/login/',
+            {'email': 'secure@example.com', 'password': 'OriginalPass123!x'},
+        )
+        self.assertEqual(login_response.status_code, 200)
+        old_refresh = login_response.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value
+
         request_response = self.post_public(
             '/api/auth/password/reset-request/',
             {'email': 'secure@example.com'},
@@ -4040,6 +4186,12 @@ class AccountSecurityFlowTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('BetterPass123!x'))
 
+        old_refresh_reuse = self.post_public(
+            '/api/auth/refresh/',
+            {'refresh': old_refresh},
+        )
+        self.assertEqual(old_refresh_reuse.status_code, 401)
+
         replay_response = self.post_public(
             '/api/auth/password/reset-confirm/',
             {
@@ -4051,6 +4203,39 @@ class AccountSecurityFlowTests(TestCase):
         )
         self.assertEqual(replay_response.status_code, 400)
         self.assertIn('invalid or expired', replay_response.data['error'])
+
+    @patch('core.views.send_password_reset_code')
+    @patch('core.views.generate_password_reset_code', return_value='123456')
+    def test_password_reset_challenge_locks_after_failed_attempts(self, *_mocks):
+        request_response = self.post_public(
+            '/api/auth/password/reset-request/',
+            {'email': 'secure@example.com'},
+        )
+        token = request_response.data['token']
+
+        for _ in range(5):
+            wrong_response = self.post_public(
+                '/api/auth/password/reset-confirm/',
+                {
+                    'token': token,
+                    'code': '000000',
+                    'new_password': 'BetterPass123!x',
+                    'new_password2': 'BetterPass123!x',
+                },
+            )
+            self.assertEqual(wrong_response.status_code, 400)
+
+        locked_response = self.post_public(
+            '/api/auth/password/reset-confirm/',
+            {
+                'token': token,
+                'code': '123456',
+                'new_password': 'BetterPass123!x',
+                'new_password2': 'BetterPass123!x',
+            },
+        )
+        self.assertEqual(locked_response.status_code, 400)
+        self.assertIn('invalid or expired', locked_response.data['error'])
 
     @patch('core.views.send_new_email_change_code')
     @patch('core.views.send_email_change_code')
@@ -4088,6 +4273,38 @@ class AccountSecurityFlowTests(TestCase):
         self.assertEqual(success_response.status_code, 200)
         self.user.refresh_from_db()
         self.assertEqual(self.user.email, 'new-secure@example.com')
+
+    @patch('core.views.send_new_email_change_code')
+    @patch('core.views.send_email_change_code')
+    @patch('core.views.generate_email_change_code', side_effect=['111111', '222222'])
+    def test_email_change_challenge_locks_after_failed_attempts(self, *_mocks):
+        self.client.force_authenticate(user=self.user)
+        request_response = self.client.post(
+            '/api/auth/email/request-change/',
+            {'new_email': 'new-secure@example.com'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        token = request_response.data['token']
+
+        for _ in range(5):
+            wrong_response = self.client.post(
+                '/api/auth/email/confirm-change/',
+                {'token': token, 'current_code': '111111', 'new_code': '000000'},
+                format='json',
+                HTTP_ORIGIN=self.origin,
+            )
+            self.assertEqual(wrong_response.status_code, 400)
+
+        locked_response = self.client.post(
+            '/api/auth/email/confirm-change/',
+            {'token': token, 'current_code': '111111', 'new_code': '222222'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        self.assertEqual(locked_response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'secure@example.com')
 
     def test_username_update_uses_django_username_validator(self):
         self.client.force_authenticate(user=self.user)

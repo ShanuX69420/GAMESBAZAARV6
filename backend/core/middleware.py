@@ -8,14 +8,14 @@ from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.models import User
-from .services import decode_chat_ws_ticket
+from .services import consume_chat_ws_ticket
 
 
 @database_sync_to_async
 def get_user_from_ticket(ticket_str):
     """Validate a short-lived chat ticket and return the user plus scoped conversation."""
     try:
-        payload = decode_chat_ws_ticket(ticket_str)
+        payload = consume_chat_ws_ticket(ticket_str)
         return User.objects.get(id=payload['user_id']), payload['conversation_id']
     except Exception:
         return AnonymousUser(), None

@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.core import signing
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
@@ -29,17 +30,44 @@ CHAT_WS_MESSAGE_LIMIT = 20
 CHAT_WS_MESSAGE_WINDOW_SECONDS = 60
 CHAT_WS_RATE_LIMIT_CACHE_PREFIX = 'chat-ws-rate'
 CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
+CHAT_WS_TICKET_CACHE_PREFIX = 'chat-ws-ticket'
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
 PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
-ENCRYPTED_TEXT_PREFIX = 'enc:v1:'
+ENCRYPTED_TEXT_V1_PREFIX = 'enc:v1:'
+ENCRYPTED_TEXT_V2_PREFIX = 'enc:v2:'
+ENCRYPTED_TEXT_PREFIX = ENCRYPTED_TEXT_V1_PREFIX
+CHALLENGE_MAX_FAILED_ATTEMPTS = 5
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
-def _sensitive_text_fernet():
+def _legacy_sensitive_text_fernet():
     key = hashlib.sha256(str(settings.SECRET_KEY).encode('utf-8')).digest()
     return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _field_encryption_fernet(key_id):
+    keys = getattr(settings, 'FIELD_ENCRYPTION_KEYS', {}) or {}
+    key = keys.get(key_id)
+    if not key:
+        return None
+    try:
+        return Fernet(str(key).encode('ascii'))
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(
+            f'FIELD_ENCRYPTION_KEYS contains an invalid Fernet key for "{key_id}".'
+        ) from exc
+
+
+def _primary_field_encryption_fernet():
+    primary_key_id = getattr(settings, 'FIELD_ENCRYPTION_PRIMARY_KEY_ID', '')
+    if not primary_key_id:
+        return None, None
+    fernet = _field_encryption_fernet(primary_key_id)
+    if fernet is None:
+        return None, None
+    return primary_key_id, fernet
 
 
 def encrypt_sensitive_text(value):
@@ -47,10 +75,15 @@ def encrypt_sensitive_text(value):
     if value in (None, ''):
         return ''
     text = str(value)
-    if text.startswith(ENCRYPTED_TEXT_PREFIX):
+    if text.startswith(ENCRYPTED_TEXT_V1_PREFIX) or text.startswith(ENCRYPTED_TEXT_V2_PREFIX):
         return text
-    token = _sensitive_text_fernet().encrypt(text.encode('utf-8')).decode('ascii')
-    return f'{ENCRYPTED_TEXT_PREFIX}{token}'
+    key_id, fernet = _primary_field_encryption_fernet()
+    if fernet is not None:
+        token = fernet.encrypt(text.encode('utf-8')).decode('ascii')
+        return f'{ENCRYPTED_TEXT_V2_PREFIX}{key_id}:{token}'
+
+    token = _legacy_sensitive_text_fernet().encrypt(text.encode('utf-8')).decode('ascii')
+    return f'{ENCRYPTED_TEXT_V1_PREFIX}{token}'
 
 
 def decrypt_sensitive_text(value):
@@ -58,11 +91,21 @@ def decrypt_sensitive_text(value):
     if value in (None, ''):
         return ''
     text = str(value)
-    if not text.startswith(ENCRYPTED_TEXT_PREFIX):
+    if text.startswith(ENCRYPTED_TEXT_V2_PREFIX):
+        try:
+            key_id, token = text[len(ENCRYPTED_TEXT_V2_PREFIX):].split(':', 1)
+            fernet = _field_encryption_fernet(key_id)
+            if fernet is None:
+                return ''
+            return fernet.decrypt(token.encode('ascii')).decode('utf-8')
+        except (InvalidToken, UnicodeDecodeError, ValueError):
+            return ''
+
+    if not text.startswith(ENCRYPTED_TEXT_V1_PREFIX):
         return text
-    token = text[len(ENCRYPTED_TEXT_PREFIX):]
+    token = text[len(ENCRYPTED_TEXT_V1_PREFIX):]
     try:
-        return _sensitive_text_fernet().decrypt(token.encode('ascii')).decode('utf-8')
+        return _legacy_sensitive_text_fernet().decrypt(token.encode('ascii')).decode('utf-8')
     except (InvalidToken, UnicodeDecodeError, ValueError):
         return ''
 
@@ -71,6 +114,17 @@ def get_or_create_locked_wallet(user):
     """Return the user's wallet locked for the current transaction."""
     wallet, _ = Wallet.objects.get_or_create(user=user)
     return Wallet.objects.select_for_update().get(pk=wallet.pk)
+
+
+def revoke_user_refresh_tokens(user):
+    """Blacklist every outstanding refresh token for a user."""
+    from rest_framework_simplejwt.token_blacklist.models import (
+        BlacklistedToken,
+        OutstandingToken,
+    )
+
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
 
 
 def apply_wallet_delta_once(user, *, delta, transaction_type, amount, description, reference_id):
@@ -233,10 +287,17 @@ def consume_chat_ws_message_quota(user_id, conversation_id):
 
 def create_chat_ws_ticket(user, conversation_id):
     """Create a short-lived ticket for opening one chat WebSocket."""
+    nonce = secrets.token_urlsafe(24)
+    cache.set(
+        f'{CHAT_WS_TICKET_CACHE_PREFIX}:{nonce}',
+        True,
+        timeout=CHAT_WS_TICKET_MAX_AGE_SECONDS,
+    )
     return signing.dumps(
         {
             'user_id': user.pk,
             'conversation_id': int(conversation_id),
+            'nonce': nonce,
         },
         salt=CHAT_WS_TICKET_SALT,
     )
@@ -247,7 +308,21 @@ def decode_chat_ws_ticket(ticket, max_age=CHAT_WS_TICKET_MAX_AGE_SECONDS):
     return {
         'user_id': int(payload['user_id']),
         'conversation_id': int(payload['conversation_id']),
+        'nonce': str(payload.get('nonce', '')),
     }
+
+
+def consume_chat_ws_ticket(ticket):
+    payload = decode_chat_ws_ticket(ticket)
+    nonce = payload.get('nonce')
+    if not nonce:
+        raise signing.BadSignature('Missing ticket nonce.')
+
+    cache_key = f'{CHAT_WS_TICKET_CACHE_PREFIX}:{nonce}'
+    if not cache.get(cache_key):
+        raise signing.BadSignature('Ticket has already been used.')
+    cache.delete(cache_key)
+    return payload
 
 
 def create_private_media_ticket(kind, object_id, *, viewer_user_id=None):
@@ -300,6 +375,7 @@ def _create_cached_challenge(prefix, code, payload, timeout):
         {
             **payload,
             'code_hash': _hash_challenge_code(challenge_id, code),
+            'failed_attempts': 0,
         },
         timeout=timeout,
     )
@@ -317,13 +393,30 @@ def _delete_cached_challenge(prefix, challenge_id):
         cache.delete(_challenge_cache_key(prefix, challenge_id))
 
 
-def _verify_cached_challenge(prefix, challenge_id, code):
+def _record_failed_challenge_attempt(prefix, challenge_id, payload, timeout):
+    failed_attempts = int(payload.get('failed_attempts') or 0) + 1
+    if failed_attempts >= CHALLENGE_MAX_FAILED_ATTEMPTS:
+        _delete_cached_challenge(prefix, challenge_id)
+        return
+
+    cache.set(
+        _challenge_cache_key(prefix, challenge_id),
+        {
+            **payload,
+            'failed_attempts': failed_attempts,
+        },
+        timeout=timeout,
+    )
+
+
+def _verify_cached_challenge(prefix, challenge_id, code, timeout):
     payload = _get_cached_challenge(prefix, challenge_id)
     if not payload:
         return None
     expected = payload.get('code_hash', '')
     actual = _hash_challenge_code(challenge_id, code)
     if not constant_time_compare(expected, actual):
+        _record_failed_challenge_attempt(prefix, challenge_id, payload, timeout)
         return None
     return payload
 
@@ -343,6 +436,7 @@ def create_email_change_token(user_id, current_code, new_email, new_code):
             'new_email': new_email,
             'current_code_hash': _hash_challenge_code(challenge_id, current_code),
             'new_code_hash': _hash_challenge_code(challenge_id, new_code),
+            'failed_attempts': 0,
         },
         EMAIL_CHANGE_CODE_MAX_AGE,
     )
@@ -362,6 +456,12 @@ def verify_email_change_token(token, current_code, new_code):
         constant_time_compare(current_expected, current_actual)
         and constant_time_compare(new_expected, new_actual)
     ):
+        _record_failed_challenge_attempt(
+            EMAIL_CHANGE_CACHE_PREFIX,
+            token,
+            payload,
+            EMAIL_CHANGE_CODE_MAX_AGE,
+        )
         return None
     return payload
 
@@ -438,7 +538,12 @@ def create_password_reset_token(user_id=None, code=None):
 
 
 def verify_password_reset_token(token, code):
-    return _verify_cached_challenge(PASSWORD_RESET_CACHE_PREFIX, token, code)
+    return _verify_cached_challenge(
+        PASSWORD_RESET_CACHE_PREFIX,
+        token,
+        code,
+        PASSWORD_RESET_CODE_MAX_AGE,
+    )
 
 
 def consume_password_reset_token(token):

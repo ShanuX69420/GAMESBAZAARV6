@@ -161,6 +161,20 @@ export async function updateListing(id, data) {
   return result;
 }
 
+export async function restockAutoDeliveryListing(id, data) {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/restock/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    const errors = Object.values(result).flat();
+    throw new Error(errors[0] || result.error || 'Failed to restock listing');
+  }
+  return result;
+}
+
 export async function deleteListing(id) {
   const res = await authFetch(`${API_BASE}/api/listings/${id}/`, {
     method: 'DELETE',
@@ -330,10 +344,12 @@ export async function buyListing(listingId, quantity = 1) {
   return data;
 }
 
-export async function getMyOrders({ limit, offset, status, search, date_from, date_to } = {}) {
+export async function getMyOrders({ limit, offset, beforeId, status, search, date_from, date_to, cursor } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));
   if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  if (beforeId !== undefined && beforeId !== null) params.set('before_id', String(beforeId));
+  if (cursor) params.set('cursor', '1');
   if (status) params.set('status', status);
   if (search) params.set('search', search);
   if (date_from) params.set('date_from', date_from);
@@ -346,10 +362,12 @@ export async function getMyOrders({ limit, offset, status, search, date_from, da
   return res.json();
 }
 
-export async function getMySales({ limit, offset, status, search, date_from, date_to } = {}) {
+export async function getMySales({ limit, offset, beforeId, status, search, date_from, date_to, cursor } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));
   if (offset !== undefined && offset !== null) params.set('offset', String(offset));
+  if (beforeId !== undefined && beforeId !== null) params.set('before_id', String(beforeId));
+  if (cursor) params.set('cursor', '1');
   if (status) params.set('status', status);
   if (search) params.set('search', search);
   if (date_from) params.set('date_from', date_from);

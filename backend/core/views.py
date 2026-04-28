@@ -31,6 +31,7 @@ from .serializers import (
     UpdateProfileSerializer, ChangePasswordSerializer,
     build_listing_filter_display_map,
     ListingSerializer, CreateListingSerializer,
+    AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
@@ -47,6 +48,7 @@ from .services import (
     get_or_create_locked_wallet,
     release_order_funds_to_seller_once,
     record_platform_ledger_once,
+    revoke_user_refresh_tokens,
     ALLOWED_IMAGE_CONTENT_TYPES,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -108,6 +110,8 @@ def has_valid_private_media_ticket(request, *, kind, object_id):
         payload = decode_private_media_ticket(ticket)
     except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError, ValueError):
         return False
+    if request.user.is_authenticated and request.user.id != payload['viewer_user_id']:
+        return False
     return (
         payload['kind'] == kind and
         payload['object_id'] == int(object_id) and
@@ -129,6 +133,7 @@ def private_file_response(file_field):
     response = FileResponse(opened_file, content_type=content_type)
     response['X-Content-Type-Options'] = 'nosniff'
     response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'no-referrer'
     return response
 
 
@@ -156,6 +161,30 @@ def get_pagination_payload(total_count, limit, offset):
         'offset': offset,
         'next_offset': next_offset,
         'previous_offset': previous_offset,
+    }
+
+
+def get_before_id(request):
+    try:
+        before_id = int(request.query_params.get('before_id', 0))
+    except (TypeError, ValueError):
+        return None
+    return before_id if before_id > 0 else None
+
+
+def get_cursor_page(queryset, limit, before_id=None):
+    if before_id:
+        queryset = queryset.filter(id__lt=before_id)
+    page = list(queryset.order_by('-id')[:limit + 1])
+    has_more = len(page) > limit
+    page = page[:limit]
+    return page, {
+        'count': None,
+        'limit': limit,
+        'next_offset': None,
+        'previous_offset': None,
+        'next_before_id': page[-1].id if has_more and page else None,
+        'has_more': has_more,
     }
 
 
@@ -519,6 +548,7 @@ class ConfirmPasswordResetView(ScopedPostThrottleMixin, APIView):
 
         user.set_password(new_password)
         user.save()
+        revoke_user_refresh_tokens(user)
         consume_password_reset_token(token)
 
         return Response({'message': 'Password reset successfully. You can now sign in.'})
@@ -664,6 +694,7 @@ class ChangePasswordView(ScopedPostThrottleMixin, APIView):
 
         user.set_password(serializer.validated_data['new_password'])
         user.save()
+        revoke_user_refresh_tokens(user)
 
         # Re-issue JWT cookies so the session stays valid
         from rest_framework_simplejwt.tokens import RefreshToken
@@ -917,6 +948,61 @@ class ListingDetailView(APIView):
         listing = get_object_or_404(Listing, pk=pk, seller=request.user)
         listing.delete()
         return Response({'message': 'Listing deleted.'}, status=204)
+
+
+class AutoDeliveryRestockView(APIView):
+    """POST /api/listings/{id}/restock/ - Append automated delivery stock."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        serializer = AutoDeliveryRestockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with db_transaction.atomic():
+            listing = get_object_or_404(
+                Listing.objects.select_for_update().select_related(
+                    'seller', 'game_category__game', 'game_category__category'
+                ),
+                pk=pk,
+                seller=request.user,
+            )
+            if not listing.is_auto_delivery:
+                return Response(
+                    {'error': 'Only automated delivery listings can be restocked here.'},
+                    status=400,
+                )
+
+            existing_lines = [
+                line.strip()
+                for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
+                if line.strip()
+            ]
+            new_lines = serializer.validated_data['auto_delivery_data']
+            combined_lines = existing_lines + new_lines
+            if len(combined_lines) > MAX_AUTO_DELIVERY_LINES:
+                return Response({
+                    'auto_delivery_data': (
+                        f'Automated delivery inventory cannot exceed {MAX_AUTO_DELIVERY_LINES} items.'
+                    ),
+                }, status=400)
+
+            listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(combined_lines))
+            listing.quantity = len(combined_lines)
+            listing.delivery_time = 'Instant'
+            update_fields = ['auto_delivery_data', 'quantity', 'delivery_time', 'updated_at']
+            if serializer.validated_data['activate']:
+                listing.status = 'active'
+                update_fields.append('status')
+            listing.save(update_fields=update_fields)
+
+        return Response(ListingSerializer(
+            listing,
+            context={
+                'request': request,
+                'filter_option_display_map': build_listing_filter_display_map([listing]),
+            },
+        ).data)
+
 
 class ConversationListView(APIView):
     """GET /api/chat/ — List all conversations for current user."""
@@ -1403,9 +1489,6 @@ class BuyListingView(APIView):
                 delivered_lines = all_lines[:qty]
                 remaining_lines = all_lines[qty:]
                 delivery_note = '\n'.join(delivered_lines)
-                # Append delivery instructions if seller provided them
-                if listing.delivery_instructions.strip():
-                    delivery_note += '\n\n--- Seller Instructions ---\n' + listing.delivery_instructions.strip()
                 delivery_note = encrypt_sensitive_text(delivery_note)
                 initial_status = 'delivered'
             else:
@@ -1459,7 +1542,9 @@ class BuyListingView(APIView):
                 commission_amount=commission,
                 seller_amount=seller_receives,
                 status=initial_status,
+                was_auto_delivery=is_auto,
                 delivery_note=delivery_note,
+                delivery_instructions_snapshot=listing.delivery_instructions.strip(),
             )
 
             # Log transaction
@@ -1542,8 +1627,14 @@ class MyOrdersView(APIView):
             default_limit=DEFAULT_ORDER_PAGE_SIZE,
             max_limit=MAX_ORDER_PAGE_SIZE,
         )
-        total_count = orders_qs.count()
-        orders = orders_qs[offset:offset + limit]
+        before_id = get_before_id(request)
+        use_cursor = request.query_params.get('cursor') == '1' or before_id is not None
+        if use_cursor:
+            orders, pagination = get_cursor_page(orders_qs, limit, before_id)
+        else:
+            total_count = orders_qs.count()
+            orders = orders_qs[offset:offset + limit]
+            pagination = get_pagination_payload(total_count, limit, offset)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(buyer=request.user).values('status').annotate(
             count=Count('id')
@@ -1552,7 +1643,7 @@ class MyOrdersView(APIView):
 
         return Response({
             'orders': OrderSerializer(orders, many=True).data,
-            'pagination': get_pagination_payload(total_count, limit, offset),
+            'pagination': pagination,
             'status_counts': counts,
         })
 
@@ -1600,8 +1691,14 @@ class MySalesView(APIView):
             default_limit=DEFAULT_ORDER_PAGE_SIZE,
             max_limit=MAX_ORDER_PAGE_SIZE,
         )
-        total_count = orders_qs.count()
-        orders = orders_qs[offset:offset + limit]
+        before_id = get_before_id(request)
+        use_cursor = request.query_params.get('cursor') == '1' or before_id is not None
+        if use_cursor:
+            orders, pagination = get_cursor_page(orders_qs, limit, before_id)
+        else:
+            total_count = orders_qs.count()
+            orders = orders_qs[offset:offset + limit]
+            pagination = get_pagination_payload(total_count, limit, offset)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(seller=request.user).values('status').annotate(
             count=Count('id')
@@ -1616,7 +1713,7 @@ class MySalesView(APIView):
 
         return Response({
             'sales': OrderSerializer(orders, many=True).data,
-            'pagination': get_pagination_payload(total_count, limit, offset),
+            'pagination': pagination,
             'summary': summary,
             'status_counts': counts,
         })
@@ -2228,6 +2325,12 @@ class SellerDashboardView(APIView):
         if not profile.is_seller:
             return Response({'error': 'Not a seller.'}, status=403)
 
+        cache_key = f'seller-dashboard:v1:{request.user.pk}'
+        if not settings.DEBUG:
+            cached_payload = cache.get(cache_key)
+            if cached_payload is not None:
+                return Response(cached_payload)
+
         now = timezone.now()
         thirty_days_ago = now - timezone.timedelta(days=30)
         seven_days_ago = now - timezone.timedelta(days=7)
@@ -2347,7 +2450,7 @@ class SellerDashboardView(APIView):
         except Wallet.DoesNotExist:
             wallet_balance = '0.00'
 
-        return Response({
+        payload = {
             'orders': {
                 'total': order_stats['total_orders'],
                 'pending': order_stats['pending_count'],
@@ -2375,4 +2478,7 @@ class SellerDashboardView(APIView):
             'recent_sales': recent_sales_data,
             'top_categories': top_categories_data,
             'wallet_balance': wallet_balance,
-        })
+        }
+        if not settings.DEBUG:
+            cache.set(cache_key, payload, timeout=60)
+        return Response(payload)
