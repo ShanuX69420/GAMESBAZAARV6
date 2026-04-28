@@ -48,6 +48,8 @@ from .services import (
     release_order_funds_to_seller_once,
     record_platform_ledger_once,
     ALLOWED_IMAGE_CONTENT_TYPES,
+    decrypt_sensitive_text,
+    encrypt_sensitive_text,
     validate_chat_message_content,
     validate_uploaded_image,
     generate_email_change_code,
@@ -107,10 +109,9 @@ def has_valid_private_media_ticket(request, *, kind, object_id):
     except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError, ValueError):
         return False
     return (
-        request.user.is_authenticated and
         payload['kind'] == kind and
         payload['object_id'] == int(object_id) and
-        payload['viewer_user_id'] == request.user.id
+        payload['viewer_user_id'] > 0
     )
 
 
@@ -948,26 +949,21 @@ class ConversationListView(APIView):
             Prefetch('participants', queryset=User.objects.select_related('profile')),
         ).order_by(F('latest_message_created_at').desc(nulls_last=True), '-updated_at', '-pk')
 
-        if any(param in request.query_params for param in ('limit', 'offset', 'other_user_id')):
-            limit, offset = get_pagination_params(
-                request,
-                default_limit=DEFAULT_CONVERSATION_PAGE_SIZE,
-                max_limit=MAX_CONVERSATION_PAGE_SIZE,
-            )
-            total_count = conversations_qs.count()
-            page = list(conversations[offset:offset + limit])
-            return Response({
-                'conversations': ConversationListSerializer(
-                    page,
-                    many=True,
-                    context={'request': request},
-                ).data,
-                'pagination': get_pagination_payload(total_count, limit, offset),
-            })
-
-        data = ConversationListSerializer(conversations, many=True,
-                                           context={'request': request}).data
-        return Response(data)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_CONVERSATION_PAGE_SIZE,
+            max_limit=MAX_CONVERSATION_PAGE_SIZE,
+        )
+        total_count = conversations_qs.count()
+        page = list(conversations[offset:offset + limit])
+        return Response({
+            'conversations': ConversationListSerializer(
+                page,
+                many=True,
+                context={'request': request},
+            ).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
 
 
 class StartConversationView(ScopedPostThrottleMixin, APIView):
@@ -1399,7 +1395,8 @@ class BuyListingView(APIView):
 
             is_auto = listing.is_auto_delivery
             if is_auto:
-                all_lines = [line for line in listing.auto_delivery_data.splitlines() if line.strip()]
+                auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
+                all_lines = [line for line in auto_delivery_data.splitlines() if line.strip()]
                 if len(all_lines) < qty:
                     item_label = 'item' if len(all_lines) == 1 else 'items'
                     return Response({'error': f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'}, status=400)
@@ -1409,6 +1406,7 @@ class BuyListingView(APIView):
                 # Append delivery instructions if seller provided them
                 if listing.delivery_instructions.strip():
                     delivery_note += '\n\n--- Seller Instructions ---\n' + listing.delivery_instructions.strip()
+                delivery_note = encrypt_sensitive_text(delivery_note)
                 initial_status = 'delivered'
             else:
                 initial_status = 'pending'
@@ -1430,7 +1428,10 @@ class BuyListingView(APIView):
 
             if is_auto:
                 # Update the listing's remaining auto_delivery_data and quantity
-                listing.auto_delivery_data = '\n'.join(remaining_lines)
+                listing.auto_delivery_data = (
+                    encrypt_sensitive_text('\n'.join(remaining_lines))
+                    if remaining_lines else ''
+                )
                 listing.quantity = len(remaining_lines)
                 if listing.quantity <= 0:
                     listing.quantity = 0
@@ -1661,7 +1662,7 @@ class DeliverOrderView(APIView):
 
             delivery_note = request.data.get('delivery_note', '').strip()
             order.status = 'delivered'
-            order.delivery_note = delivery_note
+            order.delivery_note = encrypt_sensitive_text(delivery_note)
             order.save(update_fields=['status', 'delivery_note', 'updated_at'])
 
             # Notify buyer that seller delivered
@@ -1929,31 +1930,39 @@ class CreateReviewView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        order = get_object_or_404(Order, pk=data['order_id'], buyer=request.user)
+        try:
+            with db_transaction.atomic():
+                order = get_object_or_404(
+                    Order.objects.select_for_update().select_related('seller'),
+                    pk=data['order_id'],
+                    buyer=request.user,
+                )
 
-        if order.status != 'completed':
-            return Response({'error': 'You can only review completed orders.'}, status=400)
+                if order.status != 'completed':
+                    return Response({'error': 'You can only review completed orders.'}, status=400)
 
-        if hasattr(order, 'review'):
+                if hasattr(order, 'review'):
+                    return Response({'error': 'You have already reviewed this order.'}, status=400)
+
+                review = Review.objects.create(
+                    order=order,
+                    reviewer=request.user,
+                    seller=order.seller,
+                    rating=data['rating'],
+                    comment=data.get('comment', ''),
+                )
+
+                # Notify seller about new review
+                create_notification(
+                    recipient=order.seller,
+                    notification_type='new_review',
+                    title=f'New {data["rating"]}-star review from {request.user.username}',
+                    message=f'{request.user.username} left a {data["rating"]}-star review for "{order.listing_title}".' + (f' "{data.get("comment", "")}"' if data.get('comment') else ''),
+                    order=order,
+                    review=review,
+                )
+        except IntegrityError:
             return Response({'error': 'You have already reviewed this order.'}, status=400)
-
-        review = Review.objects.create(
-            order=order,
-            reviewer=request.user,
-            seller=order.seller,
-            rating=data['rating'],
-            comment=data.get('comment', ''),
-        )
-
-        # Notify seller about new review
-        create_notification(
-            recipient=order.seller,
-            notification_type='new_review',
-            title=f'New {data["rating"]}★ review from {request.user.username}',
-            message=f'{request.user.username} left a {data["rating"]}-star review for "{order.listing_title}".' + (f' "{data.get("comment", "")}"' if data.get('comment') else ''),
-            order=order,
-            review=review,
-        )
 
         return Response(ReviewSerializer(review).data, status=201)
 

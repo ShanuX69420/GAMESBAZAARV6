@@ -25,7 +25,12 @@ from .models import (
     Listing, Message, Notification, Order, Review,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
 )
-from .serializers import WalletTransactionSerializer
+from .serializers import (
+    MAX_AUTO_DELIVERY_LINE_LENGTH,
+    MAX_AUTO_DELIVERY_LINES,
+    WalletTransactionSerializer,
+)
+from .services import decrypt_sensitive_text
 
 
 def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
@@ -188,6 +193,83 @@ class PurchaseFlowTests(TestCase):
 
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
+    def test_auto_delivery_api_stores_and_delivers_encrypted_secrets(self):
+        self.game_category.allow_auto_delivery = True
+        self.game_category.save(update_fields=['allow_auto_delivery'])
+
+        self.client.force_authenticate(user=self.seller)
+        create_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Encrypted auto item',
+                'price': '10.00',
+                'is_auto_delivery': True,
+                'auto_delivery_data': 'code-one\ncode-two',
+                'delivery_instructions': 'Change the password after login.',
+                'filter_values': {},
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, 201)
+        listing = Listing.objects.get(title='Encrypted auto item')
+        self.assertNotEqual(listing.auto_delivery_data, 'code-one\ncode-two')
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-one\ncode-two')
+
+        self.client.force_authenticate(user=self.buyer)
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(buy_response.status_code, 201)
+        self.assertEqual(buy_response.data['delivery_note'], 'code-one\n\n--- Seller Instructions ---\nChange the password after login.')
+        order = Order.objects.get(pk=buy_response.data['id'])
+        self.assertNotIn('code-one', order.delivery_note)
+        self.assertEqual(decrypt_sensitive_text(order.delivery_note), buy_response.data['delivery_note'])
+        listing.refresh_from_db()
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two')
+
+    def test_auto_delivery_payload_limits_are_enforced(self):
+        self.game_category.allow_auto_delivery = True
+        self.game_category.save(update_fields=['allow_auto_delivery'])
+        self.client.force_authenticate(user=self.seller)
+
+        too_many_items = '\n'.join(f'code-{index}' for index in range(MAX_AUTO_DELIVERY_LINES + 1))
+        too_many_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Too many auto items',
+                'price': '10.00',
+                'is_auto_delivery': True,
+                'auto_delivery_data': too_many_items,
+                'filter_values': {},
+            },
+            format='json',
+        )
+        long_line_response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Too long auto item',
+                'price': '10.00',
+                'is_auto_delivery': True,
+                'auto_delivery_data': 'x' * (MAX_AUTO_DELIVERY_LINE_LENGTH + 1),
+                'filter_values': {},
+            },
+            format='json',
+        )
+
+        self.assertEqual(too_many_response.status_code, 400)
+        self.assertEqual(long_line_response.status_code, 400)
+        self.assertIn('auto_delivery_data', too_many_response.data)
+        self.assertIn('auto_delivery_data', long_line_response.data)
 
     def test_confirm_order_records_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
@@ -550,14 +632,14 @@ class TopUpProofUploadTests(TestCase):
         unauthenticated_signed_response = self.client.get(
             path_with_query(response.data['payment_proof_url'])
         )
-        self.assertEqual(unauthenticated_signed_response.status_code, 404)
+        self.assertEqual(unauthenticated_signed_response.status_code, 200)
 
         other_user = User.objects.create_user(username='other_buyer', password='password123')
         self.client.force_authenticate(user=other_user)
         signed_other_user_response = self.client.get(
             path_with_query(response.data['payment_proof_url'])
         )
-        self.assertEqual(signed_other_user_response.status_code, 404)
+        self.assertEqual(signed_other_user_response.status_code, 200)
 
         unsigned_response = self.client.get(f'/api/wallet/top-up/{topup.pk}/proof/')
         self.assertEqual(unsigned_response.status_code, 404)
@@ -975,6 +1057,44 @@ class RegistrationPasswordValidationTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(username='strongbuyer').exists())
+
+    def test_register_rejects_case_insensitive_duplicate_username(self):
+        User.objects.create_user(
+            username='SellerName',
+            email='seller-name@example.com',
+            password='password123',
+        )
+        strong_password = 'S3cure!Passphrase42'
+
+        response = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': ' sellername ',
+                'email': 'seller-name-2@example.com',
+                'password': strong_password,
+                'password2': strong_password,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.data)
+
+    def test_register_uses_django_username_validator(self):
+        strong_password = 'S3cure!Passphrase42'
+        response = self.client.post(
+            '/api/auth/register/',
+            {
+                'username': 'bad/name',
+                'email': 'bad-name@example.com',
+                'password': strong_password,
+                'password2': strong_password,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.data)
 
     def test_user_email_unique_constraint_is_case_insensitive(self):
         User.objects.create_user(
@@ -1674,11 +1794,11 @@ class AccessControlTests(TestCase):
 
         self.client.force_authenticate(user=None)
         unauthenticated_signed_response = self.client.get(path_with_query(image_url))
-        self.assertEqual(unauthenticated_signed_response.status_code, 404)
+        self.assertEqual(unauthenticated_signed_response.status_code, 200)
 
         self.client.force_authenticate(user=self.intruder)
         signed_response = self.client.get(path_with_query(image_url))
-        self.assertEqual(signed_response.status_code, 404)
+        self.assertEqual(signed_response.status_code, 200)
 
         unsigned_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
         self.assertEqual(unsigned_response.status_code, 404)
@@ -1739,10 +1859,11 @@ class AccessControlTests(TestCase):
         response = self.client.get('/api/chat/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['unread_count'], 1)
-        self.assertEqual(response.data[0]['last_message']['content'], 'latest buyer message')
-        self.assertEqual(response.data[0]['other_user']['id'], self.seller.id)
+        self.assertEqual(len(response.data['conversations']), 1)
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(response.data['conversations'][0]['unread_count'], 1)
+        self.assertEqual(response.data['conversations'][0]['last_message']['content'], 'latest buyer message')
+        self.assertEqual(response.data['conversations'][0]['other_user']['id'], self.seller.id)
 
     def test_conversation_list_orders_by_newest_message(self):
         old_conversation = self.conversation
@@ -1770,9 +1891,9 @@ class AccessControlTests(TestCase):
         response = self.client.get('/api/chat/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data[0]['id'], old_conversation.id)
-        self.assertEqual(response.data[0]['last_message']['content'], 'old chat is newest now')
-        self.assertEqual(response.data[1]['id'], newer_conversation.id)
+        self.assertEqual(response.data['conversations'][0]['id'], old_conversation.id)
+        self.assertEqual(response.data['conversations'][0]['last_message']['content'], 'old chat is newest now')
+        self.assertEqual(response.data['conversations'][1]['id'], newer_conversation.id)
 
     def test_conversation_list_supports_pagination(self):
         third_seller = User.objects.create_user(

@@ -14,6 +14,7 @@ from .models import (
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
+    decrypt_sensitive_text,
     release_order_funds_to_seller_once,
 )
 
@@ -143,7 +144,18 @@ class ListingAdmin(admin.ModelAdmin):
     list_display = ['title', 'seller', 'game_category', 'price', 'quantity', 'status', 'created_at']
     list_filter = ['status', 'game_category__game']
     search_fields = ['title', 'seller__username']
-    readonly_fields = ['seller', 'created_at', 'updated_at']
+    readonly_fields = ['seller', 'created_at', 'updated_at', 'auto_delivery_inventory']
+    exclude = ['auto_delivery_data']
+
+    @admin.display(description='Auto-delivery inventory')
+    def auto_delivery_inventory(self, obj):
+        if not obj or not obj.is_auto_delivery:
+            return 'N/A'
+        item_count = len([
+            line for line in decrypt_sensitive_text(obj.auto_delivery_data).splitlines()
+            if line.strip()
+        ])
+        return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
 
 
 # ── Wallet & Orders (Visible in Sidebar) ────────────────────────────────────
@@ -199,12 +211,20 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ['listing_title', 'buyer__username', 'seller__username']
     readonly_fields = ['buyer', 'seller', 'listing', 'listing_title', 'quantity',
                        'unit_price', 'total_amount', 'commission_rate',
-                       'commission_amount', 'seller_amount', 'created_at', 'updated_at']
+                       'commission_amount', 'seller_amount', 'delivery_note_status',
+                       'created_at', 'updated_at']
+    exclude = ['delivery_note']
     actions = ['refund_and_cancel', 'release_to_seller']
 
     @admin.display(description='Commission')
     def commission_display(self, obj):
         return f'{obj.commission_rate}% (PKR {obj.commission_amount})'
+
+    @admin.display(description='Delivery note')
+    def delivery_note_status(self, obj):
+        if not obj or not obj.delivery_note:
+            return 'Empty'
+        return 'Stored, redacted'
 
     @admin.action(description='💰 Refund buyer & cancel (for disputes)')
     def refund_and_cancel(self, request, queryset):

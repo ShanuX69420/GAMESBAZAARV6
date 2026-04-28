@@ -191,9 +191,12 @@ REST_FRAMEWORK = {
 }
 
 # JWT Settings
+JWT_ACCESS_TOKEN_MINUTES = env_int('JWT_ACCESS_TOKEN_MINUTES', 12 * 60 if DEBUG else 30)
+JWT_REFRESH_TOKEN_DAYS = env_int('JWT_REFRESH_TOKEN_DAYS', 7)
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=JWT_ACCESS_TOKEN_MINUTES),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=JWT_REFRESH_TOKEN_DAYS),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
 }
@@ -202,7 +205,9 @@ JWT_AUTH_COOKIE_ACCESS = 'gb_access_token'
 JWT_AUTH_COOKIE_REFRESH = 'gb_refresh_token'
 JWT_AUTH_COOKIE_HTTP_ONLY = True
 JWT_AUTH_COOKIE_SECURE = env_bool('JWT_AUTH_COOKIE_SECURE', not DEBUG)
-JWT_AUTH_COOKIE_SAMESITE = 'Lax'
+JWT_AUTH_COOKIE_SAMESITE = os.environ.get('JWT_AUTH_COOKIE_SAMESITE', 'Lax').strip() or 'Lax'
+if JWT_AUTH_COOKIE_SAMESITE not in {'Lax', 'Strict', 'None'}:
+    raise ImproperlyConfigured('JWT_AUTH_COOKIE_SAMESITE must be one of Lax, Strict, or None.')
 JWT_AUTH_COOKIE_PATH = '/'
 
 # Browser / proxy security. Defaults stay relaxed in local development and

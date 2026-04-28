@@ -1,9 +1,12 @@
+import base64
 import hashlib
 import secrets
 import warnings
 from time import time
 
+from cryptography.fernet import Fernet, InvalidToken
 from PIL import Image, UnidentifiedImageError
+from django.conf import settings
 from django.core.cache import cache
 from django.core import signing
 from django.utils import timezone
@@ -29,8 +32,39 @@ CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
 PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
+ENCRYPTED_TEXT_PREFIX = 'enc:v1:'
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+
+def _sensitive_text_fernet():
+    key = hashlib.sha256(str(settings.SECRET_KEY).encode('utf-8')).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def encrypt_sensitive_text(value):
+    """Encrypt sensitive text while accepting already-encrypted values."""
+    if value in (None, ''):
+        return ''
+    text = str(value)
+    if text.startswith(ENCRYPTED_TEXT_PREFIX):
+        return text
+    token = _sensitive_text_fernet().encrypt(text.encode('utf-8')).decode('ascii')
+    return f'{ENCRYPTED_TEXT_PREFIX}{token}'
+
+
+def decrypt_sensitive_text(value):
+    """Decrypt sensitive text, leaving legacy plaintext rows readable."""
+    if value in (None, ''):
+        return ''
+    text = str(value)
+    if not text.startswith(ENCRYPTED_TEXT_PREFIX):
+        return text
+    token = text[len(ENCRYPTED_TEXT_PREFIX):]
+    try:
+        return _sensitive_text_fernet().decrypt(token.encode('ascii')).decode('utf-8')
+    except (InvalidToken, UnicodeDecodeError, ValueError):
+        return ''
 
 
 def get_or_create_locked_wallet(user):

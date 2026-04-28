@@ -358,7 +358,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
           )}
           {msg.image_url && (
             <div className="chat-msg-image">
-              <img src={msg.image_url} alt="Shared image" onClick={() => window.open(msg.image_url, '_blank')} />
+              <img
+                src={msg.image_url}
+                alt="Shared image"
+                onClick={() => window.open(msg.image_url, '_blank', 'noopener,noreferrer')}
+              />
             </div>
           )}
           {msg.content && <div className="chat-msg-content">{msg.content}</div>}

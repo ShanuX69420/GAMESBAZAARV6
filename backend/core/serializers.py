@@ -17,7 +17,17 @@ from .models import (
     Wallet, WalletTransaction, TopUpRequest, Order,
     SellerCommissionOverride, Review, Notification,
 )
-from .services import create_private_media_ticket
+from .services import (
+    create_private_media_ticket,
+    decrypt_sensitive_text,
+    encrypt_sensitive_text,
+)
+
+
+MAX_AUTO_DELIVERY_PAYLOAD_LENGTH = 100_000
+MAX_AUTO_DELIVERY_LINES = 1_000
+MAX_AUTO_DELIVERY_LINE_LENGTH = 2_000
+MAX_DELIVERY_INSTRUCTIONS_LENGTH = 2_000
 
 
 def build_listing_filter_display_map(listings):
@@ -147,6 +157,7 @@ class GameCategoryDetailSerializer(serializers.Serializer):
 # ── Auth Serializers ─────────────────────────────────────────────────────────
 
 class RegisterSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(max_length=150, required=True)
     email = serializers.EmailField(required=True)
     password = serializers.CharField(write_only=True, min_length=6)
     password2 = serializers.CharField(write_only=True, min_length=6)
@@ -159,6 +170,18 @@ class RegisterSerializer(serializers.ModelSerializer):
         value = User.objects.normalize_email(value.strip())
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+    def validate_username(self, value):
+        value = User.normalize_username(value.strip())
+        if not value:
+            raise serializers.ValidationError('Username cannot be blank.')
+        try:
+            User._meta.get_field('username').run_validators(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError('This username is already taken.')
         return value
 
     def validate(self, attrs):
@@ -177,9 +200,16 @@ class RegisterSerializer(serializers.ModelSerializer):
             with transaction.atomic():
                 return User.objects.create_user(**validated_data)
         except IntegrityError:
-            raise serializers.ValidationError({
-                'email': 'A user with this email already exists.',
-            })
+            errors = {}
+            username = validated_data.get('username')
+            email = validated_data.get('email')
+            if username and User.objects.filter(username__iexact=username).exists():
+                errors['username'] = 'This username is already taken.'
+            if email and User.objects.filter(email__iexact=email).exists():
+                errors['email'] = 'A user with this email already exists.'
+            if not errors:
+                errors['detail'] = 'Could not create account. Please try again.'
+            raise serializers.ValidationError(errors)
 
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -396,8 +426,18 @@ class CreateListingSerializer(serializers.ModelSerializer):
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
     is_auto_delivery = serializers.BooleanField(required=False, default=False)
-    auto_delivery_data = serializers.CharField(required=False, default='', allow_blank=True)
-    delivery_instructions = serializers.CharField(required=False, default='', allow_blank=True)
+    auto_delivery_data = serializers.CharField(
+        required=False,
+        default='',
+        allow_blank=True,
+        max_length=MAX_AUTO_DELIVERY_PAYLOAD_LENGTH,
+    )
+    delivery_instructions = serializers.CharField(
+        required=False,
+        default='',
+        allow_blank=True,
+        max_length=MAX_DELIVERY_INSTRUCTIONS_LENGTH,
+    )
 
     class Meta:
         model = Listing
@@ -428,7 +468,6 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
                 })
-            attrs['auto_delivery_data'] = auto_data
             # Force instant delivery for auto-delivery listings
             attrs['delivery_time'] = 'Instant'
             # Quantity = number of non-empty lines (each line = 1 deliverable item)
@@ -437,6 +476,15 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'auto_delivery_data': 'Please enter at least one item.',
                 })
+            if len(lines) > MAX_AUTO_DELIVERY_LINES:
+                raise serializers.ValidationError({
+                    'auto_delivery_data': f'Automated delivery inventory cannot exceed {MAX_AUTO_DELIVERY_LINES} items.',
+                })
+            if any(len(line) > MAX_AUTO_DELIVERY_LINE_LENGTH for line in lines):
+                raise serializers.ValidationError({
+                    'auto_delivery_data': f'Each automated delivery item must be {MAX_AUTO_DELIVERY_LINE_LENGTH} characters or fewer.',
+                })
+            attrs['auto_delivery_data'] = encrypt_sensitive_text('\n'.join(lines))
             attrs['quantity'] = len(lines)
         else:
             # Manual listings cannot select Instant delivery
@@ -547,7 +595,7 @@ class UpdateListingSerializer(serializers.ModelSerializer):
                 })
 
             available_items = [
-                line for line in listing.auto_delivery_data.splitlines()
+                line for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
                 if line.strip()
             ]
             if next_status == 'active' and (
@@ -797,6 +845,7 @@ class OrderSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     listing_id = serializers.IntegerField(source='listing.id', read_only=True, default=None)
     conversation_id = serializers.IntegerField(source='conversation.id', read_only=True, default=None)
+    delivery_note = serializers.SerializerMethodField()
     has_review = serializers.SerializerMethodField()
     is_auto_delivery = serializers.SerializerMethodField()
     auto_delivery_data = serializers.SerializerMethodField()
@@ -820,6 +869,9 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_has_review(self, obj):
         return hasattr(obj, 'review') and obj.review is not None
 
+    def get_delivery_note(self, obj):
+        return decrypt_sensitive_text(obj.delivery_note)
+
     def get_is_auto_delivery(self, obj):
         """Check if the original listing was an auto-delivery listing."""
         if obj.listing:
@@ -830,7 +882,7 @@ class OrderSerializer(serializers.ModelSerializer):
         """Return auto delivery data from the delivery_note for auto orders."""
         # Auto delivery data is stored in delivery_note on the order
         if obj.delivery_note and obj.listing and obj.listing.is_auto_delivery:
-            return obj.delivery_note
+            return decrypt_sensitive_text(obj.delivery_note)
         return None
 
     def get_delivery_instructions(self, obj):
