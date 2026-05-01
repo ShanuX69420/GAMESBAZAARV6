@@ -41,7 +41,7 @@ def clean_auto_delivery_lines(value):
             'auto_delivery_data': 'Delivery data is required for automated delivery listings.',
         })
 
-    lines = [line for line in raw_data.splitlines() if line != '']
+    lines = get_auto_delivery_inventory_lines(raw_data)
     if not lines:
         raise serializers.ValidationError({
             'auto_delivery_data': 'Please enter at least one item.',
@@ -55,6 +55,11 @@ def clean_auto_delivery_lines(value):
             'auto_delivery_data': f'Each automated delivery item must be {MAX_AUTO_DELIVERY_LINE_LENGTH} characters or fewer.',
         })
     return lines
+
+
+def get_auto_delivery_inventory_lines(value):
+    raw_data = '' if value is None else str(value)
+    return [line for line in raw_data.splitlines() if line.strip()]
 
 
 def build_listing_filter_display_map(listings):
@@ -607,10 +612,9 @@ class UpdateListingSerializer(serializers.ModelSerializer):
                     'quantity': 'Automated delivery stock is controlled by delivery data.',
                 })
 
-            available_items = [
-                line for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
-                if line != ''
-            ]
+            available_items = get_auto_delivery_inventory_lines(
+                decrypt_sensitive_text(listing.auto_delivery_data)
+            )
             if next_status == 'active' and (
                 not next_quantity or len(available_items) != next_quantity
             ):

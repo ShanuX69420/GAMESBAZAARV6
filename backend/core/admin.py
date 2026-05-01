@@ -17,6 +17,7 @@ from .services import (
     decrypt_sensitive_text,
     release_order_funds_to_seller_once,
 )
+from .serializers import get_auto_delivery_inventory_lines
 
 
 # ── Inlines ──────────────────────────────────────────────────────────────────
@@ -151,10 +152,9 @@ class ListingAdmin(admin.ModelAdmin):
     def auto_delivery_inventory(self, obj):
         if not obj or not obj.is_auto_delivery:
             return 'N/A'
-        item_count = len([
-            line for line in decrypt_sensitive_text(obj.auto_delivery_data).splitlines()
-            if line != ''
-        ])
+        item_count = len(get_auto_delivery_inventory_lines(
+            decrypt_sensitive_text(obj.auto_delivery_data)
+        ))
         return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
 
 

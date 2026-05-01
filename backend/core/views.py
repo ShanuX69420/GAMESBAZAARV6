@@ -29,7 +29,7 @@ from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
     UpdateProfileSerializer, ChangePasswordSerializer,
-    build_listing_filter_display_map,
+    build_listing_filter_display_map, get_auto_delivery_inventory_lines,
     ListingSerializer, CreateListingSerializer,
     AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
@@ -991,11 +991,9 @@ class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
                     status=400,
                 )
 
-            existing_lines = [
-                line
-                for line in decrypt_sensitive_text(listing.auto_delivery_data).splitlines()
-                if line != ''
-            ]
+            existing_lines = get_auto_delivery_inventory_lines(
+                decrypt_sensitive_text(listing.auto_delivery_data)
+            )
             new_lines = serializer.validated_data['auto_delivery_data']
             combined_lines = existing_lines + new_lines
             if len(combined_lines) > MAX_AUTO_DELIVERY_LINES:
@@ -1501,7 +1499,7 @@ class BuyListingView(APIView):
             is_auto = listing.is_auto_delivery
             if is_auto:
                 auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
-                all_lines = [line for line in auto_delivery_data.splitlines() if line != '']
+                all_lines = get_auto_delivery_inventory_lines(auto_delivery_data)
                 if len(all_lines) < qty:
                     item_label = 'item' if len(all_lines) == 1 else 'items'
                     return Response({'error': f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'}, status=400)

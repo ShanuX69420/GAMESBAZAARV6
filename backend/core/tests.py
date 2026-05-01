@@ -156,6 +156,36 @@ class PurchaseFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
 
+    def test_auto_delivery_whitespace_only_stock_does_not_debit_wallet(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Whitespace only auto stock',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=' \n\t',
+        )
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Only 0 items remaining for auto-delivery.')
+        self.assertFalse(Order.objects.filter(listing=listing).exists())
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 1)
+        self.assertEqual(listing.status, 'active')
+        self.assertEqual(listing.auto_delivery_data, ' \n\t')
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
     def test_refund_auto_delivery_does_not_restore_consumed_stock(self):
         listing = Listing.objects.create(
             seller=self.seller,
@@ -255,6 +285,35 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         self.assertTrue(detail_response.data['is_auto_delivery'])
         self.assertEqual(detail_response.data['auto_delivery_data'], 'code-one')
+
+    def test_auto_delivery_create_rejects_whitespace_only_inventory(self):
+        self.game_category.allow_auto_delivery = True
+        self.game_category.save(update_fields=['allow_auto_delivery'])
+        self.client.force_authenticate(user=self.seller)
+
+        for title, payload in (
+            ('Whitespace auto item spaces', ' '),
+            ('Whitespace auto item tabs', '\t'),
+            ('Whitespace auto item mixed', ' \n\t'),
+        ):
+            with self.subTest(payload=repr(payload)):
+                response = self.client.post(
+                    '/api/listings/',
+                    {
+                        'game_slug': 'test-game',
+                        'category_slug': 'accounts',
+                        'title': title,
+                        'price': '10.00',
+                        'is_auto_delivery': True,
+                        'auto_delivery_data': payload,
+                        'filter_values': {},
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('auto_delivery_data', response.data)
+                self.assertFalse(Listing.objects.filter(title=title).exists())
 
     def test_auto_delivery_preserves_item_edge_whitespace(self):
         self.game_category.allow_auto_delivery = True
@@ -680,6 +739,33 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(listing.quantity, 2)
         self.assertEqual(listing.status, 'active')
         self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two\ncode-three')
+
+    def test_restock_rejects_whitespace_only_auto_delivery_data(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Sold auto delivery item',
+            price=Decimal('10.00'),
+            quantity=0,
+            status='sold',
+            is_auto_delivery=True,
+            auto_delivery_data='',
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            f'/api/listings/{listing.id}/restock/',
+            {'auto_delivery_data': ' \n\t'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('auto_delivery_data', response.data)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 0)
+        self.assertEqual(listing.status, 'sold')
+        self.assertEqual(listing.auto_delivery_data, '')
 
     def test_restock_rejects_manual_listing(self):
         listing = Listing.objects.create(
