@@ -338,6 +338,40 @@ export async function getTopUpRequests(pagination = {}) {
   return res.json();
 }
 
+export async function requestWithdraw(amount, paymentMethod, accountTitle, accountDetails, bankName) {
+  const res = await authFetch(`${API_BASE}/api/wallet/withdraw/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      amount,
+      payment_method: paymentMethod,
+      account_title: accountTitle,
+      account_details: accountDetails,
+      bank_name: bankName || '',
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      data.error ||
+      data.amount?.[0] ||
+      data.payment_method?.[0] ||
+      data.account_title?.[0] ||
+      data.account_details?.[0] ||
+      'Withdrawal request failed'
+    );
+  }
+  return data;
+}
+
+export async function getWithdrawRequests(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/wallet/withdraw/${paginationQuery(pagination)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get withdrawal requests');
+  return res.json();
+}
+
 // ── Orders API ──────────────────────────────────────────────────────────────
 
 export async function buyListing(listingId, quantity = 1) {

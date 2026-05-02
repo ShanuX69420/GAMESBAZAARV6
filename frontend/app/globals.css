@@ -2449,6 +2449,18 @@ img {
   color: white;
 }
 
+.wallet-actions .btn-withdraw {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+}
+
+.wallet-actions .btn-withdraw:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
 .wallet-topup-card {
   padding: 28px;
   background: var(--bg-primary);
@@ -2456,6 +2468,49 @@ img {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   margin-bottom: 24px;
+}
+
+.wallet-withdraw-card {
+  padding: 28px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid #F59E0B;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+.wallet-withdraw-card .card-title {
+  color: #B45309;
+}
+
+.btn-withdraw {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 24px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+  transition: all var(--transition);
+}
+
+.btn-withdraw:hover {
+  background: linear-gradient(135deg, #D97706, #B45309);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.btn-withdraw:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .topup-form {
@@ -2504,6 +2559,21 @@ img {
 .txn-refund {
   background: #E0E7FF;
   color: #4338CA;
+}
+
+.txn-withdraw_request {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.txn-withdraw_approved {
+  background: #FFEDD5;
+  color: #9A3412;
+}
+
+.txn-withdraw_rejected {
+  background: #FEE2E2;
+  color: #991B1B;
 }
 
 .txn-amount {

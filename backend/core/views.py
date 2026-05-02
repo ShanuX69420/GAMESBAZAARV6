@@ -22,7 +22,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
-    Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
+    Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
+    SellerCommissionOverride,
     Review, Notification, Report,
 )
 from .serializers import (
@@ -35,6 +36,7 @@ from .serializers import (
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
+    WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer,
     NotificationSerializer,
@@ -90,6 +92,8 @@ SEARCH_CACHE_SECONDS = 60
 SEARCH_RESULT_LIMIT = 50
 DEFAULT_NOTIFICATION_PAGE_SIZE = 30
 MAX_NOTIFICATION_PAGE_SIZE = 100
+DEFAULT_WITHDRAW_REQUEST_PAGE_SIZE = 20
+MAX_WITHDRAW_REQUEST_PAGE_SIZE = 100
 
 
 class ScopedPostThrottleMixin:
@@ -1453,6 +1457,73 @@ class TopUpProofView(APIView):
         if not (has_ticket or can_view):
             raise Http404
         return private_file_response(topup.payment_proof)
+
+
+class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
+    """POST /api/wallet/withdraw/ — Create a withdrawal request.
+    GET /api/wallet/withdraw/ — List my withdrawal requests.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'withdraw_request'
+
+    def get(self, request):
+        requests_qs = WithdrawRequest.objects.filter(user=request.user)
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_WITHDRAW_REQUEST_PAGE_SIZE,
+            max_limit=MAX_WITHDRAW_REQUEST_PAGE_SIZE,
+        )
+        total_count = requests_qs.count()
+        withdraw_requests = requests_qs[offset:offset + limit]
+        return Response({
+            'withdraw_requests': WithdrawRequestSerializer(
+                withdraw_requests, many=True,
+            ).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
+
+    def post(self, request):
+        serializer = CreateWithdrawRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        amount = data['amount']
+
+        with db_transaction.atomic():
+            wallet = get_or_create_locked_wallet(request.user)
+
+            if wallet.balance < amount:
+                return Response(
+                    {'error': 'Insufficient wallet balance.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Deduct balance immediately (held until admin approves/rejects)
+            wallet.balance -= amount
+            wallet.save(update_fields=['balance', 'updated_at'])
+
+            withdraw = WithdrawRequest.objects.create(
+                user=request.user,
+                amount=amount,
+                payment_method=data.get('payment_method', ''),
+                account_title=data.get('account_title', ''),
+                account_details=data.get('account_details', ''),
+                bank_name=data.get('bank_name', ''),
+            )
+
+            WalletTransaction.objects.create(
+                wallet=wallet,
+                transaction_type='withdraw_request',
+                amount=amount,
+                balance_after=wallet.balance,
+                description=f'Withdrawal request: PKR {amount} via {data.get("payment_method", "N/A")}',
+                reference_id=f'withdraw_{withdraw.pk}',
+            )
+
+        return Response(
+            WithdrawRequestSerializer(withdraw).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 # ── Order views ───────────────────────────────────────────────────────────────

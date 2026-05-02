@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getWallet, requestTopUp, getTopUpRequests } from '@/lib/api';
+import { getWallet, requestTopUp, getTopUpRequests, requestWithdraw, getWithdrawRequests } from '@/lib/api';
 
 const TRANSACTION_PAGE_SIZE = 20;
 const TOPUP_PAGE_SIZE = 20;
+const WITHDRAW_PAGE_SIZE = 20;
 const MAX_TOP_UP_AMOUNT = 10000;
 const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to add more.';
+const MIN_WITHDRAW_AMOUNT = 500;
 
 export default function WalletPage() {
   const { user, loading } = useAuth();
@@ -17,14 +19,23 @@ export default function WalletPage() {
   const [transactionPagination, setTransactionPagination] = useState(null);
   const [topUpRequests, setTopUpRequests] = useState([]);
   const [topUpPagination, setTopUpPagination] = useState(null);
+  const [withdrawRequests, setWithdrawRequests] = useState([]);
+  const [withdrawPagination, setWithdrawPagination] = useState(null);
   const [showTopUp, setShowTopUp] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('JazzCash');
   const [txnId, setTxnId] = useState('');
   const [proofFile, setProofFile] = useState(null);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState('JazzCash');
+  const [withdrawAccountTitle, setWithdrawAccountTitle] = useState('');
+  const [withdrawAccount, setWithdrawAccount] = useState('');
+  const [withdrawBankName, setWithdrawBankName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
   const [loadingMoreTopUps, setLoadingMoreTopUps] = useState(false);
+  const [loadingMoreWithdraws, setLoadingMoreWithdraws] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -40,14 +51,17 @@ export default function WalletPage() {
 
   async function loadData() {
     try {
-      const [wallet, topups] = await Promise.all([
+      const [wallet, topups, withdraws] = await Promise.all([
         getWallet({ limit: TRANSACTION_PAGE_SIZE, offset: 0 }),
         getTopUpRequests({ limit: TOPUP_PAGE_SIZE, offset: 0 }),
+        getWithdrawRequests({ limit: WITHDRAW_PAGE_SIZE, offset: 0 }),
       ]);
       setWalletData(wallet);
       setTransactionPagination(wallet.transaction_pagination || null);
       setTopUpRequests(topups.topup_requests || []);
       setTopUpPagination(topups.pagination || null);
+      setWithdrawRequests(withdraws.withdraw_requests || []);
+      setWithdrawPagination(withdraws.pagination || null);
     } catch (err) {
       console.error(err);
     }
@@ -96,6 +110,26 @@ export default function WalletPage() {
     }
   }
 
+  async function loadMoreWithdraws() {
+    if (!withdrawPagination?.next_offset || loadingMoreWithdraws) return;
+    setLoadingMoreWithdraws(true);
+    try {
+      const withdraws = await getWithdrawRequests({
+        limit: WITHDRAW_PAGE_SIZE,
+        offset: withdrawPagination.next_offset,
+      });
+      setWithdrawRequests(prev => [
+        ...prev,
+        ...(withdraws.withdraw_requests || []),
+      ]);
+      setWithdrawPagination(withdraws.pagination || null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMoreWithdraws(false);
+    }
+  }
+
   function handleTopUpAmountChange(e) {
     const value = e.target.value;
     setTopUpAmount(value);
@@ -140,7 +174,55 @@ export default function WalletPage() {
     }
   }
 
+  async function handleWithdraw(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    const amount = Number(withdrawAmount);
+    if (amount < MIN_WITHDRAW_AMOUNT) {
+      setError(`Minimum withdrawal amount is PKR ${MIN_WITHDRAW_AMOUNT}.`);
+      return;
+    }
+    if (!withdrawAccountTitle.trim()) {
+      setError('Account title is required.');
+      return;
+    }
+    if (!withdrawAccount.trim()) {
+      setError('Account details are required.');
+      return;
+    }
+    if (withdrawMethod === 'Bank Transfer' && !withdrawBankName.trim()) {
+      setError('Bank name is required for bank transfers.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await requestWithdraw(
+        withdrawAmount,
+        withdrawMethod,
+        withdrawAccountTitle.trim(),
+        withdrawAccount.trim(),
+        withdrawMethod === 'Bank Transfer' ? withdrawBankName.trim() : '',
+      );
+      setSuccess('Withdrawal request submitted! Admin will process it shortly.');
+      setWithdrawAmount('');
+      setWithdrawMethod('JazzCash');
+      setWithdrawAccountTitle('');
+      setWithdrawAccount('');
+      setWithdrawBankName('');
+      setShowWithdraw(false);
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const amountOverLimit = Number(topUpAmount) > MAX_TOP_UP_AMOUNT;
+  const withdrawBelowMin = withdrawAmount !== '' && Number(withdrawAmount) < MIN_WITHDRAW_AMOUNT;
+  const currentBalance = walletData ? Number(walletData.balance) : 0;
+  const withdrawExceedsBalance = withdrawAmount !== '' && Number(withdrawAmount) > currentBalance;
 
   if (loading || !user) {
     return (
@@ -164,8 +246,17 @@ export default function WalletPage() {
           PKR {walletData ? Number(walletData.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 }) : '0.00'}
         </div>
         <div className="wallet-actions">
-          <button className="btn btn-primary" onClick={() => setShowTopUp(!showTopUp)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => { setShowTopUp(!showTopUp); setShowWithdraw(false); setError(''); setSuccess(''); }}
+          >
             {showTopUp ? 'Cancel' : '+ Add Funds'}
+          </button>
+          <button
+            className="btn btn-withdraw"
+            onClick={() => { setShowWithdraw(!showWithdraw); setShowTopUp(false); setError(''); setSuccess(''); }}
+          >
+            {showWithdraw ? 'Cancel' : '↗ Withdraw'}
           </button>
         </div>
       </div>
@@ -240,6 +331,90 @@ export default function WalletPage() {
         </div>
       )}
 
+      {/* Withdraw Form */}
+      {showWithdraw && (
+        <div className="wallet-withdraw-card">
+          <h2 className="card-title">Request Withdrawal</h2>
+          <p className="card-text">
+            Enter the amount and your payment details. Your balance will be held until
+            admin processes the withdrawal. Minimum withdrawal is <strong>PKR {MIN_WITHDRAW_AMOUNT}</strong>.
+          </p>
+          <form onSubmit={handleWithdraw} className="topup-form">
+            <div className="form-group">
+              <label className="form-label">Amount (PKR) *</label>
+              <input
+                type="number"
+                className="form-input"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                placeholder={`Min. ${MIN_WITHDRAW_AMOUNT}`}
+                min={MIN_WITHDRAW_AMOUNT}
+                step="0.01"
+                required
+              />
+              {withdrawBelowMin && (
+                <span className="form-hint form-error-text">Minimum withdrawal is PKR {MIN_WITHDRAW_AMOUNT}.</span>
+              )}
+              {withdrawExceedsBalance && !withdrawBelowMin && (
+                <span className="form-hint form-error-text">Amount exceeds your available balance.</span>
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Method *</label>
+              <select
+                className="form-input"
+                value={withdrawMethod}
+                onChange={(e) => setWithdrawMethod(e.target.value)}
+                required
+              >
+                <option value="JazzCash">JazzCash</option>
+                <option value="EasyPaisa">EasyPaisa</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Account Title *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={withdrawAccountTitle}
+                onChange={(e) => setWithdrawAccountTitle(e.target.value)}
+                placeholder="Name on the account"
+                required
+              />
+            </div>
+            {withdrawMethod === 'Bank Transfer' && (
+              <div className="form-group">
+                <label className="form-label">Bank Name *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={withdrawBankName}
+                  onChange={(e) => setWithdrawBankName(e.target.value)}
+                  placeholder="e.g., HBL, Meezan Bank, UBL"
+                  required
+                />
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">{withdrawMethod === 'Bank Transfer' ? 'IBAN / Account Number *' : 'Account Number *'}</label>
+              <input
+                type="text"
+                className="form-input"
+                value={withdrawAccount}
+                onChange={(e) => setWithdrawAccount(e.target.value)}
+                placeholder={withdrawMethod === 'Bank Transfer' ? 'e.g., PK36MEZN0001234567890123' : 'e.g., 03001234567'}
+                required
+              />
+              <span className="form-hint">{withdrawMethod === 'Bank Transfer' ? 'Enter your IBAN or bank account number.' : 'Enter your mobile wallet number.'}</span>
+            </div>
+            <button type="submit" className="btn btn-withdraw" disabled={submitting || withdrawBelowMin || withdrawExceedsBalance}>
+              {submitting ? 'Submitting...' : 'Submit Withdrawal Request'}
+            </button>
+          </form>
+        </div>
+      )}
+
       {/* Top-Up Requests */}
       {topUpRequests.length > 0 && (
         <section className="section">
@@ -277,6 +452,51 @@ export default function WalletPage() {
                 disabled={loadingMoreTopUps}
               >
                 {loadingMoreTopUps ? 'Loading...' : 'Load More Top-Ups'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Withdrawal Requests */}
+      {withdrawRequests.length > 0 && (
+        <section className="section">
+          <h2 className="section-title">Withdrawal Requests</h2>
+          <div className="listings-table-wrap">
+            <table className="listings-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Method</th>
+                  <th>Account</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withdrawRequests.map((req) => (
+                  <tr key={req.id}>
+                    <td className="listing-price">PKR {req.amount}</td>
+                    <td>{req.payment_method || '—'}</td>
+                    <td className="txn-desc">{req.account_details || '—'}</td>
+                    <td>
+                      <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
+                        {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                      </span>
+                    </td>
+                    <td>{new Date(req.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {withdrawPagination?.next_offset !== null && withdrawPagination?.next_offset !== undefined && (
+              <button
+                className="btn btn-outline btn-full"
+                style={{ marginTop: '16px' }}
+                onClick={loadMoreWithdraws}
+                disabled={loadingMoreWithdraws}
+              >
+                {loadingMoreWithdraws ? 'Loading...' : 'Load More Withdrawals'}
               </button>
             )}
           </div>

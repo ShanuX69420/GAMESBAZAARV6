@@ -237,6 +237,7 @@ REST_FRAMEWORK = {
         'chat_message': '60/min',
         'chat_upload': '20/min',
         'topup_request': '10/hour',
+        'withdraw_request': '10/hour',
         'heartbeat': '120/hour',
         'search': '120/min',
         'avatar_upload': '20/hour',

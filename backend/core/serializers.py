@@ -15,7 +15,7 @@ from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
-    Wallet, WalletTransaction, TopUpRequest, Order,
+    Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     SellerCommissionOverride, Review, Notification,
     Report,
 )
@@ -806,7 +806,7 @@ class WalletTransactionSerializer(serializers.ModelSerializer):
 
     def get_signed_amount(self, obj):
         amount = obj.amount
-        if obj.transaction_type in ('purchase', 'commission'):
+        if obj.transaction_type in ('purchase', 'commission', 'withdraw_request', 'withdraw_approved'):
             amount = -abs(amount)
         elif obj.transaction_type == 'refund' and obj.description.startswith('Refund issued:'):
             amount = -abs(amount)
@@ -867,6 +867,34 @@ class CreateTopUpRequestSerializer(serializers.Serializer):
         attrs['payment_method'] = payment_method
         attrs['transaction_id'] = transaction_id
         return attrs
+
+
+class WithdrawRequestSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = WithdrawRequest
+        fields = [
+            'id', 'amount', 'payment_method', 'account_title',
+            'account_details', 'bank_name',
+            'status', 'status_display',
+            'admin_note', 'created_at', 'reviewed_at',
+        ]
+
+
+class CreateWithdrawRequestSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal('500.00'),
+        error_messages={
+            'min_value': 'Minimum withdrawal amount is PKR 500.',
+        },
+    )
+    payment_method = serializers.CharField(max_length=200, required=True, allow_blank=False)
+    account_title = serializers.CharField(max_length=300, required=True, allow_blank=False)
+    account_details = serializers.CharField(max_length=500, required=True, allow_blank=False)
+    bank_name = serializers.CharField(max_length=300, required=False, default='', allow_blank=True)
 
 
 # ── Order Serializers ────────────────────────────────────────────────────────

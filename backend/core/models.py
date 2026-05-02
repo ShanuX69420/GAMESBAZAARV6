@@ -389,6 +389,9 @@ class WalletTransaction(models.Model):
         ('sale', 'Sale Received'),
         ('commission', 'Commission Deducted'),
         ('refund', 'Refund'),
+        ('withdraw_request', 'Withdraw Request'),
+        ('withdraw_approved', 'Withdraw Approved'),
+        ('withdraw_rejected', 'Withdraw Rejected'),
     ]
 
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
@@ -519,6 +522,57 @@ class TopUpRequest(models.Model):
         self.payment_method = (self.payment_method or '').strip()
         self.transaction_id = (self.transaction_id or '').strip()
         super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.username} — PKR {self.amount} — {self.get_status_display()}"
+
+
+class WithdrawRequest(models.Model):
+    """Manual withdraw request. Admin approves/rejects from Django admin."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='withdraw_requests')
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('500.00'))],
+    )
+    payment_method = models.CharField(max_length=200, blank=True, default='',
+                                       help_text='e.g., JazzCash, EasyPaisa, Bank Transfer')
+    account_title = models.CharField(max_length=300, blank=True, default='',
+                                      help_text='Name on the account')
+    account_details = models.CharField(max_length=500, blank=True, default='',
+                                        help_text='Account number, IBAN, or mobile wallet number')
+    bank_name = models.CharField(max_length=300, blank=True, default='',
+                                  help_text='Bank name (for bank transfers only)')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    admin_note = models.TextField(blank=True, default='')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['user', '-created_at'],
+                name='withdraw_user_created_idx',
+            ),
+            models.Index(
+                fields=['status', '-created_at'],
+                name='withdraw_status_created_idx',
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(amount__gte=Decimal('500.00')),
+                name='withdraw_amount_min_500',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.username} — PKR {self.amount} — {self.get_status_display()}"

@@ -8,7 +8,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
-    TopUpRequest, Order, SellerCommissionOverride, Review,
+    TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
     Notification, Report,
 )
 from .services import (
@@ -214,6 +214,114 @@ class TopUpRequestAdmin(admin.ModelAdmin):
             reviewed_at=timezone.now(),
         )
         self.message_user(request, f'{updated} top-up(s) rejected.')
+
+
+@admin.register(WithdrawRequest)
+class WithdrawRequestAdmin(admin.ModelAdmin):
+    list_display = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name', 'status', 'created_at', 'reviewed_at']
+    list_filter = ['status']
+    search_fields = ['user__username', 'account_details', 'account_title']
+    readonly_fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name', 'created_at']
+    fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name',
+              'status', 'admin_note', 'reviewed_at', 'created_at']
+    actions = ['approve_withdrawals', 'reject_withdrawals']
+
+    def save_model(self, request, obj, form, change):
+        """Handle status changes via edit form."""
+        if change and 'status' in form.changed_data:
+            if obj.status == 'rejected':
+                with transaction.atomic():
+                    WithdrawRequest.objects.select_for_update().get(pk=obj.pk)
+                    super().save_model(request, obj, form, change)
+                    obj.refresh_from_db()
+                    # Return funds to wallet
+                    apply_wallet_delta_once(
+                        obj.user,
+                        delta=obj.amount,
+                        transaction_type='withdraw_rejected',
+                        amount=obj.amount,
+                        description=f'Withdrawal rejected: PKR {obj.amount} returned',
+                        reference_id=f'withdraw_{obj.pk}',
+                    )
+                return
+            elif obj.status == 'approved':
+                with transaction.atomic():
+                    WithdrawRequest.objects.select_for_update().get(pk=obj.pk)
+                    super().save_model(request, obj, form, change)
+                    obj.refresh_from_db()
+                    # Log the approval transaction (funds already deducted on request)
+                    from .services import get_or_create_locked_wallet
+                    wallet = get_or_create_locked_wallet(obj.user)
+                    from .models import WalletTransaction
+                    if not WalletTransaction.objects.filter(
+                        wallet=wallet,
+                        transaction_type='withdraw_approved',
+                        reference_id=f'withdraw_{obj.pk}',
+                    ).exists():
+                        WalletTransaction.objects.create(
+                            wallet=wallet,
+                            transaction_type='withdraw_approved',
+                            amount=obj.amount,
+                            balance_after=wallet.balance,
+                            description=f'Withdrawal approved: PKR {obj.amount} via {obj.payment_method or "N/A"}',
+                            reference_id=f'withdraw_{obj.pk}',
+                        )
+                return
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description='✅ Approve selected withdrawals')
+    def approve_withdrawals(self, request, queryset):
+        count = 0
+        for wd_id in queryset.filter(status='pending').values_list('pk', flat=True):
+            with transaction.atomic():
+                wd = WithdrawRequest.objects.select_for_update().select_related('user').get(pk=wd_id)
+                if wd.status != 'pending':
+                    continue
+                wd.status = 'approved'
+                wd.reviewed_at = timezone.now()
+                wd.save(update_fields=['status', 'reviewed_at'])
+                # Log approval transaction
+                from .services import get_or_create_locked_wallet
+                wallet = get_or_create_locked_wallet(wd.user)
+                from .models import WalletTransaction as WT
+                if not WT.objects.filter(
+                    wallet=wallet,
+                    transaction_type='withdraw_approved',
+                    reference_id=f'withdraw_{wd.pk}',
+                ).exists():
+                    WT.objects.create(
+                        wallet=wallet,
+                        transaction_type='withdraw_approved',
+                        amount=wd.amount,
+                        balance_after=wallet.balance,
+                        description=f'Withdrawal approved: PKR {wd.amount} via {wd.payment_method or "N/A"}',
+                        reference_id=f'withdraw_{wd.pk}',
+                    )
+                count += 1
+        self.message_user(request, f'{count} withdrawal(s) approved.')
+
+    @admin.action(description='❌ Reject selected withdrawals (refund balance)')
+    def reject_withdrawals(self, request, queryset):
+        count = 0
+        for wd_id in queryset.filter(status='pending').values_list('pk', flat=True):
+            with transaction.atomic():
+                wd = WithdrawRequest.objects.select_for_update().select_related('user').get(pk=wd_id)
+                if wd.status != 'pending':
+                    continue
+                wd.status = 'rejected'
+                wd.reviewed_at = timezone.now()
+                wd.save(update_fields=['status', 'reviewed_at'])
+                # Return funds
+                apply_wallet_delta_once(
+                    wd.user,
+                    delta=wd.amount,
+                    transaction_type='withdraw_rejected',
+                    amount=wd.amount,
+                    description=f'Withdrawal rejected: PKR {wd.amount} returned',
+                    reference_id=f'withdraw_{wd.pk}',
+                )
+                count += 1
+        self.message_user(request, f'{count} withdrawal(s) rejected and funds returned.')
 
 
 @admin.register(Order)

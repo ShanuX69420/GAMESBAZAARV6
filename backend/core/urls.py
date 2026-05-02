@@ -51,6 +51,7 @@ urlpatterns = [
     path('wallet/transactions/', views.WalletTransactionsView.as_view(), name='wallet-transactions'),
     path('wallet/top-up/', views.TopUpRequestView.as_view(), name='topup-request'),
     path('wallet/top-up/<int:pk>/proof/', views.TopUpProofView.as_view(), name='topup-proof'),
+    path('wallet/withdraw/', views.WithdrawRequestView.as_view(), name='withdraw-request'),
 
     # Orders
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),
