@@ -9,7 +9,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, Order, SellerCommissionOverride, Review,
-    Notification,
+    Notification, Report,
 )
 from .services import (
     apply_wallet_delta_once,
@@ -18,6 +18,20 @@ from .services import (
     release_order_funds_to_seller_once,
 )
 from .serializers import get_auto_delivery_inventory_lines
+
+# Import the custom admin site and set it as the default
+from .admin_dashboard import GamesBazaarAdminSite
+
+# Replace the default admin site with our custom one
+site = GamesBazaarAdminSite(name='admin')
+admin.site = site
+admin.sites.site = site
+
+# Re-register User and Group (lost when we replaced the default site)
+from django.contrib.auth.models import User, Group
+from django.contrib.auth.admin import UserAdmin, GroupAdmin
+admin.site.register(User, UserAdmin)
+admin.site.register(Group, GroupAdmin)
 
 
 # ── Inlines ──────────────────────────────────────────────────────────────────
@@ -52,7 +66,6 @@ class GameCategoryFilterInline(admin.TabularInline):
     model = GameCategoryFilter
     extra = 1
     autocomplete_fields = ['filter']
-
 
 
 
@@ -358,13 +371,6 @@ class GameCategoryFilterAdmin(HiddenModelAdmin):
     autocomplete_fields = ['game_category', 'filter']
 
 
-# ── Admin Site Customization ─────────────────────────────────────────────────
-
-admin.site.site_header = '🎮 GamesBazaar Admin'
-admin.site.site_title = 'GamesBazaar'
-admin.site.index_title = 'Dashboard'
-
-
 # ── Chat Admin (hidden from sidebar) ─────────────────────────────────────────
 
 class MessageInline(admin.TabularInline):
@@ -415,3 +421,60 @@ class NotificationAdmin(admin.ModelAdmin):
     search_fields = ['recipient__username', 'title', 'message']
     raw_id_fields = ['recipient', 'order', 'review']
     readonly_fields = ['created_at']
+
+
+@admin.register(Report)
+class ReportAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'reporter', 'target_type', 'target_display',
+        'reason', 'status', 'created_at', 'reviewed_at',
+    ]
+    list_filter = ['status', 'target_type', 'reason']
+    search_fields = [
+        'reporter__username',
+        'reported_user__username',
+        'reported_listing__title',
+        'description',
+    ]
+    readonly_fields = [
+        'reporter', 'target_type', 'reported_listing', 'reported_user',
+        'reason', 'description', 'created_at',
+    ]
+    fields = [
+        'reporter', 'target_type', 'reported_listing', 'reported_user',
+        'reason', 'description', 'status', 'admin_note',
+        'reviewed_at', 'created_at',
+    ]
+    actions = ['mark_reviewed', 'mark_action_taken', 'dismiss_reports']
+
+    @admin.display(description='Target')
+    def target_display(self, obj):
+        if obj.target_type == 'listing' and obj.reported_listing:
+            return f'Listing: {obj.reported_listing.title[:40]}'
+        elif obj.target_type == 'user' and obj.reported_user:
+            return f'User: {obj.reported_user.username}'
+        return '—'
+
+    @admin.action(description='👁️ Mark as Reviewed')
+    def mark_reviewed(self, request, queryset):
+        updated = queryset.filter(status='pending').update(
+            status='reviewed',
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(request, f'{updated} report(s) marked as reviewed.')
+
+    @admin.action(description='⚡ Mark as Action Taken')
+    def mark_action_taken(self, request, queryset):
+        updated = queryset.filter(status__in=('pending', 'reviewed')).update(
+            status='action_taken',
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(request, f'{updated} report(s) marked as action taken.')
+
+    @admin.action(description='✖ Dismiss selected reports')
+    def dismiss_reports(self, request, queryset):
+        updated = queryset.filter(status__in=('pending', 'reviewed')).update(
+            status='dismissed',
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(request, f'{updated} report(s) dismissed.')

@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSellerProfile, getSellerReviews, formatLastActive, startConversation } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
+import { useAuth } from '@/lib/auth';
+import ReportModal from '@/components/ReportModal';
 
 const REVIEW_PAGE_SIZE = 20;
 
@@ -12,6 +14,7 @@ export default function SellerProfilePage() {
   const params = useParams();
   const router = useRouter();
   const { username } = params;
+  const { user } = useAuth();
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
@@ -20,6 +23,7 @@ export default function SellerProfilePage() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('shop');
   const [startingChat, setStartingChat] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -149,6 +153,19 @@ export default function SellerProfilePage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             {startingChat ? 'Starting...' : 'Message'}
           </button>
+          {user && user.username !== profile.username && (
+            <button
+              className="report-flag-btn"
+              onClick={() => setShowReport(true)}
+              title="Report this seller"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                <line x1="4" y1="22" x2="4" y2="15"/>
+              </svg>
+              Report
+            </button>
+          )}
         </div>
       </div>
 
@@ -297,6 +314,17 @@ export default function SellerProfilePage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Report Modal */}
+      {profile && (
+        <ReportModal
+          isOpen={showReport}
+          onClose={() => setShowReport(false)}
+          targetType="user"
+          userId={profile.user_id}
+          targetName={profile.username}
+        />
       )}
     </div>
   );

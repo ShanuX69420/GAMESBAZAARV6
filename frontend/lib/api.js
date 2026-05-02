@@ -608,3 +608,29 @@ export async function confirmPasswordReset(token, code, newPassword, newPassword
   if (!res.ok) throw new Error(data.error || 'Failed to reset password');
   return data;
 }
+
+// ── Reports / Flags API ─────────────────────────────────────────────────────
+
+export async function submitReport({ targetType, listingId, userId, reason, description }) {
+  const body = { target_type: targetType, reason, description: description || '' };
+  if (targetType === 'listing') body.listing_id = listingId;
+  if (targetType === 'user') body.user_id = userId;
+
+  const res = await authFetch(`${API_BASE}/api/reports/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || Object.values(data).flat()[0] || 'Failed to submit report');
+  return data;
+}
+
+export async function getMyReports(pagination = {}) {
+  const qs = paginationQuery(pagination);
+  const res = await authFetch(`${API_BASE}/api/reports/mine/${qs}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get reports');
+  return res.json();
+}

@@ -673,3 +673,95 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.recipient.username}: {self.title}"
+
+
+# ── Reports / Flags ─────────────────────────────────────────────────────────
+
+class Report(models.Model):
+    """User-submitted report / flag for listings or users."""
+    TARGET_TYPE_CHOICES = [
+        ('listing', 'Listing'),
+        ('user', 'User'),
+    ]
+
+    REASON_CHOICES = [
+        ('scam', 'Scam / Fraud'),
+        ('inappropriate', 'Inappropriate Content'),
+        ('duplicate', 'Duplicate / Spam'),
+        ('wrong_category', 'Wrong Category'),
+        ('misleading', 'Misleading Information'),
+        ('harassment', 'Harassment / Abuse'),
+        ('stolen', 'Stolen Account / Item'),
+        ('other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('reviewed', 'Reviewed'),
+        ('action_taken', 'Action Taken'),
+        ('dismissed', 'Dismissed'),
+    ]
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='reports_submitted',
+    )
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPE_CHOICES)
+    # One of these will be set depending on target_type
+    reported_listing = models.ForeignKey(
+        Listing, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='reports',
+    )
+    reported_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='reports_received',
+    )
+    reason = models.CharField(max_length=30, choices=REASON_CHOICES)
+    description = models.TextField(
+        blank=True, default='',
+        help_text='Additional details about the report',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    admin_note = models.TextField(blank=True, default='',
+                                   help_text='Internal admin notes on this report')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['status', '-created_at'],
+                name='report_status_created_idx',
+            ),
+            models.Index(
+                fields=['reporter', '-created_at'],
+                name='report_reporter_created_idx',
+            ),
+            models.Index(
+                fields=['target_type', 'status'],
+                name='report_target_status_idx',
+            ),
+        ]
+        constraints = [
+            # Prevent duplicate pending reports from same user on same listing
+            models.UniqueConstraint(
+                fields=['reporter', 'reported_listing'],
+                condition=models.Q(status='pending', target_type='listing'),
+                name='uniq_pending_listing_report',
+            ),
+            # Prevent duplicate pending reports from same user on same user
+            models.UniqueConstraint(
+                fields=['reporter', 'reported_user'],
+                condition=models.Q(status='pending', target_type='user'),
+                name='uniq_pending_user_report',
+            ),
+        ]
+
+    def __str__(self):
+        target = ''
+        if self.target_type == 'listing' and self.reported_listing_id:
+            target = f'Listing #{self.reported_listing_id}'
+        elif self.target_type == 'user' and self.reported_user_id:
+            target = f'User #{self.reported_user_id}'
+        return f"Report by {self.reporter.username} → {target} ({self.get_status_display()})"

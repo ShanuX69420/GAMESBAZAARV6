@@ -23,7 +23,7 @@ from django.utils.dateparse import parse_date
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order, SellerCommissionOverride,
-    Review, Notification,
+    Review, Notification, Report,
 )
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
@@ -38,6 +38,7 @@ from .serializers import (
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer,
     NotificationSerializer,
+    CreateReportSerializer, ReportSerializer,
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
@@ -569,21 +570,29 @@ class UpdateProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def put(self, request):
-        serializer = UpdateProfileSerializer(
-            data=request.data,
-            context={'user': request.user},
-        )
-        serializer.is_valid(raise_exception=True)
+        try:
+            with db_transaction.atomic():
+                user = request.user
+                profile = UserProfile.objects.select_for_update().get(user=user)
+                serializer = UpdateProfileSerializer(
+                    data=request.data,
+                    context={'user': user, 'profile': profile},
+                )
+                serializer.is_valid(raise_exception=True)
 
-        user = request.user
-        new_username = serializer.validated_data['username']
-        if new_username != user.username:
-            user.username = new_username
-            user.save(update_fields=['username'])
-            # Record the change timestamp
-            profile = user.profile
-            profile.username_changed_at = timezone.now()
-            profile.save(update_fields=['username_changed_at'])
+                new_username = serializer.validated_data['username']
+                if new_username != user.username:
+                    user.username = new_username
+                    user.save(update_fields=['username'])
+                    profile.username_changed_at = timezone.now()
+                    profile.save(update_fields=['username_changed_at'])
+        except IntegrityError:
+            return Response(
+                {'username': ['This username is already taken.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.select_related('profile').get(pk=request.user.pk)
 
         return Response({
             'message': 'Profile updated.',
@@ -2502,3 +2511,84 @@ class SellerDashboardView(APIView):
         if not settings.DEBUG:
             cache.set(cache_key, payload, timeout=60)
         return Response(payload)
+
+
+# ── Report / Flag views ────────────────────────────────────────────────────────
+
+class CreateReportView(ScopedPostThrottleMixin, APIView):
+    """POST /api/reports/ — Submit a report/flag for a listing or user."""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'create_report'
+
+    def post(self, request):
+        serializer = CreateReportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        target_type = data['target_type']
+        reporter = request.user
+
+        # Cannot report yourself
+        if target_type == 'user' and data.get('user_id') == reporter.pk:
+            return Response(
+                {'error': 'You cannot report yourself.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Cannot report your own listing
+        if target_type == 'listing':
+            listing = Listing.objects.filter(pk=data['listing_id']).first()
+            if listing and listing.seller_id == reporter.pk:
+                return Response(
+                    {'error': 'You cannot report your own listing.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        report_kwargs = {
+            'reporter': reporter,
+            'target_type': target_type,
+            'reason': data['reason'],
+            'description': data.get('description', ''),
+        }
+
+        if target_type == 'listing':
+            report_kwargs['reported_listing_id'] = data['listing_id']
+        elif target_type == 'user':
+            report_kwargs['reported_user_id'] = data['user_id']
+
+        try:
+            report = Report.objects.create(**report_kwargs)
+        except IntegrityError:
+            return Response(
+                {'error': 'You have already submitted a report for this. It is currently under review.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                'message': 'Report submitted successfully. Our team will review it shortly.',
+                'report': ReportSerializer(report).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MyReportsView(APIView):
+    """GET /api/reports/mine/ — List reports submitted by the current user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_ORDER_PAGE_SIZE,
+            max_limit=MAX_ORDER_PAGE_SIZE,
+        )
+        qs = Report.objects.filter(reporter=request.user).select_related(
+            'reported_listing', 'reported_user',
+        )
+        total = qs.count()
+        reports = list(qs[offset:offset + limit])
+        return Response({
+            'reports': ReportSerializer(reports, many=True).data,
+            'pagination': get_pagination_payload(total, limit, offset),
+        })

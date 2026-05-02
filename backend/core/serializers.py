@@ -17,6 +17,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, Order,
     SellerCommissionOverride, Review, Notification,
+    Report,
 )
 from .services import (
     create_private_media_ticket,
@@ -332,7 +333,7 @@ class UpdateProfileSerializer(serializers.Serializer):
 
         # 90-day cooldown
         from .services import USERNAME_CHANGE_COOLDOWN_DAYS
-        profile = user.profile
+        profile = self.context.get('profile') or user.profile
         if profile.username_changed_at:
             from django.utils import timezone
             days_since = (timezone.now() - profile.username_changed_at).days
@@ -626,6 +627,10 @@ class UpdateListingSerializer(serializers.ModelSerializer):
         elif next_delivery_time == 'Instant':
             raise serializers.ValidationError({
                 'delivery_time': 'Instant delivery is only available for automated delivery listings.',
+            })
+        elif next_status == 'active' and next_quantity is not None and next_quantity <= 0:
+            raise serializers.ValidationError({
+                'status': 'Set stock above 0 or choose unlimited stock before activating this listing.',
             })
 
         return attrs
@@ -972,3 +977,52 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'notification_type', 'title', 'message',
             'is_read', 'order_id', 'review_id', 'created_at',
         ]
+
+
+# ── Report Serializers ───────────────────────────────────────────────────────
+
+class CreateReportSerializer(serializers.Serializer):
+    target_type = serializers.ChoiceField(choices=['listing', 'user'])
+    listing_id = serializers.IntegerField(required=False)
+    user_id = serializers.IntegerField(required=False)
+    reason = serializers.ChoiceField(choices=[c[0] for c in Report.REASON_CHOICES])
+    description = serializers.CharField(required=False, default='', max_length=2000, allow_blank=True)
+
+    def validate(self, attrs):
+        target_type = attrs['target_type']
+        if target_type == 'listing':
+            listing_id = attrs.get('listing_id')
+            if not listing_id:
+                raise serializers.ValidationError({'listing_id': 'Listing ID is required.'})
+            if not Listing.objects.filter(pk=listing_id).exists():
+                raise serializers.ValidationError({'listing_id': 'Listing not found.'})
+        elif target_type == 'user':
+            user_id = attrs.get('user_id')
+            if not user_id:
+                raise serializers.ValidationError({'user_id': 'User ID is required.'})
+            from django.contrib.auth.models import User
+            if not User.objects.filter(pk=user_id).exists():
+                raise serializers.ValidationError({'user_id': 'User not found.'})
+        return attrs
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    reporter_name = serializers.CharField(source='reporter.username', read_only=True)
+    reason_display = serializers.CharField(source='get_reason_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    target_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Report
+        fields = [
+            'id', 'target_type', 'reported_listing', 'reported_user',
+            'reporter_name', 'reason', 'reason_display', 'description',
+            'status', 'status_display', 'target_display', 'created_at',
+        ]
+
+    def get_target_display(self, obj):
+        if obj.target_type == 'listing' and obj.reported_listing_id:
+            return f'Listing: {obj.reported_listing.title[:60]}' if obj.reported_listing else f'Listing #{obj.reported_listing_id}'
+        elif obj.target_type == 'user' and obj.reported_user_id:
+            return f'User: {obj.reported_user.username}' if obj.reported_user else f'User #{obj.reported_user_id}'
+        return 'Unknown'

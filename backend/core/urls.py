@@ -78,4 +78,8 @@ urlpatterns = [
     path('notifications/', views.NotificationListView.as_view(), name='notification-list'),
     path('notifications/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
     path('notifications/unread-count/', views.NotificationUnreadCountView.as_view(), name='notification-unread-count'),
+
+    # Reports / Flags
+    path('reports/', views.CreateReportView.as_view(), name='create-report'),
+    path('reports/mine/', views.MyReportsView.as_view(), name='my-reports'),
 ]

@@ -16,6 +16,7 @@ from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import resolve
+from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
@@ -24,7 +25,8 @@ from .admin import OrderAdmin, TopUpRequestAdmin
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
     Listing, Message, Notification, Order, Review,
-    PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, Wallet, WalletTransaction,
+    PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, UserProfile, Wallet,
+    WalletTransaction,
 )
 from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
@@ -713,6 +715,53 @@ class PurchaseFlowTests(TestCase):
         self.assertIn('status', response.data)
         listing.refresh_from_db()
         self.assertEqual(listing.status, 'sold')
+
+    def test_update_listing_rejects_reactivating_empty_manual_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Empty manual delivery item',
+            price=Decimal('10.00'),
+            quantity=0,
+            status='sold',
+            delivery_time='1-2 Hours',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/',
+            {'status': 'active'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('status', response.data)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 0)
+        self.assertEqual(listing.status, 'sold')
+
+    def test_update_listing_allows_reactivating_manual_listing_with_unlimited_stock(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Unlimited manual delivery item',
+            price=Decimal('10.00'),
+            quantity=0,
+            status='sold',
+            delivery_time='1-2 Hours',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/',
+            {'status': 'active', 'quantity': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertIsNone(listing.quantity)
+        self.assertEqual(listing.status, 'active')
 
     def test_seller_can_restock_auto_delivery_listing(self):
         listing = Listing.objects.create(
@@ -4526,6 +4575,25 @@ class AccountSecurityFlowTests(TestCase):
         self.assertEqual(cooldown_response.status_code, 400)
         self.assertIn('username', cooldown_response.data)
         self.assertIn('once every 90 days', str(cooldown_response.data['username'][0]))
+
+    def test_profile_update_checks_fresh_locked_profile_for_cooldown(self):
+        # Populate the related-object cache, then update the database row directly.
+        # The view must validate against its locked UserProfile row, not this stale cache.
+        self.assertIsNone(self.user.profile.username_changed_at)
+        UserProfile.objects.filter(user=self.user).update(username_changed_at=timezone.now())
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.put(
+            '/api/auth/profile/',
+            {'username': 'secureuser2'},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'secureuser')
 
     def test_email_change_rejects_current_or_existing_email(self):
         User.objects.create_user(
