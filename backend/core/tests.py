@@ -21,12 +21,12 @@ from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
-from .admin import OrderAdmin, TopUpRequestAdmin
+from .admin import OrderAdmin, TopUpRequestAdmin, WithdrawRequestAdmin
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    Listing, Message, Notification, Order, Review,
+    Listing, Message, Notification, Order, Report, Review,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, UserProfile, Wallet,
-    WalletTransaction,
+    WalletTransaction, WithdrawRequest,
 )
 from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
@@ -1065,6 +1065,169 @@ class TopUpProofUploadTests(TestCase):
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-wide').exists())
 
 
+class WithdrawalRequestTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='buyer', password='password123')
+        self.wallet = Wallet.objects.get(user=self.user)
+        self.wallet.balance = Decimal('1200.00')
+        self.wallet.save(update_fields=['balance'])
+        self.client.force_authenticate(user=self.user)
+
+    def test_withdrawal_request_deducts_wallet_and_logs_hold(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '500.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Buyer Account',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        withdraw = WithdrawRequest.objects.get(user=self.user)
+        self.assertEqual(withdraw.status, 'pending')
+        self.assertEqual(withdraw.amount, Decimal('500.00'))
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal('700.00'))
+        transaction = WalletTransaction.objects.get(
+            wallet=self.wallet,
+            transaction_type='withdraw_request',
+            reference_id=f'withdraw_{withdraw.pk}',
+        )
+        self.assertEqual(transaction.amount, Decimal('500.00'))
+        self.assertEqual(transaction.balance_after, Decimal('700.00'))
+
+    def test_withdrawal_rejects_insufficient_balance_without_side_effects(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '1500.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Buyer Account',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Insufficient wallet balance.')
+        self.assertFalse(WithdrawRequest.objects.exists())
+        self.assertFalse(WalletTransaction.objects.filter(wallet=self.wallet).exists())
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal('1200.00'))
+
+    def test_bank_transfer_withdrawal_requires_bank_name(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '500.00',
+                'payment_method': 'Bank Transfer',
+                'account_title': 'Buyer Account',
+                'account_details': 'PK36MEZN0001234567890123',
+                'bank_name': '  ',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('bank_name', response.data)
+        self.assertFalse(WithdrawRequest.objects.exists())
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal('1200.00'))
+
+
+class ReportFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.reporter = User.objects.create_user(username='reporter', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.other_user = User.objects.create_user(username='other', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+        game = Game.objects.create(name='Report Game', slug='report-game')
+        category = Category.objects.create(name='Accounts', slug='report-accounts')
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Reported listing',
+            price=Decimal('100.00'),
+            quantity=1,
+        )
+
+    def test_user_can_report_listing_once_while_pending(self):
+        self.client.force_authenticate(user=self.reporter)
+        payload = {
+            'target_type': 'listing',
+            'listing_id': self.listing.pk,
+            'reason': 'scam',
+            'description': 'Suspicious listing.',
+        }
+
+        response = self.client.post('/api/reports/', payload, format='json')
+        duplicate_response = self.client.post('/api/reports/', payload, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Report.objects.count(), 1)
+        report = Report.objects.get()
+        self.assertEqual(report.reporter, self.reporter)
+        self.assertEqual(report.reported_listing, self.listing)
+        self.assertEqual(report.status, 'pending')
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(Report.objects.count(), 1)
+
+    def test_user_cannot_report_self_or_own_listing(self):
+        self.client.force_authenticate(user=self.seller)
+        own_listing_response = self.client.post(
+            '/api/reports/',
+            {
+                'target_type': 'listing',
+                'listing_id': self.listing.pk,
+                'reason': 'other',
+            },
+            format='json',
+        )
+        self_report_response = self.client.post(
+            '/api/reports/',
+            {
+                'target_type': 'user',
+                'user_id': self.seller.pk,
+                'reason': 'other',
+            },
+            format='json',
+        )
+
+        self.assertEqual(own_listing_response.status_code, 400)
+        self.assertEqual(self_report_response.status_code, 400)
+        self.assertFalse(Report.objects.exists())
+
+    def test_my_reports_returns_only_current_users_reports(self):
+        own_report = Report.objects.create(
+            reporter=self.reporter,
+            target_type='listing',
+            reported_listing=self.listing,
+            reason='misleading',
+        )
+        Report.objects.create(
+            reporter=self.other_user,
+            target_type='user',
+            reported_user=self.seller,
+            reason='harassment',
+        )
+
+        self.client.force_authenticate(user=self.reporter)
+        response = self.client.get('/api/reports/mine/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(len(response.data['reports']), 1)
+        self.assertEqual(response.data['reports'][0]['id'], own_report.pk)
+        self.assertEqual(response.data['reports'][0]['target_display'], 'Listing: Reported listing')
+
+
 THROTTLE_TEST_REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '1/min',
@@ -1075,6 +1238,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'chat_message': '1/min',
         'chat_upload': '1/min',
         'topup_request': '1/min',
+        'withdraw_request': '1/min',
         'heartbeat': '1/min',
         'search': '1/min',
         'avatar_upload': '1/min',
@@ -1082,6 +1246,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'listing_create': '1/min',
         'listing_mutation': '1/min',
         'listing_restock': '1/min',
+        'create_report': '1/min',
     },
 }
 
@@ -1097,6 +1262,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/chat/1/send/': 'chat_message',
             '/api/chat/1/send-image/': 'chat_upload',
             '/api/wallet/top-up/': 'topup_request',
+            '/api/wallet/withdraw/': 'withdraw_request',
             '/api/heartbeat/': 'heartbeat',
             '/api/search/': 'search',
             '/api/auth/avatar/': 'avatar_upload',
@@ -1104,6 +1270,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/listings/': 'listing_create',
             '/api/listings/1/': 'listing_mutation',
             '/api/listings/1/restock/': 'listing_restock',
+            '/api/reports/': 'create_report',
         }
 
         for path, scope in cases.items():
@@ -2372,6 +2539,32 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.data['pagination']['count'], 30)
         self.assertEqual(response.data['pagination']['next_offset'], 10)
 
+    def test_withdraw_requests_are_paginated_for_current_user(self):
+        other_user = User.objects.create_user(username='other', password='password123')
+        for index in range(30):
+            WithdrawRequest.objects.create(
+                user=self.buyer,
+                amount=Decimal('500.00'),
+                payment_method='JazzCash',
+                account_title='Buyer Account',
+                account_details=f'03001234{index:02d}',
+            )
+        WithdrawRequest.objects.create(
+            user=other_user,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Other Account',
+            account_details='03009999999',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.get('/api/wallet/withdraw/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['withdraw_requests']), 10)
+        self.assertEqual(response.data['pagination']['count'], 30)
+        self.assertEqual(response.data['pagination']['next_offset'], 10)
+
     def test_buyer_orders_are_paginated(self):
         for index in range(25):
             self.create_order(index)
@@ -3006,6 +3199,93 @@ class AdminMoneyActionTests(TestCase):
                 reference_id=f'topup_{topup.pk}',
             ).count(),
             1,
+        )
+
+    def test_admin_withdrawal_approval_is_idempotent(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Buyer Account',
+            account_details='03001234567',
+        )
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        queryset = WithdrawRequest.objects.filter(pk=withdraw.pk)
+
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.approve_withdrawals(self.request, queryset)
+            admin_obj.approve_withdrawals(self.request, queryset)
+
+        withdraw.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(withdraw.status, 'approved')
+        self.assertIsNotNone(withdraw.reviewed_at)
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.buyer_wallet,
+                transaction_type='withdraw_approved',
+                reference_id=f'withdraw_{withdraw.pk}',
+            ).count(),
+            1,
+        )
+
+    def test_admin_withdrawal_rejection_refunds_once(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Buyer Account',
+            account_details='03001234567',
+        )
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        queryset = WithdrawRequest.objects.filter(pk=withdraw.pk)
+
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.reject_withdrawals(self.request, queryset)
+            admin_obj.reject_withdrawals(self.request, queryset)
+
+        withdraw.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(withdraw.status, 'rejected')
+        self.assertIsNotNone(withdraw.reviewed_at)
+        self.assertEqual(self.buyer_wallet.balance, Decimal('500.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.buyer_wallet,
+                transaction_type='withdraw_rejected',
+                reference_id=f'withdraw_{withdraw.pk}',
+            ).count(),
+            1,
+        )
+
+    def test_admin_terminal_withdrawal_edit_does_not_reverse_money(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Buyer Account',
+            account_details='03001234567',
+            status='approved',
+            reviewed_at=timezone.now(),
+        )
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        form = type('ChangedStatusForm', (), {'changed_data': ['status']})()
+
+        withdraw.status = 'rejected'
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.save_model(self.request, withdraw, form, change=True)
+
+        withdraw.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(withdraw.status, 'approved')
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.buyer_wallet,
+                transaction_type='withdraw_rejected',
+                reference_id=f'withdraw_{withdraw.pk}',
+            ).exists()
         )
 
     def test_active_topup_transaction_reference_is_unique_per_method(self):

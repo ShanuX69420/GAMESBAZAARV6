@@ -4,10 +4,14 @@ import {
   getConversations,
   getMyListings,
   getMyOrders,
+  getMyReports,
+  getWithdrawRequests,
+  requestWithdraw,
   getSellerDashboard,
   getSellerProfile,
   getSellerReviews,
   searchMarketplace,
+  submitReport,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -65,6 +69,76 @@ describe('API client helpers', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/orders/mine/?limit=20&before_id=42&cursor=1`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('serializes withdrawal requests and paginates withdrawal history', async () => {
+    await requestWithdraw(
+      '500.00',
+      'Bank Transfer',
+      'Buyer Account',
+      'PK36MEZN0001234567890123',
+      'Meezan Bank'
+    );
+    await getWithdrawRequests({ limit: 20, offset: 40 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/wallet/withdraw/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: '500.00',
+          payment_method: 'Bank Transfer',
+          account_title: 'Buyer Account',
+          account_details: 'PK36MEZN0001234567890123',
+          bank_name: 'Meezan Bank',
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/wallet/withdraw/?limit=20&offset=40`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('serializes report submissions and report pagination', async () => {
+    await submitReport({
+      targetType: 'listing',
+      listingId: 7,
+      reason: 'scam',
+      description: 'Suspicious listing.',
+    });
+    await getMyReports({ limit: 10, offset: 20 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/reports/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_type: 'listing',
+          reason: 'scam',
+          description: 'Suspicious listing.',
+          listing_id: 7,
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/reports/mine/?limit=10&offset=20`,
       {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

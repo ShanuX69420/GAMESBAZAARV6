@@ -2628,7 +2628,8 @@ class CreateReportView(ScopedPostThrottleMixin, APIView):
             report_kwargs['reported_user_id'] = data['user_id']
 
         try:
-            report = Report.objects.create(**report_kwargs)
+            with db_transaction.atomic():
+                report = Report.objects.create(**report_kwargs)
         except IntegrityError:
             return Response(
                 {'error': 'You have already submitted a report for this. It is currently under review.'},

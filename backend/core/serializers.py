@@ -896,6 +896,17 @@ class CreateWithdrawRequestSerializer(serializers.Serializer):
     account_details = serializers.CharField(max_length=500, required=True, allow_blank=False)
     bank_name = serializers.CharField(max_length=300, required=False, default='', allow_blank=True)
 
+    def validate(self, attrs):
+        attrs['payment_method'] = attrs['payment_method'].strip()
+        attrs['account_title'] = attrs['account_title'].strip()
+        attrs['account_details'] = attrs['account_details'].strip()
+        attrs['bank_name'] = attrs.get('bank_name', '').strip()
+        if attrs['payment_method'].lower() == 'bank transfer' and not attrs['bank_name']:
+            raise serializers.ValidationError({
+                'bank_name': 'Bank name is required for bank transfers.',
+            })
+        return attrs
+
 
 # ── Order Serializers ────────────────────────────────────────────────────────
 

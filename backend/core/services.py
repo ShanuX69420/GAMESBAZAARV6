@@ -222,6 +222,24 @@ def approve_topup_request(topup):
     topup.save(update_fields=['status', 'reviewed_at'])
 
 
+def record_withdrawal_approval_once(withdraw):
+    wallet = get_or_create_locked_wallet(withdraw.user)
+    transaction, created = WalletTransaction.objects.get_or_create(
+        wallet=wallet,
+        transaction_type='withdraw_approved',
+        reference_id=f'withdraw_{withdraw.pk}',
+        defaults={
+            'amount': withdraw.amount,
+            'balance_after': wallet.balance,
+            'description': (
+                f'Withdrawal approved: PKR {withdraw.amount} via '
+                f'{withdraw.payment_method or "N/A"}'
+            ),
+        },
+    )
+    return transaction, created
+
+
 def validate_uploaded_image(image):
     if image.content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
         return 'Invalid image type.'

@@ -23,6 +23,7 @@ export default function ListingDetailPage() {
   const [buySuccess, setBuySuccess] = useState('');
   const buyingRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/listings/${id}/`, { cache: 'no-store' })
@@ -37,6 +38,12 @@ export default function ListingDetailPage() {
     }
   }, [user]);
 
+  function openConfirmModal() {
+    setBuyError('');
+    setBuySuccess('');
+    setShowConfirm(true);
+  }
+
   async function handleBuy() {
     if (buyingRef.current) return;
     buyingRef.current = true;
@@ -45,6 +52,7 @@ export default function ListingDetailPage() {
     setBuying(true);
     try {
       const order = await buyListing(listing.id, quantity);
+      setShowConfirm(false);
       setBuySuccess(`Order #${order.id} placed! Redirecting...`);
       setTimeout(() => router.push(`/order/${order.id}`), 1500);
     } catch (err) {
@@ -210,7 +218,7 @@ export default function ListingDetailPage() {
 
                     <button
                       className="btn btn-primary btn-full buy-now-btn"
-                      onClick={handleBuy}
+                      onClick={openConfirmModal}
                       disabled={buying || !hasBalance}
                     >
                       {buying ? 'Purchasing...' : `🛒 Buy Now — PKR ${totalPrice}`}
@@ -262,6 +270,107 @@ export default function ListingDetailPage() {
         listingId={listing.id}
         targetName={listing.title}
       />
+
+      {/* Order Confirmation Modal */}
+      {showConfirm && (
+        <div className="confirm-order-overlay" onClick={() => !buying && setShowConfirm(false)}>
+          <div className="confirm-order-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-order-header">
+              <div className="confirm-order-header-left">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                </svg>
+                <h3>Confirm Your Order</h3>
+              </div>
+              <button className="confirm-order-close" onClick={() => !buying && setShowConfirm(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="confirm-order-body">
+              {/* Item info */}
+              <div className="confirm-order-item">
+                <div className="confirm-order-item-name">{listing.title}</div>
+                <div className="confirm-order-item-meta">
+                  {listing.game_name} · {listing.category_name}
+                </div>
+              </div>
+
+              {/* Order summary rows */}
+              <div className="confirm-order-summary">
+                <div className="confirm-order-row">
+                  <span className="confirm-order-label">Seller</span>
+                  <span className="confirm-order-value">{listing.seller_name}</span>
+                </div>
+                <div className="confirm-order-row">
+                  <span className="confirm-order-label">Unit Price</span>
+                  <span className="confirm-order-value">PKR {Number(listing.price).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                </div>
+                {quantity > 1 && (
+                  <div className="confirm-order-row">
+                    <span className="confirm-order-label">Quantity</span>
+                    <span className="confirm-order-value">×{quantity}</span>
+                  </div>
+                )}
+                <div className="confirm-order-row confirm-order-row-total">
+                  <span className="confirm-order-label">Total</span>
+                  <span className="confirm-order-value confirm-order-total">PKR {Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Wallet info */}
+              {wallet && (
+                <div className="confirm-order-wallet">
+                  <div className="confirm-order-row">
+                    <span className="confirm-order-label">Wallet Balance</span>
+                    <span className="confirm-order-value">PKR {Number(wallet.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="confirm-order-row">
+                    <span className="confirm-order-label">After Purchase</span>
+                    <span className="confirm-order-value" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
+                      PKR {(parseFloat(wallet.balance) - parseFloat(totalPrice)).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {listing.is_auto_delivery && (
+                <div className="confirm-order-notice confirm-order-notice-instant">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                  </svg>
+                  This item will be delivered instantly after purchase.
+                </div>
+              )}
+
+              <div className="confirm-order-notice">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                Funds will be held in escrow until you confirm delivery.
+              </div>
+
+              {buyError && <div className="alert alert-error" style={{ margin: '0' }}>{buyError}</div>}
+            </div>
+
+            <div className="confirm-order-actions">
+              <button className="btn btn-outline" onClick={() => setShowConfirm(false)} disabled={buying}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleBuy} disabled={buying}>
+                {buying ? (
+                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> Processing...</>
+                ) : (
+                  `✅ Confirm Purchase — PKR ${Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

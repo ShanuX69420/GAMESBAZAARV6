@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
@@ -15,6 +15,7 @@ from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
     decrypt_sensitive_text,
+    record_withdrawal_approval_once,
     release_order_funds_to_seller_once,
 )
 from .serializers import get_auto_delivery_inventory_lines
@@ -229,12 +230,25 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """Handle status changes via edit form."""
         if change and 'status' in form.changed_data:
-            if obj.status == 'rejected':
-                with transaction.atomic():
-                    WithdrawRequest.objects.select_for_update().get(pk=obj.pk)
+            with transaction.atomic():
+                locked = WithdrawRequest.objects.select_for_update().select_related('user').get(pk=obj.pk)
+                previous_status = locked.status
+                if previous_status != 'pending':
+                    obj.status = previous_status
                     super().save_model(request, obj, form, change)
-                    obj.refresh_from_db()
-                    # Return funds to wallet
+                    self.message_user(
+                        request,
+                        'Only pending withdrawals can be approved or rejected.',
+                        level=messages.WARNING,
+                    )
+                    return
+
+                if obj.reviewed_at is None:
+                    obj.reviewed_at = timezone.now()
+                super().save_model(request, obj, form, change)
+                obj.refresh_from_db()
+
+                if obj.status == 'rejected':
                     apply_wallet_delta_once(
                         obj.user,
                         delta=obj.amount,
@@ -243,30 +257,9 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                         description=f'Withdrawal rejected: PKR {obj.amount} returned',
                         reference_id=f'withdraw_{obj.pk}',
                     )
-                return
-            elif obj.status == 'approved':
-                with transaction.atomic():
-                    WithdrawRequest.objects.select_for_update().get(pk=obj.pk)
-                    super().save_model(request, obj, form, change)
-                    obj.refresh_from_db()
-                    # Log the approval transaction (funds already deducted on request)
-                    from .services import get_or_create_locked_wallet
-                    wallet = get_or_create_locked_wallet(obj.user)
-                    from .models import WalletTransaction
-                    if not WalletTransaction.objects.filter(
-                        wallet=wallet,
-                        transaction_type='withdraw_approved',
-                        reference_id=f'withdraw_{obj.pk}',
-                    ).exists():
-                        WalletTransaction.objects.create(
-                            wallet=wallet,
-                            transaction_type='withdraw_approved',
-                            amount=obj.amount,
-                            balance_after=wallet.balance,
-                            description=f'Withdrawal approved: PKR {obj.amount} via {obj.payment_method or "N/A"}',
-                            reference_id=f'withdraw_{obj.pk}',
-                        )
-                return
+                elif obj.status == 'approved':
+                    record_withdrawal_approval_once(obj)
+            return
         super().save_model(request, obj, form, change)
 
     @admin.action(description='✅ Approve selected withdrawals')
@@ -280,23 +273,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 wd.status = 'approved'
                 wd.reviewed_at = timezone.now()
                 wd.save(update_fields=['status', 'reviewed_at'])
-                # Log approval transaction
-                from .services import get_or_create_locked_wallet
-                wallet = get_or_create_locked_wallet(wd.user)
-                from .models import WalletTransaction as WT
-                if not WT.objects.filter(
-                    wallet=wallet,
-                    transaction_type='withdraw_approved',
-                    reference_id=f'withdraw_{wd.pk}',
-                ).exists():
-                    WT.objects.create(
-                        wallet=wallet,
-                        transaction_type='withdraw_approved',
-                        amount=wd.amount,
-                        balance_after=wallet.balance,
-                        description=f'Withdrawal approved: PKR {wd.amount} via {wd.payment_method or "N/A"}',
-                        reference_id=f'withdraw_{wd.pk}',
-                    )
+                record_withdrawal_approval_once(wd)
                 count += 1
         self.message_user(request, f'{count} withdrawal(s) approved.')
 
