@@ -381,6 +381,22 @@
   function fmtPKR(n) {
     return 'PKR ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+  function safeClassToken(value) {
+    return String(value ?? '').replace(/[^a-z0-9_-]/gi, '');
+  }
+  function truncate(value, maxLength) {
+    const text = String(value ?? '');
+    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
+  }
 
   function renderDashboard(data) {
     const k = data.kpis;
@@ -585,7 +601,7 @@
     tbody.innerHTML = sellers.map((s, i) => `
       <tr>
         <td class="rank">${i + 1}</td>
-        <td><strong>${s.seller__username}</strong></td>
+        <td><strong>${escapeHtml(s.seller__username)}</strong></td>
         <td>${s.order_count}</td>
         <td>${fmtPKR(s.total_earned)}</td>
       </tr>
@@ -598,15 +614,19 @@
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#9ca3af;padding:20px;">No orders yet</td></tr>';
       return;
     }
-    tbody.innerHTML = orders.map(o => `
+    const safeOrders = orders.map(o => ({
+      ...o,
+      listing_title: escapeHtml(o.listing_title),
+    }));
+    tbody.innerHTML = safeOrders.map(o => `
       <tr>
         <td><a href="/admin/core/order/${o.id}/change/">#${o.id}</a></td>
         <td class="item-cell" title="${o.listing_title}">${o.listing_title.length > 30 ? o.listing_title.slice(0,30) + '…' : o.listing_title}</td>
-        <td>${o.buyer__username}</td>
-        <td>${o.seller__username}</td>
+        <td>${escapeHtml(o.buyer__username)}</td>
+        <td>${escapeHtml(o.seller__username)}</td>
         <td>${fmtPKR(o.total_amount)}</td>
-        <td><span class="status-badge status-${o.status}">${o.status}</span></td>
-        <td>${o.created_at}</td>
+        <td><span class="status-badge status-${safeClassToken(o.status)}">${escapeHtml(o.status)}</span></td>
+        <td>${escapeHtml(o.created_at)}</td>
       </tr>
     `).join('');
   }

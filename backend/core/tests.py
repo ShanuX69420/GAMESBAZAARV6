@@ -2854,6 +2854,7 @@ class HistoryPaginationTests(TestCase):
 
 class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
     reset_sequences = True
+    websocket_test_origin = b'http://localhost:3000'
 
     def setUp(self):
         cache.clear()
@@ -2868,6 +2869,14 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
     def tearDown(self):
         cache.clear()
 
+    def make_websocket_communicator(self, application, path):
+        from channels.testing import WebsocketCommunicator
+        return WebsocketCommunicator(
+            application,
+            path,
+            headers=[(b'origin', self.websocket_test_origin)],
+        )
+
     def test_websocket_accepts_scoped_ticket_and_rejects_raw_jwt(self):
         from asgiref.sync import async_to_sync
         from channels.testing import WebsocketCommunicator
@@ -2878,7 +2887,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_ticket_flow():
             ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -2894,7 +2903,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             self.assertEqual(event['message']['content'], 'hello over ticket')
             await communicator.disconnect()
 
-            replay_communicator = WebsocketCommunicator(
+            replay_communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -2913,7 +2922,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_jwt_rejection():
             raw_jwt = AccessToken.for_user(self.buyer)
-            jwt_communicator = WebsocketCommunicator(
+            jwt_communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?token={raw_jwt}',
             )
@@ -2931,7 +2940,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_wrong_conversation_rejection():
             wrong_ticket = create_chat_ws_ticket(self.buyer, self.other_conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={wrong_ticket}',
             )
@@ -2959,7 +2968,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_rest_broadcast_flow():
             ticket = create_chat_ws_ticket(self.seller, self.conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -2996,7 +3005,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_image_broadcast_flow():
             ticket = create_chat_ws_ticket(self.seller, self.conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -3024,7 +3033,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_overlong_message_rejection():
             ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -3053,7 +3062,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_rate_limit_rejection():
             ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
-            communicator = WebsocketCommunicator(
+            communicator = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
             )
@@ -3095,7 +3104,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async def run_shared_rate_limit_rejection():
             first_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
-            first = WebsocketCommunicator(
+            first = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={first_ticket}',
             )
@@ -3113,7 +3122,7 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             await first.disconnect()
 
             second_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
-            second = WebsocketCommunicator(
+            second = self.make_websocket_communicator(
                 application,
                 f'/ws/chat/{self.conversation.id}/?ticket={second_ticket}',
             )

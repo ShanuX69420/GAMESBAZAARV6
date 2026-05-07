@@ -24,6 +24,16 @@ DB_PORT=5432
 
 CORS_ALLOWED_ORIGINS=https://www.example.com
 CSRF_TRUSTED_ORIGINS=https://www.example.com
+WEBSOCKET_ALLOWED_ORIGINS=https://www.example.com
+
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=replace-with-smtp-user
+EMAIL_HOST_PASSWORD=replace-with-smtp-password
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=noreply@example.com
 
 CHANNEL_REDIS_URL=redis://replace-with-redis-host:6379/0
 CACHE_REDIS_URL=redis://replace-with-redis-host:6379/1
@@ -42,6 +52,8 @@ Notes:
 - `FIELD_ENCRYPTION_KEYS` protects stored delivery secrets. Generate a Fernet key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, keep old keys for reading old encrypted rows, and point `FIELD_ENCRYPTION_PRIMARY_KEY_ID` at the newest key.
 - `DJANGO_ALLOWED_HOSTS` must list only real backend hostnames. Do not use `*`.
 - `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` must list the frontend origin exactly, including `https://`.
+- `WEBSOCKET_ALLOWED_ORIGINS` must list the browser origin allowed to open chat sockets. If omitted, it defaults to `CORS_ALLOWED_ORIGINS`.
+- SMTP values are required for password reset and email-change flows unless you intentionally configure another production email backend.
 - `CHANNEL_REDIS_URL` is required when `DJANGO_DEBUG=False` because chat uses Channels.
 - `CACHE_REDIS_URL` should point to shared Redis for rate limiting. If omitted, the backend falls back to `CHANNEL_REDIS_URL`.
 - Keep `JWT_AUTH_COOKIE_SECURE=True` so auth cookies are only sent over HTTPS.

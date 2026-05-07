@@ -287,6 +287,20 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
+WEBSOCKET_ALLOWED_ORIGINS = env_list(
+    'WEBSOCKET_ALLOWED_ORIGINS',
+    CORS_ALLOWED_ORIGINS if not DEBUG else DEV_FRONTEND_ORIGINS,
+)
+
+if not DEBUG:
+    if not CORS_ALLOWED_ORIGINS:
+        raise ImproperlyConfigured(
+            'CORS_ALLOWED_ORIGINS must list the production frontend origin when DJANGO_DEBUG=False.'
+        )
+    if not WEBSOCKET_ALLOWED_ORIGINS:
+        raise ImproperlyConfigured(
+            'WEBSOCKET_ALLOWED_ORIGINS or CORS_ALLOWED_ORIGINS must list the production frontend origin when DJANGO_DEBUG=False.'
+        )
 
 # Email — console in dev, configure SMTP for production
 EMAIL_BACKEND = os.environ.get(
@@ -295,6 +309,25 @@ EMAIL_BACKEND = os.environ.get(
     else 'django.core.mail.backends.smtp.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gamesbazaar.pk')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost' if DEBUG else '').strip()
+EMAIL_PORT = env_int('EMAIL_PORT', 587)
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', not DEBUG)
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 20)
+
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured('EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be True.')
+
+if (
+    not DEBUG and
+    EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend' and
+    not EMAIL_HOST
+):
+    raise ImproperlyConfigured(
+        'EMAIL_HOST must be set when using SMTP email in production.'
+    )
 
 # ASGI / Channels
 ASGI_APPLICATION = 'gamesbazaar.asgi.application'
