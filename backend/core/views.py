@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 import hashlib
 import mimetypes
@@ -16,7 +17,11 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core import signing
 from django.http import FileResponse, Http404
-from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import (
+    Avg, Case, Count, ExpressionWrapper, F, IntegerField, OuterRef,
+    Prefetch, Q, Subquery, Sum, Value, When,
+)
+from django.db.models.functions import Coalesce
 from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -224,6 +229,127 @@ def create_notification(*, recipient, notification_type, title, message='', orde
 
 # ── Public Game / Category / Filter views ────────────────────────────────────
 
+def apply_recommended_listing_ordering(listings_qs):
+    """Rank active listings with cheap signals we already have."""
+    completed_order_count_subquery = (
+        Order.objects.filter(listing=OuterRef('pk'), status='completed')
+        .values('listing')
+        .annotate(cnt=Count('id'))
+        .values('cnt')[:1]
+    )
+    pending_report_count_subquery = (
+        Report.objects.filter(
+            reported_listing=OuterRef('pk'),
+            target_type='listing',
+            status='pending',
+        )
+        .values('reported_listing')
+        .annotate(cnt=Count('id'))
+        .values('cnt')[:1]
+    )
+
+    now = timezone.now()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    quarter_ago = now - timedelta(days=90)
+
+    seller_rating_score = Case(
+        When(seller_avg_rating__gte=Decimal('4.8'), then=Value(30)),
+        When(seller_avg_rating__gte=Decimal('4.5'), then=Value(24)),
+        When(seller_avg_rating__gte=Decimal('4.0'), then=Value(18)),
+        When(seller_avg_rating__gte=Decimal('3.5'), then=Value(10)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    seller_review_score = Case(
+        When(seller_review_count__gte=20, then=Value(15)),
+        When(seller_review_count__gte=5, then=Value(10)),
+        When(seller_review_count__gte=1, then=Value(5)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    completed_order_score = Case(
+        When(completed_order_count__gte=20, then=Value(25)),
+        When(completed_order_count__gte=5, then=Value(18)),
+        When(completed_order_count__gte=1, then=Value(10)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    seller_status_score = Case(
+        When(seller__profile__seller_status='approved', then=Value(10)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    fulfillment_score = Case(
+        When(is_auto_delivery=True, then=Value(12)),
+        When(delivery_time__in=['1-2 Hours', '1-2 hours'], then=Value(5)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    stock_score = Case(
+        When(quantity__isnull=True, then=Value(8)),
+        When(quantity__gte=5, then=Value(8)),
+        When(quantity__gte=1, then=Value(5)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    completeness_score = Case(
+        When(description='', then=Value(0)),
+        default=Value(10),
+        output_field=IntegerField(),
+    )
+    freshness_score = Case(
+        When(created_at__gte=week_ago, then=Value(12)),
+        When(created_at__gte=month_ago, then=Value(8)),
+        When(created_at__gte=quarter_ago, then=Value(4)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    report_penalty = Case(
+        When(pending_report_count__gt=0, then=Value(-50)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+
+    recommended_score = ExpressionWrapper(
+        seller_rating_score +
+        seller_review_score +
+        completed_order_score +
+        seller_status_score +
+        fulfillment_score +
+        stock_score +
+        completeness_score +
+        freshness_score +
+        report_penalty,
+        output_field=IntegerField(),
+    )
+
+    return (
+        listings_qs
+        .annotate(
+            completed_order_count=Coalesce(
+                Subquery(completed_order_count_subquery),
+                Value(0),
+                output_field=IntegerField(),
+            ),
+            pending_report_count=Coalesce(
+                Subquery(pending_report_count_subquery),
+                Value(0),
+                output_field=IntegerField(),
+            ),
+        )
+        .annotate(recommended_score=recommended_score)
+        .order_by(
+            '-recommended_score',
+            '-completed_order_count',
+            F('seller_avg_rating').desc(nulls_last=True),
+            F('seller_review_count').desc(nulls_last=True),
+            '-created_at',
+            '-pk',
+        )
+    )
+
+
 def broadcast_chat_message(message, request):
     """Broadcast a REST-created message to any open WebSocket clients."""
     channel_layer = get_channel_layer()
@@ -353,7 +479,6 @@ class GameCategoryDetailView(APIView):
 
         # Online seller filter: only show listings from sellers who are currently online
         if request.query_params.get('online_only') == 'true':
-            from datetime import timedelta
             online_threshold = timezone.now() - timedelta(seconds=120)
             listings_qs = listings_qs.filter(seller__profile__last_active__gte=online_threshold)
 
@@ -378,8 +503,7 @@ class GameCategoryDetailView(APIView):
         if ordering_param in ALLOWED_ORDERINGS:
             listings_qs = listings_qs.order_by(ALLOWED_ORDERINGS[ordering_param])
         else:
-            # Default: recommended (newest first)
-            listings_qs = listings_qs.order_by('-created_at')
+            listings_qs = apply_recommended_listing_ordering(listings_qs)
 
         total_count = listings_qs.count()
         limit, offset = get_pagination_params(request)

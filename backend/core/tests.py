@@ -2074,6 +2074,69 @@ class GameCategoryListingPaginationTests(TestCase):
         self.assertEqual(second_page.data['listing_pagination']['next_offset'], None)
         self.assertEqual(second_page.data['listing_pagination']['previous_offset'], 0)
 
+    def test_recommended_default_prioritizes_quality_over_newest(self):
+        from datetime import timedelta
+
+        buyer = User.objects.create_user(username='recommended_buyer', password='password123')
+        trusted_seller = User.objects.create_user(
+            username='trusted_seller',
+            password='password123',
+        )
+        trusted_seller.profile.seller_status = 'approved'
+        trusted_seller.profile.save(update_fields=['seller_status'])
+
+        recommended_listing = Listing.objects.create(
+            seller=trusted_seller,
+            game_category=self.game_category,
+            title='Older trusted listing',
+            description='Detailed listing from a seller with completed orders and a strong review.',
+            price=Decimal('12.00'),
+            quantity=5,
+            status='active',
+            delivery_time='Instant',
+            is_auto_delivery=True,
+        )
+        Listing.objects.filter(pk=recommended_listing.pk).update(
+            created_at=timezone.now() - timedelta(days=45)
+        )
+
+        order = Order.objects.create(
+            buyer=buyer,
+            seller=trusted_seller,
+            listing=recommended_listing,
+            listing_title=recommended_listing.title,
+            quantity=1,
+            unit_price=Decimal('12.00'),
+            total_amount=Decimal('12.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=Decimal('12.00'),
+            status='completed',
+        )
+        Review.objects.create(
+            order=order,
+            reviewer=buyer,
+            seller=trusted_seller,
+            rating=5,
+        )
+        newest_listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Newest basic listing',
+            description='',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+        response = self.client.get('/api/games/test-game/accounts/')
+        newest_response = self.client.get('/api/games/test-game/accounts/?ordering=newest')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['listings'][0]['id'], recommended_listing.id)
+        self.assertEqual(newest_response.status_code, 200)
+        self.assertEqual(newest_response.data['listings'][0]['id'], newest_listing.id)
+
     def test_seller_filter_scopes_sibling_category_counts(self):
         other_seller = User.objects.create_user(username='other_seller', password='password123')
         other_seller.profile.seller_status = 'approved'
