@@ -7,10 +7,10 @@ from unittest.mock import patch
 from cryptography.fernet import Fernet
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.core import signing
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
@@ -22,9 +22,10 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
 from .admin import OrderAdmin, TopUpRequestAdmin, WithdrawRequestAdmin
+from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    Listing, Message, Notification, Order, Report, Review,
+    Listing, Message, Notification, Order, Report, Review, SupportTicket,
     PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, UserProfile, Wallet,
     WalletTransaction, WithdrawRequest,
 )
@@ -127,6 +128,71 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.data['id'], buy_response.data['id'])
         self.assertEqual(detail_response.data['order_number'], order_number)
+
+    def test_delivery_and_confirm_accept_public_order_number_reference(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Public ref action item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        order_number = buy_response.data['order_number']
+
+        self.client.force_authenticate(user=self.seller)
+        deliver_response = self.client.post(
+            f'/api/orders/{order_number}/deliver/',
+            {'delivery_note': 'Delivered by public reference.'},
+            format='json',
+        )
+        self.client.force_authenticate(user=self.buyer)
+        confirm_response = self.client.post(
+            f'/api/orders/{order_number}/confirm/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(deliver_response.status_code, 200)
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertEqual(confirm_response.data['status'], 'completed')
+
+    def test_dispute_and_refund_accept_public_order_number_reference(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Public ref refund item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        order_number = buy_response.data['order_number']
+
+        dispute_response = self.client.post(
+            f'/api/orders/{order_number}/dispute/',
+            {'reason': 'Something went wrong.'},
+            format='json',
+        )
+        self.client.force_authenticate(user=self.seller)
+        refund_response = self.client.post(
+            f'/api/orders/{order_number}/refund/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(dispute_response.status_code, 200)
+        self.assertEqual(refund_response.status_code, 200)
+        self.assertEqual(refund_response.data['status'], 'cancelled')
 
     def test_oversized_numeric_order_reference_returns_not_found(self):
         huge_reference = '9' * 5000
@@ -1259,6 +1325,113 @@ class ReportFlowTests(TestCase):
         self.assertEqual(response.data['reports'][0]['target_display'], 'Listing: Reported listing')
 
 
+class SupportTicketFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='support_user',
+            email='support-user@example.com',
+            password='password123',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_support_user',
+            email='other-support@example.com',
+            password='password123',
+        )
+
+    def test_guest_can_create_support_ticket_with_email(self):
+        response = self.client.post(
+            '/api/support/',
+            {
+                'name': 'Guest Buyer',
+                'email': 'guest@example.com',
+                'category': 'order',
+                'subject': 'Need order help',
+                'message': 'I cannot see my order details.',
+                'order_id': 123,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        ticket = SupportTicket.objects.get()
+        self.assertIsNone(ticket.user)
+        self.assertEqual(ticket.guest_email, 'guest@example.com')
+        self.assertEqual(ticket.name, 'Guest Buyer')
+        self.assertEqual(ticket.order_id, 123)
+        self.assertEqual(response.data['ticket']['status'], 'open')
+        self.assertNotIn('guest_email', response.data['ticket'])
+
+    def test_guest_support_ticket_requires_email(self):
+        response = self.client.post(
+            '/api/support/',
+            {
+                'category': 'account',
+                'subject': 'Cannot log in',
+                'message': 'Please help.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
+        self.assertFalse(SupportTicket.objects.exists())
+
+    def test_authenticated_support_ticket_uses_user_and_hides_guest_email(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/support/',
+            {
+                'name': 'Ignored display name',
+                'email': 'ignored@example.com',
+                'category': 'payment',
+                'subject': 'Wallet issue',
+                'message': 'My balance looks wrong.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        ticket = SupportTicket.objects.get()
+        self.assertEqual(ticket.user, self.user)
+        self.assertEqual(ticket.guest_email, '')
+        self.assertEqual(ticket.name, 'Ignored display name')
+
+    def test_my_support_tickets_returns_only_current_users_tickets(self):
+        own_ticket = SupportTicket.objects.create(
+            user=self.user,
+            category='payment',
+            subject='Wallet issue',
+            message='My balance looks wrong.',
+        )
+        SupportTicket.objects.create(
+            user=self.other_user,
+            category='account',
+            subject='Other user ticket',
+            message='Do not show this.',
+        )
+        SupportTicket.objects.create(
+            guest_email='guest@example.com',
+            category='other',
+            subject='Guest ticket',
+            message='Do not show this either.',
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get('/api/support/mine/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(len(response.data['tickets']), 1)
+        self.assertEqual(response.data['tickets'][0]['id'], own_ticket.pk)
+
+    def test_my_support_tickets_requires_authentication(self):
+        response = self.client.get('/api/support/mine/')
+
+        self.assertEqual(response.status_code, 401)
+
+
 THROTTLE_TEST_REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '1/min',
@@ -1278,6 +1451,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'listing_mutation': '1/min',
         'listing_restock': '1/min',
         'create_report': '1/min',
+        'create_support_ticket': '1/min',
     },
 }
 
@@ -1302,6 +1476,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/listings/1/': 'listing_mutation',
             '/api/listings/1/restock/': 'listing_restock',
             '/api/reports/': 'create_report',
+            '/api/support/': 'create_support_ticket',
         }
 
         for path, scope in cases.items():
@@ -1328,6 +1503,7 @@ class ApiPermissionConfigurationTests(TestCase):
             '/api/reviews/seller/seller/',
             '/api/seller/profile/seller/',
             '/api/search/',
+            '/api/support/',
         ]
 
         for path in cases:
@@ -1456,6 +1632,20 @@ class ApiThrottleBehaviorTests(TestCase):
         second = self.client.get('/api/search/?q=Valorant')
 
         self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+    def test_support_ticket_is_rate_limited(self):
+        payload = {
+            'email': 'guest@example.com',
+            'category': 'other',
+            'subject': 'Need help',
+            'message': 'Please help me with my account.',
+        }
+
+        first = self.client.post('/api/support/', payload, format='json')
+        second = self.client.post('/api/support/', payload, format='json')
+
+        self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 429)
 
 
@@ -3395,6 +3585,103 @@ class AdminMoneyActionTests(TestCase):
         self.assertEqual(entry.amount, Decimal('10.00'))
 
 
+class AdminChatProtectionTests(TestCase):
+    def setUp(self):
+        self.site = GamesBazaarAdminSite(name='test_admin')
+        self.factory = RequestFactory()
+        self.buyer = User.objects.create_user(username='chat_buyer', password='password123')
+        self.seller = User.objects.create_user(username='chat_seller', password='password123')
+        self.no_perm_admin = User.objects.create_user(
+            username='no_perm_admin',
+            password='password123',
+            is_staff=True,
+        )
+        self.view_only_admin = User.objects.create_user(
+            username='view_only_admin',
+            password='password123',
+            is_staff=True,
+        )
+        self.sender_admin = User.objects.create_user(
+            username='sender_admin',
+            password='password123',
+            is_staff=True,
+        )
+        self.grant_permission(self.view_only_admin, 'view_conversation')
+        self.grant_permission(self.sender_admin, 'view_conversation')
+        self.grant_permission(self.sender_admin, 'add_message')
+        self.conversation = Conversation.objects.create()
+        self.conversation.participants.add(self.buyer, self.seller)
+
+    def grant_permission(self, user, codename):
+        permission = Permission.objects.get(
+            content_type__app_label='core',
+            codename=codename,
+        )
+        user.user_permissions.add(permission)
+        for attr in ('_perm_cache', '_user_perm_cache', '_group_perm_cache'):
+            if hasattr(user, attr):
+                delattr(user, attr)
+
+    def test_admin_chatbox_requires_conversation_view_permission(self):
+        request = self.factory.get(
+            f'/admin/core/conversation/{self.conversation.pk}/chatbox/',
+        )
+        request.user = self.no_perm_admin
+
+        with self.assertRaises(PermissionDenied):
+            self.site.conversation_chatbox_view(request, self.conversation.pk)
+
+    def test_view_only_admin_cannot_send_chatbox_message(self):
+        request = self.factory.post(
+            f'/admin/core/conversation/{self.conversation.pk}/chatbox/',
+            {'message': 'Admin note'},
+        )
+        request.user = self.view_only_admin
+
+        with self.assertRaises(PermissionDenied):
+            self.site.conversation_chatbox_view(request, self.conversation.pk)
+
+        self.assertFalse(
+            Message.objects.filter(
+                conversation=self.conversation,
+                sender=self.view_only_admin,
+            ).exists()
+        )
+
+    def test_admin_with_message_permission_can_send_chatbox_message(self):
+        request = self.factory.post(
+            f'/admin/core/conversation/{self.conversation.pk}/chatbox/',
+            {'message': 'Please share a screenshot.'},
+        )
+        request.user = self.sender_admin
+
+        response = self.site.conversation_chatbox_view(request, self.conversation.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            Message.objects.filter(
+                conversation=self.conversation,
+                sender=self.sender_admin,
+                content='Please share a screenshot.',
+            ).exists()
+        )
+        self.assertTrue(
+            self.conversation.participants.filter(pk=self.sender_admin.pk).exists()
+        )
+
+    def test_admin_message_image_view_requires_conversation_view_permission(self):
+        message = Message.objects.create(
+            conversation=self.conversation,
+            sender=self.buyer,
+            content='image',
+        )
+        request = self.factory.get(f'/admin/core/message/{message.pk}/image/')
+        request.user = self.no_perm_admin
+
+        with self.assertRaises(PermissionDenied):
+            self.site.conversation_message_image_view(request, message.pk)
+
+
 class ConcurrentPurchaseFlowTests(TransactionTestCase):
     reset_sequences = True
 
@@ -3795,6 +4082,23 @@ class ReviewTests(TestCase):
         self.assertEqual(response.data['comment'], 'Great seller!')
         self.assertTrue(Review.objects.filter(order=self.completed_order).exists())
 
+    def test_buyer_can_review_completed_order_by_order_number(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {
+                'order_id': self.completed_order.order_number,
+                'rating': 5,
+                'comment': 'Found by public order number.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['order'], self.completed_order.pk)
+        self.assertTrue(Review.objects.filter(order=self.completed_order).exists())
+
     def test_review_without_comment_is_accepted(self):
         self.client.force_authenticate(user=self.buyer)
 
@@ -3981,6 +4285,113 @@ class ReviewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['has_review'])
+
+    def test_order_detail_includes_review_data_and_seller_reply(self):
+        review = Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+            comment='Great seller.',
+            seller_reply='Thanks for buying.',
+            seller_reply_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.get(f'/api/orders/{self.completed_order.order_number}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['has_review'])
+        self.assertEqual(response.data['review_data']['id'], review.pk)
+        self.assertEqual(response.data['review_data']['rating'], 5)
+        self.assertEqual(response.data['review_data']['seller_reply'], 'Thanks for buying.')
+
+    def test_buyer_can_update_own_review(self):
+        review = Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=4,
+            comment='Good.',
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.put(
+            f'/api/reviews/{review.pk}/',
+            {'rating': 2, 'comment': 'Updated after issue.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        review.refresh_from_db()
+        self.assertEqual(review.rating, 2)
+        self.assertEqual(review.comment, 'Updated after issue.')
+        self.assertEqual(response.data['rating'], 2)
+
+    def test_other_buyer_cannot_update_review(self):
+        review = Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=4,
+        )
+        self.client.force_authenticate(user=self.other_buyer)
+
+        response = self.client.put(
+            f'/api/reviews/{review.pk}/',
+            {'rating': 1, 'comment': 'Not my review.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        review.refresh_from_db()
+        self.assertEqual(review.rating, 4)
+
+    def test_seller_can_reply_to_review_once(self):
+        review = Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            f'/api/reviews/{review.pk}/reply/',
+            {'reply': 'Thanks for the kind review.'},
+            format='json',
+        )
+        duplicate_response = self.client.post(
+            f'/api/reviews/{review.pk}/reply/',
+            {'reply': 'Second reply.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['seller_reply'], 'Thanks for the kind review.')
+        self.assertEqual(duplicate_response.status_code, 400)
+        review.refresh_from_db()
+        self.assertEqual(review.seller_reply, 'Thanks for the kind review.')
+        self.assertIsNotNone(review.seller_reply_at)
+
+    def test_non_seller_cannot_reply_to_review(self):
+        review = Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=5,
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            f'/api/reviews/{review.pk}/reply/',
+            {'reply': 'Not the seller.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        review.refresh_from_db()
+        self.assertEqual(review.seller_reply, '')
 
     # SellerReviewsView tests
 

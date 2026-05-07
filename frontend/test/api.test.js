@@ -1,17 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE } from '../lib/config';
 import {
+  confirmOrder,
+  deliverOrder,
+  disputeOrder,
   getConversations,
+  getMySupportTickets,
   getMyListings,
   getMyOrders,
   getMyReports,
+  getOrderDetail,
   getWithdrawRequests,
+  refundOrder,
+  replyToReview,
   requestWithdraw,
   getSellerDashboard,
   getSellerProfile,
   getSellerReviews,
   searchMarketplace,
   submitReport,
+  submitSupportTicket,
+  updateReview,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -165,6 +174,130 @@ describe('API client helpers', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/search/?q=valorant+prime%2Bboost`
+    );
+  });
+
+  it('encodes public order references for order detail and actions', async () => {
+    const orderRef = 'GB-ABCD+EFGH/IJKL';
+
+    await getOrderDetail(orderRef);
+    await deliverOrder(orderRef, 'Delivered');
+    await confirmOrder(orderRef);
+    await disputeOrder(orderRef, 'Missing item');
+    await refundOrder(orderRef);
+
+    const encoded = 'GB-ABCD%2BEFGH%2FIJKL';
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/orders/${encoded}/`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/orders/${encoded}/deliver/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_note: 'Delivered' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE}/api/orders/${encoded}/confirm/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      `${API_BASE}/api/orders/${encoded}/dispute/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Missing item' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      `${API_BASE}/api/orders/${encoded}/refund/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+  });
+
+  it('serializes review update and seller reply helpers', async () => {
+    await updateReview(12, 4, 'Updated review');
+    await replyToReview(12, 'Thanks for the review');
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/reviews/12/`,
+      {
+        credentials: 'include',
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: 4, comment: 'Updated review' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/reviews/12/reply/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply: 'Thanks for the review' }),
+      }
+    );
+  });
+
+  it('serializes support ticket creation and support history pagination', async () => {
+    await submitSupportTicket({
+      name: 'Guest Buyer',
+      email: 'guest@example.com',
+      category: 'order',
+      subject: 'Order help',
+      message: 'I need help with an order.',
+      orderId: 1234,
+    });
+    await getMySupportTickets({ limit: 10, offset: 20 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/support/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: 'order',
+          subject: 'Order help',
+          message: 'I need help with an order.',
+          name: 'Guest Buyer',
+          email: 'guest@example.com',
+          order_id: 1234,
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/support/mine/?limit=10&offset=20`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
     );
   });
 
