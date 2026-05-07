@@ -422,7 +422,7 @@ export async function getMySales({ limit, offset, beforeId, status, search, date
 }
 
 export async function getOrderDetail(id) {
-  const res = await authFetch(`${API_BASE}/api/orders/${id}/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get order');
@@ -430,7 +430,7 @@ export async function getOrderDetail(id) {
 }
 
 export async function deliverOrder(id, deliveryNote = '') {
-  const res = await authFetch(`${API_BASE}/api/orders/${id}/deliver/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/deliver/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ delivery_note: deliveryNote }),
@@ -441,7 +441,7 @@ export async function deliverOrder(id, deliveryNote = '') {
 }
 
 export async function confirmOrder(id) {
-  const res = await authFetch(`${API_BASE}/api/orders/${id}/confirm/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/confirm/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({}),
@@ -452,7 +452,7 @@ export async function confirmOrder(id) {
 }
 
 export async function disputeOrder(id, reason) {
-  const res = await authFetch(`${API_BASE}/api/orders/${id}/dispute/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/dispute/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ reason }),
@@ -463,7 +463,7 @@ export async function disputeOrder(id, reason) {
 }
 
 export async function refundOrder(id) {
-  const res = await authFetch(`${API_BASE}/api/orders/${id}/refund/`, {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/refund/`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({}),
@@ -490,6 +490,28 @@ export async function getSellerReviews(username, pagination = {}) {
   const res = await fetch(`${API_BASE}/api/reviews/seller/${pathSegment(username)}/${paginationQuery(pagination)}`);
   if (!res.ok) throw new Error('Failed to get reviews');
   return res.json();
+}
+
+export async function updateReview(reviewId, rating, comment = '') {
+  const res = await authFetch(`${API_BASE}/api/reviews/${reviewId}/`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ rating, comment }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to update review');
+  return data;
+}
+
+export async function replyToReview(reviewId, reply) {
+  const res = await authFetch(`${API_BASE}/api/reviews/${reviewId}/reply/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ reply }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to reply to review');
+  return data;
 }
 
 export async function getSellerProfile(username) {
@@ -666,5 +688,32 @@ export async function getMyReports(pagination = {}) {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error('Failed to get reports');
+  return res.json();
+}
+
+// ── Support Tickets API ─────────────────────────────────────────────────────
+
+export async function submitSupportTicket({ name, email, category, subject, message, orderId }) {
+  const body = { category, subject, message };
+  if (name) body.name = name;
+  if (email) body.email = email;
+  if (orderId) body.order_id = orderId;
+
+  const res = await authFetch(`${API_BASE}/api/support/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || Object.values(data).flat()[0] || 'Failed to submit ticket');
+  return data;
+}
+
+export async function getMySupportTickets(pagination = {}) {
+  const qs = paginationQuery(pagination);
+  const res = await authFetch(`${API_BASE}/api/support/mine/${qs}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get support tickets');
   return res.json();
 }

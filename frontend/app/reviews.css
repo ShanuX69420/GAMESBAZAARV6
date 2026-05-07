@@ -87,6 +87,152 @@
   margin-top: 8px;
 }
 
+/* ── Review Display Card (Order Page) ──────────────────────────────────── */
+
+.review-display-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+}
+
+.review-display-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.review-display-label {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  display: block;
+}
+
+.review-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.review-edit-btn:hover {
+  border-color: var(--green-400);
+  color: var(--green-600);
+  background: var(--green-50);
+}
+
+/* ── Seller Reply Block ────────────────────────────────────────────────── */
+
+.review-reply-block {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--green-400);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.review-reply-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--green-700);
+  margin-bottom: 6px;
+}
+
+.review-reply-date {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+.review-reply-text {
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+/* ── Seller Reply Button ───────────────────────────────────────────────── */
+
+.review-reply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 5px 14px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.review-reply-btn:hover {
+  border-color: var(--green-400);
+  color: var(--green-600);
+  background: var(--green-50);
+}
+
+/* ── Reply Form ────────────────────────────────────────────────────────── */
+
+.review-reply-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-reply-form .form-textarea {
+  font-size: 0.86rem;
+}
+
+.review-reply-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.review-reply-error {
+  font-size: 0.8rem;
+  color: #DC2626;
+  padding: 6px 10px;
+  background: #FEF2F2;
+  border-radius: var(--radius-sm);
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+}
+
+/* ── Edited Badge ──────────────────────────────────────────────────────── */
+
+.review-edited-badge {
+  font-style: italic;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ── Seller Profile Page (Minimal Redesign) ─────────────────────────────── */

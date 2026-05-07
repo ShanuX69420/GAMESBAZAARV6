@@ -24,8 +24,13 @@ from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     SellerCommissionOverride,
-    Review, Notification, Report,
+    Review, Notification, Report, SupportTicket,
 )
+
+GAME_LIST_CACHE_KEY = 'game-list:v1'
+GAME_LIST_CACHE_SECONDS = 60
+SELLER_PROFILE_CACHE_SECONDS = 30
+UNREAD_COUNT_CACHE_SECONDS = 5
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
@@ -38,9 +43,10 @@ from .serializers import (
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
-    ReviewSerializer, CreateReviewSerializer,
+    ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
     NotificationSerializer,
     CreateReportSerializer, ReportSerializer,
+    CreateSupportTicketSerializer, SupportTicketSerializer,
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
@@ -252,10 +258,30 @@ def get_or_create_private_conversation(user, other_user):
 
 
 class GameListView(generics.ListAPIView):
-    """GET /api/games/ — List all active games."""
+    """GET /api/games/ — List all active games, sorted by popularity (active listing count)."""
     serializer_class = GameListSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = Game.objects.filter(is_active=True).prefetch_related('game_categories')
+
+    def get_queryset(self):
+        return (
+            Game.objects.filter(is_active=True)
+            .prefetch_related('game_categories')
+            .annotate(
+                active_listing_count=Count(
+                    'game_categories__listings',
+                    filter=Q(game_categories__listings__status='active'),
+                )
+            )
+            .order_by('-active_listing_count', 'order', 'name')
+        )
+
+    def list(self, request, *args, **kwargs):
+        cached = cache.get(GAME_LIST_CACHE_KEY)
+        if cached is not None:
+            return Response(cached)
+        response = super().list(request, *args, **kwargs)
+        cache.set(GAME_LIST_CACHE_KEY, response.data, GAME_LIST_CACHE_SECONDS)
+        return response
 
 
 class GameDetailView(generics.RetrieveAPIView):
@@ -293,6 +319,24 @@ class GameCategoryDetailView(APIView):
             status='active',
         ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
 
+        # Annotate with seller rating stats (for display on listing cards)
+        seller_avg_rating_subquery = (
+            Review.objects.filter(seller=OuterRef('seller'))
+            .values('seller')
+            .annotate(avg=Avg('rating'))
+            .values('avg')[:1]
+        )
+        seller_review_count_subquery = (
+            Review.objects.filter(seller=OuterRef('seller'))
+            .values('seller')
+            .annotate(cnt=Count('id'))
+            .values('cnt')[:1]
+        )
+        listings_qs = listings_qs.annotate(
+            seller_avg_rating=Subquery(seller_avg_rating_subquery),
+            seller_review_count=Subquery(seller_review_count_subquery),
+        )
+
         # Apply filter params from query string: ?filter_{filter_id}={option_value}
         for key, value in request.query_params.items():
             if key.startswith('filter_') and value:
@@ -307,6 +351,12 @@ class GameCategoryDetailView(APIView):
         if request.query_params.get('instant_delivery') == 'true':
             listings_qs = listings_qs.filter(is_auto_delivery=True)
 
+        # Online seller filter: only show listings from sellers who are currently online
+        if request.query_params.get('online_only') == 'true':
+            from datetime import timedelta
+            online_threshold = timezone.now() - timedelta(seconds=120)
+            listings_qs = listings_qs.filter(seller__profile__last_active__gte=online_threshold)
+
         # Search filter: filter by title
         search_q = request.query_params.get('search', '').strip()
         if search_q:
@@ -316,6 +366,20 @@ class GameCategoryDetailView(APIView):
         seller_username = request.query_params.get('seller', '').strip()
         if seller_username:
             listings_qs = listings_qs.filter(seller__username=seller_username)
+
+        # Sorting / Ordering
+        ALLOWED_ORDERINGS = {
+            'price_asc': F('price').asc(),
+            'price_desc': F('price').desc(),
+            'newest': F('created_at').desc(),
+            'rating': F('seller_avg_rating').desc(nulls_last=True),
+        }
+        ordering_param = request.query_params.get('ordering', '').strip()
+        if ordering_param in ALLOWED_ORDERINGS:
+            listings_qs = listings_qs.order_by(ALLOWED_ORDERINGS[ordering_param])
+        else:
+            # Default: recommended (newest first)
+            listings_qs = listings_qs.order_by('-created_at')
 
         total_count = listings_qs.count()
         limit, offset = get_pagination_params(request)
@@ -338,7 +402,8 @@ class GameCategoryDetailView(APIView):
             game__is_active=True,
         ).select_related('category').order_by('order', 'category__name')
 
-        from django.db.models import Count, Q
+
+
         listing_count_filter = Q(listings__status='active')
         if seller_username:
             listing_count_filter &= Q(listings__seller__username=seller_username)
@@ -938,7 +1003,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
 
     def get(self, request, pk):
         listings_qs = Listing.objects.select_related(
-            'seller', 'game_category__game', 'game_category__category'
+            'seller', 'seller__profile', 'game_category__game', 'game_category__category'
         )
         if request.user.is_authenticated:
             if not request.user.is_staff:
@@ -1136,7 +1201,9 @@ class ConversationDetailView(APIView):
 
     def get(self, request, pk):
         conversation = get_object_or_404(
-            Conversation.objects.prefetch_related('participants'),
+            Conversation.objects.prefetch_related(
+                Prefetch('participants', queryset=User.objects.select_related('profile')),
+            ),
             pk=pk,
             participants=request.user,
         )
@@ -1305,12 +1372,17 @@ class UnreadCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        cache_key = f'chat-unread:v1:{request.user.pk}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({'unread_count': cached})
         count = Message.objects.filter(
             conversation__participants=request.user,
             is_read=False,
         ).exclude(sender=request.user).values(
             'conversation'
         ).distinct().count()
+        cache.set(cache_key, count, UNREAD_COUNT_CACHE_SECONDS)
         return Response({'unread_count': count})
 
 
@@ -1541,6 +1613,20 @@ def get_commission_rate(seller, category):
         return category.commission_rate
 
 
+def order_reference_filter(order_ref):
+    order_ref = str(order_ref).strip()
+    lookup = Q(order_number__iexact=order_ref)
+    if order_ref.isdigit() and len(order_ref) <= 19:
+        pk_value = int(order_ref)
+        if pk_value <= 9223372036854775807:
+            lookup |= Q(pk=pk_value)
+    return lookup
+
+
+def get_order_by_reference_or_404(queryset, order_ref, **filters):
+    return get_object_or_404(queryset.filter(order_reference_filter(order_ref), **filters))
+
+
 class BuyListingView(APIView):
     """POST /api/orders/buy/ — Purchase a listing. Deducts from buyer wallet (escrow)."""
     permission_classes = [permissions.IsAuthenticated]
@@ -1715,7 +1801,12 @@ class MyOrdersView(APIView):
     def get(self, request):
         orders_qs = Order.objects.filter(
             buyer=request.user
-        ).select_related('listing', 'seller', 'conversation')
+        ).select_related(
+            'listing', 'seller', 'conversation',
+            'review', 'review__reviewer',
+        ).annotate(
+            _has_review_annotation=Q(review__isnull=False),
+        )
 
         orders_qs = self._apply_filters(request, orders_qs)
 
@@ -1779,7 +1870,12 @@ class MySalesView(APIView):
     def get(self, request):
         orders_qs = Order.objects.filter(
             seller=request.user
-        ).select_related('listing', 'buyer', 'conversation')
+        ).select_related(
+            'listing', 'buyer', 'conversation',
+            'review', 'review__reviewer',
+        ).annotate(
+            _has_review_annotation=Q(review__isnull=False),
+        )
 
         orders_qs = self._apply_filters(request, orders_qs)
 
@@ -1820,10 +1916,13 @@ class OrderDetailView(APIView):
     """GET /api/orders/<id>/ — Get order detail."""
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request, pk):
-        order = get_object_or_404(
-            Order.objects.select_related('listing', 'buyer', 'seller', 'conversation'),
-            pk=pk,
+    def get(self, request, order_ref):
+        order = get_order_by_reference_or_404(
+            Order.objects.select_related(
+                'listing', 'buyer', 'seller', 'conversation',
+                'review', 'review__reviewer',
+            ),
+            order_ref,
         )
         # Only buyer or seller can view
         if request.user not in (order.buyer, order.seller):
@@ -1843,14 +1942,14 @@ class DeliverOrderView(APIView):
     """POST /api/orders/<id>/deliver/ — Seller marks order as delivered."""
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, order_ref):
         serializer = DeliverOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         with db_transaction.atomic():
-            order = get_object_or_404(
+            order = get_order_by_reference_or_404(
                 Order.objects.select_for_update(),
-                pk=pk,
+                order_ref,
                 seller=request.user,
             )
 
@@ -1878,11 +1977,11 @@ class ConfirmOrderView(APIView):
     """POST /api/orders/<id>/confirm/ — Buyer confirms delivery. Releases funds to seller."""
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, order_ref):
         with db_transaction.atomic():
-            order = get_object_or_404(
+            order = get_order_by_reference_or_404(
                 Order.objects.select_for_update().select_related('seller'),
-                pk=pk,
+                order_ref,
                 buyer=request.user,
             )
 
@@ -1918,15 +2017,15 @@ class DisputeOrderView(APIView):
     """POST /api/orders/<id>/dispute/ — Buyer opens a dispute."""
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, order_ref):
         serializer = DisputeOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data['reason']
 
         with db_transaction.atomic():
-            order = get_object_or_404(
+            order = get_order_by_reference_or_404(
                 Order.objects.select_for_update(),
-                pk=pk,
+                order_ref,
                 buyer=request.user,
             )
 
@@ -2038,11 +2137,11 @@ class RefundOrderView(APIView):
     """POST /api/orders/<id>/refund/ — Seller voluntarily refunds the buyer."""
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, order_ref):
         with db_transaction.atomic():
-            order = get_object_or_404(
+            order = get_order_by_reference_or_404(
                 Order.objects.select_for_update().select_related('buyer', 'seller'),
-                pk=pk,
+                order_ref,
                 seller=request.user,
             )
 
@@ -2130,8 +2229,9 @@ class CreateReviewView(APIView):
         try:
             with db_transaction.atomic():
                 order = get_object_or_404(
-                    Order.objects.select_for_update().select_related('seller'),
-                    pk=data['order_id'],
+                    Order.objects.select_for_update().select_related('seller').filter(
+                        order_reference_filter(data['order_id']),
+                    ),
                     buyer=request.user,
                 )
 
@@ -2164,6 +2264,59 @@ class CreateReviewView(APIView):
         return Response(ReviewSerializer(review).data, status=201)
 
 
+class UpdateReviewView(APIView):
+    """PUT /api/reviews/<id>/ — Buyer edits their own review."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, pk):
+        serializer = UpdateReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        review = get_object_or_404(
+            Review.objects.select_related('order'),
+            pk=pk,
+            reviewer=request.user,
+        )
+
+        review.rating = data['rating']
+        review.comment = data.get('comment', '')
+        review.updated_at = timezone.now()
+        review.save(update_fields=['rating', 'comment', 'updated_at'])
+
+        # Invalidate seller profile cache
+        cache.delete(f'seller-profile:v1:{review.seller_id}')
+
+        return Response(ReviewSerializer(review).data)
+
+
+class ReplyToReviewView(APIView):
+    """POST /api/reviews/<id>/reply/ — Seller replies once to a review."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        serializer = ReplyToReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        review = get_object_or_404(
+            Review,
+            pk=pk,
+            seller=request.user,
+        )
+
+        if review.seller_reply:
+            return Response({'error': 'You have already replied to this review.'}, status=400)
+
+        review.seller_reply = serializer.validated_data['reply']
+        review.seller_reply_at = timezone.now()
+        review.save(update_fields=['seller_reply', 'seller_reply_at', 'updated_at'])
+
+        # Invalidate seller profile cache
+        cache.delete(f'seller-profile:v1:{review.seller_id}')
+
+        return Response(ReviewSerializer(review).data)
+
+
 class SellerReviewsView(APIView):
     """GET /api/reviews/seller/<username>/ — Get all reviews for a seller."""
     permission_classes = [permissions.AllowAny]
@@ -2191,37 +2344,47 @@ class SellerProfileView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, username):
-        seller = get_object_or_404(User, username=username)
+        seller = get_object_or_404(
+            User.objects.select_related('profile'),
+            username=username,
+        )
         profile = seller.profile
 
         if profile.seller_status != 'approved':
             return Response({'error': 'Seller not found.'}, status=404)
 
-        review_stats = Review.objects.filter(seller=seller).aggregate(
-            review_count=Count('id'),
-            avg_rating=Avg('rating'),
-        )
-        review_count = review_stats['review_count']
-        avg_rating = (
-            round(float(review_stats['avg_rating']), 1)
-            if review_stats['avg_rating'] is not None else None
-        )
+        # Check cache for expensive aggregate queries
+        cache_key = f'seller-profile:v1:{seller.pk}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            # Online status and avatar must be fresh
+            cached['is_online'] = profile.is_online
+            cached['last_active'] = profile.last_active
+            if profile.avatar:
+                cached['avatar_url'] = request.build_absolute_uri(profile.avatar.url)
+            else:
+                cached['avatar_url'] = None
+            return Response(cached)
 
-        # Rating distribution (5→1 star counts)
+        # Single review query: get distribution and compute count+avg from it
+        dist_qs = (
+            Review.objects.filter(seller=seller)
+            .values('rating')
+            .annotate(count=Count('id'))
+        )
         rating_distribution = {str(i): 0 for i in range(1, 6)}
+        for row in dist_qs:
+            rating_distribution[str(row['rating'])] = row['count']
+
+        review_count = sum(rating_distribution.values())
         if review_count > 0:
-            dist_qs = (
-                Review.objects.filter(seller=seller)
-                .values('rating')
-                .annotate(count=Count('id'))
-            )
-            for row in dist_qs:
-                rating_distribution[str(row['rating'])] = row['count']
+            weighted_sum = sum(int(k) * v for k, v in rating_distribution.items())
+            avg_rating = round(weighted_sum / review_count, 1)
+        else:
+            avg_rating = None
 
         # Positive rating percentage (4+ stars)
-        positive_count = sum(
-            rating_distribution[str(i)] for i in (4, 5)
-        )
+        positive_count = rating_distribution['4'] + rating_distribution['5']
         positive_pct = (
             round(positive_count / review_count * 100, 1) if review_count > 0 else None
         )
@@ -2231,13 +2394,8 @@ class SellerProfileView(APIView):
             seller=seller, status='completed'
         ).count()
 
-        # Active listings count
-        active_listings_count = Listing.objects.filter(
-            seller=seller, status='active',
-        ).count()
-
-        # Build game services: group by game, then by category
-        cat_stats = (
+        # Build game services and get active listing count in a single query
+        cat_stats = list(
             Listing.objects.filter(seller=seller, status='active')
             .values(
                 'game_category__game__slug',
@@ -2249,6 +2407,9 @@ class SellerProfileView(APIView):
             .annotate(listing_count=Count('id'))
             .order_by('game_category__game__name', '-listing_count')
         )
+
+        # Derive active listing count from the same query
+        active_listings_count = sum(row['listing_count'] for row in cat_stats)
 
         # Group by game
         games_map = {}
@@ -2272,24 +2433,17 @@ class SellerProfileView(APIView):
         # Sort games by total offers descending
         games = sorted(games_map.values(), key=lambda g: g['total_offers'], reverse=True)
 
-        # Member since
-        member_since = seller.date_joined
-
-        # Online status
-        is_online = profile.is_online
-        last_active = profile.last_active
-
         # Avatar URL
         avatar_url = None
         if profile.avatar:
             avatar_url = request.build_absolute_uri(profile.avatar.url)
 
-        return Response({
+        payload = {
             'username': seller.username,
             'user_id': seller.pk,
-            'member_since': member_since,
-            'is_online': is_online,
-            'last_active': last_active,
+            'member_since': seller.date_joined,
+            'is_online': profile.is_online,
+            'last_active': profile.last_active,
             'avg_rating': avg_rating,
             'positive_pct': positive_pct,
             'review_count': review_count,
@@ -2298,7 +2452,9 @@ class SellerProfileView(APIView):
             'active_listings': active_listings_count,
             'avatar_url': avatar_url,
             'games': games,
-        })
+        }
+        cache.set(cache_key, payload, SELLER_PROFILE_CACHE_SECONDS)
+        return Response(payload)
 
 
 class SearchView(APIView):
@@ -2361,7 +2517,7 @@ class NotificationListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        qs = Notification.objects.filter(recipient=request.user)
+        qs = Notification.objects.filter(recipient=request.user).select_related('order')
         limit, offset = get_pagination_params(
             request,
             default_limit=DEFAULT_NOTIFICATION_PAGE_SIZE,
@@ -2409,10 +2565,15 @@ class NotificationUnreadCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        cache_key = f'notif-unread:v1:{request.user.pk}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({'unread_count': cached})
         count = Notification.objects.filter(
             recipient=request.user,
             is_read=False,
         ).count()
+        cache.set(cache_key, count, UNREAD_COUNT_CACHE_SECONDS)
         return Response({'unread_count': count})
 
 
@@ -2513,6 +2674,7 @@ class SellerDashboardView(APIView):
         recent_sales_data = [
             {
                 'id': order.pk,
+                'order_number': order.order_number,
                 'listing_title': order.listing_title,
                 'buyer_name': order.buyer.username,
                 'total_amount': str(order.total_amount),
@@ -2662,5 +2824,57 @@ class MyReportsView(APIView):
         reports = list(qs[offset:offset + limit])
         return Response({
             'reports': ReportSerializer(reports, many=True).data,
+            'pagination': get_pagination_payload(total, limit, offset),
+        })
+
+
+# ── Support Tickets ──────────────────────────────────────────────────────────
+
+class CreateSupportTicketView(ScopedPostThrottleMixin, APIView):
+    """POST /api/support/ — Submit a support ticket. Works for guests and logged-in users."""
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'create_support_ticket'
+
+    def post(self, request):
+        serializer = CreateSupportTicketSerializer(
+            data=request.data, context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        ticket = SupportTicket.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            guest_email=data.get('email', '') if not request.user.is_authenticated else '',
+            name=data.get('name', ''),
+            category=data['category'],
+            subject=data['subject'],
+            message=data['message'],
+            order_id=data.get('order_id'),
+        )
+
+        return Response(
+            {
+                'message': 'Your support ticket has been submitted. We will get back to you soon!',
+                'ticket': SupportTicketSerializer(ticket).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MySupportTicketsView(APIView):
+    """GET /api/support/mine/ — List support tickets submitted by the current user."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_ORDER_PAGE_SIZE,
+            max_limit=MAX_ORDER_PAGE_SIZE,
+        )
+        qs = SupportTicket.objects.filter(user=request.user)
+        total = qs.count()
+        tickets = list(qs[offset:offset + limit])
+        return Response({
+            'tickets': SupportTicketSerializer(tickets, many=True).data,
             'pagination': get_pagination_payload(total, limit, offset),
         })

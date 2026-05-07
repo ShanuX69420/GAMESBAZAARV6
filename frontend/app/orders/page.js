@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMyOrders } from '@/lib/api';
+import { orderLabel, orderPath } from '@/lib/orderNumbers';
 
 const ORDER_PAGE_SIZE = 20;
 
@@ -218,8 +219,8 @@ export default function OrdersPage() {
               <div className="order-card-header">
                 <div className="order-card-id">
                   <span className="order-hash">
-                    <Link href={`/order/${order.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                      Order #{order.id}
+                    <Link href={orderPath(order)} style={{ color: 'inherit', textDecoration: 'none' }}>
+                      Order {orderLabel(order)}
                     </Link>
                   </span>
                   <span className={`status-pill order-pill-${order.status}`}>
@@ -247,7 +248,7 @@ export default function OrdersPage() {
 
               {/* Details */}
               <div className="order-card-actions">
-                <Link href={`/order/${order.id}`} className="btn btn-outline btn-sm">
+                <Link href={orderPath(order)} className="btn btn-outline btn-sm">
                   📋 View Order
                 </Link>
               </div>

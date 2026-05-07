@@ -102,6 +102,37 @@ class PurchaseFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('75.00'))
 
+    def test_order_number_is_public_random_reference(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Public ref item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(buy_response.status_code, 201)
+        order_number = buy_response.data['order_number']
+        self.assertRegex(order_number, r'^GB-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$')
+        self.assertNotEqual(order_number, str(buy_response.data['id']))
+
+        detail_response = self.client.get(f'/api/orders/{order_number}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data['id'], buy_response.data['id'])
+        self.assertEqual(detail_response.data['order_number'], order_number)
+
+    def test_oversized_numeric_order_reference_returns_not_found(self):
+        huge_reference = '9' * 5000
+        response = self.client.get(f'/api/orders/{huge_reference}/')
+        self.assertEqual(response.status_code, 404)
+
     def test_cannot_buy_with_negative_quantity(self):
         listing = Listing.objects.create(
             seller=self.seller,
@@ -4542,7 +4573,7 @@ class NotificationTests(TestCase):
         response = self.client.get('/api/notifications/')
 
         notif = response.data['notifications'][0]
-        expected_fields = {'id', 'notification_type', 'title', 'message', 'is_read', 'order_id', 'review_id', 'created_at'}
+        expected_fields = {'id', 'notification_type', 'title', 'message', 'is_read', 'order_id', 'order_number', 'review_id', 'created_at'}
         self.assertEqual(set(notif.keys()), expected_fields)
 
     def test_cannot_mark_other_users_notification_read(self):

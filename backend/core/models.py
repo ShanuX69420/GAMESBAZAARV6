@@ -1,10 +1,19 @@
 from decimal import Decimal
+import secrets
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.db.models.functions import Lower, Trim
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
+
+
+ORDER_NUMBER_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+
+
+def generate_order_number():
+    token = ''.join(secrets.choice(ORDER_NUMBER_ALPHABET) for _ in range(12))
+    return f'GB-{token[:4]}-{token[4:8]}-{token[8:]}'
 
 
 class Game(models.Model):
@@ -113,6 +122,11 @@ class Filter(models.Model):
     ]
 
     name = models.CharField(max_length=200)
+    admin_label = models.CharField(
+        max_length=300, blank=True, default='',
+        help_text='Internal note for admin only (e.g., "Valorant Accounts - Rank"). '
+                  'Not shown to users on the frontend.',
+    )
     filter_type = models.CharField(max_length=20, choices=FILTER_TYPE_CHOICES, default='button')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -120,7 +134,10 @@ class Filter(models.Model):
         ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} ({self.get_filter_type_display()})"
+        label = f"{self.name} ({self.get_filter_type_display()})"
+        if self.admin_label:
+            label += f" — {self.admin_label}"
+        return label
 
 
 class FilterOption(models.Model):
@@ -385,7 +402,7 @@ class WalletTransaction(models.Model):
         ('topup_request', 'Top-Up Request'),
         ('topup_approved', 'Top-Up Approved'),
         ('topup_rejected', 'Top-Up Rejected'),
-        ('purchase', 'Purchase (Escrow)'),
+        ('purchase', 'Purchase'),
         ('sale', 'Sale Received'),
         ('commission', 'Commission Deducted'),
         ('refund', 'Refund'),
@@ -592,6 +609,8 @@ class Order(models.Model):
 
     buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                               related_name='orders_as_buyer')
+    order_number = models.CharField(max_length=17, unique=True,
+                                    editable=False, blank=True)
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                related_name='orders_as_seller')
     listing = models.ForeignKey(Listing, on_delete=models.SET_NULL, null=True,
@@ -649,8 +668,18 @@ class Order(models.Model):
             ),
         ]
 
+    def save(self, *args, **kwargs):
+        if not self.order_number:
+            order_number = generate_order_number()
+            while Order.objects.filter(order_number=order_number).exists():
+                order_number = generate_order_number()
+            self.order_number = order_number
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'order_number'}
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Order #{self.pk} — {self.listing_title} — {self.get_status_display()}"
+        return f"Order #{self.order_number or self.pk} - {self.listing_title} - {self.get_status_display()}"
 
 
 # ── Reviews ──────────────────────────────────────────────────────────────────
@@ -669,7 +698,13 @@ class Review(models.Model):
         help_text='1-5 star rating',
     )
     comment = models.TextField(blank=True, default='', help_text='Optional review text')
+    seller_reply = models.TextField(blank=True, default='',
+                                     help_text='Optional one-time seller reply')
+    seller_reply_at = models.DateTimeField(null=True, blank=True,
+                                            help_text='When the seller replied')
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(null=True, blank=True,
+                                       help_text='Set when the buyer edits the review')
 
     class Meta:
         ordering = ['-created_at']
@@ -819,3 +854,76 @@ class Report(models.Model):
         elif self.target_type == 'user' and self.reported_user_id:
             target = f'User #{self.reported_user_id}'
         return f"Report by {self.reporter.username} → {target} ({self.get_status_display()})"
+
+
+# ── Support Tickets ──────────────────────────────────────────────────────────
+
+class SupportTicket(models.Model):
+    """User-submitted support/contact ticket."""
+    CATEGORY_CHOICES = [
+        ('account', 'Account Issue'),
+        ('order', 'Order Problem'),
+        ('payment', 'Payment / Wallet'),
+        ('seller', 'Seller Application'),
+        ('report', 'Report / Safety'),
+        ('feedback', 'Feedback / Suggestion'),
+        ('other', 'Other'),
+    ]
+
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+
+    STATUS_CHOICES = [
+        ('open', 'Open'),
+        ('in_progress', 'In Progress'),
+        ('resolved', 'Resolved'),
+        ('closed', 'Closed'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='support_tickets',
+        help_text='Null for guest (non-logged-in) submissions',
+    )
+    guest_email = models.EmailField(
+        blank=True, default='',
+        help_text='Email for non-logged-in users',
+    )
+    name = models.CharField(max_length=200, blank=True, default='',
+                            help_text='Name provided by the user')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
+    subject = models.CharField(max_length=300)
+    message = models.TextField()
+    order_id = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Related order ID if applicable',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
+    admin_reply = models.TextField(blank=True, default='',
+                                    help_text='Admin response to the user')
+    admin_note = models.TextField(blank=True, default='',
+                                   help_text='Internal admin notes (not visible to user)')
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['status', '-created_at'],
+                name='support_ticket_status_idx',
+            ),
+            models.Index(
+                fields=['user', '-created_at'],
+                name='support_ticket_user_idx',
+            ),
+        ]
+
+    def __str__(self):
+        user_label = self.user.username if self.user else (self.guest_email or 'Guest')
+        return f"Ticket #{self.pk} — {user_label} — {self.subject[:40]}"

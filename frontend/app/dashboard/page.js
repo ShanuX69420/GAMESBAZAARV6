@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getSellerDashboard } from '@/lib/api';
+import { orderPath } from '@/lib/orderNumbers';
 
 function formatPKR(value) {
   const num = Number(value);
@@ -275,7 +276,7 @@ export default function DashboardPage() {
                 {recent_sales.map(sale => {
                   const style = ORDER_STATUS_STYLES[sale.status] || ORDER_STATUS_STYLES.pending;
                   return (
-                    <Link key={sale.id} href={`/order/${sale.id}`} className="sd-activity-item">
+                    <Link key={sale.id} href={orderPath(sale)} className="sd-activity-item">
                       <div className="sd-activity-icon" style={{ background: style.bg, color: style.color }}>
                         {style.icon}
                       </div>

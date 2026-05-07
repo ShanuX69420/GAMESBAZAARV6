@@ -9,7 +9,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
-    Notification, Report,
+    Notification, Report, SupportTicket,
 )
 from .services import (
     apply_wallet_delta_once,
@@ -112,14 +112,22 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Filter)
 class FilterAdmin(admin.ModelAdmin):
-    list_display = ['name', 'filter_type', 'option_count', 'created_at']
+    list_display = ['name', 'admin_label', 'filter_type', 'assigned_to', 'option_count', 'created_at']
+    list_editable = ['admin_label']
     list_filter = ['filter_type']
-    search_fields = ['name']
+    search_fields = ['name', 'admin_label']
     inlines = [FilterOptionInline]
 
     @admin.display(description='Options')
     def option_count(self, obj):
         return obj.options.count()
+
+    @admin.display(description='Assigned To')
+    def assigned_to(self, obj):
+        count = obj.game_category_assignments.count()
+        if not count:
+            return '—'
+        return f'{count} game categor{"ies" if count != 1 else "y"}'
 
 
 @admin.register(UserProfile)
@@ -303,15 +311,15 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['id', 'listing_title', 'buyer', 'seller', 'total_amount',
+    list_display = ['id', 'order_number', 'listing_title', 'buyer', 'seller', 'total_amount',
                     'commission_display', 'status', 'created_at']
     list_filter = ['status']
-    search_fields = ['listing_title', 'buyer__username', 'seller__username']
-    readonly_fields = ['buyer', 'seller', 'listing', 'listing_title', 'quantity',
+    search_fields = ['order_number', 'listing_title', 'buyer__username', 'seller__username']
+    readonly_fields = ['order_number', 'buyer', 'seller', 'listing', 'listing_title', 'quantity',
                        'unit_price', 'total_amount', 'commission_rate',
                        'commission_amount', 'seller_amount', 'delivery_note_status',
-                       'created_at', 'updated_at']
-    exclude = ['delivery_note']
+                       'created_at', 'updated_at', 'chat_link']
+    exclude = ['delivery_note', 'conversation']
     actions = ['refund_and_cancel', 'release_to_seller']
 
     @admin.display(description='Commission')
@@ -323,6 +331,30 @@ class OrderAdmin(admin.ModelAdmin):
         if not obj or not obj.delivery_note:
             return 'Empty'
         return 'Stored, redacted'
+
+    @admin.display(description='💬 Order Conversation')
+    def chat_link(self, obj):
+        if not obj or not obj.conversation_id:
+            return format_html(
+                '<span style="color:#94a3b8;">No conversation linked to this order</span>'
+            )
+        url = reverse('admin:conversation_chatbox', args=[obj.conversation_id])
+        url += f'?order={obj.pk}'
+        return format_html(
+            '<a href="{}" style="display:inline-flex;align-items:center;gap:8px;'
+            'padding:10px 20px;background:linear-gradient(135deg,#3b82f6,#2563eb);'
+            'color:#fff;border-radius:10px;text-decoration:none;font-weight:600;'
+            'font-size:0.9em;transition:all 0.2s;box-shadow:0 2px 6px rgba(37,99,235,0.3);"'
+            ' onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px rgba(37,99,235,0.4)\';"'
+            ' onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 6px rgba(37,99,235,0.3)\';">'
+            '💬 Open Chat &rarr;</a>'
+            '&nbsp;&nbsp;'
+            '<span style="color:#64748b;font-size:0.82em;">'
+            '({})'
+            '</span>',
+            url,
+            obj.conversation,
+        )
 
     @admin.action(description='💰 Refund buyer & cancel (for disputes)')
     def refund_and_cancel(self, request, queryset):
@@ -563,3 +595,52 @@ class ReportAdmin(admin.ModelAdmin):
             reviewed_at=timezone.now(),
         )
         self.message_user(request, f'{updated} report(s) dismissed.')
+
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'user_display', 'category', 'subject_preview',
+        'status', 'priority', 'created_at', 'resolved_at',
+    ]
+    list_filter = ['status', 'category', 'priority']
+    search_fields = [
+        'user__username', 'guest_email', 'subject', 'message', 'name',
+    ]
+    readonly_fields = [
+        'user', 'guest_email', 'name', 'category', 'subject',
+        'message', 'order_id', 'created_at', 'updated_at',
+    ]
+    fields = [
+        'user', 'guest_email', 'name', 'category', 'subject',
+        'message', 'order_id', 'priority', 'status', 'admin_reply',
+        'admin_note', 'resolved_at', 'created_at', 'updated_at',
+    ]
+    actions = ['mark_in_progress', 'mark_resolved', 'close_tickets']
+
+    @admin.display(description='User')
+    def user_display(self, obj):
+        if obj.user:
+            return obj.user.username
+        return obj.guest_email or obj.name or 'Guest'
+
+    @admin.display(description='Subject')
+    def subject_preview(self, obj):
+        return obj.subject[:50] + ('...' if len(obj.subject) > 50 else '')
+
+    @admin.action(description='🔄 Mark as In Progress')
+    def mark_in_progress(self, request, queryset):
+        updated = queryset.filter(status='open').update(status='in_progress')
+        self.message_user(request, f'{updated} ticket(s) marked as in progress.')
+
+    @admin.action(description='✅ Mark as Resolved')
+    def mark_resolved(self, request, queryset):
+        updated = queryset.filter(
+            status__in=('open', 'in_progress'),
+        ).update(status='resolved', resolved_at=timezone.now())
+        self.message_user(request, f'{updated} ticket(s) marked as resolved.')
+
+    @admin.action(description='🔒 Close selected tickets')
+    def close_tickets(self, request, queryset):
+        updated = queryset.exclude(status='closed').update(status='closed')
+        self.message_user(request, f'{updated} ticket(s) closed.')

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMySales } from '@/lib/api';
+import { orderLabel, orderPath } from '@/lib/orderNumbers';
 
 const SALES_PAGE_SIZE = 20;
 
@@ -221,8 +222,8 @@ export default function SalesPage() {
               <div className="order-card-header">
                 <div className="order-card-id">
                   <span className="order-hash">
-                    <Link href={`/order/${sale.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                      Sale #{sale.id}
+                    <Link href={orderPath(sale)} style={{ color: 'inherit', textDecoration: 'none' }}>
+                      Sale {orderLabel(sale)}
                     </Link>
                   </span>
                   <span className={`status-pill order-pill-${sale.status}`}>
@@ -252,7 +253,7 @@ export default function SalesPage() {
 
               {/* Details */}
               <div className="order-card-actions">
-                <Link href={`/order/${sale.id}`} className="btn btn-outline btn-sm">
+                <Link href={orderPath(sale)} className="btn btn-outline btn-sm">
                   📋 View Order
                 </Link>
                 {sale.status === 'delivered' && (

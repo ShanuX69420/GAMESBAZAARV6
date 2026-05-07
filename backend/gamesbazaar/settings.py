@@ -246,6 +246,7 @@ REST_FRAMEWORK = {
         'listing_mutation': '120/hour',
         'listing_restock': '60/hour',
         'create_report': '10/hour',
+        'create_support_ticket': '5/hour',
     },
 }
 

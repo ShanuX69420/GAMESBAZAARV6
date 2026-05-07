@@ -4,11 +4,12 @@ export default function Footer() {
   return (
     <footer className="footer">
       <div className="container footer-inner">
-        <div className="footer-brand">🎮 GamesBazaar</div>
+        <div className="footer-brand"><img src="/logo.png" alt="GamesBazaar" className="footer-brand-logo" /> GamesBazaar</div>
         <ul className="footer-links">
           <li><Link href="/">Home</Link></li>
-          <li><Link href="/">About</Link></li>
-          <li><Link href="/">Support</Link></li>
+          <li><Link href="/support">Support</Link></li>
+          <li><Link href="/privacy-policy">Privacy Policy</Link></li>
+          <li><Link href="/terms-of-service">Terms of Service</Link></li>
         </ul>
         <div className="footer-copy">
           &copy; {new Date().getFullYear()} GamesBazaar. All rights reserved.

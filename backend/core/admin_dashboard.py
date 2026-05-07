@@ -28,8 +28,116 @@ class GamesBazaarAdminSite(AdminSite):
                 self.admin_view(self.dashboard_stats_view),
                 name='dashboard_stats',
             ),
+            path(
+                'core/conversation/<int:conversation_id>/chatbox/',
+                self.admin_view(self.conversation_chatbox_view),
+                name='conversation_chatbox',
+            ),
+            path(
+                'core/message/<int:message_id>/image/',
+                self.admin_view(self.conversation_message_image_view),
+                name='conversation_message_image',
+            ),
         ]
         return custom + super().get_urls()
+
+    # ── Conversation Chatbox ────────────────────────────────────────
+
+    def _can_view_conversation(self, user):
+        return user.is_superuser or user.has_perm('core.view_conversation')
+
+    def _can_send_admin_message(self, user):
+        return user.is_superuser or user.has_perm('core.add_message')
+
+    def conversation_chatbox_view(self, request, conversation_id):
+        """Render a modern chatbox for a conversation, and handle admin messages."""
+        from django.core.exceptions import PermissionDenied
+        from django.shortcuts import get_object_or_404, render, redirect
+        from core.models import Conversation, Message
+
+        can_view_conversation = self._can_view_conversation(request.user)
+        if not can_view_conversation:
+            raise PermissionDenied
+
+        can_send_admin_message = self._can_send_admin_message(request.user)
+
+        conversation = get_object_or_404(
+            Conversation.objects.prefetch_related('participants', 'messages__sender'),
+            pk=conversation_id,
+        )
+        participants = list(conversation.participants.all())
+        messages_list = list(conversation.messages.select_related('sender').all())
+
+        # Try to find the related order (if opened from order page)
+        order = None
+        order_id = request.GET.get('order')
+        if order_id:
+            from core.models import Order
+            order = Order.objects.filter(pk=order_id, conversation=conversation).first()
+        if not order:
+            order = conversation.orders.select_related('buyer', 'seller').first()
+
+        alert_message = None
+        alert_type = None
+
+        if request.method == 'POST':
+            if not can_send_admin_message:
+                raise PermissionDenied
+
+            content = request.POST.get('message', '').strip()
+            if content:
+                # Add admin to participants if not already there
+                if request.user not in participants:
+                    conversation.participants.add(request.user)
+
+                Message.objects.create(
+                    conversation=conversation,
+                    sender=request.user,
+                    content=content,
+                )
+                # Touch updated_at
+                conversation.save(update_fields=['updated_at'])
+
+                # Redirect to avoid double-submit (PRG pattern)
+                redirect_url = f'{request.path}?sent=1'
+                if order_id:
+                    redirect_url += f'&order={order_id}'
+                return redirect(redirect_url)
+            else:
+                alert_message = 'Message cannot be empty.'
+                alert_type = 'error'
+
+        if request.GET.get('sent') == '1':
+            alert_message = 'Message sent successfully as admin.'
+            alert_type = 'success'
+            # Refresh messages after send
+            messages_list = list(conversation.messages.select_related('sender').all())
+
+        context = {
+            **self.each_context(request),
+            'title': f'Chat — {conversation}',
+            'conversation': conversation,
+            'participants': participants,
+            'messages_list': messages_list,
+            'order': order,
+            'alert_message': alert_message,
+            'alert_type': alert_type,
+            'can_send_admin_message': can_send_admin_message,
+        }
+        return render(request, 'admin/core/conversation_chatbox.html', context)
+
+    def conversation_message_image_view(self, request, message_id):
+        """Serve chat message images through admin permissions."""
+        from django.core.exceptions import PermissionDenied
+        from django.shortcuts import get_object_or_404
+        from core.models import Message
+        from core.views import private_file_response
+
+        if not self._can_view_conversation(request.user):
+            raise PermissionDenied
+
+        message = get_object_or_404(Message, pk=message_id)
+        return private_file_response(message.image)
 
     # ── JSON stats endpoint ─────────────────────────────────────────────
 

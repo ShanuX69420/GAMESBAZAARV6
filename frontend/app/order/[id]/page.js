@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview } from '@/lib/api';
+import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview, updateReview, replyToReview } from '@/lib/api';
+import { orderLabel } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 
 export default function OrderDetailPage() {
@@ -26,6 +27,10 @@ export default function OrderDetailPage() {
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [editingReview, setEditingReview] = useState(false);
+  const [sellerReplyText, setSellerReplyText] = useState('');
+  const [replyingToReview, setReplyingToReview] = useState(false);
+  const [replyLoading, setReplyLoading] = useState(false);
   const actionRef = useRef(false);
 
   useEffect(() => {
@@ -106,12 +111,52 @@ export default function OrderDetailPage() {
     setError('');
     setSuccess('');
     try {
-      await createReview(id, reviewRating, reviewComment);
+      if (editingReview && order.review_data) {
+        await updateReview(order.review_data.id, reviewRating, reviewComment);
+        setSuccess('Review updated!');
+      } else {
+        await createReview(id, reviewRating, reviewComment);
+        setSuccess('Review submitted! Thank you for your feedback.');
+      }
       setReviewSubmitted(true);
-      setSuccess('Review submitted! Thank you for your feedback.');
+      setEditingReview(false);
       await loadOrder();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  function startEditingReview() {
+    if (order.review_data) {
+      setReviewRating(order.review_data.rating);
+      setReviewComment(order.review_data.comment || '');
+      setEditingReview(true);
+      setReviewSubmitted(false);
+    }
+  }
+
+  function cancelEditingReview() {
+    setEditingReview(false);
+    setReviewRating(0);
+    setReviewHover(0);
+    setReviewComment('');
+  }
+
+  async function handleSellerReply() {
+    if (!sellerReplyText.trim() || replyLoading) return;
+    setReplyLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      await replyToReview(order.review_data.id, sellerReplyText.trim());
+      setSuccess('Reply posted!');
+      setReplyingToReview(false);
+      setSellerReplyText('');
+      await loadOrder();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReplyLoading(false);
     }
   }
 
@@ -138,6 +183,10 @@ export default function OrderDetailPage() {
   const isBuyer = user && user.id === order.buyer_id;
   const isSeller = user && user.id === order.seller_id;
   const otherUser = isBuyer ? order.seller_name : order.buyer_name;
+  const hasReview = order.has_review || reviewSubmitted;
+  const reviewData = order.review_data;
+  const showReviewForm = isBuyer && order.status === 'completed' && (!hasReview || editingReview);
+  const displayOrderNumber = orderLabel(order);
 
   function getStatusColor(status) {
     switch (status) {
@@ -161,6 +210,10 @@ export default function OrderDetailPage() {
     }
   }
 
+  function renderStars(rating) {
+    return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
+  }
+
   return (
     <div className="container">
       {/* Breadcrumb */}
@@ -168,7 +221,7 @@ export default function OrderDetailPage() {
         <div className="breadcrumb">
           <Link href={isSeller ? '/sales' : '/orders'}>{isSeller ? 'Sales' : 'Purchases'}</Link>
           <span className="breadcrumb-sep">›</span>
-          <span>Order #{order.id}</span>
+          <span>Order {displayOrderNumber}</span>
         </div>
       </div>
 
@@ -179,7 +232,7 @@ export default function OrderDetailPage() {
         {/* Left: Order Info */}
         <div className="order-detail-main">
           <div className="order-detail-header">
-            <h1 className="order-detail-title">Order #{order.id}</h1>
+            <h1 className="order-detail-title">Order {displayOrderNumber}</h1>
             <span
               className="order-detail-status"
               style={{ background: getStatusColor(order.status) + '20', color: getStatusColor(order.status) }}
@@ -352,10 +405,12 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Review Section — Buyer can review completed orders */}
-          {isBuyer && order.status === 'completed' && !order.has_review && !reviewSubmitted && (
+          {/* Review Section — Buyer can create or edit review */}
+          {showReviewForm && (
             <div className="order-detail-actions">
-              <h3 className="order-detail-section-title">⭐ Leave a Review</h3>
+              <h3 className="order-detail-section-title">
+                {editingReview ? '✏️ Edit Your Review' : '⭐ Leave a Review'}
+              </h3>
               <form onSubmit={handleReview} className="review-form">
                 <div className="review-stars-input">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -385,16 +440,121 @@ export default function OrderDetailPage() {
                     rows={3}
                   />
                 </div>
-                <button type="submit" className="btn btn-primary" disabled={reviewRating === 0}>
-                  Submit Review
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="submit" className="btn btn-primary" disabled={reviewRating === 0}>
+                    {editingReview ? 'Update Review' : 'Submit Review'}
+                  </button>
+                  {editingReview && (
+                    <button type="button" className="btn btn-outline" onClick={cancelEditingReview}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
           )}
-          {isBuyer && (order.has_review || reviewSubmitted) && (
+
+          {/* Show existing review (buyer view) */}
+          {isBuyer && hasReview && !editingReview && reviewData && (
             <div className="order-detail-actions">
-              <div className="order-completed-msg" style={{ padding: '8px 0' }}>
-                ⭐ You've reviewed this order. Thank you!
+              <div className="review-display-card">
+                <div className="review-display-header">
+                  <div>
+                    <div className="review-card-stars">{renderStars(reviewData.rating)}</div>
+                    <span className="review-display-label">Your review</span>
+                  </div>
+                  <button className="review-edit-btn" onClick={startEditingReview} title="Edit review">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    Edit
+                  </button>
+                </div>
+                {reviewData.comment && (
+                  <div className="review-card-comment">{reviewData.comment}</div>
+                )}
+                {/* Show seller reply */}
+                {reviewData.seller_reply && (
+                  <div className="review-reply-block">
+                    <div className="review-reply-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 17 4 12 9 7"/>
+                        <path d="M20 18v-2a4 4 0 00-4-4H4"/>
+                      </svg>
+                      <span>Seller's Reply</span>
+                      {reviewData.seller_reply_at && (
+                        <span className="review-reply-date">
+                          {new Date(reviewData.seller_reply_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="review-reply-text">{reviewData.seller_reply}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Seller view of the review on this order */}
+          {isSeller && hasReview && reviewData && (
+            <div className="order-detail-actions">
+              <h3 className="order-detail-section-title">⭐ Buyer's Review</h3>
+              <div className="review-display-card">
+                <div className="review-card-stars">{renderStars(reviewData.rating)}</div>
+                {reviewData.comment && (
+                  <div className="review-card-comment">{reviewData.comment}</div>
+                )}
+                {reviewData.seller_reply ? (
+                  <div className="review-reply-block">
+                    <div className="review-reply-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 17 4 12 9 7"/>
+                        <path d="M20 18v-2a4 4 0 00-4-4H4"/>
+                      </svg>
+                      <span>Your Reply</span>
+                    </div>
+                    <div className="review-reply-text">{reviewData.seller_reply}</div>
+                  </div>
+                ) : replyingToReview ? (
+                  <div className="review-reply-form">
+                    <textarea
+                      className="form-textarea"
+                      value={sellerReplyText}
+                      onChange={(e) => setSellerReplyText(e.target.value)}
+                      placeholder="Write your reply to this review..."
+                      rows={3}
+                      maxLength={2000}
+                    />
+                    <div className="review-reply-form-actions">
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => { setReplyingToReview(false); setSellerReplyText(''); }}
+                        disabled={replyLoading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSellerReply}
+                        disabled={!sellerReplyText.trim() || replyLoading}
+                      >
+                        {replyLoading ? 'Posting...' : 'Post Reply'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="review-reply-btn"
+                    onClick={() => setReplyingToReview(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 17 4 12 9 7"/>
+                      <path d="M20 18v-2a4 4 0 00-4-4H4"/>
+                    </svg>
+                    Reply to Review
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -418,7 +578,7 @@ export default function OrderDetailPage() {
         <div className="image-preview-overlay" onClick={() => setDeliverModal(false)}>
           <div className="image-preview-modal" onClick={(e) => e.stopPropagation()}>
             <div className="image-preview-header">
-              <span>Deliver Order #{order.id}</span>
+              <span>Deliver Order {displayOrderNumber}</span>
               <button className="image-preview-close" onClick={() => setDeliverModal(false)}>✕</button>
             </div>
             <div style={{ padding: '20px' }}>
@@ -502,7 +662,7 @@ export default function OrderDetailPage() {
               <div className="confirm-order-item">
                 <div className="confirm-order-item-name">{order.listing_title}</div>
                 <div className="confirm-order-item-meta">
-                  Order #{order.id} &middot; from {order.seller_name}
+                  Order {displayOrderNumber} &middot; from {order.seller_name}
                 </div>
               </div>
 

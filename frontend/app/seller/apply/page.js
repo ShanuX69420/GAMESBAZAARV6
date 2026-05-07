@@ -105,8 +105,8 @@ export default function SellerApplyPage() {
                 <div className="seller-benefit">
                   <span className="seller-benefit-icon">🔒</span>
                   <div>
-                    <strong>Secure Escrow</strong>
-                    <p>All transactions protected with our escrow system</p>
+                    <strong>Buyer Protection</strong>
+                    <p>Your payment is safe — sellers get paid only after you confirm</p>
                   </div>
                 </div>
                 <div className="seller-benefit">

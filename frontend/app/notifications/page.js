@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getNotifications, markNotificationRead } from '@/lib/api';
+import { notificationOrderPath } from '@/lib/orderNumbers';
 
 const NOTIF_ICONS = {
   new_order: '🛒',
@@ -72,8 +73,9 @@ export default function NotificationsPage() {
         setUnreadCount(prev => Math.max(0, prev - 1));
       } catch { /* ignore */ }
     }
-    if (notif.order_id) {
-      router.push(`/order/${notif.order_id}`);
+    const orderPath = notificationOrderPath(notif);
+    if (orderPath) {
+      router.push(orderPath);
     }
   }
 

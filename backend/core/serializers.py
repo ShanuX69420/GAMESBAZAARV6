@@ -17,7 +17,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     SellerCommissionOverride, Review, Notification,
-    Report,
+    Report, SupportTicket,
 )
 from .services import (
     create_private_media_ticket,
@@ -123,6 +123,7 @@ class CategorySerializer(serializers.ModelSerializer):
 class GameCategorySerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
 
+
     class Meta:
         model = GameCategory
         fields = ['id', 'category', 'order']
@@ -137,7 +138,9 @@ class GameListSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count']
 
     def get_category_count(self, obj):
-        return obj.game_categories.count()
+        # Use len() to leverage the prefetched cache instead of .count()
+        # which always fires a separate COUNT query.
+        return len(obj.game_categories.all())
 
     def get_icon_url(self, obj):
         if obj.icon:
@@ -157,8 +160,9 @@ class GameDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'description', 'icon_url', 'categories']
 
     def get_categories(self, obj):
-        game_categories = obj.game_categories.select_related('category').all()
-        return GameCategorySerializer(game_categories, many=True).data
+        # Use .all() to leverage the prefetched cache from the view
+        # instead of re-querying with select_related.
+        return GameCategorySerializer(obj.game_categories.all(), many=True).data
 
     def get_icon_url(self, obj):
         if obj.icon:
@@ -183,8 +187,9 @@ class GameCategoryDetailSerializer(serializers.Serializer):
         }
 
     def get_filters(self, obj):
-        assigned = obj.assigned_filters.select_related('filter').prefetch_related('filter__options').all()
-        return [FilterSerializer(gcf.filter).data for gcf in assigned]
+        # Use .all() to leverage the prefetched cache from the view
+        # instead of re-querying with select_related/prefetch_related.
+        return [FilterSerializer(gcf.filter).data for gcf in obj.assigned_filters.all()]
 
 
 # ── Auth Serializers ─────────────────────────────────────────────────────────
@@ -399,6 +404,8 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_is_online = serializers.SerializerMethodField()
     seller_last_active = serializers.SerializerMethodField()
     seller_avatar_url = serializers.SerializerMethodField()
+    seller_avg_rating = serializers.SerializerMethodField()
+    seller_review_count = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.category.name', read_only=True)
     filter_display = serializers.SerializerMethodField()
@@ -408,7 +415,7 @@ class ListingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'price', 'quantity', 'status',
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
-            'seller_avatar_url',
+            'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'game_name', 'category_name',
             'filter_values', 'filter_display', 'delivery_time',
             'is_auto_delivery', 'delivery_instructions', 'created_at',
@@ -433,6 +440,18 @@ class ListingSerializer(serializers.ModelSerializer):
             return profile.avatar.url
         return None
 
+    def get_seller_avg_rating(self, obj):
+        """Return seller avg rating from annotation, or None."""
+        val = getattr(obj, 'seller_avg_rating', None)
+        if val is not None:
+            return round(float(val), 1)
+        return None
+
+    def get_seller_review_count(self, obj):
+        """Return seller review count from annotation, or 0."""
+        val = getattr(obj, 'seller_review_count', None)
+        return val if val is not None else 0
+
     def get_filter_display(self, obj):
         """Convert filter_values {filter_id: option_value} to human-readable labels."""
         if not obj.filter_values:
@@ -444,13 +463,10 @@ class ListingSerializer(serializers.ModelSerializer):
             if mapped:
                 filter_name, option_label = mapped
                 result[filter_name] = option_label
-                continue
-            try:
-                opt = FilterOption.objects.select_related('filter').get(
-                    filter__id=int(filter_id_str), value=option_value
-                )
-                result[opt.filter.name] = opt.label
-            except (FilterOption.DoesNotExist, ValueError):
+            else:
+                # Show raw values for unmapped pairs instead of firing
+                # a per-item DB query. The batch map already covers all
+                # valid filter option pairs.
                 result[filter_id_str] = option_value
         return result
 
@@ -920,6 +936,7 @@ class OrderSerializer(serializers.ModelSerializer):
     conversation_id = serializers.IntegerField(source='conversation.id', read_only=True, default=None)
     delivery_note = serializers.SerializerMethodField()
     has_review = serializers.SerializerMethodField()
+    review_data = serializers.SerializerMethodField()
     is_auto_delivery = serializers.SerializerMethodField()
     auto_delivery_data = serializers.SerializerMethodField()
     delivery_instructions = serializers.SerializerMethodField()
@@ -927,20 +944,43 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'buyer_id', 'buyer_name', 'seller_id', 'seller_name',
+            'id', 'order_number', 'buyer_id', 'buyer_name', 'seller_id', 'seller_name',
             'listing_id', 'listing_title', 'quantity',
             'unit_price', 'total_amount',
             'commission_rate', 'commission_amount', 'seller_amount',
             'status', 'status_display',
             'delivery_note', 'dispute_reason',
-            'conversation_id', 'has_review',
+            'conversation_id', 'has_review', 'review_data',
             'is_auto_delivery', 'auto_delivery_data',
             'delivery_instructions',
             'created_at', 'updated_at',
         ]
 
     def get_has_review(self, obj):
+        # Use the annotated field if available (avoids a lazy-load query
+        # per order on the OneToOneField reverse relation).
+        if hasattr(obj, '_has_review_annotation'):
+            return obj._has_review_annotation
         return hasattr(obj, 'review') and obj.review is not None
+
+    def get_review_data(self, obj):
+        """Return the full review object if present."""
+        try:
+            review = obj.review
+        except Review.DoesNotExist:
+            return None
+        if review is None:
+            return None
+        return {
+            'id': review.id,
+            'rating': review.rating,
+            'comment': review.comment,
+            'reviewer_name': review.reviewer.username if review.reviewer_id else '',
+            'seller_reply': review.seller_reply,
+            'seller_reply_at': review.seller_reply_at,
+            'created_at': review.created_at,
+            'updated_at': review.updated_at,
+        }
 
     def get_delivery_note(self, obj):
         return decrypt_sensitive_text(obj.delivery_note)
@@ -993,29 +1033,47 @@ class ReviewSerializer(serializers.ModelSerializer):
         model = Review
         fields = [
             'id', 'order', 'reviewer_name', 'seller',
-            'rating', 'comment', 'listing_title', 'created_at',
+            'rating', 'comment', 'listing_title',
+            'seller_reply', 'seller_reply_at',
+            'created_at', 'updated_at',
         ]
-        read_only_fields = ['order', 'seller', 'reviewer_name', 'listing_title', 'created_at']
+        read_only_fields = ['order', 'seller', 'reviewer_name', 'listing_title',
+                            'seller_reply', 'seller_reply_at', 'created_at', 'updated_at']
 
 
 class CreateReviewSerializer(serializers.Serializer):
-    order_id = serializers.IntegerField()
+    order_id = serializers.CharField(max_length=32)
     rating = serializers.IntegerField(min_value=1, max_value=5)
     comment = serializers.CharField(required=False, default='', max_length=2000)
+
+
+class UpdateReviewSerializer(serializers.Serializer):
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(required=False, default='', max_length=2000)
+
+
+class ReplyToReviewSerializer(serializers.Serializer):
+    reply = serializers.CharField(max_length=2000, allow_blank=False)
 
 
 # ── Notification Serializers ───────────────────────────────────────────────────
 
 class NotificationSerializer(serializers.ModelSerializer):
     order_id = serializers.IntegerField(read_only=True)
+    order_number = serializers.SerializerMethodField()
     review_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Notification
         fields = [
             'id', 'notification_type', 'title', 'message',
-            'is_read', 'order_id', 'review_id', 'created_at',
+            'is_read', 'order_id', 'order_number', 'review_id', 'created_at',
         ]
+
+    def get_order_number(self, obj):
+        if not obj.order_id:
+            return None
+        return getattr(obj.order, 'order_number', None)
 
 
 # ── Report Serializers ───────────────────────────────────────────────────────
@@ -1065,3 +1123,43 @@ class ReportSerializer(serializers.ModelSerializer):
         elif obj.target_type == 'user' and obj.reported_user_id:
             return f'User: {obj.reported_user.username}' if obj.reported_user else f'User #{obj.reported_user_id}'
         return 'Unknown'
+
+
+# ── Support Ticket Serializers ───────────────────────────────────────────────
+
+class CreateSupportTicketSerializer(serializers.Serializer):
+    """Create a support ticket. Works for both logged-in and guest users."""
+    name = serializers.CharField(max_length=200, required=False, default='')
+    email = serializers.EmailField(required=False, default='')
+    category = serializers.ChoiceField(
+        choices=SupportTicket.CATEGORY_CHOICES, default='other',
+    )
+    subject = serializers.CharField(max_length=300)
+    message = serializers.CharField(max_length=5000)
+    order_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        is_authed = request and request.user.is_authenticated
+        if not is_authed and not attrs.get('email'):
+            raise serializers.ValidationError({
+                'email': 'Email is required when not logged in.',
+            })
+        return attrs
+
+
+class SupportTicketSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(
+        source='get_category_display', read_only=True,
+    )
+    status_display = serializers.CharField(
+        source='get_status_display', read_only=True,
+    )
+
+    class Meta:
+        model = SupportTicket
+        fields = [
+            'id', 'category', 'category_display', 'subject', 'message',
+            'order_id', 'status', 'status_display', 'admin_reply',
+            'created_at', 'updated_at',
+        ]

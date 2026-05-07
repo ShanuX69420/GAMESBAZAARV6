@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { buyListing, getWallet } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
+import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
 
@@ -53,8 +54,8 @@ export default function ListingDetailPage() {
     try {
       const order = await buyListing(listing.id, quantity);
       setShowConfirm(false);
-      setBuySuccess(`Order #${order.id} placed! Redirecting...`);
-      setTimeout(() => router.push(`/order/${order.id}`), 1500);
+      setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
+      setTimeout(() => router.push(orderPath(order)), 1500);
     } catch (err) {
       setBuyError(err.message);
       buyingRef.current = false;
@@ -350,7 +351,7 @@ export default function ListingDetailPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                 </svg>
-                Funds will be held in escrow until you confirm delivery.
+                Your payment is protected — the seller only receives it after you confirm delivery.
               </div>
 
               {buyError && <div className="alert alert-error" style={{ margin: '0' }}>{buyError}</div>}

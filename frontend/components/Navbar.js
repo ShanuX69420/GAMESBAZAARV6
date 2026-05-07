@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount } from '@/lib/api';
+import { notificationOrderPath } from '@/lib/orderNumbers';
 
 const UNREAD_POLL_INTERVAL_MS = 15000;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -142,7 +143,8 @@ export default function Navbar() {
       } catch { /* ignore */ }
     }
     setNotifOpen(false);
-    if (notif.order_id) router.push(`/order/${notif.order_id}`);
+    const orderPath = notificationOrderPath(notif);
+    if (orderPath) router.push(orderPath);
   }
 
   // ── Search logic ──────────────────────────────────────────────────────
@@ -250,7 +252,7 @@ export default function Navbar() {
         <div className="container navbar-inner">
           {/* ── Left: Logo ── */}
           <Link href="/" className="navbar-logo">
-            <div className="navbar-logo-icon">🎮</div>
+            <img src="/logo.png" alt="GamesBazaar" className="navbar-logo-img" />
             <span className="navbar-logo-text">GamesBazaar</span>
           </Link>
 

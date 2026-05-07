@@ -1,0 +1,513 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Chat — {{ conversation }} | {{ site_title }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:core_order_changelist' %}">Orders</a>
+  {% if order %}
+    &rsaquo; <a href="{% url 'admin:core_order_change' order.pk %}">Order #{{ order.pk }}</a>
+  {% endif %}
+  &rsaquo; Conversation Chat
+</div>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  /* ── Chat Layout ──────────────────────────────────────────────────── */
+  .chat-wrapper {
+    max-width: 900px;
+    margin: 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .chat-header {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff;
+    padding: 20px 28px;
+    border-radius: 14px 14px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .chat-header-info h2 {
+    margin: 0 0 4px 0;
+    font-size: 1.15em;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-header-info .participants {
+    font-size: 0.82em;
+    color: #94a3b8;
+    margin: 0;
+  }
+  .chat-header-meta {
+    text-align: right;
+    font-size: 0.78em;
+    color: #94a3b8;
+  }
+  .chat-header-meta .order-link {
+    color: #60a5fa;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .chat-header-meta .order-link:hover {
+    text-decoration: underline;
+  }
+
+  /* ── Messages Area ────────────────────────────────────────────────── */
+  .chat-messages {
+    background: #f1f5f9;
+    padding: 24px 20px;
+    min-height: 400px;
+    max-height: 600px;
+    overflow-y: auto;
+    border-left: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    scroll-behavior: smooth;
+  }
+
+  .chat-empty {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.95em;
+    padding: 80px 20px;
+  }
+  .chat-empty .icon {
+    font-size: 2.5em;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  /* Date separator */
+  .chat-date-sep {
+    text-align: center;
+    margin: 20px 0 16px 0;
+    position: relative;
+  }
+  .chat-date-sep::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    height: 1px;
+    background: #cbd5e1;
+  }
+  .chat-date-sep span {
+    position: relative;
+    background: #f1f5f9;
+    padding: 0 14px;
+    font-size: 0.72em;
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Message Bubble ───────────────────────────────────────────────── */
+  .msg-row {
+    display: flex;
+    margin-bottom: 12px;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .msg-row.is-admin {
+    justify-content: flex-end;
+  }
+
+  .msg-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .msg-avatar.buyer { background: #3b82f6; }
+  .msg-avatar.seller { background: #10b981; }
+  .msg-avatar.admin { background: #ef4444; }
+
+  .msg-bubble {
+    max-width: 70%;
+    padding: 10px 16px;
+    border-radius: 16px;
+    position: relative;
+    word-wrap: break-word;
+    line-height: 1.5;
+    font-size: 0.9em;
+  }
+  .msg-row:not(.is-admin) .msg-bubble {
+    background: #fff;
+    color: #1e293b;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .msg-row.is-admin .msg-bubble {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 1px 3px rgba(185,28,28,0.3);
+  }
+
+  .msg-sender {
+    font-size: 0.72em;
+    font-weight: 700;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .msg-row:not(.is-admin) .msg-sender { color: #6366f1; }
+  .msg-row.is-admin .msg-sender { color: rgba(255,255,255,0.8); }
+
+  .msg-content { margin: 0; }
+
+  .msg-content img {
+    max-width: 280px;
+    max-height: 200px;
+    border-radius: 8px;
+    margin-top: 6px;
+    display: block;
+    cursor: pointer;
+  }
+
+  .msg-meta {
+    font-size: 0.68em;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .msg-row:not(.is-admin) .msg-meta { color: #94a3b8; }
+  .msg-row.is-admin .msg-meta { color: rgba(255,255,255,0.6); }
+
+  .msg-read-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-weight: 600;
+  }
+  .msg-read-badge.read { background: #d1fae5; color: #065f46; }
+  .msg-read-badge.unread { background: #fef3c7; color: #92400e; }
+  .msg-row.is-admin .msg-read-badge.read { background: rgba(255,255,255,0.2); color: #fff; }
+  .msg-row.is-admin .msg-read-badge.unread { background: rgba(255,255,255,0.2); color: #fff; }
+
+  /* Admin badge on message */
+  .admin-badge {
+    display: inline-block;
+    background: #fef2f2;
+    color: #dc2626;
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .msg-row.is-admin .admin-badge {
+    background: rgba(255,255,255,0.25);
+    color: #fff;
+  }
+
+  /* ── Input Area ───────────────────────────────────────────────────── */
+  .chat-input-area {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-top: 2px solid #e2e8f0;
+    border-radius: 0 0 14px 14px;
+    padding: 16px 20px;
+  }
+
+  .chat-input-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    background: #fef2f2;
+    border-radius: 8px;
+    border-left: 3px solid #ef4444;
+    font-size: 0.8em;
+    color: #991b1b;
+    font-weight: 500;
+  }
+
+  .chat-input-form {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  .chat-textarea {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 0.9em;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 150px;
+    transition: border-color 0.2s;
+    outline: none;
+    line-height: 1.5;
+  }
+  .chat-textarea:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  }
+
+  .chat-send-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-size: 0.88em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .chat-send-btn:hover {
+    background: linear-gradient(135deg, #b91c1c, #991b1b);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(185,28,28,0.3);
+  }
+  .chat-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* ── Stats Bar ────────────────────────────────────────────────────── */
+  .chat-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    background: #fff;
+    border-left: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.78em;
+    color: #64748b;
+    flex-wrap: wrap;
+  }
+  .chat-stats .stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .chat-stats .stat strong {
+    color: #1e293b;
+    font-weight: 600;
+  }
+
+  /* ── Success/Error messages ───────────────────────────────────────── */
+  .chat-alert {
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 0.85em;
+    font-weight: 500;
+  }
+  .chat-alert.success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  .chat-alert.error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-wrapper">
+
+  {% if alert_message %}
+    <div class="chat-alert {{ alert_type }}">{{ alert_message }}</div>
+  {% endif %}
+
+  <!-- Chat Header -->
+  <div class="chat-header">
+    <div class="chat-header-info">
+      <h2>💬 {{ conversation }}</h2>
+      <p class="participants">
+        Participants:
+        {% for p in participants %}
+          {{ p.username }}{% if not forloop.last %}, {% endif %}
+        {% endfor %}
+      </p>
+    </div>
+    <div class="chat-header-meta">
+      {% if order %}
+        <a href="{% url 'admin:core_order_change' order.pk %}" class="order-link">
+          ← Back to Order #{{ order.pk }}
+        </a>
+        <br>
+        <span>{{ order.listing_title|truncatechars:40 }}</span>
+        <br>
+        <span style="color: {% if order.status == 'disputed' %}#f87171{% elif order.status == 'completed' %}#4ade80{% else %}#94a3b8{% endif %}; font-weight: 600;">
+          {{ order.get_status_display }}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="chat-stats">
+    <div class="stat">📨 Total Messages: <strong>{{ messages_list|length }}</strong></div>
+    <div class="stat">📅 Created: <strong>{{ conversation.created_at|date:"M d, Y H:i" }}</strong></div>
+    <div class="stat">🔄 Last Updated: <strong>{{ conversation.updated_at|date:"M d, Y H:i" }}</strong></div>
+    {% if order %}
+      <div class="stat">💰 Order Amount: <strong>PKR {{ order.total_amount }}</strong></div>
+    {% endif %}
+  </div>
+
+  <!-- Messages Area -->
+  <div class="chat-messages" id="chat-messages">
+    {% if messages_list %}
+      {% for msg in messages_list %}
+        {% ifchanged msg.created_at|date:"Y-m-d" %}
+          <div class="chat-date-sep">
+            <span>{{ msg.created_at|date:"l, M d, Y" }}</span>
+          </div>
+        {% endifchanged %}
+
+        <div class="msg-row {% if msg.sender.is_staff and msg.sender.is_superuser %}is-admin{% endif %}">
+          {% if not msg.sender.is_staff or not msg.sender.is_superuser %}
+            <div class="msg-avatar {% if order and msg.sender == order.buyer %}buyer{% elif order and msg.sender == order.seller %}seller{% else %}buyer{% endif %}">
+              {{ msg.sender.username|make_list|first }}
+            </div>
+          {% endif %}
+
+          <div class="msg-bubble">
+            <div class="msg-sender">
+              {{ msg.sender.username }}
+              {% if order and msg.sender == order.buyer %}
+                (Buyer)
+              {% elif order and msg.sender == order.seller %}
+                (Seller)
+              {% endif %}
+              {% if msg.sender.is_staff and msg.sender.is_superuser %}
+                <span class="admin-badge">Admin</span>
+              {% endif %}
+            </div>
+
+            {% if msg.content %}
+              <p class="msg-content">{{ msg.content }}</p>
+            {% endif %}
+
+            {% if msg.image %}
+              <div class="msg-content">
+                <img src="{% url 'admin:conversation_message_image' msg.pk %}" alt="Attached image" onclick="window.open(this.src, '_blank')">
+              </div>
+            {% endif %}
+
+            <div class="msg-meta">
+              <span>{{ msg.created_at|date:"H:i" }}</span>
+              <span class="msg-read-badge {% if msg.is_read %}read{% else %}unread{% endif %}">
+                {% if msg.is_read %}✓ Read{% else %}Unread{% endif %}
+              </span>
+            </div>
+          </div>
+
+          {% if msg.sender.is_staff and msg.sender.is_superuser %}
+            <div class="msg-avatar admin">
+              {{ msg.sender.username|make_list|first }}
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="chat-empty">
+        <span class="icon">💬</span>
+        No messages in this conversation yet.<br>
+        Be the first to send a message as admin.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Input Area -->
+  <div class="chat-input-area">
+    {% if can_send_admin_message %}
+    <div class="chat-input-notice">
+      ⚠️ Messages sent here will appear as <strong>&nbsp;{{ request.user.username }} (Admin)&nbsp;</strong> in the conversation visible to both buyer and seller.
+    </div>
+    <form method="post" class="chat-input-form" id="chat-form">
+      {% csrf_token %}
+      <textarea
+        name="message"
+        class="chat-textarea"
+        placeholder="Type your admin message…"
+        rows="1"
+        id="msg-input"
+        required
+      ></textarea>
+      <button type="submit" class="chat-send-btn" id="send-btn">
+        📨 Send as Admin
+      </button>
+    </form>
+    {% else %}
+    <div class="chat-input-notice">
+      You can view this conversation, but your admin account does not have permission to send chat messages.
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+(function() {
+  // Auto-scroll to bottom
+  const chatEl = document.getElementById('chat-messages');
+  if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+
+  // Auto-resize textarea
+  const textarea = document.getElementById('msg-input');
+  if (textarea) {
+    textarea.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+    });
+
+    // Ctrl+Enter to submit
+    textarea.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.getElementById('chat-form').submit();
+      }
+    });
+  }
+
+  // Disable double submit
+  const form = document.getElementById('chat-form');
+  if (form) {
+    form.addEventListener('submit', function() {
+      const btn = document.getElementById('send-btn');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+    });
+  }
+})();
+</script>
+{% endblock %}

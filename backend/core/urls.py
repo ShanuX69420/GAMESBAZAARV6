@@ -57,16 +57,18 @@ urlpatterns = [
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),
     path('orders/mine/', views.MyOrdersView.as_view(), name='my-orders'),
     path('orders/sales/', views.MySalesView.as_view(), name='my-sales'),
-    path('orders/<int:pk>/', views.OrderDetailView.as_view(), name='order-detail'),
-    path('orders/<int:pk>/deliver/', views.DeliverOrderView.as_view(), name='deliver-order'),
-    path('orders/<int:pk>/confirm/', views.ConfirmOrderView.as_view(), name='confirm-order'),
-    path('orders/<int:pk>/dispute/', views.DisputeOrderView.as_view(), name='dispute-order'),
-    path('orders/<int:pk>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
+    path('orders/<str:order_ref>/', views.OrderDetailView.as_view(), name='order-detail'),
+    path('orders/<str:order_ref>/deliver/', views.DeliverOrderView.as_view(), name='deliver-order'),
+    path('orders/<str:order_ref>/confirm/', views.ConfirmOrderView.as_view(), name='confirm-order'),
+    path('orders/<str:order_ref>/dispute/', views.DisputeOrderView.as_view(), name='dispute-order'),
+    path('orders/<str:order_ref>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
     path('admin/orders/<int:pk>/resolve-dispute/',
          views.ResolveDisputeView.as_view(), name='admin-resolve-dispute'),
 
     # Reviews
     path('reviews/', views.CreateReviewView.as_view(), name='create-review'),
+    path('reviews/<int:pk>/', views.UpdateReviewView.as_view(), name='update-review'),
+    path('reviews/<int:pk>/reply/', views.ReplyToReviewView.as_view(), name='reply-to-review'),
     path('reviews/seller/<str:username>/', views.SellerReviewsView.as_view(), name='seller-reviews'),
 
     # Seller Profile
@@ -83,4 +85,8 @@ urlpatterns = [
     # Reports / Flags
     path('reports/', views.CreateReportView.as_view(), name='create-report'),
     path('reports/mine/', views.MyReportsView.as_view(), name='my-reports'),
+
+    # Support Tickets
+    path('support/', views.CreateSupportTicketView.as_view(), name='create-support-ticket'),
+    path('support/mine/', views.MySupportTicketsView.as_view(), name='my-support-tickets'),
 ]

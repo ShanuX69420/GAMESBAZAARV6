@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getSellerProfile, getSellerReviews, formatLastActive, startConversation } from '@/lib/api';
+import { getSellerProfile, getSellerReviews, formatLastActive, startConversation, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 import { useAuth } from '@/lib/auth';
 import ReportModal from '@/components/ReportModal';
@@ -24,6 +24,10 @@ export default function SellerProfilePage() {
   const [activeTab, setActiveTab] = useState('shop');
   const [startingChat, setStartingChat] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyError, setReplyError] = useState('');
 
   useEffect(() => {
     loadData();
@@ -78,6 +82,24 @@ export default function SellerProfilePage() {
       setStartingChat(false);
     }
   }
+
+  async function handleReply(reviewId) {
+    if (!replyText.trim() || replyLoading) return;
+    setReplyLoading(true);
+    setReplyError('');
+    try {
+      const updatedReview = await replyToReview(reviewId, replyText.trim());
+      setReviews(prev => prev.map(r => r.id === reviewId ? updatedReview : r));
+      setReplyingTo(null);
+      setReplyText('');
+    } catch (err) {
+      setReplyError(err.message);
+    } finally {
+      setReplyLoading(false);
+    }
+  }
+
+  const isOwnProfile = user && user.username === username;
 
   if (loading) {
     return (
@@ -290,6 +312,9 @@ export default function SellerProfilePage() {
                       {new Date(review.created_at).toLocaleDateString('en-PK', {
                         day: 'numeric', month: 'short', year: 'numeric',
                       })}
+                      {review.updated_at && (
+                        <span className="review-edited-badge"> (edited)</span>
+                      )}
                     </span>
                   </div>
                   <div className="review-card-stars">{renderStars(review.rating)}</div>
@@ -298,6 +323,71 @@ export default function SellerProfilePage() {
                   )}
                   {review.listing_title && (
                     <div className="review-card-listing">Purchased: {review.listing_title}</div>
+                  )}
+
+                  {/* Seller Reply */}
+                  {review.seller_reply && (
+                    <div className="review-reply-block">
+                      <div className="review-reply-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 17 4 12 9 7"/>
+                          <path d="M20 18v-2a4 4 0 00-4-4H4"/>
+                        </svg>
+                        <span>Seller's Reply</span>
+                        {review.seller_reply_at && (
+                          <span className="review-reply-date">
+                            {new Date(review.seller_reply_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="review-reply-text">{review.seller_reply}</div>
+                    </div>
+                  )}
+
+                  {/* Reply button for seller (own profile, no reply yet) */}
+                  {isOwnProfile && !review.seller_reply && (
+                    <>
+                      {replyingTo === review.id ? (
+                        <div className="review-reply-form">
+                          {replyError && <div className="review-reply-error">{replyError}</div>}
+                          <textarea
+                            className="form-textarea"
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            placeholder="Write your reply..."
+                            rows={3}
+                            maxLength={2000}
+                          />
+                          <div className="review-reply-form-actions">
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => { setReplyingTo(null); setReplyText(''); setReplyError(''); }}
+                              disabled={replyLoading}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleReply(review.id)}
+                              disabled={!replyText.trim() || replyLoading}
+                            >
+                              {replyLoading ? 'Posting...' : 'Post Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          className="review-reply-btn"
+                          onClick={() => { setReplyingTo(review.id); setReplyText(''); setReplyError(''); }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 17 4 12 9 7"/>
+                            <path d="M20 18v-2a4 4 0 00-4-4H4"/>
+                          </svg>
+                          Reply
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               ))}

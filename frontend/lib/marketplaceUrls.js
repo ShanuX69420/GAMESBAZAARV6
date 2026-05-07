@@ -14,8 +14,10 @@ export function buildGameCategoryListingUrl({
   offset = 0,
   filters = {},
   instantOnly = false,
+  onlineOnly = false,
   search = '',
   seller = '',
+  ordering = '',
 }) {
   const query = new URLSearchParams();
 
@@ -33,11 +35,17 @@ export function buildGameCategoryListingUrl({
   if (instantOnly) {
     query.set('instant_delivery', 'true');
   }
+  if (onlineOnly) {
+    query.set('online_only', 'true');
+  }
   if (search) {
     query.set('search', search);
   }
   if (seller) {
     query.set('seller', seller);
+  }
+  if (ordering) {
+    query.set('ordering', ordering);
   }
 
   const queryString = query.toString();
