@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
@@ -11,9 +13,10 @@ from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import Permission, User
 from django.core import signing
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
@@ -58,6 +61,24 @@ def path_with_query(url):
     if parsed.query:
         return f'{parsed.path}?{parsed.query}'
     return parsed.path
+
+
+class SettingsHelperTests(TestCase):
+    @patch.dict(os.environ, {'TEST_FIELD_KEYS': 'v1:first-key, v2:second-key'})
+    def test_env_key_map_parses_multiple_field_encryption_keys(self):
+        from gamesbazaar import settings as project_settings
+
+        self.assertEqual(
+            project_settings.env_key_map('TEST_FIELD_KEYS'),
+            {'v1': 'first-key', 'v2': 'second-key'},
+        )
+
+    @patch.dict(os.environ, {'TEST_FIELD_KEYS': 'missing-colon'})
+    def test_env_key_map_rejects_malformed_entries(self):
+        from gamesbazaar import settings as project_settings
+
+        with self.assertRaises(ImproperlyConfigured):
+            project_settings.env_key_map('TEST_FIELD_KEYS')
 
 
 class PurchaseFlowTests(TestCase):
@@ -1731,6 +1752,31 @@ class GoogleAuthTests(TestCase):
         self.assertEqual(account.email, 'updated-player@example.com')
         self.assertEqual(User.objects.count(), 1)
 
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_auth_creates_user_for_verified_new_google_account(self, verify_google_token):
+        verify_google_token.return_value = {
+            'sub': 'new-google-sub-123',
+            'email': 'New.Player@example.com',
+            'email_verified': True,
+            'name': 'New Player',
+        }
+
+        response = self.post_google({'credential': 'new-user-token'})
+
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(email='new.player@example.com')
+        self.assertEqual(user.username, 'New_Player')
+        self.assertFalse(user.has_usable_password())
+        self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, response.cookies)
+        self.assertTrue(
+            SocialAccount.objects.filter(
+                user=user,
+                provider=SocialAccount.PROVIDER_GOOGLE,
+                uid='new-google-sub-123',
+                email='new.player@example.com',
+            ).exists()
+        )
+
 THROTTLE_TEST_REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '1/min',
@@ -3205,6 +3251,24 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.data['summary']['completed_count'], 3)
         self.assertEqual(response.data['summary']['total_revenue'], '30.00')
 
+    def test_seller_sales_support_cursor_pagination_without_count(self):
+        for index in range(25):
+            self.create_order(index)
+
+        self.client.force_authenticate(user=self.seller)
+        first_page = self.client.get('/api/orders/sales/?limit=10&cursor=1')
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(len(first_page.data['sales']), 10)
+        self.assertIsNone(first_page.data['pagination']['count'])
+        before_id = first_page.data['pagination']['next_before_id']
+        self.assertIsNotNone(before_id)
+
+        second_page = self.client.get(f'/api/orders/sales/?limit=10&before_id={before_id}')
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(len(second_page.data['sales']), 10)
+        self.assertLess(second_page.data['sales'][0]['id'], before_id)
+
     def test_seller_sales_ignore_invalid_date_filters(self):
         self.create_order(1)
 
@@ -3213,6 +3277,51 @@ class HistoryPaginationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['pagination']['count'], 1)
+
+    def test_held_orders_returns_only_current_seller_unreleased_holds(self):
+        other_seller = User.objects.create_user(username='other_seller', password='password123')
+        release_at = timezone.now() + timedelta(days=3, hours=2)
+        held_order = self.create_order(1, status='completed', seller_amount=Decimal('25.00'))
+        held_order.buyer_protection_enabled = True
+        held_order.seller_payout_available_at = release_at
+        held_order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
+
+        released_order = self.create_order(2, status='completed', seller_amount=Decimal('10.00'))
+        released_order.buyer_protection_enabled = True
+        released_order.seller_payout_available_at = timezone.now() - timedelta(days=1)
+        released_order.seller_payout_released_at = timezone.now()
+        released_order.save(update_fields=[
+            'buyer_protection_enabled',
+            'seller_payout_available_at',
+            'seller_payout_released_at',
+        ])
+        self.create_order(3, status='completed', seller_amount=Decimal('10.00'))
+        Order.objects.create(
+            buyer=self.buyer,
+            seller=other_seller,
+            listing_title='Other seller hold',
+            quantity=1,
+            unit_price=Decimal('30.00'),
+            total_amount=Decimal('30.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=Decimal('30.00'),
+            status='completed',
+            buyer_protection_enabled=True,
+            seller_payout_available_at=release_at,
+        )
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/wallet/held-orders/?limit=10')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['held_balance'], '25.00')
+        self.assertEqual(response.data['held_order_count'], 1)
+        self.assertEqual(response.data['pagination']['count'], 1)
+        self.assertEqual(len(response.data['orders']), 1)
+        self.assertEqual(response.data['orders'][0]['id'], held_order.id)
+        self.assertEqual(response.data['orders'][0]['order_number'], held_order.order_number)
+        self.assertGreater(response.data['orders'][0]['days_until_release'], 0)
 
 
 class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
@@ -3957,6 +4066,71 @@ class AdminMoneyActionTests(TestCase):
         self.assertEqual(entry.amount, Decimal('10.00'))
 
 
+class AdminDashboardStatsTests(TestCase):
+    def setUp(self):
+        self.site = GamesBazaarAdminSite(name='test_admin')
+        self.factory = RequestFactory()
+        self.admin = User.objects.create_superuser(
+            username='dashboard_admin',
+            email='dashboard-admin@example.com',
+            password='password123',
+        )
+        self.buyer = User.objects.create_user(username='dashboard_buyer', password='password123')
+        self.seller = User.objects.create_user(username='dashboard_seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+        self.game = Game.objects.create(name='Dashboard Game', slug='dashboard-game')
+        self.category = Category.objects.create(name='Accounts', slug='dashboard-accounts')
+        self.game_category = GameCategory.objects.create(game=self.game, category=self.category)
+
+    def test_dashboard_stats_view_serializes_recent_platform_metrics(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Dashboard listing',
+            price=Decimal('100.00'),
+            quantity=1,
+            status='active',
+        )
+        Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=1,
+            unit_price=Decimal('100.00'),
+            total_amount=Decimal('100.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('10.00'),
+            seller_amount=Decimal('90.00'),
+            status='completed',
+        )
+        TopUpRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('500.00'),
+            transaction_id='dashboard-topup',
+            status='approved',
+        )
+
+        request = self.factory.get('/admin/dashboard/stats/?range=all')
+        request.user = self.admin
+        response = self.site.dashboard_stats_view(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload['range'], 'all')
+        self.assertEqual(payload['kpis']['total_orders'], 1)
+        self.assertEqual(payload['kpis']['completed_orders'], 1)
+        self.assertEqual(payload['kpis']['total_revenue'], 100.0)
+        self.assertEqual(payload['kpis']['total_commission'], 10.0)
+        self.assertEqual(payload['kpis']['total_seller_payouts'], 90.0)
+        self.assertEqual(payload['kpis']['approved_topups_amount'], 500.0)
+        self.assertEqual(payload['charts']['status_pie']['Completed'], 1)
+        self.assertEqual(payload['top_sellers'][0]['seller__username'], self.seller.username)
+        self.assertEqual(payload['top_sellers'][0]['total_earned'], 90.0)
+        self.assertEqual(payload['recent_orders'][0]['listing_title'], listing.title)
+
+
 class AdminChatProtectionTests(TestCase):
     def setUp(self):
         self.site = GamesBazaarAdminSite(name='test_admin')
@@ -4536,6 +4710,26 @@ class AutoConfirmOrderTests(TestCase):
         self.assertIn('Auto-confirmed 1 order(s)', first_output.getvalue())
         self.assertIn('Auto-confirmed 0 order(s)', second_output.getvalue())
 
+    def test_auto_confirm_command_dry_run_does_not_complete_due_order(self):
+        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
+        order = self.create_order(delivered_at=delivered_at)
+
+        output = StringIO()
+        call_command('auto_confirm_orders', '--dry-run', stdout=output)
+
+        order.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+        self.assertIn('1 delivered order(s) are due for auto-confirmation', output.getvalue())
+
     def test_auto_confirm_holds_protected_category_payout_until_release_command(self):
         self.game_category.category.buyer_protection_enabled = True
         self.game_category.category.save(update_fields=['buyer_protection_enabled'])
@@ -4568,6 +4762,34 @@ class AutoConfirmOrderTests(TestCase):
         self.seller_wallet.refresh_from_db()
         self.assertIsNotNone(order.seller_payout_released_at)
         self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+
+    def test_release_held_order_funds_dry_run_does_not_release_due_hold(self):
+        order = self.create_order(status='completed', delivered_at=timezone.now())
+        order.buyer_protection_enabled = True
+        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
+        order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
+
+        output = StringIO()
+        call_command('release_held_order_funds', '--dry-run', stdout=output)
+
+        order.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+        self.assertIsNone(order.seller_payout_released_at)
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+        self.assertIn('1 held payout(s) are due for release', output.getvalue())
+
+    def test_payout_maintenance_commands_reject_invalid_batch_size(self):
+        with self.assertRaises(CommandError):
+            call_command('auto_confirm_orders', '--batch-size', '0', stdout=StringIO())
+        with self.assertRaises(CommandError):
+            call_command('release_held_order_funds', '--batch-size', '0', stdout=StringIO())
 
     def test_auto_confirm_command_skips_fresh_and_disputed_orders(self):
         old_delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)

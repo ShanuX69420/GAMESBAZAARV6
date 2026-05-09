@@ -1,18 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE } from '../lib/config';
 import {
+  changePassword,
   confirmOrder,
+  confirmEmailChange,
+  confirmPasswordReset,
   deliverOrder,
   disputeOrder,
+  fetchGame,
+  fetchGameCategory,
   getConversations,
+  getHeldOrders,
   getMySupportTickets,
   getMyListings,
   getMyOrders,
+  getMySales,
   getMyReports,
   getOrderDetail,
   getWithdrawRequests,
   refundOrder,
+  removeAvatar,
   replyToReview,
+  requestEmailChange,
+  requestPasswordReset,
   requestWithdraw,
   getSellerDashboard,
   getSellerProfile,
@@ -20,7 +30,9 @@ import {
   searchMarketplace,
   submitReport,
   submitSupportTicket,
+  updateProfile,
   updateReview,
+  uploadAvatar,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -73,11 +85,61 @@ describe('API client helpers', () => {
     );
   });
 
+  it('encodes public catalog path segments and keeps catalog revalidation options', async () => {
+    await fetchGame('pubg mobile');
+    await fetchGameCategory('pubg mobile', 'accounts & boosts', 'filter_1=Gold+Rank');
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/games/pubg%20mobile/`,
+      {
+        next: { revalidate: 120 },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/games/pubg%20mobile/accounts%20%26%20boosts/?filter_1=Gold+Rank`,
+      {
+        next: { revalidate: 120 },
+      }
+    );
+  });
+
   it('encodes cursor pagination for orders', async () => {
     await getMyOrders({ limit: 20, beforeId: 42, cursor: true });
 
     expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/orders/mine/?limit=20&before_id=42&cursor=1`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('encodes seller sales filters and held order pagination', async () => {
+    await getMySales({
+      limit: 20,
+      beforeId: 42,
+      cursor: true,
+      status: 'completed',
+      search: 'buyer+prime',
+      date_from: '2026-01-01',
+      date_to: '2026-01-31',
+    });
+    await getHeldOrders({ limit: 10, offset: 20 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/orders/sales/?limit=20&before_id=42&cursor=1&status=completed&search=buyer%2Bprime&date_from=2026-01-01&date_to=2026-01-31`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/wallet/held-orders/?limit=10&offset=20`,
       {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -296,6 +358,114 @@ describe('API client helpers', () => {
       `${API_BASE}/api/support/mine/?limit=10&offset=20`,
       {
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('serializes account security helper requests', async () => {
+    await updateProfile({ username: 'new_user' });
+    await requestEmailChange('new@example.com');
+    await confirmEmailChange('opaque-token', '111111', '222222');
+    await changePassword('OldPass123!', 'NewPass123!', 'NewPass123!');
+    await requestPasswordReset('player@example.com');
+    await confirmPasswordReset('reset-token', '123456', 'BetterPass123!', 'BetterPass123!');
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/auth/profile/`,
+      {
+        credentials: 'include',
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'new_user' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/auth/email/request-change/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_email: 'new@example.com' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE}/api/auth/email/confirm-change/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: 'opaque-token',
+          current_code: '111111',
+          new_code: '222222',
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      `${API_BASE}/api/auth/password/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: 'OldPass123!',
+          new_password: 'NewPass123!',
+          new_password2: 'NewPass123!',
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      `${API_BASE}/api/auth/password/reset-request/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'player@example.com' }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      6,
+      `${API_BASE}/api/auth/password/reset-confirm/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: 'reset-token',
+          code: '123456',
+          new_password: 'BetterPass123!',
+          new_password2: 'BetterPass123!',
+        }),
+      }
+    );
+  });
+
+  it('sends avatar uploads as form data and removes avatars through auth fetch', async () => {
+    const avatar = new Blob(['avatar'], { type: 'image/png' });
+
+    await uploadAvatar(avatar);
+    await removeAvatar();
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/auth/avatar/`,
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        body: expect.any(FormData),
+      })
+    );
+    expect(fetch.mock.calls[0][1].headers).toBeUndefined();
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/auth/avatar/`,
+      {
+        credentials: 'include',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
       }
     );
