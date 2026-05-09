@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.db import transaction
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
-    GameCategoryFilter, UserProfile, Listing,
+    GameCategoryFilter, UserProfile, SocialAccount, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
@@ -14,9 +14,9 @@ from .models import (
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
+    complete_order_with_seller_payout,
     decrypt_sensitive_text,
     record_withdrawal_approval_once,
-    release_order_funds_to_seller_once,
 )
 from .serializers import get_auto_delivery_inventory_lines
 
@@ -95,11 +95,13 @@ class GameAdmin(admin.ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'slug', 'icon', 'commission_rate_display', 'game_count', 'created_at']
-    list_editable = []
+    list_display = ['name', 'slug', 'icon', 'commission_rate_display',
+                    'buyer_protection_enabled', 'game_count', 'created_at']
+    list_editable = ['buyer_protection_enabled']
     search_fields = ['name', 'slug']
     prepopulated_fields = {'slug': ('name',)}
-    fields = ['name', 'slug', 'description', 'icon', 'commission_rate']
+    fields = ['name', 'slug', 'description', 'icon', 'commission_rate',
+              'buyer_protection_enabled']
 
     @admin.display(description='Commission')
     def commission_rate_display(self, obj):
@@ -160,6 +162,15 @@ class UserProfileAdmin(admin.ModelAdmin):
             seller_reviewed_at=timezone.now(),
         )
         self.message_user(request, f'{updated} seller(s) rejected.')
+
+
+@admin.register(SocialAccount)
+class SocialAccountAdmin(admin.ModelAdmin):
+    list_display = ['user', 'provider', 'email', 'created_at']
+    list_filter = ['provider']
+    search_fields = ['user__username', 'user__email', 'email', 'uid']
+    autocomplete_fields = ['user']
+    readonly_fields = ['provider', 'uid', 'email', 'created_at', 'updated_at']
 
 
 @admin.register(Listing)
@@ -312,12 +323,15 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ['id', 'order_number', 'listing_title', 'buyer', 'seller', 'total_amount',
-                    'commission_display', 'status', 'created_at']
-    list_filter = ['status']
+                    'commission_display', 'buyer_protection_enabled', 'payout_display',
+                    'status', 'created_at']
+    list_filter = ['status', 'buyer_protection_enabled']
     search_fields = ['order_number', 'listing_title', 'buyer__username', 'seller__username']
     readonly_fields = ['order_number', 'buyer', 'seller', 'listing', 'listing_title', 'quantity',
                        'unit_price', 'total_amount', 'commission_rate',
                        'commission_amount', 'seller_amount', 'delivery_note_status',
+                       'delivered_at', 'buyer_protection_enabled',
+                       'seller_payout_available_at', 'seller_payout_released_at',
                        'created_at', 'updated_at', 'chat_link']
     exclude = ['delivery_note', 'conversation']
     actions = ['refund_and_cancel', 'release_to_seller']
@@ -325,6 +339,16 @@ class OrderAdmin(admin.ModelAdmin):
     @admin.display(description='Commission')
     def commission_display(self, obj):
         return f'{obj.commission_rate}% (PKR {obj.commission_amount})'
+
+    @admin.display(description='Payout')
+    def payout_display(self, obj):
+        if obj.seller_payout_released_at:
+            return 'Released'
+        if obj.buyer_protection_enabled and obj.seller_payout_available_at:
+            return f'Held until {timezone.localtime(obj.seller_payout_available_at):%Y-%m-%d %H:%M}'
+        if obj.status == 'completed':
+            return 'Released'
+        return 'Pending'
 
     @admin.display(description='Delivery note')
     def delivery_note_status(self, obj):
@@ -397,15 +421,12 @@ class OrderAdmin(admin.ModelAdmin):
                 if order.status != 'disputed':
                     continue
 
-                release_order_funds_to_seller_once(
+                complete_order_with_seller_payout(
                     order,
                     sale_description=f'Dispute resolved (seller): {order.listing_title}',
                     commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     ledger_description=f'Commission collected: {order.listing_title}',
                 )
-
-                order.status = 'completed'
-                order.save(update_fields=['status', 'updated_at'])
                 count += 1
         self.message_user(request, f'{count} order(s) released to seller.')
 

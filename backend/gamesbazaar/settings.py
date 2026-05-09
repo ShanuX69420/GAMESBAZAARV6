@@ -349,3 +349,6 @@ elif DEBUG:
     }
 else:
     raise ImproperlyConfigured('CHANNEL_REDIS_URL is required when DJANGO_DEBUG=False.')
+
+# Google OAuth — Sign-In with Google
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '').strip()

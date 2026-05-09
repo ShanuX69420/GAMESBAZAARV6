@@ -65,6 +65,10 @@ class Category(models.Model):
         validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
         help_text='Default platform commission % for this category (e.g., 10.00 = 10%)',
     )
+    buyer_protection_enabled = models.BooleanField(
+        default=False,
+        help_text='Hold seller payouts for 14 days after order completion in this category.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -221,6 +225,37 @@ class UserProfile(models.Model):
 
 
 # ── Listings ─────────────────────────────────────────────────────────────────
+
+class SocialAccount(models.Model):
+    """External sign-in identity linked to a local user account."""
+
+    PROVIDER_GOOGLE = 'google'
+    PROVIDER_CHOICES = [
+        (PROVIDER_GOOGLE, 'Google'),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='social_accounts')
+    provider = models.CharField(max_length=30, choices=PROVIDER_CHOICES)
+    uid = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'uid'],
+                name='social_account_provider_uid_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'provider'], name='social_user_provider_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.get_provider_display()} account for {self.user}"
+
 
 class Listing(models.Model):
     """A seller's listing in the marketplace."""
@@ -639,6 +674,25 @@ class Order(models.Model):
         default='',
         help_text='Seller instructions captured at purchase time.',
     )
+    delivered_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the order entered delivered status.',
+    )
+    buyer_protection_enabled = models.BooleanField(
+        default=False,
+        help_text='Snapshot of whether this order uses the 14-day buyer protection payout hold.',
+    )
+    seller_payout_available_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When held seller funds become eligible for release.',
+    )
+    seller_payout_released_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When seller funds were credited to the available wallet balance.',
+    )
     dispute_reason = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -665,6 +719,14 @@ class Order(models.Model):
             models.Index(
                 fields=['status', '-created_at'],
                 name='order_status_created_idx',
+            ),
+            models.Index(
+                fields=['status', 'delivered_at'],
+                name='order_status_deliv_idx',
+            ),
+            models.Index(
+                fields=['status', 'seller_payout_available_at'],
+                name='order_payout_due_idx',
             ),
         ]
 

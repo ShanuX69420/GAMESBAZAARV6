@@ -1,5 +1,6 @@
+from datetime import timedelta
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 from threading import Barrier, Thread
 from urllib.parse import urlsplit
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
@@ -26,7 +28,7 @@ from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
     Listing, Message, Notification, Order, Report, Review, SupportTicket,
-    PlatformLedgerEntry, SellerCommissionOverride, TopUpRequest, UserProfile, Wallet,
+    PlatformLedgerEntry, SellerCommissionOverride, SocialAccount, TopUpRequest, UserProfile, Wallet,
     WalletTransaction, WithdrawRequest,
 )
 from .serializers import (
@@ -36,7 +38,12 @@ from .serializers import (
     MAX_DISPUTE_REASON_LENGTH,
     WalletTransactionSerializer,
 )
-from .services import decrypt_sensitive_text, encrypt_sensitive_text
+from .services import (
+    AUTO_CONFIRM_ORDER_AFTER,
+    BUYER_PROTECTION_HOLD,
+    decrypt_sensitive_text,
+    encrypt_sensitive_text,
+)
 
 
 def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
@@ -70,6 +77,40 @@ class PurchaseFlowTests(TestCase):
         self.game_category = GameCategory.objects.create(game=game, category=self.category)
 
         self.client.force_authenticate(user=self.buyer)
+
+    def create_confirmed_protected_order(self, *, release_at=None):
+        self.category.commission_rate = Decimal('10.00')
+        self.category.buyer_protection_enabled = True
+        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Protected dispute item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+        order = Order.objects.get(pk=buy_response.data['id'])
+        order.status = 'delivered'
+        order.delivered_at = timezone.now()
+        order.save(update_fields=['status', 'delivered_at'])
+        confirm_response = self.client.post(
+            f'/api/orders/{order.pk}/confirm/',
+            {},
+            format='json',
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+        order.refresh_from_db()
+        if release_at is not None:
+            order.seller_payout_available_at = release_at
+            order.save(update_fields=['seller_payout_available_at'])
+        return order
 
     def test_cannot_buy_more_than_available_stock(self):
         listing = Listing.objects.create(
@@ -540,6 +581,193 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(sale_tx.balance_after, Decimal('50.00'))
         self.assertEqual(commission_tx.amount, Decimal('5.00'))
         self.assertEqual(commission_tx.balance_after, Decimal('45.00'))
+
+    def test_buyer_protected_category_holds_payout_after_confirm_until_release(self):
+        self.category.commission_rate = Decimal('10.00')
+        self.category.buyer_protection_enabled = True
+        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Protected payout item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+        order = Order.objects.get(pk=buy_response.data['id'])
+        order.status = 'delivered'
+        order.delivered_at = timezone.now()
+        order.save(update_fields=['status', 'delivered_at'])
+
+        confirm_response = self.client.post(
+            f'/api/orders/{order.pk}/confirm/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
+        order.refresh_from_db()
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(order.status, 'completed')
+        self.assertTrue(order.buyer_protection_enabled)
+        self.assertEqual(confirm_response.data['seller_payout_status'], 'held')
+        self.assertIsNotNone(order.seller_payout_available_at)
+        self.assertIsNone(order.seller_payout_released_at)
+        self.assertGreaterEqual(
+            order.seller_payout_available_at,
+            timezone.now() + BUYER_PROTECTION_HOLD - timedelta(seconds=10),
+        )
+        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+
+        wallet_response = self.client.get('/api/wallet/')
+        self.assertEqual(wallet_response.data['held_balance'], '0.00')
+        self.client.force_authenticate(user=self.seller)
+        wallet_response = self.client.get('/api/wallet/')
+        self.assertEqual(wallet_response.data['held_balance'], '45.00')
+        self.assertEqual(wallet_response.data['held_order_count'], 1)
+
+        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
+        order.save(update_fields=['seller_payout_available_at'])
+        output = StringIO()
+        call_command('release_held_order_funds', stdout=output)
+        call_command('release_held_order_funds', stdout=StringIO())
+
+        order.refresh_from_db()
+        seller_wallet.refresh_from_db()
+        self.assertIsNotNone(order.seller_payout_released_at)
+        self.assertEqual(seller_wallet.balance, Decimal('45.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=seller_wallet,
+                transaction_type='commission',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(entry.amount, Decimal('5.00'))
+        self.assertIn('Released 1 held payout(s)', output.getvalue())
+
+    def test_refund_completed_protected_order_before_release_skips_seller_debit(self):
+        self.category.commission_rate = Decimal('10.00')
+        self.category.buyer_protection_enabled = True
+        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Protected refund item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+        order = Order.objects.get(pk=buy_response.data['id'])
+        order.status = 'delivered'
+        order.delivered_at = timezone.now()
+        order.save(update_fields=['status', 'delivered_at'])
+        confirm_response = self.client.post(
+            f'/api/orders/{order.pk}/confirm/',
+            {},
+            format='json',
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+
+        self.client.force_authenticate(user=self.seller)
+        refund_response = self.client.post(
+            f'/api/orders/{order.pk}/refund/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(refund_response.status_code, 200)
+        order.refresh_from_db()
+        self.buyer_wallet.refresh_from_db()
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(order.status, 'cancelled')
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=seller_wallet,
+                transaction_type='refund',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+        self.assertFalse(
+            PlatformLedgerEntry.objects.filter(
+                entry_type='commission_reversed',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+
+    def test_buyer_can_dispute_completed_protected_order_during_hold(self):
+        order = self.create_confirmed_protected_order()
+
+        detail_response = self.client.get(f'/api/orders/{order.pk}/')
+        dispute_response = self.client.post(
+            f'/api/orders/{order.pk}/dispute/',
+            {'reason': 'The delivered account details do not work.'},
+            format='json',
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.data['can_dispute'])
+        self.assertEqual(dispute_response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'disputed')
+        self.assertEqual(order.dispute_reason, 'The delivered account details do not work.')
+        self.assertIsNone(order.seller_payout_released_at)
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
+
+    def test_buyer_cannot_dispute_protected_order_after_hold_expires(self):
+        order = self.create_confirmed_protected_order(
+            release_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        detail_response = self.client.get(f'/api/orders/{order.pk}/')
+        dispute_response = self.client.post(
+            f'/api/orders/{order.pk}/dispute/',
+            {'reason': 'Too late dispute.'},
+            format='json',
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertFalse(detail_response.data['can_dispute'])
+        self.assertEqual(dispute_response.status_code, 400)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'completed')
 
     def test_completed_order_refund_reverses_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
@@ -1432,6 +1660,77 @@ class SupportTicketFlowTests(TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+@override_settings(
+    GOOGLE_OAUTH_CLIENT_ID='test-google-client',
+    CORS_ALLOWED_ORIGINS=['http://localhost:3000'],
+    CSRF_TRUSTED_ORIGINS=['http://localhost:3000'],
+)
+class GoogleAuthTests(TestCase):
+    origin = 'http://localhost:3000'
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def tearDown(self):
+        cache.clear()
+
+    def post_google(self, payload):
+        return self.client.post(
+            '/api/auth/google/',
+            payload,
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+    def test_google_auth_rejects_non_string_credential(self):
+        response = self.post_google({'credential': {'token': 'not-a-string'}})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Google credential must be a string.')
+        self.assertFalse(SocialAccount.objects.exists())
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_auth_links_by_google_account_id(self, verify_google_token):
+        existing_user = User.objects.create_user(
+            username='manual_player',
+            email='player@example.com',
+            password='password123',
+        )
+        verify_google_token.return_value = {
+            'sub': 'google-sub-123',
+            'email': 'player@example.com',
+            'email_verified': True,
+            'name': 'Manual Player',
+        }
+
+        first_response = self.post_google({'credential': 'first-token'})
+
+        self.assertEqual(first_response.status_code, 200)
+        account = SocialAccount.objects.get(
+            provider=SocialAccount.PROVIDER_GOOGLE,
+            uid='google-sub-123',
+        )
+        self.assertEqual(account.user, existing_user)
+        self.assertEqual(account.email, 'player@example.com')
+        self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, first_response.cookies)
+
+        cache.clear()
+        verify_google_token.return_value = {
+            'sub': 'google-sub-123',
+            'email': 'updated-player@example.com',
+            'email_verified': True,
+            'name': 'Manual Player',
+        }
+
+        second_response = self.post_google({'credential': 'second-token'})
+
+        self.assertEqual(second_response.status_code, 200)
+        account.refresh_from_db()
+        self.assertEqual(account.user, existing_user)
+        self.assertEqual(account.email, 'updated-player@example.com')
+        self.assertEqual(User.objects.count(), 1)
+
 THROTTLE_TEST_REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '1/min',
@@ -1498,6 +1797,7 @@ class ApiPermissionConfigurationTests(TestCase):
             '/api/games/test-game/',
             '/api/games/test-game/accounts/',
             '/api/auth/login/',
+            '/api/auth/google/',
             '/api/auth/refresh/',
             '/api/auth/register/',
             '/api/reviews/seller/seller/',
@@ -4095,6 +4395,202 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             ).count(),
             1,
         )
+
+
+class AutoConfirmOrderTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='auto_buyer', password='password123')
+        self.seller = User.objects.create_user(username='auto_seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
+        self.buyer_wallet.balance = Decimal('500.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        self.seller_wallet = Wallet.objects.get(user=self.seller)
+        self.seller_wallet.balance = Decimal('0.00')
+        self.seller_wallet.save(update_fields=['balance'])
+
+        game = Game.objects.create(name='Auto Confirm Game', slug='auto-confirm-game')
+        category = Category.objects.create(
+            name='Accounts',
+            slug='auto-accounts',
+            commission_rate=Decimal('0.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+
+    def create_order(self, *, status='delivered', delivered_at=None, title='Auto item'):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title=title,
+            price=Decimal('50.00'),
+            quantity=0,
+            status='sold',
+        )
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=Decimal('50.00'),
+            status=status,
+            delivered_at=delivered_at,
+        )
+
+    def test_deliver_sets_auto_confirm_deadline(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Manual delivery item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        buy_response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(buy_response.status_code, 201)
+
+        self.client.force_authenticate(user=self.seller)
+        deliver_response = self.client.post(
+            f'/api/orders/{buy_response.data["id"]}/deliver/',
+            {'delivery_note': 'delivered'},
+            format='json',
+        )
+        self.assertEqual(deliver_response.status_code, 200)
+
+        order = Order.objects.get(pk=buy_response.data['id'])
+        self.assertIsNotNone(order.delivered_at)
+        self.assertEqual(deliver_response.data['status'], 'delivered')
+        self.assertIsNotNone(deliver_response.data['auto_confirm_at'])
+
+    def test_auto_delivery_purchase_sets_auto_confirm_deadline(self):
+        self.game_category.allow_auto_delivery = True
+        self.game_category.save(update_fields=['allow_auto_delivery'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Instant delivery item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one'),
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(pk=response.data['id'])
+        self.assertEqual(order.status, 'delivered')
+        self.assertIsNotNone(order.delivered_at)
+        self.assertIsNotNone(response.data['auto_confirm_at'])
+
+    def test_auto_confirm_command_completes_due_delivered_order_once(self):
+        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
+        order = self.create_order(delivered_at=delivered_at)
+
+        first_output = StringIO()
+        call_command('auto_confirm_orders', stdout=first_output)
+        second_output = StringIO()
+        call_command('auto_confirm_orders', stdout=second_output)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'completed')
+
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.seller,
+                notification_type='order_confirmed',
+                order=order,
+            ).count(),
+            1,
+        )
+        self.assertIn('Auto-confirmed 1 order(s)', first_output.getvalue())
+        self.assertIn('Auto-confirmed 0 order(s)', second_output.getvalue())
+
+    def test_auto_confirm_holds_protected_category_payout_until_release_command(self):
+        self.game_category.category.buyer_protection_enabled = True
+        self.game_category.category.save(update_fields=['buyer_protection_enabled'])
+        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
+        order = self.create_order(delivered_at=delivered_at)
+        order.buyer_protection_enabled = True
+        order.save(update_fields=['buyer_protection_enabled'])
+
+        call_command('auto_confirm_orders', stdout=StringIO())
+
+        order.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(order.status, 'completed')
+        self.assertIsNotNone(order.seller_payout_available_at)
+        self.assertIsNone(order.seller_payout_released_at)
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+
+        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
+        order.save(update_fields=['seller_payout_available_at'])
+        call_command('release_held_order_funds', stdout=StringIO())
+
+        order.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+        self.assertIsNotNone(order.seller_payout_released_at)
+        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+
+    def test_auto_confirm_command_skips_fresh_and_disputed_orders(self):
+        old_delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
+        fresh_delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER + timedelta(minutes=1)
+        due_order = self.create_order(delivered_at=old_delivered_at, title='Due item')
+        fresh_order = self.create_order(delivered_at=fresh_delivered_at, title='Fresh item')
+        disputed_order = self.create_order(
+            status='disputed',
+            delivered_at=old_delivered_at,
+            title='Disputed item',
+        )
+
+        call_command('auto_confirm_orders', stdout=StringIO())
+
+        due_order.refresh_from_db()
+        fresh_order.refresh_from_db()
+        disputed_order.refresh_from_db()
+        self.assertEqual(due_order.status, 'completed')
+        self.assertEqual(fresh_order.status, 'delivered')
+        self.assertEqual(disputed_order.status, 'disputed')
+
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
 
 
 class ReviewTests(TestCase):

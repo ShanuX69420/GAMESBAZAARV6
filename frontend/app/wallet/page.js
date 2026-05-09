@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getWallet, requestTopUp, getTopUpRequests, requestWithdraw, getWithdrawRequests } from '@/lib/api';
 
@@ -222,6 +223,7 @@ export default function WalletPage() {
   const amountOverLimit = Number(topUpAmount) > MAX_TOP_UP_AMOUNT;
   const withdrawBelowMin = withdrawAmount !== '' && Number(withdrawAmount) < MIN_WITHDRAW_AMOUNT;
   const currentBalance = walletData ? Number(walletData.balance) : 0;
+  const heldBalance = walletData ? Number(walletData.held_balance || 0) : 0;
   const withdrawExceedsBalance = withdrawAmount !== '' && Number(withdrawAmount) > currentBalance;
 
   if (loading || !user) {
@@ -245,6 +247,15 @@ export default function WalletPage() {
         <div className="wallet-balance-amount">
           PKR {walletData ? Number(walletData.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 }) : '0.00'}
         </div>
+        {heldBalance > 0 && (
+          <div className="wallet-balance-label" style={{ marginTop: '8px' }}>
+            <Link href="/wallet/held-balance" className="held-balance-link">
+              Held by buyer protection: PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+              {walletData?.next_payout_release_at ? ` – next release ${new Date(walletData.next_payout_release_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+              <span className="held-arrow">→</span>
+            </Link>
+          </div>
+        )}
         <div className="wallet-actions">
           <button
             className="btn btn-primary"

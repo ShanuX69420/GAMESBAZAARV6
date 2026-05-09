@@ -73,8 +73,12 @@ export default function OrderDetailPage() {
   function handleConfirm() {
     setConfirmModal(false);
     doAction(async () => {
-      await confirmOrder(id);
-      setSuccess('Order confirmed! Funds released to seller.');
+      const confirmed = await confirmOrder(id);
+      if (confirmed.seller_payout_status === 'held') {
+        setSuccess('Order confirmed! Seller payout is held by buyer protection for 14 days.');
+      } else {
+        setSuccess('Order confirmed! Funds released to seller.');
+      }
     });
   }
 
@@ -186,6 +190,7 @@ export default function OrderDetailPage() {
   const hasReview = order.has_review || reviewSubmitted;
   const reviewData = order.review_data;
   const showReviewForm = isBuyer && order.status === 'completed' && (!hasReview || editingReview);
+  const canOpenDispute = isBuyer && order.can_dispute;
   const displayOrderNumber = orderLabel(order);
 
   function getStatusColor(status) {
@@ -240,6 +245,29 @@ export default function OrderDetailPage() {
               {getStatusIcon(order.status)} {order.status_display}
             </span>
           </div>
+
+          {/* Auto-confirm banner for delivered orders (buyer view) */}
+          {isBuyer && order.status === 'delivered' && (
+            <div className="order-autoconfirm-banner">
+              <div className="order-autoconfirm-content">
+                <svg className="order-autoconfirm-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <div className="order-autoconfirm-text">
+                  <strong>Awaiting your confirmation</strong>
+                  <p>The seller has completed the delivery. If you received the wrong / incomplete / invalid items, please file a report or the order will auto-confirm after 3 days.</p>
+                </div>
+              </div>
+              <button
+                className="order-autoconfirm-btn"
+                onClick={() => setConfirmModal(true)}
+                disabled={actionLoading}
+              >
+                Order received
+              </button>
+            </div>
+          )}
 
           {/* Order info grid */}
           <div className="order-info-grid">
@@ -350,17 +378,8 @@ export default function OrderDetailPage() {
             <h3 className="order-detail-section-title">Actions</h3>
             <div className="order-action-buttons">
               {/* Buyer actions */}
-              {isBuyer && (order.status === 'pending' || order.status === 'delivered') && (
+              {canOpenDispute && (
                 <>
-                  {order.status === 'delivered' && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => setConfirmModal(true)}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? 'Processing...' : '✅ Confirm Received'}
-                  </button>
-                  )}
                   <button
                     className="btn btn-outline"
                     onClick={() => { setDisputeModal(true); setDisputeReason(''); }}
@@ -392,9 +411,21 @@ export default function OrderDetailPage() {
               )}
 
               {/* Completed/cancelled messaging */}
-              {order.status === 'completed' && (
+              {order.status === 'completed' && isSeller && order.seller_payout_status === 'held' && (
+                <div className="order-completed-msg" style={{ padding: '12px 0' }}>
+                  Payout is held by buyer protection until {new Date(order.seller_payout_available_at).toLocaleString('en-PK', {
+                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                  })}.
+                </div>
+              )}
+              {order.status === 'completed' && !(isSeller && order.seller_payout_status === 'held') && (
                 <div className="order-completed-msg" style={{ padding: '12px 0' }}>
                   ✅ This order has been completed. {isSeller ? 'Funds have been credited to your wallet.' : 'Thank you for your purchase!'}
+                </div>
+              )}
+              {order.status === 'completed' && canOpenDispute && (
+                <div className="order-completed-msg" style={{ padding: '0 0 12px', color: 'var(--text-tertiary)' }}>
+                  Buyer protection is still active, so you can open a dispute if something is wrong.
                 </div>
               )}
               {order.status === 'cancelled' && (
@@ -688,7 +719,9 @@ export default function OrderDetailPage() {
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                   <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
-                This action is irreversible. Funds will be released to the seller immediately.
+                This action is irreversible. {order.buyer_protection_enabled
+                  ? 'Seller payout will be held by buyer protection for 14 days.'
+                  : 'Funds will be released to the seller immediately.'}
               </div>
 
               <div className="confirm-order-notice">

@@ -31,3 +31,5 @@ function websocketBaseFromApiBase() {
 }
 
 export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || websocketBaseFromApiBase();
+
+export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';

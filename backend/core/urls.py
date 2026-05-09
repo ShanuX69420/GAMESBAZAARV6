@@ -14,6 +14,7 @@ urlpatterns = [
     path('auth/refresh/', views.RefreshTokenView.as_view(), name='token-refresh'),
     path('auth/logout/', views.LogoutView.as_view(), name='logout'),
     path('auth/me/', views.MeView.as_view(), name='me'),
+    path('auth/google/', views.GoogleAuthView.as_view(), name='google-auth'),
     path('auth/profile/', views.UpdateProfileView.as_view(), name='update-profile'),
     path('auth/password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('auth/password/reset-request/', views.RequestPasswordResetView.as_view(), name='request-password-reset'),
@@ -49,6 +50,7 @@ urlpatterns = [
     # Wallet
     path('wallet/', views.WalletView.as_view(), name='wallet'),
     path('wallet/transactions/', views.WalletTransactionsView.as_view(), name='wallet-transactions'),
+    path('wallet/held-orders/', views.HeldOrdersView.as_view(), name='wallet-held-orders'),
     path('wallet/top-up/', views.TopUpRequestView.as_view(), name='topup-request'),
     path('wallet/top-up/<int:pk>/proof/', views.TopUpProofView.as_view(), name='topup-proof'),
     path('wallet/withdraw/', views.WithdrawRequestView.as_view(), name='withdraw-request'),

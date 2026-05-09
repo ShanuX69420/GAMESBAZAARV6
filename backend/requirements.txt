@@ -10,3 +10,5 @@ daphne==4.2.1
 cryptography==46.0.7
 Pillow==12.2.0
 psycopg2-binary==2.9.11
+google-auth==2.38.0
+python-dotenv>=1.0.0

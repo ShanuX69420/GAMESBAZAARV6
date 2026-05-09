@@ -160,7 +160,11 @@ export default function DashboardPage() {
     );
   }
 
-  const { orders, revenue, daily_revenue, listings, reviews, recent_sales, top_categories, wallet_balance } = data;
+  const {
+    orders, revenue, daily_revenue, listings, reviews, recent_sales, top_categories,
+    wallet_balance, wallet_held_balance,
+  } = data;
+  const heldWalletBalance = Number(wallet_held_balance || 0);
 
   return (
     <div className="container">
@@ -188,6 +192,13 @@ export default function DashboardPage() {
             <span className="sd-metric-label">Wallet Balance</span>
             <span className="sd-metric-value">{formatPKRDecimal(wallet_balance)}</span>
           </div>
+          {heldWalletBalance > 0 && (
+            <div className="sd-metric-sub">
+              <span className="sd-metric-badge sd-badge-amber">
+                {formatPKR(heldWalletBalance)} held
+              </span>
+            </div>
+          )}
         </Link>
 
         <div className="sd-metric-card sd-metric-revenue" id="sd-revenue-card">

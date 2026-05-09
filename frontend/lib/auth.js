@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { API_BASE } from '@/lib/config';
 
 const AuthContext = createContext(null);
@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const getToken = () => null;
+  const getToken = useCallback(() => null, []);
 
   const logout = useCallback(async () => {
     try {
@@ -63,7 +63,7 @@ export function AuthProvider({ children }) {
     fetchUser();
   }, [fetchUser]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const res = await fetch(`${API_BASE}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -75,9 +75,23 @@ export function AuthProvider({ children }) {
       throw new Error(data.detail || 'Login failed');
     }
     return fetchUser();
-  };
+  }, [fetchUser]);
 
-  const register = async (username, email, password, password2) => {
+  const googleLogin = useCallback(async (credential) => {
+    const res = await fetch(`${API_BASE}/api/auth/google/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ credential }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Google sign-in failed');
+    }
+    return fetchUser();
+  }, [fetchUser]);
+
+  const register = useCallback(async (username, email, password, password2) => {
     const res = await fetch(`${API_BASE}/api/auth/register/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -91,10 +105,21 @@ export function AuthProvider({ children }) {
       throw new Error(errors[0] || 'Registration failed');
     }
     return data;
-  };
+  }, []);
+
+  const value = useMemo(() => ({
+    user,
+    loading,
+    login,
+    googleLogin,
+    register,
+    logout,
+    getToken,
+    fetchUser,
+  }), [user, loading, login, googleLogin, register, logout, getToken, fetchUser]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, getToken, fetchUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

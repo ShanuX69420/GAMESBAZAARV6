@@ -11,6 +11,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.urls import reverse
+from django.utils import timezone
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
@@ -20,6 +21,8 @@ from .models import (
     Report, SupportTicket,
 )
 from .services import (
+    get_order_auto_confirm_at,
+    order_seller_payout_has_been_released,
     create_private_media_ticket,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -117,7 +120,7 @@ class FilterSerializer(serializers.ModelSerializer):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'description', 'icon']
+        fields = ['id', 'name', 'slug', 'description', 'icon', 'buyer_protection_enabled']
 
 
 class GameCategorySerializer(serializers.ModelSerializer):
@@ -408,6 +411,9 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_review_count = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.category.name', read_only=True)
+    buyer_protection_enabled = serializers.BooleanField(
+        source='game_category.category.buyer_protection_enabled', read_only=True,
+    )
     filter_display = serializers.SerializerMethodField()
 
     class Meta:
@@ -416,7 +422,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'price', 'quantity', 'status',
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
-            'game_name', 'category_name',
+            'game_name', 'category_name', 'buyer_protection_enabled',
             'filter_values', 'filter_display', 'delivery_time',
             'is_auto_delivery', 'delivery_instructions', 'created_at',
         ]
@@ -940,6 +946,9 @@ class OrderSerializer(serializers.ModelSerializer):
     is_auto_delivery = serializers.SerializerMethodField()
     auto_delivery_data = serializers.SerializerMethodField()
     delivery_instructions = serializers.SerializerMethodField()
+    auto_confirm_at = serializers.SerializerMethodField()
+    seller_payout_status = serializers.SerializerMethodField()
+    can_dispute = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -952,7 +961,9 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery_note', 'dispute_reason',
             'conversation_id', 'has_review', 'review_data',
             'is_auto_delivery', 'auto_delivery_data',
-            'delivery_instructions',
+            'delivery_instructions', 'delivered_at', 'auto_confirm_at',
+            'buyer_protection_enabled', 'seller_payout_status', 'can_dispute',
+            'seller_payout_available_at', 'seller_payout_released_at',
             'created_at', 'updated_at',
         ]
 
@@ -1000,6 +1011,52 @@ class OrderSerializer(serializers.ModelSerializer):
         if obj.delivery_instructions_snapshot:
             return obj.delivery_instructions_snapshot
         return None
+
+    def get_auto_confirm_at(self, obj):
+        """Return the deadline when delivered orders auto-complete."""
+        return get_order_auto_confirm_at(obj)
+
+    def _seller_payout_has_been_released(self, obj):
+        cache = getattr(self, '_seller_payout_released_cache', None)
+        if cache is None:
+            cache = {}
+            self._seller_payout_released_cache = cache
+        if obj.pk in cache:
+            return cache[obj.pk]
+
+        if obj.seller_payout_released_at:
+            cache[obj.pk] = True
+            return cache[obj.pk]
+
+        released_refs = self.context.get('released_seller_payout_order_refs')
+        if released_refs is not None:
+            cache[obj.pk] = f'order_{obj.pk}' in released_refs
+            return cache[obj.pk]
+
+        cache[obj.pk] = order_seller_payout_has_been_released(obj)
+        return cache[obj.pk]
+
+    def get_seller_payout_status(self, obj):
+        if obj.status == 'cancelled':
+            return 'cancelled'
+        if obj.status != 'completed':
+            return 'pending'
+        if self._seller_payout_has_been_released(obj):
+            return 'released'
+        if obj.buyer_protection_enabled:
+            return 'held'
+        return 'released'
+
+    def get_can_dispute(self, obj):
+        if obj.status in ('pending', 'delivered'):
+            return True
+        if obj.status != 'completed':
+            return False
+        if not obj.buyer_protection_enabled or not obj.seller_payout_available_at:
+            return False
+        if self._seller_payout_has_been_released(obj):
+            return False
+        return timezone.now() < obj.seller_payout_available_at
 
 
 class BuyListingSerializer(serializers.Serializer):

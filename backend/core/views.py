@@ -29,7 +29,7 @@ from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     SellerCommissionOverride,
-    Review, Notification, Report, SupportTicket,
+    Review, Notification, Report, SupportTicket, SocialAccount,
 )
 
 GAME_LIST_CACHE_KEY = 'game-list:v1'
@@ -59,8 +59,11 @@ from .services import (
     create_chat_ws_ticket,
     decode_private_media_ticket,
     apply_wallet_delta_once,
+    complete_order_with_seller_payout,
+    get_seller_held_payout_summary,
     get_or_create_locked_wallet,
-    release_order_funds_to_seller_once,
+    is_order_in_buyer_protection_dispute_window,
+    order_seller_payout_has_been_released,
     record_platform_ledger_once,
     revoke_user_refresh_tokens,
     ALLOWED_IMAGE_CONTENT_TYPES,
@@ -204,6 +207,30 @@ def get_cursor_page(queryset, limit, before_id=None):
         'next_before_id': page[-1].id if has_more and page else None,
         'has_more': has_more,
     }
+
+
+def get_released_seller_payout_order_refs(orders):
+    order_refs = []
+    seller_ids = set()
+    for order in orders:
+        if (
+            order.status == 'completed'
+            and order.buyer_protection_enabled
+            and not order.seller_payout_released_at
+        ):
+            order_refs.append(f'order_{order.pk}')
+            seller_ids.add(order.seller_id)
+
+    if not order_refs:
+        return set()
+
+    return set(
+        WalletTransaction.objects.filter(
+            wallet__user_id__in=seller_ids,
+            transaction_type='sale',
+            reference_id__in=order_refs,
+        ).values_list('reference_id', flat=True)
+    )
 
 
 def parse_query_date(value):
@@ -670,6 +697,194 @@ class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
             'user': UserSerializer(user).data,
         }, status=status.HTTP_201_CREATED)
 
+
+class GoogleAuthLinkError(Exception):
+    pass
+
+
+class GoogleAuthView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/google/ — Authenticate via Google ID token.
+
+    Accepts { "credential": "<google_id_token>" }.
+    Verifies the token with Google, finds or creates the local user,
+    and returns JWT cookies identical to the normal login flow.
+    """
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth_login'
+
+    def post(self, request):
+        import re
+        import secrets as _secrets
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+
+        enforce_trusted_origin(request)
+
+        credential = request.data.get('credential', '')
+        if not isinstance(credential, str):
+            return Response(
+                {'error': 'Google credential must be a string.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        credential = credential.strip()
+        if not credential:
+            return Response(
+                {'error': 'Google credential is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client_id = settings.GOOGLE_OAUTH_CLIENT_ID
+        if not client_id:
+            return Response(
+                {'error': 'Google authentication is not configured.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        try:
+            idinfo = google_id_token.verify_oauth2_token(
+                credential,
+                google_requests.Request(),
+                client_id,
+                clock_skew_in_seconds=300,
+            )
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning('Google token verification failed: %s', exc)
+            error_detail = 'Invalid Google credential.'
+            if settings.DEBUG:
+                error_detail = f'Invalid Google credential: {exc}'
+            return Response(
+                {'error': error_detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        google_email = idinfo.get('email', '').strip().lower()
+        if not google_email or not idinfo.get('email_verified'):
+            return Response(
+                {'error': 'Google account email is not verified.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        google_sub = idinfo.get('sub', '')
+        if not isinstance(google_sub, str) or not google_sub.strip():
+            return Response(
+                {'error': 'Google credential is missing an account identifier.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        google_sub = google_sub.strip()
+
+        try:
+            user = self._get_or_create_google_user(
+                google_sub=google_sub,
+                google_email=google_email,
+                google_name=idinfo.get('name', '').strip(),
+                re_module=re,
+                secrets_module=_secrets,
+            )
+        except GoogleAuthLinkError as exc:
+            return Response(
+                {'error': str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except IntegrityError:
+            existing_account = SocialAccount.objects.select_related('user').filter(
+                provider=SocialAccount.PROVIDER_GOOGLE,
+                uid=google_sub,
+            ).first()
+            if existing_account is None:
+                raise
+            user = existing_account.user
+
+        if not user.is_active:
+            return Response(
+                {'error': 'This account has been deactivated.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Issue JWT cookies
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+        response = Response({'message': 'Logged in with Google.'})
+        set_jwt_auth_cookies(
+            response,
+            access=str(refresh.access_token),
+            refresh=str(refresh),
+        )
+        return response
+
+    @classmethod
+    def _get_or_create_google_user(
+        cls,
+        *,
+        google_sub,
+        google_email,
+        google_name,
+        re_module,
+        secrets_module,
+    ):
+        with db_transaction.atomic():
+            social_account = (
+                SocialAccount.objects.select_for_update()
+                .select_related('user')
+                .filter(provider=SocialAccount.PROVIDER_GOOGLE, uid=google_sub)
+                .first()
+            )
+            if social_account:
+                if social_account.email != google_email:
+                    social_account.email = google_email
+                    social_account.save(update_fields=['email', 'updated_at'])
+                return social_account.user
+
+            matching_users = list(
+                User.objects.select_for_update()
+                .filter(email__iexact=google_email)
+                .order_by('id')[:2]
+            )
+            if len(matching_users) > 1:
+                raise GoogleAuthLinkError(
+                    'More than one account uses this email. Please sign in with your password or contact support.'
+                )
+
+            user = matching_users[0] if matching_users else cls._create_google_user(
+                google_email=google_email,
+                google_name=google_name,
+                re_module=re_module,
+                secrets_module=secrets_module,
+            )
+
+            SocialAccount.objects.create(
+                user=user,
+                provider=SocialAccount.PROVIDER_GOOGLE,
+                uid=google_sub,
+                email=google_email,
+            )
+            return user
+
+    @staticmethod
+    def _create_google_user(*, google_email, google_name, re_module, secrets_module):
+        base_name = google_name or google_email.split('@')[0]
+        base_username = re_module.sub(r'[^a-zA-Z0-9_]', '', base_name.replace(' ', '_'))
+        if not base_username:
+            base_username = 'user'
+        base_username = base_username[:20]
+
+        for _ in range(10):
+            username = base_username
+            while User.objects.filter(username__iexact=username).exists():
+                username = f'{base_username}_{secrets_module.token_hex(3)}'
+            try:
+                with db_transaction.atomic():
+                    return User.objects.create_user(
+                        username=username,
+                        email=google_email,
+                        password=None,
+                    )
+            except IntegrityError:
+                continue
+
+        raise IntegrityError('Could not create a unique username for Google sign-in.')
 
 class RequestPasswordResetView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/password/reset-request/ — Send reset code to email."""
@@ -1544,8 +1759,12 @@ class WalletView(APIView):
         transactions_qs = wallet.transactions.all()
         total_count = transactions_qs.count()
         transactions = transactions_qs[offset:offset + limit]
+        held_summary = get_seller_held_payout_summary(request.user)
         return Response({
             'balance': str(wallet.balance),
+            'held_balance': str(held_summary['held_balance']),
+            'held_order_count': held_summary['held_order_count'],
+            'next_payout_release_at': held_summary['next_release_at'],
             'transactions': WalletTransactionSerializer(transactions, many=True).data,
             'transaction_pagination': get_pagination_payload(total_count, limit, offset),
         })
@@ -1567,6 +1786,60 @@ class WalletTransactionsView(APIView):
         transactions = transactions_qs[offset:offset + limit]
         return Response({
             'transactions': WalletTransactionSerializer(transactions, many=True).data,
+            'pagination': get_pagination_payload(total_count, limit, offset),
+        })
+
+
+class HeldOrdersView(APIView):
+    """GET /api/wallet/held-orders/ — List orders with buyer protection holds."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        held_orders_qs = Order.objects.filter(
+            seller=request.user,
+            status='completed',
+            buyer_protection_enabled=True,
+            seller_payout_released_at__isnull=True,
+        ).select_related('buyer').order_by('-created_at')
+
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_ORDER_PAGE_SIZE,
+            max_limit=MAX_ORDER_PAGE_SIZE,
+        )
+        total_count = held_orders_qs.count()
+        held_orders = held_orders_qs[offset:offset + limit]
+
+        now = timezone.now()
+        orders_data = []
+        total_held = Decimal('0.00')
+        for order in held_orders:
+            days_until_release = None
+            if order.seller_payout_available_at:
+                delta = order.seller_payout_available_at - now
+                days_until_release = max(0, delta.days + (1 if delta.seconds > 0 else 0))
+
+            total_held += order.seller_amount or Decimal('0.00')
+            orders_data.append({
+                'id': order.id,
+                'order_number': order.order_number,
+                'listing_title': order.listing_title,
+                'buyer_name': order.buyer.username,
+                'quantity': order.quantity,
+                'total_amount': str(order.total_amount),
+                'seller_amount': str(order.seller_amount),
+                'commission_amount': str(order.commission_amount),
+                'seller_payout_available_at': order.seller_payout_available_at,
+                'days_until_release': days_until_release,
+                'created_at': order.created_at,
+            })
+
+        held_summary = get_seller_held_payout_summary(request.user)
+        return Response({
+            'held_balance': str(held_summary['held_balance']),
+            'held_order_count': held_summary['held_order_count'],
+            'next_release_at': held_summary['next_release_at'],
+            'orders': orders_data,
             'pagination': get_pagination_payload(total_count, limit, offset),
         })
 
@@ -1798,8 +2071,10 @@ class BuyListingView(APIView):
                 delivery_note = '\n'.join(delivered_lines)
                 delivery_note = encrypt_sensitive_text(delivery_note)
                 initial_status = 'delivered'
+                delivered_at = timezone.now()
             else:
                 initial_status = 'pending'
+                delivered_at = None
                 delivery_note = ''
 
             wallet = get_or_create_locked_wallet(request.user)
@@ -1851,6 +2126,8 @@ class BuyListingView(APIView):
                 status=initial_status,
                 was_auto_delivery=is_auto,
                 delivery_note=delivery_note,
+                delivered_at=delivered_at,
+                buyer_protection_enabled=category.buyer_protection_enabled,
                 delivery_instructions_snapshot=listing.delivery_instructions.strip(),
             )
 
@@ -1945,8 +2222,9 @@ class MyOrdersView(APIView):
             orders, pagination = get_cursor_page(orders_qs, limit, before_id)
         else:
             total_count = orders_qs.count()
-            orders = orders_qs[offset:offset + limit]
+            orders = list(orders_qs[offset:offset + limit])
             pagination = get_pagination_payload(total_count, limit, offset)
+        released_payout_refs = get_released_seller_payout_order_refs(orders)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(buyer=request.user).values('status').annotate(
             count=Count('id')
@@ -1954,7 +2232,11 @@ class MyOrdersView(APIView):
         counts = {item['status']: item['count'] for item in status_counts}
 
         return Response({
-            'orders': OrderSerializer(orders, many=True).data,
+            'orders': OrderSerializer(
+                orders,
+                many=True,
+                context={'released_seller_payout_order_refs': released_payout_refs},
+            ).data,
             'pagination': pagination,
             'status_counts': counts,
         })
@@ -2014,8 +2296,9 @@ class MySalesView(APIView):
             orders, pagination = get_cursor_page(orders_qs, limit, before_id)
         else:
             total_count = orders_qs.count()
-            orders = orders_qs[offset:offset + limit]
+            orders = list(orders_qs[offset:offset + limit])
             pagination = get_pagination_payload(total_count, limit, offset)
+        released_payout_refs = get_released_seller_payout_order_refs(orders)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(seller=request.user).values('status').annotate(
             count=Count('id')
@@ -2029,7 +2312,11 @@ class MySalesView(APIView):
         summary['total_revenue'] = format(summary['total_revenue'] or Decimal('0.00'), '.2f')
 
         return Response({
-            'sales': OrderSerializer(orders, many=True).data,
+            'sales': OrderSerializer(
+                orders,
+                many=True,
+                context={'released_seller_payout_order_refs': released_payout_refs},
+            ).data,
             'pagination': pagination,
             'summary': summary,
             'status_counts': counts,
@@ -2083,7 +2370,8 @@ class DeliverOrderView(APIView):
             delivery_note = serializer.validated_data.get('delivery_note', '')
             order.status = 'delivered'
             order.delivery_note = encrypt_sensitive_text(delivery_note)
-            order.save(update_fields=['status', 'delivery_note', 'updated_at'])
+            order.delivered_at = timezone.now()
+            order.save(update_fields=['status', 'delivery_note', 'delivered_at', 'updated_at'])
 
             # Notify buyer that seller delivered
             create_notification(
@@ -2115,22 +2403,34 @@ class ConfirmOrderView(APIView):
             if order.status != 'delivered':
                 return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
 
-            release_order_funds_to_seller_once(
+            payout_result = complete_order_with_seller_payout(
                 order,
                 sale_description=f'Sale completed: {order.listing_title} (x{order.quantity})',
                 commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
 
-            order.status = 'completed'
-            order.save(update_fields=['status', 'updated_at'])
+            if payout_result['held']:
+                release_at = timezone.localtime(payout_result['seller_payout_available_at'])
+                title = 'Order confirmed - payout held by buyer protection'
+                message = (
+                    f'{request.user.username} confirmed delivery of "{order.listing_title}". '
+                    f'PKR {order.seller_amount} is held by buyer protection and will be '
+                    f'credited after {release_at:%Y-%m-%d %H:%M}.'
+                )
+            else:
+                title = 'Order confirmed - funds released!'
+                message = (
+                    f'{request.user.username} confirmed delivery of "{order.listing_title}". '
+                    f'PKR {order.seller_amount} has been credited to your wallet.'
+                )
 
             # Notify seller that buyer confirmed
             create_notification(
                 recipient=order.seller,
                 notification_type='order_confirmed',
-                title='Order confirmed — funds released!',
-                message=f'{request.user.username} confirmed delivery of "{order.listing_title}". PKR {order.seller_amount} has been credited to your wallet.',
+                title=title,
+                message=message,
                 order=order,
             )
 
@@ -2153,7 +2453,8 @@ class DisputeOrderView(APIView):
                 buyer=request.user,
             )
 
-            if order.status not in ('pending', 'delivered'):
+            can_dispute_completed_hold = is_order_in_buyer_protection_dispute_window(order)
+            if order.status not in ('pending', 'delivered') and not can_dispute_completed_hold:
                 return Response({'error': 'Cannot dispute in current state.'}, status=400)
 
             order.status = 'disputed'
@@ -2228,20 +2529,33 @@ class ResolveDisputeView(APIView):
                     order=order,
                 )
             else:
-                release_order_funds_to_seller_once(
+                payout_result = complete_order_with_seller_payout(
                     order,
                     sale_description=f'Dispute resolved (seller): {order.listing_title}',
                     commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     ledger_description=f'Commission collected: {order.listing_title}',
                 )
-                order.status = 'completed'
+                if payout_result['held']:
+                    release_at = timezone.localtime(payout_result['seller_payout_available_at'])
+                    seller_title = 'Dispute resolved - payout held'
+                    seller_message = (
+                        f'The dispute for "{order.listing_title}" has been resolved in your favour. '
+                        f'PKR {order.seller_amount} is held by buyer protection and will be '
+                        f'credited after {release_at:%Y-%m-%d %H:%M}.'
+                    )
+                else:
+                    seller_title = 'Dispute resolved - funds released!'
+                    seller_message = (
+                        f'The dispute for "{order.listing_title}" has been resolved in your favour. '
+                        f'PKR {order.seller_amount} has been credited.'
+                    )
 
                 # Notify both parties
                 create_notification(
                     recipient=order.seller,
                     notification_type='order_confirmed',
-                    title='Dispute resolved — funds released!',
-                    message=f'The dispute for "{order.listing_title}" has been resolved in your favour. PKR {order.seller_amount} has been credited.',
+                    title=seller_title,
+                    message=seller_message,
                     order=order,
                 )
                 create_notification(
@@ -2279,7 +2593,7 @@ class RefundOrderView(APIView):
                     listing = None
 
             # If order was completed, seller already received funds — deduct from seller
-            if order.status == 'completed':
+            if order.status == 'completed' and order_seller_payout_has_been_released(order):
                 seller_wallet = get_or_create_locked_wallet(order.seller)
                 if seller_wallet.balance < order.seller_amount:
                     return Response({
@@ -2835,6 +3149,7 @@ class SellerDashboardView(APIView):
             wallet_balance = str(request.user.wallet.balance)
         except Wallet.DoesNotExist:
             wallet_balance = '0.00'
+        held_payout_summary = get_seller_held_payout_summary(request.user)
 
         payload = {
             'orders': {
@@ -2864,6 +3179,9 @@ class SellerDashboardView(APIView):
             'recent_sales': recent_sales_data,
             'top_categories': top_categories_data,
             'wallet_balance': wallet_balance,
+            'wallet_held_balance': str(held_payout_summary['held_balance']),
+            'wallet_held_order_count': held_payout_summary['held_order_count'],
+            'next_payout_release_at': held_payout_summary['next_release_at'],
         }
         if not settings.DEBUG:
             cache.set(cache_key, payload, timeout=60)

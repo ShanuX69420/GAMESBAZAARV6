@@ -131,6 +131,20 @@ export default function ListingDetailPage() {
 
         {/* Right side: price card + buy + chat */}
         <div className="listing-detail-sidebar">
+          {/* Buyer Protection Badge */}
+          {listing.buyer_protection_enabled && (
+            <div className="buyer-protection-badge">
+              <div className="buyer-protection-badge-left">
+                <svg className="buyer-protection-badge-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  <polyline points="9 12 11 14 15 10"/>
+                </svg>
+                <span>Buyer Protection</span>
+              </div>
+              <span className="buyer-protection-badge-days">14 Day</span>
+            </div>
+          )}
+
           <div className="listing-detail-price-card">
             <div className="listing-detail-price">PKR {listing.price}</div>
             <div className="listing-detail-seller">

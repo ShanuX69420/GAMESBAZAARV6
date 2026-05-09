@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -31,6 +32,14 @@ export default function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleGoogleSuccess(userData) {
+    router.push(userData?.is_seller ? '/dashboard' : '/');
+  }
+
+  function handleGoogleError(message) {
+    setError(message);
   }
 
   if (loading || user) {
@@ -83,6 +92,11 @@ export default function LoginPage() {
               {submitting ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+          />
 
           <p className="auth-footer">
             Don&apos;t have an account? <Link href="/register">Sign Up</Link>

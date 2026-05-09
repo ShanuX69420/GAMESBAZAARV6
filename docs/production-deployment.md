@@ -90,6 +90,30 @@ Expected result:
 - Backend tests should pass.
 - Frontend build should pass.
 
+## Scheduled Jobs
+
+Run the order auto-confirm command on a short recurring schedule, for example
+every 10-15 minutes:
+
+```powershell
+cd backend
+python manage.py auto_confirm_orders --batch-size 500
+```
+
+This completes delivered orders once their 72-hour buyer review window has
+expired. Orders that buyers disputed are skipped automatically.
+
+If buyer protection is enabled for any category, also run the held payout
+release command on a recurring schedule:
+
+```powershell
+cd backend
+python manage.py release_held_order_funds --batch-size 500
+```
+
+This credits seller wallet balances for completed protected orders after their
+14-day hold has expired.
+
 ## After Deploy
 
 Check these manually in the browser:

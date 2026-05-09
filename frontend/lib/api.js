@@ -372,6 +372,14 @@ export async function getWithdrawRequests(pagination = {}) {
   return res.json();
 }
 
+export async function getHeldOrders(pagination = {}) {
+  const res = await authFetch(`${API_BASE}/api/wallet/held-orders/${paginationQuery(pagination)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get held orders');
+  return res.json();
+}
+
 // ── Orders API ──────────────────────────────────────────────────────────────
 
 export async function buyListing(listingId, quantity = 1) {

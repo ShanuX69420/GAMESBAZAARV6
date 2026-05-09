@@ -2,6 +2,8 @@ import base64
 import hashlib
 import secrets
 import warnings
+from datetime import timedelta
+from decimal import Decimal
 from time import time
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -10,10 +12,12 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.core import signing
+from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
-from .models import PlatformLedgerEntry, Wallet, WalletTransaction
+from .models import Notification, Order, PlatformLedgerEntry, Wallet, WalletTransaction
 
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
@@ -38,6 +42,8 @@ ENCRYPTED_TEXT_V1_PREFIX = 'enc:v1:'
 ENCRYPTED_TEXT_V2_PREFIX = 'enc:v2:'
 ENCRYPTED_TEXT_PREFIX = ENCRYPTED_TEXT_V1_PREFIX
 CHALLENGE_MAX_FAILED_ATTEMPTS = 5
+AUTO_CONFIRM_ORDER_AFTER = timedelta(hours=72)
+BUYER_PROTECTION_HOLD = timedelta(days=14)
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
@@ -158,6 +164,9 @@ def release_order_funds_to_seller_once(order, *, sale_description, commission_de
         transaction_type='sale',
         reference_id=reference_id,
     ).exists():
+        if not order.seller_payout_released_at:
+            order.seller_payout_released_at = timezone.now()
+            order.save(update_fields=['seller_payout_released_at', 'updated_at'])
         return wallet, False
 
     wallet.balance += order.total_amount
@@ -189,7 +198,258 @@ def release_order_funds_to_seller_once(order, *, sale_description, commission_de
             reference_id=reference_id,
         )
 
+    order.seller_payout_released_at = timezone.now()
+    order.save(update_fields=['seller_payout_released_at', 'updated_at'])
     return wallet, True
+
+
+def complete_order_with_seller_payout(order, *, sale_description, commission_description, ledger_description, completed_at=None):
+    """Complete an order and either release seller funds now or schedule the hold."""
+    completed_at = completed_at or timezone.now()
+    if order.buyer_protection_enabled:
+        if not order.seller_payout_available_at:
+            order.seller_payout_available_at = completed_at + BUYER_PROTECTION_HOLD
+        order.status = 'completed'
+        order.save(update_fields=['status', 'seller_payout_available_at', 'updated_at'])
+        return {
+            'held': True,
+            'released': False,
+            'seller_payout_available_at': order.seller_payout_available_at,
+        }
+
+    _, released = release_order_funds_to_seller_once(
+        order,
+        sale_description=sale_description,
+        commission_description=commission_description,
+        ledger_description=ledger_description,
+    )
+    order.status = 'completed'
+    order.save(update_fields=['status', 'updated_at'])
+    return {
+        'held': False,
+        'released': released,
+        'seller_payout_available_at': None,
+    }
+
+
+def order_seller_payout_has_been_released(order):
+    """Return whether a completed order's seller payout is already available."""
+    if order.status != 'completed':
+        return False
+    if not order.buyer_protection_enabled:
+        return True
+    if order.seller_payout_released_at:
+        return True
+
+    return WalletTransaction.objects.filter(
+        wallet__user=order.seller,
+        transaction_type='sale',
+        reference_id=f'order_{order.pk}',
+    ).exists()
+
+
+def is_order_in_buyer_protection_dispute_window(order, *, now=None):
+    """Return whether a completed order can still be disputed under buyer protection."""
+    if (
+        order.status != 'completed'
+        or not order.buyer_protection_enabled
+        or not order.seller_payout_available_at
+        or order.seller_payout_released_at
+    ):
+        return False
+
+    if order_seller_payout_has_been_released(order):
+        return False
+
+    now = now or timezone.now()
+    return now < order.seller_payout_available_at
+
+
+def get_order_auto_confirm_at(order):
+    """Return when a delivered order becomes eligible for auto-confirmation."""
+    if order.status != 'delivered' or not order.delivered_at:
+        return None
+    return order.delivered_at + AUTO_CONFIRM_ORDER_AFTER
+
+
+def get_seller_held_payout_summary(user):
+    held_orders = Order.objects.filter(
+        seller=user,
+        status='completed',
+        buyer_protection_enabled=True,
+        seller_payout_released_at__isnull=True,
+    )
+    summary = held_orders.aggregate(
+        total=models.Sum('seller_amount'),
+        count=models.Count('id'),
+        next_release_at=models.Min('seller_payout_available_at'),
+    )
+    return {
+        'held_balance': summary['total'] or Decimal('0.00'),
+        'held_order_count': summary['count'] or 0,
+        'next_release_at': summary['next_release_at'],
+    }
+
+
+def release_due_held_order_funds(*, now=None, batch_size=100, dry_run=False):
+    """Release completed buyer-protected payouts whose 14-day hold has expired."""
+    if batch_size < 1:
+        raise ValueError('batch_size must be at least 1.')
+
+    now = now or timezone.now()
+    due_order_ids = list(
+        Order.objects.filter(
+            status='completed',
+            buyer_protection_enabled=True,
+            seller_payout_released_at__isnull=True,
+            seller_payout_available_at__isnull=False,
+            seller_payout_available_at__lte=now,
+        )
+        .order_by('seller_payout_available_at', 'pk')
+        .values_list('pk', flat=True)[:batch_size]
+    )
+
+    if dry_run:
+        return {
+            'due_count': len(due_order_ids),
+            'released_count': 0,
+            'skipped_count': 0,
+            'order_ids': due_order_ids,
+        }
+
+    released_order_ids = []
+    skipped_count = 0
+
+    for order_id in due_order_ids:
+        with transaction.atomic():
+            order = (
+                Order.objects.select_for_update()
+                .select_related('seller')
+                .get(pk=order_id)
+            )
+            if (
+                order.status != 'completed'
+                or not order.buyer_protection_enabled
+                or order.seller_payout_released_at
+                or not order.seller_payout_available_at
+                or order.seller_payout_available_at > now
+            ):
+                skipped_count += 1
+                continue
+
+            _, released = release_order_funds_to_seller_once(
+                order,
+                sale_description=f'Buyer protection payout released: {order.listing_title} (x{order.quantity})',
+                commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
+            )
+            if not released:
+                skipped_count += 1
+                continue
+
+            Notification.objects.create(
+                recipient=order.seller,
+                notification_type='order_confirmed',
+                title='Buyer protection funds released',
+                message=(
+                    f'The 14-day buyer protection hold for "{order.listing_title}" has ended. '
+                    f'PKR {order.seller_amount} has been credited to your wallet.'
+                ),
+                order=order,
+            )
+            released_order_ids.append(order.pk)
+
+    return {
+        'due_count': len(due_order_ids),
+        'released_count': len(released_order_ids),
+        'skipped_count': skipped_count,
+        'order_ids': released_order_ids,
+    }
+
+
+def auto_confirm_due_orders(*, now=None, batch_size=100, dry_run=False):
+    """Complete delivered orders whose 72-hour buyer review window has expired."""
+    if batch_size < 1:
+        raise ValueError('batch_size must be at least 1.')
+
+    now = now or timezone.now()
+    cutoff = now - AUTO_CONFIRM_ORDER_AFTER
+    due_filter = Q(delivered_at__lte=cutoff) | (
+        Q(delivered_at__isnull=True) & Q(updated_at__lte=cutoff)
+    )
+    due_order_ids = list(
+        Order.objects.filter(status='delivered')
+        .filter(due_filter)
+        .order_by('delivered_at', 'pk')
+        .values_list('pk', flat=True)[:batch_size]
+    )
+
+    if dry_run:
+        return {
+            'due_count': len(due_order_ids),
+            'confirmed_count': 0,
+            'skipped_count': 0,
+            'order_ids': due_order_ids,
+        }
+
+    confirmed_order_ids = []
+    skipped_count = 0
+
+    for order_id in due_order_ids:
+        with transaction.atomic():
+            order = (
+                Order.objects.select_for_update()
+                .select_related('seller')
+                .get(pk=order_id)
+            )
+            if order.status != 'delivered':
+                skipped_count += 1
+                continue
+
+            delivered_at = order.delivered_at or order.updated_at
+            if not delivered_at or delivered_at > cutoff:
+                skipped_count += 1
+                continue
+
+            payout_result = complete_order_with_seller_payout(
+                order,
+                sale_description=f'Auto-confirmed sale: {order.listing_title} (x{order.quantity})',
+                commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
+                ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
+            )
+
+            if payout_result['held']:
+                release_at = timezone.localtime(payout_result['seller_payout_available_at'])
+                title = 'Order auto-confirmed - payout held'
+                message = (
+                    f'Order "{order.listing_title}" was automatically confirmed after '
+                    f'72 hours without a buyer dispute. PKR {order.seller_amount} '
+                    f'is held by buyer protection and will be credited after '
+                    f'{release_at:%Y-%m-%d %H:%M}.'
+                )
+            else:
+                title = 'Order auto-confirmed - funds released'
+                message = (
+                    f'Order "{order.listing_title}" was automatically confirmed after '
+                    f'72 hours without a buyer dispute. PKR {order.seller_amount} '
+                    f'has been credited to your wallet.'
+                )
+
+            Notification.objects.create(
+                recipient=order.seller,
+                notification_type='order_confirmed',
+                title=title,
+                message=message,
+                order=order,
+            )
+            confirmed_order_ids.append(order.pk)
+
+    return {
+        'due_count': len(due_order_ids),
+        'confirmed_count': len(confirmed_order_ids),
+        'skipped_count': skipped_count,
+        'order_ids': confirmed_order_ids,
+    }
 
 
 def record_platform_ledger_once(*, entry_type, amount, description, reference_id):
