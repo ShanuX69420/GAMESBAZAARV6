@@ -57,6 +57,7 @@ from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_WS_TICKET_MAX_AGE_SECONDS,
     create_chat_ws_ticket,
+    create_notification as create_user_notification,
     decode_private_media_ticket,
     apply_wallet_delta_once,
     complete_order_with_seller_payout,
@@ -82,6 +83,8 @@ from .services import (
     verify_password_reset_token,
     consume_password_reset_token,
     send_password_reset_code,
+    send_topup_request_received_email,
+    send_withdraw_request_received_email,
 )
 from .authentication import enforce_trusted_origin
 
@@ -244,7 +247,7 @@ def parse_query_date(value):
 
 def create_notification(*, recipient, notification_type, title, message='', order=None, review=None):
     """Create a notification for a user."""
-    return Notification.objects.create(
+    return create_user_notification(
         recipient=recipient,
         notification_type=notification_type,
         title=title,
@@ -1902,6 +1905,8 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        send_topup_request_received_email(topup)
+
         return Response(
             TopUpRequestSerializer(topup, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
@@ -1988,6 +1993,8 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
                 description=f'Withdrawal request: PKR {amount} via {data.get("payment_method", "N/A")}',
                 reference_id=f'withdraw_{withdraw.pk}',
             )
+
+        send_withdraw_request_received_email(withdraw)
 
         return Response(
             WithdrawRequestSerializer(withdraw).data,
@@ -2403,34 +2410,19 @@ class ConfirmOrderView(APIView):
             if order.status != 'delivered':
                 return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
 
-            payout_result = complete_order_with_seller_payout(
+            complete_order_with_seller_payout(
                 order,
                 sale_description=f'Sale completed: {order.listing_title} (x{order.quantity})',
                 commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
 
-            if payout_result['held']:
-                release_at = timezone.localtime(payout_result['seller_payout_available_at'])
-                title = 'Order confirmed - payout held by buyer protection'
-                message = (
-                    f'{request.user.username} confirmed delivery of "{order.listing_title}". '
-                    f'PKR {order.seller_amount} is held by buyer protection and will be '
-                    f'credited after {release_at:%Y-%m-%d %H:%M}.'
-                )
-            else:
-                title = 'Order confirmed - funds released!'
-                message = (
-                    f'{request.user.username} confirmed delivery of "{order.listing_title}". '
-                    f'PKR {order.seller_amount} has been credited to your wallet.'
-                )
-
             # Notify seller that buyer confirmed
             create_notification(
                 recipient=order.seller,
                 notification_type='order_confirmed',
-                title=title,
-                message=message,
+                title='Order confirmed',
+                message=f'Order "{order.listing_title}" has been confirmed.',
                 order=order,
             )
 
@@ -2518,7 +2510,7 @@ class ResolveDisputeView(APIView):
                     recipient=order.buyer,
                     notification_type='order_cancelled',
                     title='Dispute resolved — refund issued',
-                    message=f'Your dispute for "{order.listing_title}" has been resolved. PKR {order.total_amount} has been refunded to your wallet.',
+                    message=f'Your dispute for "{order.listing_title}" has been resolved. The order has been refunded.',
                     order=order,
                 )
                 create_notification(
@@ -2529,26 +2521,17 @@ class ResolveDisputeView(APIView):
                     order=order,
                 )
             else:
-                payout_result = complete_order_with_seller_payout(
+                complete_order_with_seller_payout(
                     order,
                     sale_description=f'Dispute resolved (seller): {order.listing_title}',
                     commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     ledger_description=f'Commission collected: {order.listing_title}',
                 )
-                if payout_result['held']:
-                    release_at = timezone.localtime(payout_result['seller_payout_available_at'])
-                    seller_title = 'Dispute resolved - payout held'
-                    seller_message = (
-                        f'The dispute for "{order.listing_title}" has been resolved in your favour. '
-                        f'PKR {order.seller_amount} is held by buyer protection and will be '
-                        f'credited after {release_at:%Y-%m-%d %H:%M}.'
-                    )
-                else:
-                    seller_title = 'Dispute resolved - funds released!'
-                    seller_message = (
-                        f'The dispute for "{order.listing_title}" has been resolved in your favour. '
-                        f'PKR {order.seller_amount} has been credited.'
-                    )
+                seller_title = 'Dispute resolved - order completed'
+                seller_message = (
+                    f'The dispute for "{order.listing_title}" has been resolved in your favour. '
+                    'The order is now marked as completed.'
+                )
 
                 # Notify both parties
                 create_notification(
@@ -2646,7 +2629,7 @@ class RefundOrderView(APIView):
                 recipient=order.buyer,
                 notification_type='order_cancelled',
                 title='Refund received',
-                message=f'{order.seller.username} has refunded your order "{order.listing_title}". PKR {order.total_amount} has been credited to your wallet.',
+                message=f'Your order "{order.listing_title}" has been refunded.',
                 order=order,
             )
 

@@ -250,8 +250,7 @@ export default function WalletPage() {
         {heldBalance > 0 && (
           <div className="wallet-balance-label" style={{ marginTop: '8px' }}>
             <Link href="/wallet/held-balance" className="held-balance-link">
-              Held by buyer protection: PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
-              {walletData?.next_payout_release_at ? ` – next release ${new Date(walletData.next_payout_release_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+              Pending balance: PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
               <span className="held-arrow">→</span>
             </Link>
           </div>

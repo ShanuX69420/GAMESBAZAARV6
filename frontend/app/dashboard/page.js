@@ -195,7 +195,7 @@ export default function DashboardPage() {
           {heldWalletBalance > 0 && (
             <div className="sd-metric-sub">
               <span className="sd-metric-badge sd-badge-amber">
-                {formatPKR(heldWalletBalance)} held
+                {formatPKR(heldWalletBalance)} pending
               </span>
             </div>
           )}

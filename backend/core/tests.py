@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import Permission, User
-from django.core import signing
+from django.core import mail, signing
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -1483,6 +1483,116 @@ class WithdrawalRequestTests(TestCase):
         self.assertFalse(WithdrawRequest.objects.exists())
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.balance, Decimal('1200.00'))
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class WalletTransactionalEmailTests(TestCase):
+    def setUp(self):
+        mail.outbox = []
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='wallet_buyer',
+            email='wallet-buyer@example.com',
+            password='password123',
+        )
+        self.wallet = Wallet.objects.get(user=self.user)
+        self.wallet.balance = Decimal('1200.00')
+        self.wallet.save(update_fields=['balance'])
+        self.client.force_authenticate(user=self.user)
+
+        self.site = AdminSite()
+        self.request = RequestFactory().post('/admin/')
+        self.request.user = User.objects.create_superuser(
+            username='wallet_admin',
+            email='wallet-admin@example.com',
+            password='password123',
+        )
+
+    def test_topup_request_and_admin_decision_send_emails(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '100.00',
+                'payment_method': 'Bank Transfer',
+                'transaction_id': 'email-topup',
+                'payment_proof': make_image_file(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['wallet-buyer@example.com'])
+        self.assertIn('Top-up request received', mail.outbox[0].subject)
+
+        topup = TopUpRequest.objects.get(transaction_id='email-topup')
+        mail.outbox.clear()
+        admin_obj = TopUpRequestAdmin(TopUpRequest, self.site)
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.approve_topups(self.request, TopUpRequest.objects.filter(pk=topup.pk))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Top-up Approved', mail.outbox[0].subject)
+        self.assertIn('credited to your wallet', mail.outbox[0].body)
+
+        rejected = TopUpRequest.objects.create(
+            user=self.user,
+            amount=Decimal('50.00'),
+            payment_method='Bank Transfer',
+            transaction_id='email-topup-rejected',
+        )
+        mail.outbox.clear()
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.reject_topups(self.request, TopUpRequest.objects.filter(pk=rejected.pk))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Top-up Rejected', mail.outbox[0].subject)
+
+    def test_withdraw_request_and_admin_decision_send_emails(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '500.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Wallet Buyer',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Withdrawal request received', mail.outbox[0].subject)
+        withdraw = WithdrawRequest.objects.get(pk=response.data['id'])
+
+        mail.outbox.clear()
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.approve_withdrawals(self.request, WithdrawRequest.objects.filter(pk=withdraw.pk))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Withdrawal Approved', mail.outbox[0].subject)
+
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '500.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Wallet Buyer',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        rejected = WithdrawRequest.objects.get(pk=response.data['id'])
+
+        mail.outbox.clear()
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.reject_withdrawals(self.request, WithdrawRequest.objects.filter(pk=rejected.pk))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Withdrawal Rejected', mail.outbox[0].subject)
+        self.assertIn('returned to your wallet', mail.outbox[0].body)
 
 
 class ReportFlowTests(TestCase):
@@ -3720,6 +3830,27 @@ class DisputeResolutionApiTests(TestCase):
             1,
         )
 
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_resolve_dispute_refund_emails_dispute_result_to_both_parties(self):
+        self.buyer.email = 'dispute-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'dispute-seller@example.com'
+        self.seller.save(update_fields=['email'])
+        order = self.create_order()
+        self.client.force_authenticate(user=self.staff)
+        mail.outbox = []
+
+        response = self.client.post(
+            f'/api/admin/orders/{order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        recipients = {message.to[0] for message in mail.outbox}
+        self.assertEqual(recipients, {'dispute-buyer@example.com', 'dispute-seller@example.com'})
+        self.assertTrue(all('Dispute result' in message.subject for message in mail.outbox))
+
     def test_resolve_dispute_refund_does_not_restore_auto_delivery_stock(self):
         listing = Listing.objects.create(
             seller=self.seller,
@@ -4710,6 +4841,23 @@ class AutoConfirmOrderTests(TestCase):
         self.assertIn('Auto-confirmed 1 order(s)', first_output.getvalue())
         self.assertIn('Auto-confirmed 0 order(s)', second_output.getvalue())
 
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_auto_confirm_command_sends_seller_completed_email(self):
+        self.buyer.email = 'auto-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'auto-seller@example.com'
+        self.seller.save(update_fields=['email'])
+        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
+        self.create_order(delivered_at=delivered_at)
+        mail.outbox = []
+
+        call_command('auto_confirm_orders', stdout=StringIO())
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['auto-seller@example.com'])
+        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertNotIn('auto_buyer', mail.outbox[0].body)
+
     def test_auto_confirm_command_dry_run_does_not_complete_due_order(self):
         delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
         order = self.create_order(delivered_at=delivered_at)
@@ -4762,6 +4910,24 @@ class AutoConfirmOrderTests(TestCase):
         self.seller_wallet.refresh_from_db()
         self.assertIsNotNone(order.seller_payout_released_at)
         self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_release_held_order_funds_sends_seller_email(self):
+        self.seller.email = 'protected-seller@example.com'
+        self.seller.save(update_fields=['email'])
+        order = self.create_order(status='completed', delivered_at=timezone.now())
+        order.buyer_protection_enabled = True
+        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
+        order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
+        mail.outbox = []
+
+        call_command('release_held_order_funds', stdout=StringIO())
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['protected-seller@example.com'])
+        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertNotIn('buyer protection', mail.outbox[0].body.lower())
+        self.assertNotIn('buyer protection', mail.outbox[0].subject.lower())
 
     def test_release_held_order_funds_dry_run_does_not_release_due_hold(self):
         order = self.create_order(status='completed', delivered_at=timezone.now())
@@ -5628,6 +5794,25 @@ class NotificationTests(TestCase):
         self.assertIn('notif_buyer', notif.title)
         self.assertIsNotNone(notif.order)
 
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_buy_sends_order_placed_email_only_to_seller(self):
+        """Buying a listing should email the seller without naming the buyer."""
+        self.buyer.email = 'notif-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'notif-seller@example.com'
+        self.seller.save(update_fields=['email'])
+        mail.outbox = []
+
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['notif-seller@example.com'])
+        self.assertIn('Order placed', mail.outbox[0].subject)
+        self.assertNotIn('notif_buyer', mail.outbox[0].subject)
+        self.assertNotIn('notif_buyer', mail.outbox[0].body)
+
     def test_deliver_creates_notification_for_buyer(self):
         """Delivering an order should create an order_delivered notification for the buyer."""
         self.client.force_authenticate(user=self.buyer)
@@ -5640,6 +5825,28 @@ class NotificationTests(TestCase):
         notif = Notification.objects.filter(recipient=self.buyer, notification_type='order_delivered').first()
         self.assertIsNotNone(notif)
         self.assertIn('delivered', notif.title.lower())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_deliver_sends_order_delivered_email_only_to_buyer(self):
+        """Delivering an order should email the buyer with sanitized order copy."""
+        self.buyer.email = 'deliver-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'deliver-seller@example.com'
+        self.seller.save(update_fields=['email'])
+
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        mail.outbox.clear()
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(f'/api/orders/{order_id}/deliver/', {'delivery_note': 'Here it is'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['deliver-buyer@example.com'])
+        self.assertIn('Order delivered', mail.outbox[0].subject)
+        self.assertNotIn('notif_buyer', mail.outbox[0].body)
 
     def test_confirm_creates_notification_for_seller(self):
         """Confirming an order should create an order_confirmed notification for the seller."""
@@ -5656,6 +5863,54 @@ class NotificationTests(TestCase):
         notif = Notification.objects.filter(recipient=self.seller, notification_type='order_confirmed').first()
         self.assertIsNotNone(notif)
         self.assertIn('confirmed', notif.title.lower())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_confirm_sends_funds_released_email_to_seller(self):
+        """Buyer confirmation should email the seller when normal-order funds release."""
+        self.buyer.email = 'confirm-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'confirm-seller@example.com'
+        self.seller.save(update_fields=['email'])
+
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/deliver/')
+
+        mail.outbox.clear()
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(f'/api/orders/{order_id}/confirm/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['confirm-seller@example.com'])
+        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertNotIn('confirm_buyer', mail.outbox[0].body)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_protected_confirm_waits_to_email_seller_until_payout_release(self):
+        """Protected orders should not email completion until seller funds are credited."""
+        self.seller.email = 'protected-confirm-seller@example.com'
+        self.seller.save(update_fields=['email'])
+        category = self.listing.game_category.category
+        category.buyer_protection_enabled = True
+        category.save(update_fields=['buyer_protection_enabled'])
+
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.seller)
+        self.client.post(f'/api/orders/{order_id}/deliver/')
+
+        mail.outbox.clear()
+        self.client.force_authenticate(user=self.buyer)
+        response = self.client.post(f'/api/orders/{order_id}/confirm/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mail.outbox, [])
 
     def test_dispute_creates_notification_for_seller(self):
         """Disputing an order should create an order_disputed notification for the seller."""
@@ -5836,7 +6091,28 @@ class NotificationTests(TestCase):
         ).first()
         self.assertIsNotNone(notif)
         self.assertIn('refund', notif.title.lower())
-        self.assertIn('wallet', notif.message.lower())
+        self.assertIn('refunded', notif.message.lower())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_refund_sends_order_refunded_email_only_to_buyer(self):
+        """Seller refunding an order should email the buyer, not the seller."""
+        self.buyer.email = 'refund-buyer@example.com'
+        self.buyer.save(update_fields=['email'])
+        self.seller.email = 'refund-seller@example.com'
+        self.seller.save(update_fields=['email'])
+
+        self.client.force_authenticate(user=self.buyer)
+        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        order_id = resp.data['id']
+
+        mail.outbox.clear()
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(f'/api/orders/{order_id}/refund/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['refund-buyer@example.com'])
+        self.assertIn('Order refunded', mail.outbox[0].subject)
 
 
 class AccountSecurityFlowTests(TestCase):

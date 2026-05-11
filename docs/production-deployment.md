@@ -34,6 +34,8 @@ EMAIL_HOST_PASSWORD=replace-with-smtp-password
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
 DEFAULT_FROM_EMAIL=noreply@example.com
+TRANSACTIONAL_EMAILS_ENABLED=True
+TRANSACTIONAL_EMAIL_FAIL_SILENTLY=True
 
 CHANNEL_REDIS_URL=redis://replace-with-redis-host:6379/0
 CACHE_REDIS_URL=redis://replace-with-redis-host:6379/1
@@ -54,6 +56,7 @@ Notes:
 - `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` must list the frontend origin exactly, including `https://`.
 - `WEBSOCKET_ALLOWED_ORIGINS` must list the browser origin allowed to open chat sockets. If omitted, it defaults to `CORS_ALLOWED_ORIGINS`.
 - SMTP values are required for password reset and email-change flows unless you intentionally configure another production email backend.
+- Transactional marketplace emails use the same SMTP settings. Keep `TRANSACTIONAL_EMAILS_ENABLED=True` to notify users about orders, payouts, disputes, top-ups, and withdrawals.
 - `CHANNEL_REDIS_URL` is required when `DJANGO_DEBUG=False` because chat uses Channels.
 - `CACHE_REDIS_URL` should point to shared Redis for rate limiting. If omitted, the backend falls back to `CHANNEL_REDIS_URL`.
 - Keep `JWT_AUTH_COOKIE_SECURE=True` so auth cookies are only sent over HTTPS.

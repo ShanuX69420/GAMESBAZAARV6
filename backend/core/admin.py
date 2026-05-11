@@ -15,8 +15,11 @@ from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
     complete_order_with_seller_payout,
+    create_notification,
     decrypt_sensitive_text,
     record_withdrawal_approval_once,
+    send_topup_status_email,
+    send_withdraw_status_email,
 )
 from .serializers import get_auto_delivery_inventory_lines
 
@@ -205,13 +208,29 @@ class TopUpRequestAdmin(admin.ModelAdmin):
     actions = ['approve_topups', 'reject_topups']
 
     def save_model(self, request, obj, form, change):
-        """Credit wallet when admin changes status to 'approved' via edit form."""
-        if change and 'status' in form.changed_data and obj.status == 'approved':
+        """Handle status changes via edit form."""
+        if change and 'status' in form.changed_data:
             with transaction.atomic():
-                TopUpRequest.objects.select_for_update().get(pk=obj.pk)
+                locked = TopUpRequest.objects.select_for_update().select_related('user').get(pk=obj.pk)
+                previous_status = locked.status
+                if previous_status != 'pending':
+                    obj.status = previous_status
+                    super().save_model(request, obj, form, change)
+                    self.message_user(
+                        request,
+                        'Only pending top-ups can be approved or rejected.',
+                        level=messages.WARNING,
+                    )
+                    return
+
+                if obj.reviewed_at is None and obj.status in ('approved', 'rejected'):
+                    obj.reviewed_at = timezone.now()
                 super().save_model(request, obj, form, change)
                 obj.refresh_from_db()
-                approve_topup_request(obj)
+                if obj.status == 'approved':
+                    approve_topup_request(obj)
+                elif obj.status == 'rejected':
+                    send_topup_status_email(obj)
             return
         super().save_model(request, obj, form, change)
 
@@ -229,11 +248,18 @@ class TopUpRequestAdmin(admin.ModelAdmin):
 
     @admin.action(description='❌ Reject selected top-ups')
     def reject_topups(self, request, queryset):
-        updated = queryset.filter(status='pending').update(
-            status='rejected',
-            reviewed_at=timezone.now(),
-        )
-        self.message_user(request, f'{updated} top-up(s) rejected.')
+        count = 0
+        for topup_id in queryset.filter(status='pending').values_list('pk', flat=True):
+            with transaction.atomic():
+                topup = TopUpRequest.objects.select_for_update().select_related('user').get(pk=topup_id)
+                if topup.status != 'pending':
+                    continue
+                topup.status = 'rejected'
+                topup.reviewed_at = timezone.now()
+                topup.save(update_fields=['status', 'reviewed_at'])
+                send_topup_status_email(topup)
+                count += 1
+        self.message_user(request, f'{count} top-up(s) rejected.')
 
 
 @admin.register(WithdrawRequest)
@@ -268,7 +294,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 obj.refresh_from_db()
 
                 if obj.status == 'rejected':
-                    apply_wallet_delta_once(
+                    _, returned = apply_wallet_delta_once(
                         obj.user,
                         delta=obj.amount,
                         transaction_type='withdraw_rejected',
@@ -276,6 +302,8 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                         description=f'Withdrawal rejected: PKR {obj.amount} returned',
                         reference_id=f'withdraw_{obj.pk}',
                     )
+                    if returned:
+                        send_withdraw_status_email(obj)
                 elif obj.status == 'approved':
                     record_withdrawal_approval_once(obj)
             return
@@ -308,7 +336,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 wd.reviewed_at = timezone.now()
                 wd.save(update_fields=['status', 'reviewed_at'])
                 # Return funds
-                apply_wallet_delta_once(
+                _, returned = apply_wallet_delta_once(
                     wd.user,
                     delta=wd.amount,
                     transaction_type='withdraw_rejected',
@@ -316,6 +344,8 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                     description=f'Withdrawal rejected: PKR {wd.amount} returned',
                     reference_id=f'withdraw_{wd.pk}',
                 )
+                if returned:
+                    send_withdraw_status_email(wd)
                 count += 1
         self.message_user(request, f'{count} withdrawal(s) rejected and funds returned.')
 
@@ -385,9 +415,10 @@ class OrderAdmin(admin.ModelAdmin):
         count = 0
         for order_id in queryset.filter(status__in=('pending', 'delivered', 'disputed')).values_list('pk', flat=True):
             with transaction.atomic():
-                order = Order.objects.select_for_update().select_related('buyer').get(pk=order_id)
+                order = Order.objects.select_for_update().select_related('buyer', 'seller').get(pk=order_id)
                 if order.status not in ('pending', 'delivered', 'disputed'):
                     continue
+                was_disputed = order.status == 'disputed'
 
                 apply_wallet_delta_once(
                     order.buyer,
@@ -409,6 +440,31 @@ class OrderAdmin(admin.ModelAdmin):
 
                 order.status = 'cancelled'
                 order.save(update_fields=['status', 'updated_at'])
+                create_notification(
+                    recipient=order.buyer,
+                    notification_type='order_cancelled',
+                    title=(
+                        'Dispute resolved - refund issued'
+                        if was_disputed else 'Order cancelled - refund issued'
+                    ),
+                    message=(
+                        f'Order "{order.listing_title}" was cancelled. '
+                        'The order has been refunded.'
+                    ),
+                    order=order,
+                )
+                create_notification(
+                    recipient=order.seller,
+                    notification_type='order_cancelled',
+                    title=(
+                        'Dispute resolved - order cancelled'
+                        if was_disputed else 'Order cancelled - buyer refunded'
+                    ),
+                    message=(
+                        f'Order "{order.listing_title}" was cancelled and the buyer was refunded.'
+                    ),
+                    order=order,
+                )
                 count += 1
         self.message_user(request, f'{count} order(s) refunded and cancelled.')
 
@@ -417,7 +473,7 @@ class OrderAdmin(admin.ModelAdmin):
         count = 0
         for order_id in queryset.filter(status='disputed').values_list('pk', flat=True):
             with transaction.atomic():
-                order = Order.objects.select_for_update().select_related('seller').get(pk=order_id)
+                order = Order.objects.select_for_update().select_related('buyer', 'seller').get(pk=order_id)
                 if order.status != 'disputed':
                     continue
 
@@ -426,6 +482,28 @@ class OrderAdmin(admin.ModelAdmin):
                     sale_description=f'Dispute resolved (seller): {order.listing_title}',
                     commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     ledger_description=f'Commission collected: {order.listing_title}',
+                )
+                seller_title = 'Dispute resolved - order completed'
+                seller_message = (
+                    f'The dispute for "{order.listing_title}" was resolved in your favour. '
+                    'The order is now marked as completed.'
+                )
+                create_notification(
+                    recipient=order.seller,
+                    notification_type='order_confirmed',
+                    title=seller_title,
+                    message=seller_message,
+                    order=order,
+                )
+                create_notification(
+                    recipient=order.buyer,
+                    notification_type='order_confirmed',
+                    title='Dispute resolved - order completed',
+                    message=(
+                        f'The dispute for "{order.listing_title}" was resolved. '
+                        'The order is now marked as completed.'
+                    ),
+                    order=order,
                 )
                 count += 1
         self.message_user(request, f'{count} order(s) released to seller.')

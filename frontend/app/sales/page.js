@@ -256,13 +256,6 @@ export default function SalesPage() {
                 <Link href={orderPath(sale)} className="btn btn-outline btn-sm">
                   📋 View Order
                 </Link>
-                {sale.status === 'completed' && sale.seller_payout_status === 'held' && (
-                  <span className="order-completed-msg" style={{ color: 'var(--text-tertiary)' }}>
-                    Buyer protection hold until {new Date(sale.seller_payout_available_at).toLocaleDateString('en-PK', {
-                      day: 'numeric', month: 'short', year: 'numeric',
-                    })}
-                  </span>
-                )}
                 {sale.status === 'delivered' && (
                   <span className="order-completed-msg" style={{ color: 'var(--text-tertiary)' }}>
                     ⏳ Waiting for buyer to confirm

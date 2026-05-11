@@ -69,7 +69,7 @@ export default function HeldBalancePage() {
   if (pageLoading) {
     return (
       <div className="container">
-        <div className="loading"><div className="loading-spinner"></div> Loading held balance...</div>
+        <div className="loading"><div className="loading-spinner"></div> Loading pending balance...</div>
       </div>
     );
   }
@@ -84,22 +84,22 @@ export default function HeldBalancePage() {
       <div className="held-breadcrumb">
         <Link href="/wallet" className="held-breadcrumb-link">Wallet</Link>
         <span className="held-breadcrumb-sep">›</span>
-        <span className="held-breadcrumb-current">Held Balance</span>
+        <span className="held-breadcrumb-current">Pending Balance</span>
       </div>
 
       {/* Header with held balance */}
       <div className="held-header">
         <div className="held-header-left">
-          <h1 className="held-page-title">🛡️ Buyer Protection Holds</h1>
+          <h1 className="held-page-title">Pending Balance</h1>
           <p className="held-page-subtitle">
-            Funds are held for 14 days after an order is completed to protect buyers. After the hold period, funds are automatically released to your wallet.
+            Some completed orders may stay pending while they finish processing.
           </p>
         </div>
         <div className="held-balance-badge">
           <div className="held-balance-amount">
             PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
           </div>
-          <div className="held-balance-label">Floating Balance</div>
+          <div className="held-balance-label">Pending Balance</div>
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export default function HeldBalancePage() {
           <div className="held-stat-icon">📦</div>
           <div className="held-stat-info">
             <div className="held-stat-value">{heldOrderCount}</div>
-            <div className="held-stat-label">Held Orders</div>
+            <div className="held-stat-label">Pending Orders</div>
           </div>
         </div>
         <div className="held-stat-card">
@@ -118,7 +118,7 @@ export default function HeldBalancePage() {
             <div className="held-stat-value">
               PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
             </div>
-            <div className="held-stat-label">Total Held</div>
+            <div className="held-stat-label">Total Pending</div>
           </div>
         </div>
         <div className="held-stat-card">
@@ -129,7 +129,7 @@ export default function HeldBalancePage() {
                 ? new Date(heldData.next_release_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })
                 : '—'}
             </div>
-            <div className="held-stat-label">Next Release</div>
+            <div className="held-stat-label">Next Update</div>
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@ export default function HeldBalancePage() {
                 <tr>
                   <th>TRANSACTION DATE</th>
                   <th>ORDER</th>
-                  <th>RELEASE DATE</th>
+                  <th>UPDATE</th>
                   <th>AMOUNT</th>
                 </tr>
               </thead>
@@ -203,8 +203,8 @@ export default function HeldBalancePage() {
       ) : (
         <div className="empty-state" style={{ marginTop: '40px' }}>
           <div className="empty-state-icon">🛡️</div>
-          <h3>No Held Orders</h3>
-          <p>You don't have any buyer protection holds at the moment.</p>
+          <h3>No Pending Orders</h3>
+          <p>You don't have any pending order balance at the moment.</p>
           <Link href="/wallet" className="btn btn-primary" style={{ marginTop: '12px' }}>
             ← Back to Wallet
           </Link>

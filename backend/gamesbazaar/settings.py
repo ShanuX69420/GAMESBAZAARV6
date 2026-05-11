@@ -309,6 +309,8 @@ EMAIL_BACKEND = os.environ.get(
     else 'django.core.mail.backends.smtp.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gamesbazaar.pk')
+TRANSACTIONAL_EMAILS_ENABLED = env_bool('TRANSACTIONAL_EMAILS_ENABLED', True)
+TRANSACTIONAL_EMAIL_FAIL_SILENTLY = env_bool('TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True)
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost' if DEBUG else '').strip()
 EMAIL_PORT = env_int('EMAIL_PORT', 587)
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')

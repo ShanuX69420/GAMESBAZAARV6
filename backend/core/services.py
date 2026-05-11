@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
+from django.core.mail import send_mail
 from django.core import signing
 from django.db import models, transaction
 from django.db.models import Q
@@ -46,6 +47,235 @@ AUTO_CONFIRM_ORDER_AFTER = timedelta(hours=72)
 BUYER_PROTECTION_HOLD = timedelta(days=14)
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+
+def _money(amount):
+    return f'PKR {amount}'
+
+
+def _order_reference(order):
+    return order.order_number or f'#{order.pk}'
+
+
+def send_transactional_email(user, *, subject, lines):
+    """Send a plain-text transactional email to a user when they have an email."""
+    if not getattr(settings, 'TRANSACTIONAL_EMAILS_ENABLED', True):
+        return False
+
+    recipient = (getattr(user, 'email', '') or '').strip()
+    if not recipient:
+        return False
+
+    message_lines = [
+        'Hi,',
+        '',
+        *[str(line) for line in lines],
+        '',
+        'GamesBazaar',
+    ]
+    send_mail(
+        subject=subject,
+        message='\n'.join(message_lines),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[recipient],
+        fail_silently=getattr(settings, 'TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True),
+    )
+    return True
+
+
+def _basic_order_lines(order):
+    return [
+        '',
+        f'Order: {_order_reference(order)}',
+        f'Listing: {order.listing_title}',
+        f'Quantity: {order.quantity}',
+    ]
+
+
+def _build_order_notification_email(notification):
+    order = notification.order
+    is_buyer = notification.recipient_id == order.buyer_id
+    is_seller = notification.recipient_id == order.seller_id
+    title = notification.title or ''
+    title_lower = title.lower()
+
+    if title_lower.startswith('dispute resolved'):
+        if is_seller and 'favour' in (notification.message or '').lower():
+            lines = [
+                'The dispute for this order was resolved in your favour.',
+                *_basic_order_lines(order),
+            ]
+        elif is_seller:
+            lines = [
+                'The dispute for this order was resolved in favour of the buyer.',
+                *_basic_order_lines(order),
+            ]
+        elif is_buyer and 'refund' in title_lower:
+            lines = [
+                'The dispute for your order was resolved and the order was refunded.',
+                *_basic_order_lines(order),
+            ]
+        elif is_buyer:
+            lines = [
+                'The dispute for your order has been resolved.',
+                *_basic_order_lines(order),
+            ]
+        else:
+            return None
+        return 'Dispute result', lines
+
+    if notification.notification_type == 'new_order' and is_seller:
+        return 'Order placed', [
+            'A new order has been placed.',
+            *_basic_order_lines(order),
+            f'Order total: {_money(order.total_amount)}',
+        ]
+
+    if notification.notification_type == 'order_delivered' and is_buyer:
+        return 'Order delivered', [
+            'Your order has been delivered.',
+            'Open the order page to review the delivery details.',
+            *_basic_order_lines(order),
+        ]
+
+    if notification.notification_type == 'order_confirmed' and is_seller:
+        if (
+            order_seller_payout_has_been_released(order)
+            or order.seller_payout_released_at
+        ):
+            return 'Order completed', [
+                'This order has been completed.',
+                *_basic_order_lines(order),
+            ]
+        return None
+
+    if notification.notification_type == 'order_cancelled':
+        if is_buyer:
+            if 'refund' in title_lower or 'refund' in (notification.message or '').lower():
+                return 'Order refunded', [
+                    'Your order has been refunded.',
+                    *_basic_order_lines(order),
+                ]
+            return 'Order cancelled', [
+                'Your order has been cancelled.',
+                *_basic_order_lines(order),
+            ]
+        return None
+
+    if notification.notification_type == 'order_disputed' and is_seller:
+        return 'Order disputed', [
+            'A dispute has been opened for this order.',
+            *_basic_order_lines(order),
+        ]
+
+    return None
+
+
+def send_notification_email(notification):
+    """Send email only for marketplace events that should reach the inbox."""
+    if not notification.order_id:
+        return False
+
+    email_payload = _build_order_notification_email(notification)
+    if email_payload is None:
+        return False
+
+    subject, email_lines = email_payload
+    return send_transactional_email(
+        notification.recipient,
+        subject=f'GamesBazaar - {subject}',
+        lines=email_lines,
+    )
+
+
+def create_notification(*, recipient, notification_type, title, message='', order=None, review=None):
+    """Create an in-app notification and send the matching transactional email."""
+    notification = Notification.objects.create(
+        recipient=recipient,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        order=order,
+        review=review,
+    )
+    send_notification_email(notification)
+    return notification
+
+
+def send_topup_request_received_email(topup):
+    return send_transactional_email(
+        topup.user,
+        subject='GamesBazaar - Top-up request received',
+        lines=[
+            f'We received your top-up request for {_money(topup.amount)}.',
+            'Status: Pending review',
+            'We will email you again when it is approved or rejected.',
+        ],
+    )
+
+
+def send_topup_status_email(topup):
+    if topup.status == 'approved':
+        lines = [
+            f'Your top-up request for {_money(topup.amount)} has been approved.',
+            'The funds have been credited to your wallet.',
+        ]
+    elif topup.status == 'rejected':
+        lines = [
+            f'Your top-up request for {_money(topup.amount)} was rejected.',
+            'No funds were added to your wallet.',
+        ]
+    else:
+        lines = [
+            f'Your top-up request for {_money(topup.amount)} is now {topup.get_status_display()}.',
+        ]
+
+    if topup.admin_note:
+        lines.extend(['', f'Admin note: {topup.admin_note}'])
+
+    return send_transactional_email(
+        topup.user,
+        subject=f'GamesBazaar - Top-up {topup.get_status_display()}',
+        lines=lines,
+    )
+
+
+def send_withdraw_request_received_email(withdraw):
+    return send_transactional_email(
+        withdraw.user,
+        subject='GamesBazaar - Withdrawal request received',
+        lines=[
+            f'We received your withdrawal request for {_money(withdraw.amount)}.',
+            'Status: Pending review',
+            'The requested amount has been held from your wallet until the request is approved or rejected.',
+        ],
+    )
+
+
+def send_withdraw_status_email(withdraw):
+    if withdraw.status == 'approved':
+        lines = [
+            f'Your withdrawal request for {_money(withdraw.amount)} has been approved.',
+            f'Payment method: {withdraw.payment_method or "N/A"}',
+        ]
+    elif withdraw.status == 'rejected':
+        lines = [
+            f'Your withdrawal request for {_money(withdraw.amount)} was rejected.',
+            'The held amount has been returned to your wallet.',
+        ]
+    else:
+        lines = [
+            f'Your withdrawal request for {_money(withdraw.amount)} is now {withdraw.get_status_display()}.',
+        ]
+
+    if withdraw.admin_note:
+        lines.extend(['', f'Admin note: {withdraw.admin_note}'])
+
+    return send_transactional_email(
+        withdraw.user,
+        subject=f'GamesBazaar - Withdrawal {withdraw.get_status_display()}',
+        lines=lines,
+    )
 
 
 def _legacy_sensitive_text_fernet():
@@ -339,7 +569,7 @@ def release_due_held_order_funds(*, now=None, batch_size=100, dry_run=False):
 
             _, released = release_order_funds_to_seller_once(
                 order,
-                sale_description=f'Buyer protection payout released: {order.listing_title} (x{order.quantity})',
+                sale_description=f'Order completed: {order.listing_title} (x{order.quantity})',
                 commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
@@ -347,14 +577,11 @@ def release_due_held_order_funds(*, now=None, batch_size=100, dry_run=False):
                 skipped_count += 1
                 continue
 
-            Notification.objects.create(
+            create_notification(
                 recipient=order.seller,
                 notification_type='order_confirmed',
-                title='Buyer protection funds released',
-                message=(
-                    f'The 14-day buyer protection hold for "{order.listing_title}" has ended. '
-                    f'PKR {order.seller_amount} has been credited to your wallet.'
-                ),
+                title='Order completed',
+                message=f'Order "{order.listing_title}" has been completed.',
                 order=order,
             )
             released_order_ids.append(order.pk)
@@ -399,7 +626,7 @@ def auto_confirm_due_orders(*, now=None, batch_size=100, dry_run=False):
         with transaction.atomic():
             order = (
                 Order.objects.select_for_update()
-                .select_related('seller')
+                .select_related('buyer', 'seller')
                 .get(pk=order_id)
             )
             if order.status != 'delivered':
@@ -411,35 +638,34 @@ def auto_confirm_due_orders(*, now=None, batch_size=100, dry_run=False):
                 skipped_count += 1
                 continue
 
-            payout_result = complete_order_with_seller_payout(
+            complete_order_with_seller_payout(
                 order,
-                sale_description=f'Auto-confirmed sale: {order.listing_title} (x{order.quantity})',
+                sale_description=f'Order completed: {order.listing_title} (x{order.quantity})',
                 commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
 
-            if payout_result['held']:
-                release_at = timezone.localtime(payout_result['seller_payout_available_at'])
-                title = 'Order auto-confirmed - payout held'
-                message = (
-                    f'Order "{order.listing_title}" was automatically confirmed after '
-                    f'72 hours without a buyer dispute. PKR {order.seller_amount} '
-                    f'is held by buyer protection and will be credited after '
-                    f'{release_at:%Y-%m-%d %H:%M}.'
-                )
-            else:
-                title = 'Order auto-confirmed - funds released'
-                message = (
-                    f'Order "{order.listing_title}" was automatically confirmed after '
-                    f'72 hours without a buyer dispute. PKR {order.seller_amount} '
-                    f'has been credited to your wallet.'
-                )
+            title = 'Order confirmed'
+            message = (
+                f'Order "{order.listing_title}" was automatically confirmed after '
+                f'72 hours without a dispute.'
+            )
 
-            Notification.objects.create(
+            create_notification(
                 recipient=order.seller,
                 notification_type='order_confirmed',
                 title=title,
                 message=message,
+                order=order,
+            )
+            create_notification(
+                recipient=order.buyer,
+                notification_type='order_confirmed',
+                title='Order automatically confirmed',
+                message=(
+                    f'Order "{order.listing_title}" was automatically confirmed after '
+                    f'72 hours without a dispute.'
+                ),
                 order=order,
             )
             confirmed_order_ids.append(order.pk)
@@ -469,7 +695,7 @@ def record_platform_ledger_once(*, entry_type, amount, description, reference_id
 
 
 def approve_topup_request(topup):
-    apply_wallet_delta_once(
+    _, credited = apply_wallet_delta_once(
         topup.user,
         delta=topup.amount,
         transaction_type='topup_approved',
@@ -480,6 +706,8 @@ def approve_topup_request(topup):
     topup.status = 'approved'
     topup.reviewed_at = timezone.now()
     topup.save(update_fields=['status', 'reviewed_at'])
+    if credited:
+        send_topup_status_email(topup)
 
 
 def record_withdrawal_approval_once(withdraw):
@@ -497,6 +725,8 @@ def record_withdrawal_approval_once(withdraw):
             ),
         },
     )
+    if created and withdraw.status == 'approved':
+        send_withdraw_status_email(withdraw)
     return transaction, created
 
 
