@@ -182,6 +182,54 @@ export async function restockAutoDeliveryListing(id, data) {
   return result;
 }
 
+export async function getAutoDeliveryStock(id) {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/stock/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const result = await res.json();
+    throw new Error(result.error || 'Failed to get stock');
+  }
+  return res.json();
+}
+
+export async function getAutoDeliveryStockItem(id, index) {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/stock/?view=${index}`, {
+    headers: authHeaders(),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result.error || 'Failed to get stock item');
+  }
+  return result;
+}
+
+export async function updateAutoDeliveryStock(id, updates) {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/stock/`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ updates }),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result.error || 'Failed to update stock');
+  }
+  return result;
+}
+
+export async function removeAutoDeliveryStock(id, indices) {
+  const res = await authFetch(`${API_BASE}/api/listings/${id}/stock/`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+    body: JSON.stringify({ indices }),
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result.error || 'Failed to remove stock items');
+  }
+  return result;
+}
+
 export async function deleteListing(id) {
   const res = await authFetch(`${API_BASE}/api/listings/${id}/`, {
     method: 'DELETE',

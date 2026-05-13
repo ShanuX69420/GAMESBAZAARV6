@@ -12,7 +12,7 @@ export default function TermsOfServicePage() {
         <p className="legal-subtitle">
           These are the rules of our marketplace. We&rsquo;ve kept them as straightforward as possible &mdash; no 50-page legalese.
         </p>
-        <div className="legal-updated">Last updated: May 6, 2026</div>
+        <div className="legal-updated">Last updated: May 14, 2026</div>
       </div>
 
       <div className="legal-content">
@@ -80,14 +80,56 @@ export default function TermsOfServicePage() {
               <div className="legal-step-number">3</div>
               <div>
                 <strong>You confirm</strong>
-                <p>Once you&rsquo;ve received and verified everything, confirm the order. The payment is then released to the seller.</p>
+                <p>Once you&rsquo;ve received and verified everything, confirm the order. For categories with Buyer Protection, seller funds are held for an additional 14 days after confirmation &mdash; giving you a safety net to report any issues.</p>
               </div>
             </div>
           </div>
           <div className="legal-callout">
             <span className="legal-callout-icon">⚠️</span>
             <div>
-              <strong>Important:</strong> Always verify what you&rsquo;ve received before confirming. Once confirmed, the payment is released to the seller and cannot be reversed.
+              <strong>Important:</strong> Always verify what you&rsquo;ve received before confirming. For orders <strong>without</strong> Buyer Protection, payment is released to the seller immediately upon confirmation and cannot be reversed.
+            </div>
+          </div>
+        </section>
+
+        {/* Section 4b — Buyer Protection */}
+        <section className="legal-section" id="tos-buyer-protection">
+          <div className="legal-section-icon">🛡️</div>
+          <h2>14-Day Buyer Protection</h2>
+          <p>
+            For eligible categories, GamesBazaar offers a <strong>14-Day Buyer Protection</strong> program. This feature is designed to safeguard buyers against fraud, misrepresentation, and post-delivery issues.
+          </p>
+          <div className="legal-card">
+            <h3>How It Works</h3>
+            <ul>
+              <li><strong>Held funds:</strong> When a buyer confirms delivery on a protected order, the seller&rsquo;s payout is held securely by GamesBazaar for <strong>14 calendar days</strong>. Neither the buyer nor the seller can access these funds during the hold period.</li>
+              <li><strong>Dispute window:</strong> During the 14-day hold, buyers can raise a dispute if they discover issues with the delivered item (e.g., incorrect credentials, account recovery by original owner, or items not matching the description).</li>
+              <li><strong>Automatic release:</strong> If no dispute is raised within 14 days, the funds are automatically released to the seller&rsquo;s wallet and become available for withdrawal.</li>
+              <li><strong>Category-based:</strong> Buyer Protection is enabled on a per-category basis. Whether a listing is covered is clearly indicated on the listing page with a Buyer Protection badge.</li>
+            </ul>
+          </div>
+          <div className="legal-card" style={{ marginTop: '16px' }}>
+            <h3>What&rsquo;s Covered</h3>
+            <ul>
+              <li>Items that don&rsquo;t match the listing description.</li>
+              <li>Account credentials that are invalid or don&rsquo;t work as described.</li>
+              <li>Accounts recovered by the original owner during the protection period.</li>
+              <li>Undelivered in-game items, top-ups, or services that were marked as completed.</li>
+            </ul>
+          </div>
+          <div className="legal-card" style={{ marginTop: '16px' }}>
+            <h3>What&rsquo;s Not Covered</h3>
+            <ul>
+              <li>Issues arising after the 14-day protection window has expired.</li>
+              <li>Account bans imposed by the game publisher for buyer&rsquo;s own actions after delivery.</li>
+              <li>Buyer&rsquo;s remorse or change of mind after confirming a valid delivery.</li>
+              <li>Issues caused by sharing account credentials with third parties.</li>
+            </ul>
+          </div>
+          <div className="legal-callout">
+            <span className="legal-callout-icon">💡</span>
+            <div>
+              <strong>Tip:</strong> You can check the real-time status and countdown of your held orders in the <strong>Held Balance</strong> section of your Wallet page.
             </div>
           </div>
         </section>
@@ -112,8 +154,9 @@ export default function TermsOfServicePage() {
           <h2>Wallet &amp; Withdrawals</h2>
           <ul>
             <li>All transactions on GamesBazaar use our internal wallet system in <strong>Pakistani Rupees (PKR)</strong>.</li>
-            <li>When a buyer confirms an order, the payment is released to the seller&rsquo;s wallet.</li>
-            <li>The <strong>minimum withdrawal amount is PKR 500</strong>.</li>
+            <li>When a buyer confirms an order, the payment is released to the seller&rsquo;s wallet &mdash; <strong>unless</strong> the order is covered by 14-Day Buyer Protection, in which case the funds are held for 14 days before being released.</li>
+            <li>Sellers can view the status and release schedule of held funds in the <strong>Held Balance</strong> section of their Wallet page.</li>
+            <li>The <strong>minimum withdrawal amount is PKR 500</strong>. Only released (available) funds can be withdrawn.</li>
             <li>Withdrawals are processed to Pakistani bank accounts. You must provide accurate bank details (account title, account number, and bank name).</li>
             <li>Withdrawal requests are reviewed and processed by our team. Processing times may vary.</li>
             <li>GamesBazaar is not responsible for delays caused by your bank.</li>
@@ -128,9 +171,11 @@ export default function TermsOfServicePage() {
           <div className="legal-card">
             <ul>
               <li>If there&rsquo;s a problem with your order, you can raise a dispute through the order page.</li>
+              <li>For orders covered by <strong>14-Day Buyer Protection</strong>, you can raise a dispute even after confirming delivery &mdash; as long as it falls within the 14-day protection window.</li>
               <li>Our team will review the dispute and may ask both parties for evidence.</li>
               <li>We aim to resolve disputes fairly, but our decision is final.</li>
               <li>Refunds, when approved, are credited back to the buyer&rsquo;s GamesBazaar wallet.</li>
+              <li>If a dispute is raised during the protection period, the held funds will remain frozen until the dispute is resolved.</li>
               <li>Repeatedly raising false disputes may result in account restrictions.</li>
             </ul>
           </div>
@@ -230,6 +275,7 @@ export default function TermsOfServicePage() {
             <ul>
               <li>Provide a secure marketplace for digital gaming transactions.</li>
               <li>Hold payments safely until buyers confirm delivery.</li>
+              <li>Enforce the 14-Day Buyer Protection hold on eligible categories to give buyers a post-delivery safety net.</li>
               <li>Investigate and resolve disputes between users.</li>
               <li>Keep improving the platform for a better experience.</li>
             </ul>

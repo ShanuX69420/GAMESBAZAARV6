@@ -25,7 +25,7 @@ export default function WalletPage() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('JazzCash');
+  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
   const [txnId, setTxnId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -163,7 +163,7 @@ export default function WalletPage() {
       await requestTopUp(topUpAmount, paymentMethod, txnId.trim(), proofFile);
       setSuccess('Top-up request submitted! Admin will review it shortly.');
       setTopUpAmount('');
-      setPaymentMethod('JazzCash');
+      setPaymentMethod('Bank Transfer');
       setTxnId('');
       setProofFile(null);
       setShowTopUp(false);
@@ -280,9 +280,50 @@ export default function WalletPage() {
         <div className="wallet-topup-card">
           <h2 className="card-title">Request Top-Up</h2>
           <p className="card-text">
-            Send payment via JazzCash, EasyPaisa, or Bank Transfer, then submit your details below.
+            Send payment via Bank Transfer, then submit your details below.
             Admin will verify and credit your wallet.
           </p>
+
+          {/* Payment Details Card */}
+          <div className="topup-payment-details">
+            <div className="topup-payment-details-header">
+              <span className="topup-payment-details-icon">🏦</span>
+              <strong>Send Payment To</strong>
+            </div>
+            <div className="topup-payment-details-body">
+              <div className="topup-detail-row">
+                <span className="topup-detail-label">Bank</span>
+                <span className="topup-detail-value">UBL (United Bank Limited)</span>
+              </div>
+              <div className="topup-detail-row">
+                <span className="topup-detail-label">Account Title</span>
+                <span className="topup-detail-value">GAMES BAZAAR</span>
+              </div>
+              <div className="topup-detail-row topup-detail-row-iban">
+                <span className="topup-detail-label">IBAN</span>
+                <span className="topup-detail-value topup-iban-value">
+                  <code>PK54UNIL0109000333668953</code>
+                  <button
+                    type="button"
+                    className="topup-copy-btn"
+                    onClick={() => {
+                      navigator.clipboard.writeText('PK54UNIL0109000333668953');
+                      setSuccess('IBAN copied to clipboard!');
+                      setTimeout(() => setSuccess(''), 2000);
+                    }}
+                    title="Copy IBAN"
+                  >
+                    📋
+                  </button>
+                </span>
+              </div>
+            </div>
+            <div className="topup-payment-details-footer">
+              <span>⚠️</span>
+              <span>Send the exact amount you want to top up. After sending, fill out the form below with your transaction details. Need help? <a href="https://wa.me/923133625780" target="_blank" rel="noopener noreferrer" className="topup-wa-link">Message us on WhatsApp</a></span>
+            </div>
+          </div>
+
           <form onSubmit={handleTopUp} className="topup-form">
             <div className="form-group">
               <label className="form-label">Amount (PKR) *</label>
@@ -308,9 +349,7 @@ export default function WalletPage() {
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 required
               >
-                <option value="JazzCash">JazzCash</option>
-                <option value="EasyPaisa">EasyPaisa</option>
-                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Bank Transfer">Bank Transfer (UBL)</option>
               </select>
             </div>
             <div className="form-group">

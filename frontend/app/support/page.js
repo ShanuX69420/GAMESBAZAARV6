@@ -12,15 +12,15 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I buy something on GamesBazaar?',
-        a: 'Browse games, find a listing you like, click "Buy Now", and confirm the purchase. The payment is held securely until you receive and confirm your order.',
+        a: 'Browse games, find a listing you like, click "Buy Now", and confirm the purchase. The payment is held securely until you receive and confirm your order. For categories with Buyer Protection, your funds stay held for an additional 14 days after confirmation — giving you a safety net to dispute any issues.',
       },
       {
         q: 'What if I don\'t receive my order?',
-        a: 'If the seller hasn\'t delivered within the expected time, you can open a dispute from your order page. Our team will investigate and resolve the issue — including a full refund if necessary.',
+        a: 'If the seller hasn\'t delivered within the expected time, you can open a dispute from your order page. For protected orders, you can even dispute within 14 days after confirming delivery if something goes wrong (like account recovery by the original owner). Our team will investigate and resolve the issue — including a full refund if necessary.',
       },
       {
         q: 'Can I get a refund?',
-        a: 'Yes! If the seller hasn\'t delivered or the item doesn\'t match the description, you can dispute the order. Sellers can also voluntarily refund you. Once you confirm delivery, the payment is released to the seller.',
+        a: 'Yes! If the seller hasn\'t delivered or the item doesn\'t match the description, you can dispute the order. For orders with 14-Day Buyer Protection, you can still raise a dispute even after confirming delivery — the seller\'s payout is held for 14 days. If no protection applies, funds are released to the seller immediately upon confirmation.',
       },
     ],
   },
@@ -48,7 +48,7 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I add funds to my wallet?',
-        a: 'Go to your Wallet page and submit a top-up request. You can pay via JazzCash, EasyPaisa, or bank transfer. Upload your payment proof and our team will credit your wallet once verified.',
+        a: 'Go to your Wallet page and click "Add Funds". Transfer the amount to our UBL bank account (IBAN and details are shown on the page), then submit your transaction reference and a payment proof screenshot. Our team will verify and credit your wallet shortly.',
       },
       {
         q: 'How do I withdraw my earnings?',
@@ -56,7 +56,7 @@ const FAQ_ITEMS = [
       },
       {
         q: 'Are my payments secure?',
-        a: 'Absolutely. All payments are held securely until the buyer confirms delivery. Neither the buyer nor the seller can access the funds during this period — it\'s our buyer protection guarantee.',
+        a: 'Absolutely. All payments are held securely until the buyer confirms delivery. For eligible categories, our 14-Day Buyer Protection adds another layer: funds remain held for 14 days after delivery confirmation. Neither the buyer nor the seller can access the funds during this period. After 14 days with no dispute, the funds are automatically released to the seller.',
       },
     ],
   },
@@ -377,6 +377,7 @@ export default function SupportPage() {
                   </div>
                 </div>
               </div>
+
 
               <form className="support-form" onSubmit={handleSubmit}>
                 <h2 className="support-form-title">Send us a message</h2>

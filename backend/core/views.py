@@ -42,7 +42,7 @@ from .serializers import (
     UpdateProfileSerializer, ChangePasswordSerializer,
     build_listing_filter_display_map, get_auto_delivery_inventory_lines,
     ListingSerializer, CreateListingSerializer,
-    AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES,
+    AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES, MAX_AUTO_DELIVERY_LINE_LENGTH,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
@@ -1439,6 +1439,217 @@ class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
                 'filter_option_display_map': build_listing_filter_display_map([listing]),
             },
         ).data)
+
+
+class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
+    """GET  /api/listings/{id}/stock/ — View current auto delivery stock items.
+    PUT   /api/listings/{id}/stock/ — Update specific items by index.
+    DELETE /api/listings/{id}/stock/ — Remove items by index.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_methods = {'PUT', 'DELETE'}
+    throttle_scope = 'listing_restock'
+
+    def _get_listing(self, request, pk, *, lock=False):
+        qs = Listing.objects.select_related(
+            'seller', 'game_category__game', 'game_category__category'
+        )
+        if lock:
+            qs = qs.select_for_update()
+        listing = get_object_or_404(qs, pk=pk, seller=request.user)
+        if not listing.is_auto_delivery:
+            return None, Response(
+                {'error': 'This is not an automated delivery listing.'},
+                status=400,
+            )
+        return listing, None
+
+    @staticmethod
+    def _mask_item(item):
+        """Mask an item for display, showing first/last characters for identification."""
+        text = item.strip()
+        length = len(text)
+        if length <= 4:
+            return '*' * length
+        if length <= 8:
+            return text[0] + '*' * (length - 2) + text[-1]
+        # Show first 3 and last 2 characters
+        return text[:3] + '*' * min(length - 5, 10) + text[-2:]
+
+    def get(self, request, pk):
+        listing, error_response = self._get_listing(request, pk)
+        if error_response:
+            return error_response
+
+        items = get_auto_delivery_inventory_lines(
+            decrypt_sensitive_text(listing.auto_delivery_data)
+        )
+
+        # If ?view=<index> is provided, return the full content of that item
+        view_index = request.query_params.get('view')
+        if view_index is not None:
+            try:
+                idx = int(view_index)
+            except (TypeError, ValueError):
+                return Response({'error': 'Invalid item index.'}, status=400)
+            if idx < 0 or idx >= len(items):
+                return Response(
+                    {'error': f'Invalid item index: {idx}. Must be 0-{len(items) - 1}.'},
+                    status=400,
+                )
+            return Response({
+                'index': idx,
+                'content': items[idx],
+                'length': len(items[idx]),
+            })
+
+        stock_items = [
+            {
+                'index': i,
+                'preview': self._mask_item(item),
+                'length': len(item),
+            }
+            for i, item in enumerate(items)
+        ]
+        return Response({
+            'listing_id': listing.id,
+            'listing_title': listing.title,
+            'total_items': len(items),
+            'items': stock_items,
+        })
+
+    def put(self, request, pk):
+        """Update specific items by index.
+        Body: { "updates": [{"index": 0, "content": "new-code-here"}, ...] }
+        """
+        updates = request.data.get('updates')
+        if not isinstance(updates, list) or not updates:
+            return Response(
+                {'error': 'Provide a list of updates with index and content.'},
+                status=400,
+            )
+        if len(updates) > 100:
+            return Response(
+                {'error': 'Cannot update more than 100 items at once.'},
+                status=400,
+            )
+
+        with db_transaction.atomic():
+            listing, error_response = self._get_listing(request, pk, lock=True)
+            if error_response:
+                return error_response
+
+            items = get_auto_delivery_inventory_lines(
+                decrypt_sensitive_text(listing.auto_delivery_data)
+            )
+            total = len(items)
+
+            for update in updates:
+                if not isinstance(update, dict):
+                    return Response(
+                        {'error': 'Each update must be an object with index and content.'},
+                        status=400,
+                    )
+                idx = update.get('index')
+                raw_content = update.get('content', '')
+                if not isinstance(idx, int) or idx < 0 or idx >= total:
+                    return Response(
+                        {'error': f'Invalid item index: {idx}. Must be 0-{total - 1}.'},
+                        status=400,
+                    )
+                content = '' if raw_content is None else str(raw_content)
+                if not content.strip():
+                    return Response(
+                        {'error': f'Item content at index {idx} cannot be empty. Use the delete endpoint to remove items.'},
+                        status=400,
+                    )
+                if len(content) > MAX_AUTO_DELIVERY_LINE_LENGTH:
+                    return Response(
+                        {'error': f'Item content too long at index {idx}.'},
+                        status=400,
+                    )
+                items[idx] = content
+
+            listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(items))
+            listing.quantity = len(items)
+            listing.save(update_fields=['auto_delivery_data', 'quantity', 'updated_at'])
+
+        return Response({
+            'message': f'Updated {len(updates)} item(s).',
+            'total_items': len(items),
+            'listing': ListingSerializer(
+                listing,
+                context={
+                    'request': request,
+                    'filter_option_display_map': build_listing_filter_display_map([listing]),
+                },
+            ).data,
+        })
+
+    def delete(self, request, pk):
+        """Remove items by index.
+        Body: { "indices": [0, 3, 5] }
+        """
+        indices = request.data.get('indices')
+        if not isinstance(indices, list) or not indices:
+            return Response(
+                {'error': 'Provide a list of item indices to remove.'},
+                status=400,
+            )
+
+        with db_transaction.atomic():
+            listing, error_response = self._get_listing(request, pk, lock=True)
+            if error_response:
+                return error_response
+
+            items = get_auto_delivery_inventory_lines(
+                decrypt_sensitive_text(listing.auto_delivery_data)
+            )
+            total = len(items)
+
+            # Validate all indices first
+            seen = set()
+            for idx in indices:
+                if not isinstance(idx, int) or idx < 0 or idx >= total:
+                    return Response(
+                        {'error': f'Invalid item index: {idx}. Must be 0-{total - 1}.'},
+                        status=400,
+                    )
+                if idx in seen:
+                    return Response(
+                        {'error': f'Duplicate index: {idx}.'},
+                        status=400,
+                    )
+                seen.add(idx)
+
+            if len(seen) >= total:
+                return Response(
+                    {'error': 'Cannot remove all items. Delete the listing instead, or leave at least one item.'},
+                    status=400,
+                )
+
+            # Remove items (highest indices first so earlier indices stay valid)
+            remaining_items = [item for i, item in enumerate(items) if i not in seen]
+
+            listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(remaining_items))
+            listing.quantity = len(remaining_items)
+            update_fields = ['auto_delivery_data', 'quantity', 'updated_at']
+            if listing.quantity == 0 and listing.status == 'active':
+                listing.status = 'sold'
+                update_fields.append('status')
+            listing.save(update_fields=update_fields)
+
+        return Response({
+            'message': f'Removed {len(seen)} item(s). {len(remaining_items)} remaining.',
+            'total_items': len(remaining_items),
+            'listing': ListingSerializer(
+                listing,
+                context={
+                    'request': request,
+                    'filter_option_display_map': build_listing_filter_display_map([listing]),
+                },
+            ).data,
+        })
 
 
 class ConversationListView(APIView):

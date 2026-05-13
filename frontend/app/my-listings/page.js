@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getMyListings, updateListing, deleteListing, restockAutoDeliveryListing } from '@/lib/api';
+import { getMyListings, updateListing, deleteListing, restockAutoDeliveryListing, getAutoDeliveryStock, getAutoDeliveryStockItem, updateAutoDeliveryStock, removeAutoDeliveryStock } from '@/lib/api';
 
 const MY_LISTING_PAGE_SIZE = 24;
 
@@ -30,6 +30,14 @@ export default function MyListingsPage() {
   const [editForm, setEditForm] = useState({ title: '', description: '', price: '', quantity: '', status: '' });
   const [restockModal, setRestockModal] = useState(null);
   const [restockData, setRestockData] = useState('');
+  const [stockModal, setStockModal] = useState(null);
+  const [stockItems, setStockItems] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [selectedStockItems, setSelectedStockItems] = useState(new Set());
+  const [stockListingTitle, setStockListingTitle] = useState('');
+  const [editItem, setEditItem] = useState(null);
+  const [editItemContent, setEditItemContent] = useState('');
+  const [editItemLoading, setEditItemLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -165,6 +173,111 @@ export default function MyListingsPage() {
       setSuccess(`Added ${lines.length} item${lines.length === 1 ? '' : 's'} to the listing.`);
       setRestockModal(null);
       setRestockData('');
+      await loadListings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function openStockModal(listing) {
+    setStockModal(listing.id);
+    setStockListingTitle(listing.title);
+    setStockItems([]);
+    setSelectedStockItems(new Set());
+    setStockLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const data = await getAutoDeliveryStock(listing.id);
+      setStockItems(data.items || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setStockLoading(false);
+    }
+  }
+
+  function toggleStockItem(index) {
+    setSelectedStockItems(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  function toggleAllStockItems() {
+    if (selectedStockItems.size === stockItems.length) {
+      setSelectedStockItems(new Set());
+    } else {
+      setSelectedStockItems(new Set(stockItems.map(item => item.index)));
+    }
+  }
+
+  async function handleRemoveStockItems() {
+    if (selectedStockItems.size === 0) return;
+    if (selectedStockItems.size === stockItems.length) {
+      setError('Cannot remove all items. Delete the listing instead, or leave at least one item.');
+      return;
+    }
+    const count = selectedStockItems.size;
+    if (!window.confirm(`Remove ${count} item${count !== 1 ? 's' : ''} from stock? This cannot be undone.`)) return;
+
+    setActionLoading('stock-remove');
+    setError('');
+    setSuccess('');
+    try {
+      const result = await removeAutoDeliveryStock(stockModal, Array.from(selectedStockItems));
+      setSuccess(result.message);
+      setSelectedStockItems(new Set());
+      // Reload stock
+      const data = await getAutoDeliveryStock(stockModal);
+      setStockItems(data.items || []);
+      await loadListings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function openEditItem(itemIndex) {
+    setEditItem(itemIndex);
+    setEditItemContent('');
+    setEditItemLoading(true);
+    setError('');
+    try {
+      const data = await getAutoDeliveryStockItem(stockModal, itemIndex);
+      setEditItemContent(data.content);
+    } catch (err) {
+      setError(err.message);
+      setEditItem(null);
+    } finally {
+      setEditItemLoading(false);
+    }
+  }
+
+  async function handleEditItemSave() {
+    if (!editItemContent.trim()) {
+      setError('Item content cannot be empty.');
+      return;
+    }
+    setActionLoading('stock-edit');
+    setError('');
+    setSuccess('');
+    try {
+      await updateAutoDeliveryStock(stockModal, [{ index: editItem, content: editItemContent }]);
+      setSuccess(`Item #${editItem + 1} updated successfully.`);
+      setEditItem(null);
+      setEditItemContent('');
+      // Reload stock list
+      const data = await getAutoDeliveryStock(stockModal);
+      setStockItems(data.items || []);
       await loadListings();
     } catch (err) {
       setError(err.message);
@@ -447,15 +560,26 @@ export default function MyListingsPage() {
                     </button>
                   )}
                   {listing.is_auto_delivery && (
-                    <button
-                      className="ml-action-btn"
-                      onClick={() => openRestockModal(listing)}
-                      disabled={actionLoading === listing.id}
-                      title="Add automated delivery stock"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                      Restock
-                    </button>
+                    <>
+                      <button
+                        className="ml-action-btn ml-action-stock"
+                        onClick={() => openStockModal(listing)}
+                        disabled={actionLoading === listing.id}
+                        title="View and manage automated delivery stock"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73L13 2.27a2 2 0 00-2 0L4 6.27A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        Manage Stock
+                      </button>
+                      <button
+                        className="ml-action-btn"
+                        onClick={() => openRestockModal(listing)}
+                        disabled={actionLoading === listing.id}
+                        title="Add automated delivery stock"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                        Restock
+                      </button>
+                    </>
                   )}
                   <button
                     className="ml-action-btn"
@@ -604,6 +728,184 @@ export default function MyListingsPage() {
                   {actionLoading === restockModal ? 'Adding...' : 'Add Stock'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Stock Modal */}
+      {stockModal && (
+        <div className="image-preview-overlay" onClick={() => { setStockModal(null); setError(''); setSuccess(''); }}>
+          <div className="stock-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="stock-modal-header">
+              <div className="stock-modal-header-left">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 00-1-1.73L13 2.27a2 2 0 00-2 0L4 6.27A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                <div>
+                  <h3>Manage Stock</h3>
+                  <p className="stock-modal-subtitle">{stockListingTitle}</p>
+                </div>
+              </div>
+              <button className="image-preview-close" onClick={() => { setStockModal(null); setError(''); setSuccess(''); }}>✕</button>
+            </div>
+
+            <div className="stock-modal-body">
+              {error && <div className="alert alert-error" style={{ margin: '0 0 12px' }}>{error}</div>}
+              {success && <div className="alert alert-success" style={{ margin: '0 0 12px' }}>{success}</div>}
+
+              {stockLoading ? (
+                <div className="stock-modal-loading">
+                  <div className="loading-spinner"></div>
+                  <p>Loading stock items...</p>
+                </div>
+              ) : stockItems.length === 0 ? (
+                <div className="stock-modal-empty">
+                  <div className="stock-modal-empty-icon">📦</div>
+                  <p>No items in stock.</p>
+                  <button className="btn btn-primary btn-sm" onClick={() => { setStockModal(null); openRestockModal({ id: stockModal }); }}>
+                    + Add Stock
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Toolbar */}
+                  <div className="stock-toolbar">
+                    <div className="stock-toolbar-left">
+                      <label className="stock-select-all">
+                        <input
+                          type="checkbox"
+                          checked={selectedStockItems.size === stockItems.length && stockItems.length > 0}
+                          onChange={toggleAllStockItems}
+                          className="stock-checkbox"
+                        />
+                        <span>{selectedStockItems.size > 0 ? `${selectedStockItems.size} selected` : 'Select all'}</span>
+                      </label>
+                      <span className="stock-count-badge">{stockItems.length} item{stockItems.length !== 1 ? 's' : ''} total</span>
+                    </div>
+                    <div className="stock-toolbar-right">
+                      {selectedStockItems.size > 0 && (
+                        <button
+                          className="btn btn-sm stock-remove-btn"
+                          onClick={handleRemoveStockItems}
+                          disabled={actionLoading === 'stock-remove'}
+                        >
+                          {actionLoading === 'stock-remove' ? (
+                            <><div className="loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div> Removing...</>
+                          ) : (
+                            <>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                              </svg>
+                              Remove {selectedStockItems.size} item{selectedStockItems.size !== 1 ? 's' : ''}
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stock Items List */}
+                  <div className="stock-items-list">
+                    {stockItems.map((item) => (
+                      <div
+                        key={item.index}
+                        className={`stock-item ${selectedStockItems.has(item.index) ? 'stock-item-selected' : ''}`}
+                        onClick={() => toggleStockItem(item.index)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedStockItems.has(item.index)}
+                          onChange={() => toggleStockItem(item.index)}
+                          className="stock-checkbox"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="stock-item-index">#{item.index + 1}</span>
+                        <code className="stock-item-preview">{item.preview}</code>
+                        <span className="stock-item-length">{item.length} chars</span>
+                        <button
+                          className="stock-item-edit-btn"
+                          title="View & Edit"
+                          onClick={(e) => { e.stopPropagation(); openEditItem(item.index); }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="stock-modal-footer">
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={() => { setStockModal(null); openRestockModal({ id: stockModal }); }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add More Stock
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => { setStockModal(null); setError(''); setSuccess(''); }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Stock Item Modal */}
+      {editItem !== null && (
+        <div className="image-preview-overlay" style={{ zIndex: 1001 }} onClick={() => { setEditItem(null); setEditItemContent(''); }}>
+          <div className="stock-edit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="stock-edit-header">
+              <div className="stock-edit-header-left">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                <span>Item #{editItem + 1}</span>
+              </div>
+              <button className="image-preview-close" onClick={() => { setEditItem(null); setEditItemContent(''); }}>✕</button>
+            </div>
+            <div className="stock-edit-body">
+              {editItemLoading ? (
+                <div className="stock-modal-loading">
+                  <div className="loading-spinner"></div>
+                  <p>Loading item content...</p>
+                </div>
+              ) : (
+                <>
+                  <label className="form-label">Item Content</label>
+                  <textarea
+                    className="stock-edit-textarea"
+                    value={editItemContent}
+                    onChange={(e) => setEditItemContent(e.target.value)}
+                    rows={6}
+                    placeholder="Item content (code, account, key, etc.)"
+                    spellCheck={false}
+                    autoFocus
+                  />
+                  <span className="form-hint">{editItemContent.length} characters</span>
+                </>
+              )}
+            </div>
+            <div className="stock-edit-footer">
+              <button className="btn btn-outline btn-sm" onClick={() => { setEditItem(null); setEditItemContent(''); }}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleEditItemSave}
+                disabled={actionLoading === 'stock-edit' || editItemLoading}
+              >
+                {actionLoading === 'stock-edit' ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           </div>
         </div>

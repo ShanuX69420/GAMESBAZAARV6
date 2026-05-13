@@ -1183,6 +1183,268 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'Only automated delivery listings can be restocked here.')
 
+    def test_seller_can_view_auto_delivery_stock_with_masked_previews(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock preview item',
+            price=Decimal('10.00'),
+            quantity=3,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code\nsecret9\ncredential-one'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.get(f'/api/listings/{listing.id}/stock/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['listing_id'], listing.id)
+        self.assertEqual(response.data['listing_title'], 'Stock preview item')
+        self.assertEqual(response.data['total_items'], 3)
+        self.assertEqual(response.data['items'], [
+            {'index': 0, 'preview': '****', 'length': 4},
+            {'index': 1, 'preview': 's*****9', 'length': 7},
+            {'index': 2, 'preview': 'cre*********ne', 'length': 14},
+        ])
+        self.assertNotIn('secret9', str(response.data))
+        self.assertNotIn('credential-one', str(response.data))
+
+    def test_seller_can_view_full_auto_delivery_stock_item_by_index(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock detail item',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\n  spaced credential  '),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.get(f'/api/listings/{listing.id}/stock/?view=1')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {
+            'index': 1,
+            'content': '  spaced credential  ',
+            'length': len('  spaced credential  '),
+        })
+
+    def test_auto_delivery_stock_view_rejects_invalid_item_index(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock invalid view item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        non_numeric_response = self.client.get(f'/api/listings/{listing.id}/stock/?view=abc')
+        out_of_range_response = self.client.get(f'/api/listings/{listing.id}/stock/?view=1')
+
+        self.assertEqual(non_numeric_response.status_code, 400)
+        self.assertEqual(out_of_range_response.status_code, 400)
+        self.assertEqual(non_numeric_response.data['error'], 'Invalid item index.')
+        self.assertIn('Invalid item index: 1', out_of_range_response.data['error'])
+
+    def test_seller_can_update_auto_delivery_stock_without_losing_edge_whitespace(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock update item',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\ncode-two'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': [{'index': 1, 'content': '  new-code  '}]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['message'], 'Updated 1 item(s).')
+        self.assertEqual(response.data['total_items'], 2)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 2)
+        self.assertEqual(
+            decrypt_sensitive_text(listing.auto_delivery_data),
+            'code-one\n  new-code  ',
+        )
+
+    def test_auto_delivery_stock_update_rejects_invalid_payloads_without_mutating(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock invalid update item',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\ncode-two'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        invalid_shape_response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': {'index': 0, 'content': 'code'}},
+            format='json',
+        )
+        empty_response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': [{'index': 0, 'content': ' \t '}]},
+            format='json',
+        )
+        long_response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': [{'index': 0, 'content': 'x' * (MAX_AUTO_DELIVERY_LINE_LENGTH + 1)}]},
+            format='json',
+        )
+        invalid_index_response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': [{'index': 2, 'content': 'code-three'}]},
+            format='json',
+        )
+
+        self.assertEqual(invalid_shape_response.status_code, 400)
+        self.assertEqual(empty_response.status_code, 400)
+        self.assertEqual(long_response.status_code, 400)
+        self.assertEqual(invalid_index_response.status_code, 400)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 2)
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-one\ncode-two')
+
+    def test_seller_can_remove_auto_delivery_stock_items_by_index(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock delete item',
+            price=Decimal('10.00'),
+            quantity=3,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\ncode-two\ncode-three'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.delete(
+            f'/api/listings/{listing.id}/stock/',
+            {'indices': [0, 2]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['message'], 'Removed 2 item(s). 1 remaining.')
+        self.assertEqual(response.data['total_items'], 1)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 1)
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-two')
+
+    def test_auto_delivery_stock_remove_rejects_invalid_payloads_without_mutating(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Stock invalid delete item',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\ncode-two'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        duplicate_response = self.client.delete(
+            f'/api/listings/{listing.id}/stock/',
+            {'indices': [0, 0]},
+            format='json',
+        )
+        remove_all_response = self.client.delete(
+            f'/api/listings/{listing.id}/stock/',
+            {'indices': [0, 1]},
+            format='json',
+        )
+        invalid_index_response = self.client.delete(
+            f'/api/listings/{listing.id}/stock/',
+            {'indices': [2]},
+            format='json',
+        )
+
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(remove_all_response.status_code, 400)
+        self.assertEqual(invalid_index_response.status_code, 400)
+        listing.refresh_from_db()
+        self.assertEqual(listing.quantity, 2)
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-one\ncode-two')
+
+    def test_auto_delivery_stock_endpoint_rejects_manual_listing(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Manual stock endpoint item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=False,
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.get(f'/api/listings/{listing.id}/stock/')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'This is not an automated delivery listing.')
+
+    def test_auto_delivery_stock_endpoint_is_owner_scoped(self):
+        other_seller = User.objects.create_user(username='other_seller', password='password123')
+        other_seller.profile.seller_status = 'approved'
+        other_seller.profile.save(update_fields=['seller_status'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Private stock item',
+            price=Decimal('10.00'),
+            quantity=2,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data=encrypt_sensitive_text('code-one\ncode-two'),
+            delivery_time='Instant',
+        )
+        self.client.force_authenticate(user=other_seller)
+
+        get_response = self.client.get(f'/api/listings/{listing.id}/stock/')
+        update_response = self.client.put(
+            f'/api/listings/{listing.id}/stock/',
+            {'updates': [{'index': 0, 'content': 'stolen-code'}]},
+            format='json',
+        )
+        delete_response = self.client.delete(
+            f'/api/listings/{listing.id}/stock/',
+            {'indices': [0]},
+            format='json',
+        )
+
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
+        listing.refresh_from_db()
+        self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-one\ncode-two')
+
     def test_sensitive_text_uses_dedicated_field_key_when_configured(self):
         legacy_encrypted = encrypt_sensitive_text('legacy-code')
         key = Fernet.generate_key().decode('ascii')
@@ -1930,6 +2192,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/listings/': 'listing_create',
             '/api/listings/1/': 'listing_mutation',
             '/api/listings/1/restock/': 'listing_restock',
+            '/api/listings/1/stock/': 'listing_restock',
             '/api/reports/': 'create_report',
             '/api/support/': 'create_support_ticket',
         }

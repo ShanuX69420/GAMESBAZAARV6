@@ -9,6 +9,8 @@ import {
   disputeOrder,
   fetchGame,
   fetchGameCategory,
+  getAutoDeliveryStock,
+  getAutoDeliveryStockItem,
   getConversations,
   getHeldOrders,
   getMySupportTickets,
@@ -24,6 +26,7 @@ import {
   requestEmailChange,
   requestPasswordReset,
   requestWithdraw,
+  removeAutoDeliveryStock,
   getSellerDashboard,
   getSellerProfile,
   getSellerReviews,
@@ -31,6 +34,7 @@ import {
   submitReport,
   submitSupportTicket,
   updateProfile,
+  updateAutoDeliveryStock,
   updateReview,
   uploadAvatar,
 } from '../lib/api';
@@ -71,6 +75,60 @@ describe('API client helpers', () => {
         headers: { 'Content-Type': 'application/json' },
       }
     );
+  });
+
+  it('serializes auto-delivery stock management requests', async () => {
+    await getAutoDeliveryStock(7);
+    await getAutoDeliveryStockItem(7, 2);
+    await updateAutoDeliveryStock(7, [{ index: 2, content: '  keep spaces  ' }]);
+    await removeAutoDeliveryStock(7, [0, 2]);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/listings/7/stock/`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/listings/7/stock/?view=2`,
+      {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      `${API_BASE}/api/listings/7/stock/`,
+      {
+        credentials: 'include',
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          updates: [{ index: 2, content: '  keep spaces  ' }],
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      `${API_BASE}/api/listings/7/stock/`,
+      {
+        credentials: 'include',
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ indices: [0, 2] }),
+      }
+    );
+  });
+
+  it('surfaces auto-delivery stock API error messages', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid item index.' }, 400));
+    fetch.mockResolvedValueOnce(jsonResponse({ error: 'Cannot remove all items.' }, 400));
+
+    await expect(getAutoDeliveryStockItem(7, 99)).rejects.toThrow('Invalid item index.');
+    await expect(removeAutoDeliveryStock(7, [0, 1])).rejects.toThrow('Cannot remove all items.');
   });
 
   it('encodes shared pagination aliases for conversations', async () => {
