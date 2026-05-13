@@ -3,6 +3,7 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
 from django.db import transaction
+from django.core.exceptions import PermissionDenied
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, SocialAccount, Listing,
@@ -20,6 +21,7 @@ from .services import (
     record_withdrawal_approval_once,
     send_topup_status_email,
     send_withdraw_status_email,
+    validate_uploaded_image,
 )
 from .serializers import get_auto_delivery_inventory_lines
 
@@ -33,8 +35,49 @@ admin.sites.site = site
 
 # Re-register User and Group (lost when we replaced the default site)
 from django.contrib.auth.models import User, Group
-from django.contrib.auth.admin import UserAdmin, GroupAdmin
-admin.site.register(User, UserAdmin)
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin, GroupAdmin
+
+
+def can_admin_message_user(user):
+    return (
+        user.is_superuser or
+        (
+            user.has_perm('core.view_conversation') and
+            user.has_perm('core.add_message')
+        )
+    )
+
+
+class GamesBazaarUserAdmin(BaseUserAdmin):
+    """Custom User admin with a 'Message user' action and link."""
+    list_display = list(BaseUserAdmin.list_display) + ['message_user_link']
+    actions = list(BaseUserAdmin.actions or []) + ['send_admin_message']
+
+    @admin.display(description='Message')
+    def message_user_link(self, obj):
+        url = reverse('admin:admin_message_user', args=[obj.pk])
+        return format_html(
+            '<a href="{}" style="white-space:nowrap">💬 Message</a>',
+            url,
+        )
+
+    @admin.action(description='💬 Message selected user')
+    def send_admin_message(self, request, queryset):
+        if not can_admin_message_user(request.user):
+            raise PermissionDenied
+        if queryset.count() != 1:
+            self.message_user(
+                request, 'Please select exactly one user to message.', level=messages.WARNING,
+            )
+            return
+        user = queryset.first()
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(
+            reverse('admin:admin_message_user', args=[user.pk])
+        )
+
+
+admin.site.register(User, GamesBazaarUserAdmin)
 admin.site.register(Group, GroupAdmin)
 
 
@@ -141,7 +184,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ['seller_status']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'seller_application_note', 'created_at']
-    actions = ['approve_sellers', 'reject_sellers']
+    actions = ['approve_sellers', 'reject_sellers', 'send_admin_message']
 
     @admin.display(description='Wallet Balance')
     def wallet_balance(self, obj):
@@ -165,6 +208,27 @@ class UserProfileAdmin(admin.ModelAdmin):
             seller_reviewed_at=timezone.now(),
         )
         self.message_user(request, f'{updated} seller(s) rejected.')
+
+    @admin.action(description='💬 Send admin message to selected users')
+    def send_admin_message(self, request, queryset):
+        """Open the admin chatbox with each selected user."""
+        if not can_admin_message_user(request.user):
+            raise PermissionDenied
+        if queryset.count() == 1:
+            profile = queryset.first()
+            # Import locally to avoid circular import
+            from .views import get_or_create_private_conversation
+            # Get or create conversation with this user
+            conversation, _ = get_or_create_private_conversation(request.user, profile.user)
+            from django.urls import reverse
+            url = reverse('admin:conversation_chatbox', args=[conversation.pk])
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect(url)
+        self.message_user(
+            request,
+            'Please select only one user to message.',
+            level=messages.WARNING,
+        )
 
 
 @admin.register(SocialAccount)
@@ -207,6 +271,33 @@ class TopUpRequestAdmin(admin.ModelAdmin):
               'payment_proof', 'status', 'admin_note', 'reviewed_at', 'created_at']
     actions = ['approve_topups', 'reject_topups']
 
+    def _create_topup_notification(self, topup):
+        """Create in-app notification for top-up status change."""
+        if topup.status == 'approved':
+            title = f'Top-up approved — PKR {topup.amount}'
+            message = f'Your top-up request for PKR {topup.amount} has been approved and credited to your wallet.'
+            if topup.admin_note:
+                message += f'\n\nAdmin note: {topup.admin_note}'
+            create_notification(
+                recipient=topup.user,
+                notification_type='topup_approved',
+                title=title,
+                message=message,
+            )
+        elif topup.status == 'rejected':
+            title = f'Top-up rejected — PKR {topup.amount}'
+            message = f'Your top-up request for PKR {topup.amount} was rejected.'
+            if topup.admin_note:
+                message += f'\n\nReason: {topup.admin_note}'
+            else:
+                message += ' Please check your wallet for details or contact support.'
+            create_notification(
+                recipient=topup.user,
+                notification_type='topup_rejected',
+                title=title,
+                message=message,
+            )
+
     def save_model(self, request, obj, form, change):
         """Handle status changes via edit form."""
         if change and 'status' in form.changed_data:
@@ -229,8 +320,10 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                 obj.refresh_from_db()
                 if obj.status == 'approved':
                     approve_topup_request(obj)
+                    self._create_topup_notification(obj)
                 elif obj.status == 'rejected':
                     send_topup_status_email(obj)
+                    self._create_topup_notification(obj)
             return
         super().save_model(request, obj, form, change)
 
@@ -243,6 +336,7 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                 if topup.status != 'pending':
                     continue
                 approve_topup_request(topup)
+                self._create_topup_notification(topup)
                 count += 1
         self.message_user(request, f'{count} top-up(s) approved and wallets credited.')
 
@@ -258,6 +352,7 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                 topup.reviewed_at = timezone.now()
                 topup.save(update_fields=['status', 'reviewed_at'])
                 send_topup_status_email(topup)
+                self._create_topup_notification(topup)
                 count += 1
         self.message_user(request, f'{count} top-up(s) rejected.')
 
@@ -269,11 +364,49 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
     search_fields = ['user__username', 'account_details', 'account_title']
     readonly_fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name', 'created_at']
     fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name',
-              'status', 'admin_note', 'reviewed_at', 'created_at']
+              'status', 'admin_note', 'payment_receipt', 'reviewed_at', 'created_at']
     actions = ['approve_withdrawals', 'reject_withdrawals']
+
+    def _create_withdraw_notification(self, wd):
+        """Create in-app notification for withdrawal status change."""
+        if wd.status == 'approved':
+            title = f'Withdrawal approved — PKR {wd.amount}'
+            message = f'Your withdrawal request for PKR {wd.amount} has been approved and sent via {wd.payment_method or "N/A"}.'
+            if wd.payment_receipt:
+                message += ' A payment receipt has been attached — check your wallet for details.'
+            if wd.admin_note:
+                message += f'\n\nAdmin note: {wd.admin_note}'
+            create_notification(
+                recipient=wd.user,
+                notification_type='withdraw_approved',
+                title=title,
+                message=message,
+            )
+        elif wd.status == 'rejected':
+            title = f'Withdrawal rejected — PKR {wd.amount}'
+            message = f'Your withdrawal request for PKR {wd.amount} was rejected. The held amount has been returned to your wallet.'
+            if wd.admin_note:
+                message += f'\n\nReason: {wd.admin_note}'
+            else:
+                message += ' Please check your wallet for details or contact support.'
+            create_notification(
+                recipient=wd.user,
+                notification_type='withdraw_rejected',
+                title=title,
+                message=message,
+            )
 
     def save_model(self, request, obj, form, change):
         """Handle status changes via edit form."""
+        # Validate receipt image if uploaded
+        if 'payment_receipt' in form.changed_data and obj.payment_receipt:
+            cleaned_data = getattr(form, 'cleaned_data', {}) or {}
+            uploaded_receipt = cleaned_data.get('payment_receipt') or obj.payment_receipt
+            validation_error = validate_uploaded_image(uploaded_receipt)
+            if validation_error:
+                self.message_user(request, f'Invalid receipt image: {validation_error}', level=messages.ERROR)
+                return
+
         if change and 'status' in form.changed_data:
             with transaction.atomic():
                 locked = WithdrawRequest.objects.select_for_update().select_related('user').get(pk=obj.pk)
@@ -304,8 +437,10 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                     )
                     if returned:
                         send_withdraw_status_email(obj)
+                    self._create_withdraw_notification(obj)
                 elif obj.status == 'approved':
                     record_withdrawal_approval_once(obj)
+                    self._create_withdraw_notification(obj)
             return
         super().save_model(request, obj, form, change)
 
@@ -321,6 +456,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 wd.reviewed_at = timezone.now()
                 wd.save(update_fields=['status', 'reviewed_at'])
                 record_withdrawal_approval_once(wd)
+                self._create_withdraw_notification(wd)
                 count += 1
         self.message_user(request, f'{count} withdrawal(s) approved.')
 
@@ -346,6 +482,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 )
                 if returned:
                     send_withdraw_status_email(wd)
+                self._create_withdraw_notification(wd)
                 count += 1
         self.message_user(request, f'{count} withdrawal(s) rejected and funds returned.')
 

@@ -893,6 +893,7 @@ class CreateTopUpRequestSerializer(serializers.Serializer):
 
 class WithdrawRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    payment_receipt_url = serializers.SerializerMethodField()
 
     class Meta:
         model = WithdrawRequest
@@ -900,8 +901,14 @@ class WithdrawRequestSerializer(serializers.ModelSerializer):
             'id', 'amount', 'payment_method', 'account_title',
             'account_details', 'bank_name',
             'status', 'status_display',
-            'admin_note', 'created_at', 'reviewed_at',
+            'admin_note', 'payment_receipt_url', 'created_at', 'reviewed_at',
         ]
+
+    def get_payment_receipt_url(self, obj):
+        if obj.payment_receipt:
+            request = self.context.get('request')
+            return build_private_media_url(request, 'withdraw-receipt', obj.pk, 'withdraw_receipt')
+        return None
 
 
 class CreateWithdrawRequestSerializer(serializers.Serializer):

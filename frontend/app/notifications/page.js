@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getNotifications, markNotificationRead } from '@/lib/api';
-import { notificationOrderPath } from '@/lib/orderNumbers';
+import { notificationDestinationPath } from '@/lib/notifications';
 
 const NOTIF_ICONS = {
   new_order: '🛒',
@@ -13,6 +13,11 @@ const NOTIF_ICONS = {
   order_disputed: '⚠️',
   order_cancelled: '❌',
   new_review: '⭐',
+  topup_approved: '💰',
+  topup_rejected: '🚫',
+  withdraw_approved: '💸',
+  withdraw_rejected: '🚫',
+  admin_message: '💬',
 };
 
 const NOTIF_LABELS = {
@@ -22,6 +27,11 @@ const NOTIF_LABELS = {
   order_disputed: 'Order Disputed',
   order_cancelled: 'Order Cancelled',
   new_review: 'New Review',
+  topup_approved: 'Top-Up Approved',
+  topup_rejected: 'Top-Up Rejected',
+  withdraw_approved: 'Withdrawal Approved',
+  withdraw_rejected: 'Withdrawal Rejected',
+  admin_message: 'Admin Message',
 };
 
 export default function NotificationsPage() {
@@ -73,9 +83,9 @@ export default function NotificationsPage() {
         setUnreadCount(prev => Math.max(0, prev - 1));
       } catch { /* ignore */ }
     }
-    const orderPath = notificationOrderPath(notif);
-    if (orderPath) {
-      router.push(orderPath);
+    const destinationPath = notificationDestinationPath(notif);
+    if (destinationPath) {
+      router.push(destinationPath);
     }
   }
 

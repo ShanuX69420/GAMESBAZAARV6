@@ -604,6 +604,10 @@ class WithdrawRequest(models.Model):
                                   help_text='Bank name (for bank transfers only)')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     admin_note = models.TextField(blank=True, default='')
+    payment_receipt = models.ImageField(
+        upload_to='withdraw_receipts/', blank=True, null=True,
+        help_text='Payment receipt/proof uploaded by admin after processing the withdrawal',
+    )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -786,6 +790,11 @@ class Notification(models.Model):
         ('order_disputed', 'Order Disputed'),          # Seller: buyer opened a dispute
         ('order_cancelled', 'Order Cancelled'),        # Buyer/Seller: order cancelled/refunded
         ('new_review', 'New Review'),                  # Seller: buyer left a review
+        ('topup_approved', 'Top-Up Approved'),         # User: admin approved top-up
+        ('topup_rejected', 'Top-Up Rejected'),         # User: admin rejected top-up
+        ('withdraw_approved', 'Withdraw Approved'),    # User: admin approved withdrawal
+        ('withdraw_rejected', 'Withdraw Rejected'),    # User: admin rejected withdrawal
+        ('admin_message', 'Admin Message'),            # User: admin sent a direct message
     ]
 
     recipient = models.ForeignKey(

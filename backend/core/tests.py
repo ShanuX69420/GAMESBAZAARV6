@@ -26,7 +26,13 @@ from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
-from .admin import OrderAdmin, TopUpRequestAdmin, WithdrawRequestAdmin
+from .admin import (
+    GamesBazaarUserAdmin,
+    OrderAdmin,
+    TopUpRequestAdmin,
+    UserProfileAdmin,
+    WithdrawRequestAdmin,
+)
 from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
@@ -1695,6 +1701,7 @@ class WithdrawalRequestTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.data['payment_receipt_url'])
         withdraw = WithdrawRequest.objects.get(user=self.user)
         self.assertEqual(withdraw.status, 'pending')
         self.assertEqual(withdraw.amount, Decimal('500.00'))
@@ -1746,6 +1753,80 @@ class WithdrawalRequestTests(TestCase):
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.balance, Decimal('1200.00'))
 
+    def test_withdrawal_receipt_url_is_private_to_owner_and_permitted_staff(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.user,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Buyer Account',
+            account_details='03001234567',
+            status='approved',
+            payment_receipt=make_image_file(name='receipt.png'),
+            reviewed_at=timezone.now(),
+        )
+
+        response = self.client.get('/api/wallet/withdraw/')
+
+        self.assertEqual(response.status_code, 200)
+        receipt_url = response.data['withdraw_requests'][0]['payment_receipt_url']
+        self.assertIn(f'/api/wallet/withdraw/{withdraw.pk}/receipt/', receipt_url)
+        self.assertNotIn('/media/', receipt_url)
+
+        owner_response = self.client.get(path_with_query(receipt_url))
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertEqual(owner_response['Content-Type'], 'image/png')
+        self.assertEqual(owner_response['X-Content-Type-Options'], 'nosniff')
+        self.assertEqual(owner_response['Cache-Control'], 'private, no-store')
+        self.assertEqual(owner_response['Referrer-Policy'], 'no-referrer')
+
+        self.client.force_authenticate(user=None)
+        unauthenticated_response = self.client.get(path_with_query(receipt_url))
+        self.assertEqual(unauthenticated_response.status_code, 404)
+
+        other_user = User.objects.create_user(username='other_withdraw_user', password='password123')
+        self.client.force_authenticate(user=other_user)
+        other_user_response = self.client.get(path_with_query(receipt_url))
+        self.assertEqual(other_user_response.status_code, 404)
+        unsigned_other_user_response = self.client.get(f'/api/wallet/withdraw/{withdraw.pk}/receipt/')
+        self.assertEqual(unsigned_other_user_response.status_code, 404)
+
+        staff_user = User.objects.create_user(
+            username='withdraw_staff',
+            password='password123',
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=staff_user)
+        staff_response = self.client.get(f'/api/wallet/withdraw/{withdraw.pk}/receipt/')
+        self.assertEqual(staff_response.status_code, 404)
+
+        permitted_staff = User.objects.create_user(
+            username='withdraw_permitted_staff',
+            password='password123',
+            is_staff=True,
+        )
+        permission = Permission.objects.get(
+            content_type__app_label='core',
+            codename='view_withdrawrequest',
+        )
+        permitted_staff.user_permissions.add(permission)
+        self.client.force_authenticate(user=permitted_staff)
+        permitted_staff_response = self.client.get(f'/api/wallet/withdraw/{withdraw.pk}/receipt/')
+        self.assertEqual(permitted_staff_response.status_code, 200)
+
+    def test_withdrawal_receipt_endpoint_404s_without_receipt(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.user,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Buyer Account',
+            account_details='03001234567',
+            status='approved',
+        )
+
+        response = self.client.get(f'/api/wallet/withdraw/{withdraw.pk}/receipt/')
+
+        self.assertEqual(response.status_code, 404)
+
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class WalletTransactionalEmailTests(TestCase):
@@ -1796,6 +1877,12 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Top-up Approved', mail.outbox[0].subject)
         self.assertIn('credited to your wallet', mail.outbox[0].body)
+        approved_notification = Notification.objects.get(
+            recipient=self.user,
+            notification_type='topup_approved',
+        )
+        self.assertIn('Top-up approved', approved_notification.title)
+        self.assertIn('credited to your wallet', approved_notification.message)
 
         rejected = TopUpRequest.objects.create(
             user=self.user,
@@ -1809,6 +1896,12 @@ class WalletTransactionalEmailTests(TestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Top-up Rejected', mail.outbox[0].subject)
+        rejected_notification = Notification.objects.get(
+            recipient=self.user,
+            notification_type='topup_rejected',
+        )
+        self.assertIn('Top-up rejected', rejected_notification.title)
+        self.assertIn('Please check your wallet', rejected_notification.message)
 
     def test_withdraw_request_and_admin_decision_send_emails(self):
         response = self.client.post(
@@ -1826,6 +1919,8 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Withdrawal request received', mail.outbox[0].subject)
         withdraw = WithdrawRequest.objects.get(pk=response.data['id'])
+        withdraw.payment_receipt = make_image_file(name='withdraw-approved-receipt.png')
+        withdraw.save(update_fields=['payment_receipt'])
 
         mail.outbox.clear()
         admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
@@ -1834,6 +1929,13 @@ class WalletTransactionalEmailTests(TestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Withdrawal Approved', mail.outbox[0].subject)
+        approved_notification = Notification.objects.get(
+            recipient=self.user,
+            notification_type='withdraw_approved',
+        )
+        self.assertIn('Withdrawal approved', approved_notification.title)
+        self.assertIn('JazzCash', approved_notification.message)
+        self.assertIn('payment receipt', approved_notification.message)
 
         response = self.client.post(
             '/api/wallet/withdraw/',
@@ -1855,6 +1957,41 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Withdrawal Rejected', mail.outbox[0].subject)
         self.assertIn('returned to your wallet', mail.outbox[0].body)
+        rejected_notification = Notification.objects.get(
+            recipient=self.user,
+            notification_type='withdraw_rejected',
+        )
+        self.assertIn('Withdrawal rejected', rejected_notification.title)
+        self.assertIn('returned to your wallet', rejected_notification.message)
+
+    def test_admin_withdrawal_receipt_upload_rejects_invalid_image(self):
+        withdraw = WithdrawRequest.objects.create(
+            user=self.user,
+            amount=Decimal('500.00'),
+            payment_method='JazzCash',
+            account_title='Wallet Buyer',
+            account_details='03001234567',
+        )
+        receipt = SimpleUploadedFile(
+            'receipt.txt',
+            b'not an image',
+            content_type='text/plain',
+        )
+        withdraw.payment_receipt = receipt
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        form = type(
+            'ChangedReceiptForm',
+            (),
+            {'changed_data': ['payment_receipt'], 'cleaned_data': {'payment_receipt': receipt}},
+        )()
+
+        with patch.object(admin_obj, 'message_user') as message_user:
+            admin_obj.save_model(self.request, withdraw, form, change=True)
+
+        message_user.assert_called_once()
+        self.assertIn('Invalid receipt image', message_user.call_args.args[1])
+        withdraw.refresh_from_db()
+        self.assertFalse(withdraw.payment_receipt)
 
 
 class ReportFlowTests(TestCase):
@@ -4296,6 +4433,37 @@ class AdminMoneyActionTests(TestCase):
             ).count(),
             1,
         )
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.buyer,
+                notification_type='topup_approved',
+            ).count(),
+            1,
+        )
+
+    def test_admin_topup_rejection_notification_is_idempotent(self):
+        topup = TopUpRequest.objects.create(
+            user=self.buyer,
+            amount=Decimal('100.00'),
+            payment_method='Bank Transfer',
+            transaction_id='admin-topup-reject',
+        )
+        admin_obj = TopUpRequestAdmin(TopUpRequest, self.site)
+        queryset = TopUpRequest.objects.filter(pk=topup.pk)
+
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.reject_topups(self.request, queryset)
+            admin_obj.reject_topups(self.request, queryset)
+
+        topup.refresh_from_db()
+        self.assertEqual(topup.status, 'rejected')
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.buyer,
+                notification_type='topup_rejected',
+            ).count(),
+            1,
+        )
 
     def test_admin_withdrawal_approval_is_idempotent(self):
         withdraw = WithdrawRequest.objects.create(
@@ -4325,6 +4493,13 @@ class AdminMoneyActionTests(TestCase):
             ).count(),
             1,
         )
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.buyer,
+                notification_type='withdraw_approved',
+            ).count(),
+            1,
+        )
 
     def test_admin_withdrawal_rejection_refunds_once(self):
         withdraw = WithdrawRequest.objects.create(
@@ -4351,6 +4526,13 @@ class AdminMoneyActionTests(TestCase):
                 wallet=self.buyer_wallet,
                 transaction_type='withdraw_rejected',
                 reference_id=f'withdraw_{withdraw.pk}',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.buyer,
+                notification_type='withdraw_rejected',
             ).count(),
             1,
         )
@@ -4608,6 +4790,20 @@ class AdminChatProtectionTests(TestCase):
         self.assertTrue(
             self.conversation.participants.filter(pk=self.sender_admin.pk).exists()
         )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.buyer,
+                notification_type='admin_message',
+                message='Please share a screenshot.',
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.seller,
+                notification_type='admin_message',
+                message='Please share a screenshot.',
+            ).exists()
+        )
 
     def test_admin_message_image_view_requires_conversation_view_permission(self):
         message = Message.objects.create(
@@ -4620,6 +4816,165 @@ class AdminChatProtectionTests(TestCase):
 
         with self.assertRaises(PermissionDenied):
             self.site.conversation_message_image_view(request, message.pk)
+
+
+class UserProfileAdminMessageActionTests(TestCase):
+    def setUp(self):
+        self.site = AdminSite()
+        self.request = RequestFactory().post('/admin/core/userprofile/')
+        self.request.user = User.objects.create_superuser(
+            username='profile_admin',
+            email='profile-admin@example.com',
+            password='password123',
+        )
+        self.target = User.objects.create_user(username='profile_target', password='password123')
+
+    def test_single_selected_profile_opens_private_admin_chat(self):
+        admin_obj = UserProfileAdmin(UserProfile, self.site)
+
+        response = admin_obj.send_admin_message(
+            self.request,
+            UserProfile.objects.filter(user=self.target),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        conversation = Conversation.objects.filter(
+            participants=self.request.user,
+        ).filter(
+            participants=self.target,
+        ).get()
+        self.assertIn(
+            f'/admin/core/conversation/{conversation.pk}/chatbox/',
+            response['Location'],
+        )
+
+    def test_multiple_selected_profiles_show_warning(self):
+        second_target = User.objects.create_user(username='profile_target_two', password='password123')
+        admin_obj = UserProfileAdmin(UserProfile, self.site)
+        queryset = UserProfile.objects.filter(user__in=[self.target, second_target])
+
+        with patch.object(admin_obj, 'message_user') as message_user:
+            response = admin_obj.send_admin_message(self.request, queryset)
+
+        self.assertIsNone(response)
+        message_user.assert_called_once()
+        self.assertIn('Please select only one user', message_user.call_args.args[1])
+
+    def test_profile_admin_action_requires_chat_permissions_before_creating_conversation(self):
+        self.request.user = User.objects.create_user(
+            username='profile_no_perm_admin',
+            password='password123',
+            is_staff=True,
+        )
+        admin_obj = UserProfileAdmin(UserProfile, self.site)
+        before_count = Conversation.objects.count()
+
+        with self.assertRaises(PermissionDenied):
+            admin_obj.send_admin_message(
+                self.request,
+                UserProfile.objects.filter(user=self.target),
+            )
+
+        self.assertEqual(Conversation.objects.count(), before_count)
+
+
+class UserAdminMessageShortcutTests(TestCase):
+    def setUp(self):
+        self.site = AdminSite()
+        self.request = RequestFactory().post('/admin/auth/user/')
+        self.request.user = User.objects.create_superuser(
+            username='auth_admin',
+            email='auth-admin@example.com',
+            password='password123',
+        )
+        self.target = User.objects.create_user(username='auth_target', password='password123')
+
+    def test_user_admin_action_redirects_to_message_shortcut_for_single_user(self):
+        admin_obj = GamesBazaarUserAdmin(User, self.site)
+
+        response = admin_obj.send_admin_message(
+            self.request,
+            User.objects.filter(pk=self.target.pk),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(
+            f'/admin/message-user/{self.target.pk}/',
+            response['Location'],
+        )
+
+    def test_user_admin_action_requires_exactly_one_user(self):
+        second_target = User.objects.create_user(username='auth_target_two', password='password123')
+        admin_obj = GamesBazaarUserAdmin(User, self.site)
+        queryset = User.objects.filter(pk__in=[self.target.pk, second_target.pk])
+
+        with patch.object(admin_obj, 'message_user') as message_user:
+            response = admin_obj.send_admin_message(self.request, queryset)
+
+        self.assertIsNone(response)
+        message_user.assert_called_once()
+        self.assertIn('Please select exactly one user', message_user.call_args.args[1])
+
+    def test_user_admin_action_requires_chat_permissions(self):
+        self.request.user = User.objects.create_user(
+            username='auth_no_perm_admin',
+            password='password123',
+            is_staff=True,
+        )
+        admin_obj = GamesBazaarUserAdmin(User, self.site)
+
+        with self.assertRaises(PermissionDenied):
+            admin_obj.send_admin_message(
+                self.request,
+                User.objects.filter(pk=self.target.pk),
+            )
+
+
+class AdminMessageUserViewTests(TestCase):
+    def setUp(self):
+        self.site = GamesBazaarAdminSite(name='test_admin_message_user')
+        self.request = RequestFactory().get('/admin/message-user/1/')
+        self.request.user = User.objects.create_superuser(
+            username='shortcut_admin',
+            email='shortcut-admin@example.com',
+            password='password123',
+        )
+        self.target = User.objects.create_user(username='shortcut_target', password='password123')
+
+    def test_admin_message_user_view_opens_private_chat(self):
+        response = self.site.admin_message_user_view(self.request, self.target.pk)
+
+        self.assertEqual(response.status_code, 302)
+        conversation = Conversation.objects.filter(
+            participants=self.request.user,
+        ).filter(
+            participants=self.target,
+        ).get()
+        self.assertIn(
+            f'/admin/core/conversation/{conversation.pk}/chatbox/',
+            response['Location'],
+        )
+
+    @patch('django.contrib.messages.warning')
+    def test_admin_message_user_view_rejects_self_message(self, warning):
+        response = self.site.admin_message_user_view(self.request, self.request.user.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/admin/auth/user/', response['Location'])
+        warning.assert_called_once()
+
+    def test_admin_message_user_view_requires_chat_permissions_before_creating_conversation(self):
+        self.request.user = User.objects.create_user(
+            username='shortcut_no_perm_admin',
+            password='password123',
+            is_staff=True,
+        )
+        before_count = Conversation.objects.count()
+
+        with self.assertRaises(PermissionDenied):
+            self.site.admin_message_user_view(self.request, self.target.pk)
+
+        self.assertEqual(Conversation.objects.count(), before_count)
 
 
 class ConcurrentPurchaseFlowTests(TransactionTestCase):

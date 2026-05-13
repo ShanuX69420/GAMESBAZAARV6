@@ -38,8 +38,37 @@ class GamesBazaarAdminSite(AdminSite):
                 self.admin_view(self.conversation_message_image_view),
                 name='conversation_message_image',
             ),
+            path(
+                'message-user/<int:user_id>/',
+                self.admin_view(self.admin_message_user_view),
+                name='admin_message_user',
+            ),
         ]
         return custom + super().get_urls()
+
+    # ── Message User shortcut ──────────────────────────────────────
+
+    def admin_message_user_view(self, request, user_id):
+        """Create/find a conversation with a user and redirect to the chatbox."""
+        from django.core.exceptions import PermissionDenied
+        from django.contrib.auth.models import User
+        from django.shortcuts import get_object_or_404, redirect
+        from core.views import get_or_create_private_conversation
+
+        if not (
+            self._can_view_conversation(request.user) and
+            self._can_send_admin_message(request.user)
+        ):
+            raise PermissionDenied
+
+        target_user = get_object_or_404(User, pk=user_id)
+        if target_user == request.user:
+            from django.contrib import messages
+            messages.warning(request, 'You cannot message yourself.')
+            return redirect('admin:auth_user_changelist')
+
+        conversation, _ = get_or_create_private_conversation(request.user, target_user)
+        return redirect('admin:conversation_chatbox', conversation_id=conversation.pk)
 
     # ── Conversation Chatbox ────────────────────────────────────────
 
@@ -90,11 +119,19 @@ class GamesBazaarAdminSite(AdminSite):
                 if request.user not in participants:
                     conversation.participants.add(request.user)
 
-                Message.objects.create(
+                message = Message.objects.create(
                     conversation=conversation,
                     sender=request.user,
                     content=content,
                 )
+                from core.services import create_notification
+                for participant in conversation.participants.exclude(pk=request.user.pk):
+                    create_notification(
+                        recipient=participant,
+                        notification_type='admin_message',
+                        title='New admin message',
+                        message=message.content,
+                    )
                 # Touch updated_at
                 conversation.save(update_fields=['updated_at'])
 

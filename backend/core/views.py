@@ -2144,6 +2144,34 @@ class TopUpProofView(APIView):
         return private_file_response(topup.payment_proof)
 
 
+class WithdrawReceiptView(APIView):
+    """GET /api/wallet/withdraw/{id}/receipt/ — Serve a protected payment receipt."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        withdraw = get_object_or_404(WithdrawRequest, pk=pk)
+        if not withdraw.payment_receipt:
+            raise Http404
+        has_ticket = has_valid_private_media_ticket(
+            request,
+            kind='withdraw_receipt',
+            object_id=withdraw.pk,
+        )
+        can_view = (
+            request.user.is_authenticated and
+            (
+                withdraw.user_id == request.user.id or
+                (
+                    request.user.is_staff and
+                    request.user.has_perm('core.view_withdrawrequest')
+                )
+            )
+        )
+        if not (has_ticket or can_view):
+            raise Http404
+        return private_file_response(withdraw.payment_receipt)
+
+
 class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
     """POST /api/wallet/withdraw/ — Create a withdrawal request.
     GET /api/wallet/withdraw/ — List my withdrawal requests.
@@ -2163,6 +2191,7 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
         return Response({
             'withdraw_requests': WithdrawRequestSerializer(
                 withdraw_requests, many=True,
+                context={'request': request},
             ).data,
             'pagination': get_pagination_payload(total_count, limit, offset),
         })
@@ -2208,7 +2237,7 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
         send_withdraw_request_received_email(withdraw)
 
         return Response(
-            WithdrawRequestSerializer(withdraw).data,
+            WithdrawRequestSerializer(withdraw, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
         )
 

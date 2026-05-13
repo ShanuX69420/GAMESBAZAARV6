@@ -468,31 +468,36 @@ export default function WalletPage() {
       {topUpRequests.length > 0 && (
         <section className="section">
           <h2 className="section-title">Top-Up Requests</h2>
-          <div className="listings-table-wrap">
-            <table className="listings-table">
-              <thead>
-                <tr>
-                  <th>Amount</th>
-                  <th>Method</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topUpRequests.map((req) => (
-                  <tr key={req.id}>
-                    <td className="listing-price">PKR {req.amount}</td>
-                    <td>{req.payment_method || '—'}</td>
-                    <td>
-                      <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
-                        {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
-                      </span>
-                    </td>
-                    <td>{new Date(req.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="wallet-requests-list">
+            {topUpRequests.map((req) => (
+              <div key={req.id} className={`wallet-request-card wallet-request-${req.status}`}>
+                <div className="wallet-request-header">
+                  <div className="wallet-request-info">
+                    <span className="wallet-request-amount">PKR {Number(req.amount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                    <span className="wallet-request-method">{req.payment_method || '—'}</span>
+                  </div>
+                  <div className="wallet-request-meta">
+                    <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
+                      {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                    </span>
+                    <span className="wallet-request-date">{new Date(req.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                {req.status !== 'pending' && req.admin_note && (
+                  <div className={`wallet-request-note ${req.status === 'rejected' ? 'wallet-request-note-rejected' : 'wallet-request-note-approved'}`}>
+                    <div className="wallet-request-note-label">
+                      {req.status === 'rejected' ? '❌ Rejection Reason' : '📝 Admin Note'}
+                    </div>
+                    <div className="wallet-request-note-text">{req.admin_note}</div>
+                  </div>
+                )}
+                {req.reviewed_at && (
+                  <div className="wallet-request-reviewed">
+                    Reviewed on {new Date(req.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </div>
+            ))}
             {topUpPagination?.next_offset !== null && topUpPagination?.next_offset !== undefined && (
               <button
                 className="btn btn-outline btn-full"
@@ -511,33 +516,44 @@ export default function WalletPage() {
       {withdrawRequests.length > 0 && (
         <section className="section">
           <h2 className="section-title">Withdrawal Requests</h2>
-          <div className="listings-table-wrap">
-            <table className="listings-table">
-              <thead>
-                <tr>
-                  <th>Amount</th>
-                  <th>Method</th>
-                  <th>Account</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {withdrawRequests.map((req) => (
-                  <tr key={req.id}>
-                    <td className="listing-price">PKR {req.amount}</td>
-                    <td>{req.payment_method || '—'}</td>
-                    <td className="txn-desc">{req.account_details || '—'}</td>
-                    <td>
-                      <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
-                        {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
-                      </span>
-                    </td>
-                    <td>{new Date(req.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="wallet-requests-list">
+            {withdrawRequests.map((req) => (
+              <div key={req.id} className={`wallet-request-card wallet-request-${req.status}`}>
+                <div className="wallet-request-header">
+                  <div className="wallet-request-info">
+                    <span className="wallet-request-amount">PKR {Number(req.amount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                    <span className="wallet-request-method">{req.payment_method || '—'} • {req.account_details || '—'}</span>
+                  </div>
+                  <div className="wallet-request-meta">
+                    <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
+                      {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                    </span>
+                    <span className="wallet-request-date">{new Date(req.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                {req.status !== 'pending' && req.admin_note && (
+                  <div className={`wallet-request-note ${req.status === 'rejected' ? 'wallet-request-note-rejected' : 'wallet-request-note-approved'}`}>
+                    <div className="wallet-request-note-label">
+                      {req.status === 'rejected' ? '❌ Rejection Reason' : '📝 Admin Note'}
+                    </div>
+                    <div className="wallet-request-note-text">{req.admin_note}</div>
+                  </div>
+                )}
+                {req.status === 'approved' && req.payment_receipt_url && (
+                  <div className="wallet-request-receipt">
+                    <div className="wallet-request-note-label">🧾 Payment Receipt</div>
+                    <a href={req.payment_receipt_url} target="_blank" rel="noopener noreferrer" className="wallet-receipt-link">
+                      <span>Open Receipt</span>
+                    </a>
+                  </div>
+                )}
+                {req.reviewed_at && (
+                  <div className="wallet-request-reviewed">
+                    Reviewed on {new Date(req.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </div>
+            ))}
             {withdrawPagination?.next_offset !== null && withdrawPagination?.next_offset !== undefined && (
               <button
                 className="btn btn-outline btn-full"
