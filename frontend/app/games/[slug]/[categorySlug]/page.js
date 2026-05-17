@@ -377,7 +377,7 @@ export default function GameCategoryPage() {
                     <div className="listing-card-avatar-wrap">
                       <div className="listing-card-avatar">
                         {listing.seller_avatar_url ? (
-                          <img src={listing.seller_avatar_url} alt={listing.seller_name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                          <img src={listing.seller_avatar_url} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                         ) : (
                           listing.seller_name?.charAt(0).toUpperCase()
                         )}

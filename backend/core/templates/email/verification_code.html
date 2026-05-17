@@ -1,0 +1,15 @@
+{% extends "email/base.html" %}
+
+{% block subject_heading %}Verification Code{% endblock %}
+
+{% block content %}
+<p>{{ message_body }}</p>
+
+<div class="code-block">
+  <p class="code-label">Your Verification Code</p>
+  <p class="code-value">{{ code }}</p>
+  <p class="code-expiry">This code expires in 15 minutes</p>
+</div>
+
+<p>If you did not request this, please ignore this email.</p>
+{% endblock %}

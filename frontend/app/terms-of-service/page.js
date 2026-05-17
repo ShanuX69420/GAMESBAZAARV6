@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Terms of Service — GamesBazaar',
+  title: 'Terms of Service',
   description: 'Read the Terms of Service for GamesBazaar, Pakistan\'s trusted digital gaming marketplace. Know your rights and responsibilities.',
 };
 

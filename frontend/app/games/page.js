@@ -5,8 +5,8 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'All Games — GamesBazaar',
-  description: 'Browse all games available on GamesBazaar.',
+  title: 'All Games',
+  description: 'Browse all games available on GamesBazaar. Find accounts, items, top-ups, and services for your favorite games.',
 };
 
 export default async function AllGamesPage() {

@@ -6,11 +6,11 @@ export async function generateMetadata({ params }) {
   try {
     const game = await fetchGame(slug);
     return {
-      title: `${game.name} — GamesBazaar`,
+      title: game.name,
       description: game.description || `Buy & sell ${game.name} accounts, items, and services on GamesBazaar.`,
     };
   } catch {
-    return { title: 'Game Not Found — GamesBazaar' };
+    return { title: 'Game Not Found' };
   }
 }
 

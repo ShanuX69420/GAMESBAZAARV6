@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Privacy Policy — GamesBazaar',
+  title: 'Privacy Policy',
   description: 'Learn how GamesBazaar collects, uses, and protects your personal information. Your privacy matters to us.',
 };
 

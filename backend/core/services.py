@@ -11,7 +11,8 @@ from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 from django.core import signing
 from django.db import models, transaction
 from django.db.models import Q
@@ -57,8 +58,46 @@ def _order_reference(order):
     return order.order_number or f'#{order.pk}'
 
 
-def send_transactional_email(user, *, subject, lines):
-    """Send a plain-text transactional email to a user when they have an email."""
+def _send_html_email(recipient_email, *, subject, template_name, context, fail_silently=None):
+    """Render an HTML template and send as multipart email (HTML + plain text)."""
+    if fail_silently is None:
+        fail_silently = getattr(settings, 'TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True)
+
+    context.setdefault('email_subject', subject)
+    html_body = render_to_string(template_name, context)
+
+    # Build a minimal plain-text fallback from context
+    text_parts = ['Hi,', '']
+    if context.get('message_body'):
+        text_parts.append(str(context['message_body']))
+    if context.get('detail_rows'):
+        for label, value in context['detail_rows']:
+            text_parts.append(f'{label}: {value}')
+    if context.get('status_text'):
+        text_parts.append(f'Status: {context["status_text"]}')
+    if context.get('admin_note'):
+        text_parts.append(f'Admin note: {context["admin_note"]}')
+    if context.get('extra_message'):
+        text_parts.append(str(context['extra_message']))
+    if context.get('code'):
+        text_parts.append(f'Your code: {context["code"]}')
+    text_parts.extend(['', 'GamesBazaar'])
+    text_body = '\n'.join(text_parts)
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[recipient_email],
+    )
+    msg.attach_alternative(html_body, 'text/html')
+    msg.send(fail_silently=fail_silently)
+
+
+def send_transactional_email(user, *, subject, message_body, detail_rows=None,
+                             status_text=None, status_class='info',
+                             admin_note=None, extra_message=None):
+    """Send a branded HTML transactional email to a user."""
     if not getattr(settings, 'TRANSACTIONAL_EMAILS_ENABLED', True):
         return False
 
@@ -66,29 +105,31 @@ def send_transactional_email(user, *, subject, lines):
     if not recipient:
         return False
 
-    message_lines = [
-        'Hi,',
-        '',
-        *[str(line) for line in lines],
-        '',
-        'GamesBazaar',
-    ]
-    send_mail(
+    username = getattr(user, 'username', '') or ''
+
+    _send_html_email(
+        recipient,
         subject=subject,
-        message='\n'.join(message_lines),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[recipient],
-        fail_silently=getattr(settings, 'TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True),
+        template_name='email/transactional.html',
+        context={
+            'username': username,
+            'message_body': message_body,
+            'detail_rows': detail_rows or [],
+            'status_text': status_text,
+            'status_class': status_class,
+            'admin_note': admin_note,
+            'extra_message': extra_message,
+        },
     )
     return True
 
 
-def _basic_order_lines(order):
+def _basic_order_rows(order):
+    """Return a list of (label, value) tuples for order detail cards."""
     return [
-        '',
-        f'Order: {_order_reference(order)}',
-        f'Listing: {order.listing_title}',
-        f'Quantity: {order.quantity}',
+        ('Order', _order_reference(order)),
+        ('Listing', order.listing_title),
+        ('Quantity', str(order.quantity)),
     ]
 
 
@@ -99,74 +140,54 @@ def _build_order_notification_email(notification):
     title = notification.title or ''
     title_lower = title.lower()
 
+    order_details = _basic_order_rows(order)
+
     if title_lower.startswith('dispute resolved'):
         if is_seller and 'favour' in (notification.message or '').lower():
-            lines = [
-                'The dispute for this order was resolved in your favour.',
-                *_basic_order_lines(order),
-            ]
+            message = 'The dispute for this order was resolved in your favour.'
+            status = ('Resolved — Your Favour', 'success')
         elif is_seller:
-            lines = [
-                'The dispute for this order was resolved in favour of the buyer.',
-                *_basic_order_lines(order),
-            ]
+            message = 'The dispute for this order was resolved in favour of the buyer.'
+            status = ('Resolved — Buyer Favour', 'warning')
         elif is_buyer and 'refund' in title_lower:
-            lines = [
-                'The dispute for your order was resolved and the order was refunded.',
-                *_basic_order_lines(order),
-            ]
+            message = 'The dispute for your order was resolved and the order was refunded.'
+            status = ('Refunded', 'success')
         elif is_buyer:
-            lines = [
-                'The dispute for your order has been resolved.',
-                *_basic_order_lines(order),
-            ]
+            message = 'The dispute for your order has been resolved.'
+            status = ('Resolved', 'info')
         else:
             return None
-        return 'Dispute result', lines
+        return 'Dispute Result', message, order_details, status
 
     if notification.notification_type == 'new_order' and is_seller:
-        return 'Order placed', [
-            'A new order has been placed.',
-            *_basic_order_lines(order),
-            f'Order total: {_money(order.total_amount)}',
-        ]
+        rows = order_details + [('Order Total', _money(order.total_amount))]
+        return 'New Order Received', 'A new order has been placed.', rows, ('New Order', 'info')
 
     if notification.notification_type == 'order_delivered' and is_buyer:
-        return 'Order delivered', [
-            'Your order has been delivered.',
-            'Open the order page to review the delivery details.',
-            *_basic_order_lines(order),
-        ]
+        return (
+            'Order Delivered',
+            'Your order has been delivered. Open the order page to review the delivery details.',
+            order_details,
+            ('Delivered', 'success'),
+        )
 
     if notification.notification_type == 'order_confirmed' and is_seller:
         if (
             order_seller_payout_has_been_released(order)
             or order.seller_payout_released_at
         ):
-            return 'Order completed', [
-                'This order has been completed.',
-                *_basic_order_lines(order),
-            ]
+            return 'Order Completed', 'This order has been completed.', order_details, ('Completed', 'success')
         return None
 
     if notification.notification_type == 'order_cancelled':
         if is_buyer:
             if 'refund' in title_lower or 'refund' in (notification.message or '').lower():
-                return 'Order refunded', [
-                    'Your order has been refunded.',
-                    *_basic_order_lines(order),
-                ]
-            return 'Order cancelled', [
-                'Your order has been cancelled.',
-                *_basic_order_lines(order),
-            ]
+                return 'Order Refunded', 'Your order has been refunded.', order_details, ('Refunded', 'success')
+            return 'Order Cancelled', 'Your order has been cancelled.', order_details, ('Cancelled', 'danger')
         return None
 
     if notification.notification_type == 'order_disputed' and is_seller:
-        return 'Order disputed', [
-            'A dispute has been opened for this order.',
-            *_basic_order_lines(order),
-        ]
+        return 'Order Disputed', 'A dispute has been opened for this order.', order_details, ('Disputed', 'warning')
 
     return None
 
@@ -180,11 +201,14 @@ def send_notification_email(notification):
     if email_payload is None:
         return False
 
-    subject, email_lines = email_payload
+    subject_label, message_body, detail_rows, (status_text, status_class) = email_payload
     return send_transactional_email(
         notification.recipient,
-        subject=f'GamesBazaar - {subject}',
-        lines=email_lines,
+        subject=f'GamesBazaar — {subject_label}',
+        message_body=message_body,
+        detail_rows=detail_rows,
+        status_text=status_text,
+        status_class=status_class,
     )
 
 
@@ -205,76 +229,83 @@ def create_notification(*, recipient, notification_type, title, message='', orde
 def send_topup_request_received_email(topup):
     return send_transactional_email(
         topup.user,
-        subject='GamesBazaar - Top-up request received',
-        lines=[
-            f'We received your top-up request for {_money(topup.amount)}.',
-            'Status: Pending review',
-            'We will email you again when it is approved or rejected.',
-        ],
+        subject='GamesBazaar — Top-up Request Received',
+        message_body=f'We received your top-up request for {_money(topup.amount)}.',
+        detail_rows=[('Amount', _money(topup.amount))],
+        status_text='Pending Review',
+        status_class='warning',
+        extra_message='We will email you again when it is approved or rejected.',
     )
 
 
 def send_topup_status_email(topup):
-    if topup.status == 'approved':
-        lines = [
-            f'Your top-up request for {_money(topup.amount)} has been approved.',
-            'The funds have been credited to your wallet.',
-        ]
-    elif topup.status == 'rejected':
-        lines = [
-            f'Your top-up request for {_money(topup.amount)} was rejected.',
-            'No funds were added to your wallet.',
-        ]
-    else:
-        lines = [
-            f'Your top-up request for {_money(topup.amount)} is now {topup.get_status_display()}.',
-        ]
+    detail_rows = [('Amount', _money(topup.amount))]
 
-    if topup.admin_note:
-        lines.extend(['', f'Admin note: {topup.admin_note}'])
+    if topup.status == 'approved':
+        message = f'Your top-up request for {_money(topup.amount)} has been approved.'
+        extra = 'The funds have been credited to your wallet.'
+        status_text, status_class = 'Approved', 'success'
+    elif topup.status == 'rejected':
+        message = f'Your top-up request for {_money(topup.amount)} was rejected.'
+        extra = 'No funds were added to your wallet.'
+        status_text, status_class = 'Rejected', 'danger'
+    else:
+        message = f'Your top-up request for {_money(topup.amount)} is now {topup.get_status_display()}.'
+        extra = None
+        status_text, status_class = topup.get_status_display(), 'info'
 
     return send_transactional_email(
         topup.user,
-        subject=f'GamesBazaar - Top-up {topup.get_status_display()}',
-        lines=lines,
+        subject=f'GamesBazaar — Top-up {topup.get_status_display()}',
+        message_body=message,
+        detail_rows=detail_rows,
+        status_text=status_text,
+        status_class=status_class,
+        admin_note=topup.admin_note or None,
+        extra_message=extra,
     )
 
 
 def send_withdraw_request_received_email(withdraw):
     return send_transactional_email(
         withdraw.user,
-        subject='GamesBazaar - Withdrawal request received',
-        lines=[
-            f'We received your withdrawal request for {_money(withdraw.amount)}.',
-            'Status: Pending review',
-            'The requested amount has been held from your wallet until the request is approved or rejected.',
-        ],
+        subject='GamesBazaar — Withdrawal Request Received',
+        message_body=f'We received your withdrawal request for {_money(withdraw.amount)}.',
+        detail_rows=[('Amount', _money(withdraw.amount))],
+        status_text='Pending Review',
+        status_class='warning',
+        extra_message='The requested amount has been held from your wallet until the request is approved or rejected.',
     )
 
 
 def send_withdraw_status_email(withdraw):
-    if withdraw.status == 'approved':
-        lines = [
-            f'Your withdrawal request for {_money(withdraw.amount)} has been approved.',
-            f'Payment method: {withdraw.payment_method or "N/A"}',
-        ]
-    elif withdraw.status == 'rejected':
-        lines = [
-            f'Your withdrawal request for {_money(withdraw.amount)} was rejected.',
-            'The held amount has been returned to your wallet.',
-        ]
-    else:
-        lines = [
-            f'Your withdrawal request for {_money(withdraw.amount)} is now {withdraw.get_status_display()}.',
-        ]
+    detail_rows = [
+        ('Amount', _money(withdraw.amount)),
+    ]
 
-    if withdraw.admin_note:
-        lines.extend(['', f'Admin note: {withdraw.admin_note}'])
+    if withdraw.status == 'approved':
+        message = f'Your withdrawal request for {_money(withdraw.amount)} has been approved.'
+        extra = None
+        status_text, status_class = 'Approved', 'success'
+        detail_rows.append(('Payment Method', withdraw.payment_method or 'N/A'))
+    elif withdraw.status == 'rejected':
+        message = f'Your withdrawal request for {_money(withdraw.amount)} was rejected.'
+        extra = 'The held amount has been returned to your wallet.'
+        status_text, status_class = 'Rejected', 'danger'
+    else:
+        message = f'Your withdrawal request for {_money(withdraw.amount)} is now {withdraw.get_status_display()}.'
+        extra = None
+        status_text, status_class = withdraw.get_status_display(), 'info'
 
     return send_transactional_email(
         withdraw.user,
-        subject=f'GamesBazaar - Withdrawal {withdraw.get_status_display()}',
-        lines=lines,
+        subject=f'GamesBazaar — Withdrawal {withdraw.get_status_display()}',
+        message_body=message,
+        detail_rows=detail_rows,
+        status_text=status_text,
+        status_class=status_class,
+        admin_note=withdraw.admin_note or None,
+        extra_message=extra,
     )
 
 
@@ -759,6 +790,94 @@ def validate_uploaded_image(image):
     return None
 
 
+# ── Image optimization ───────────────────────────────────────────────────────
+
+# Presets for different upload contexts
+IMAGE_OPTIMIZE_PRESETS = {
+    'avatar': {'max_size': 512, 'quality': 85},
+    'chat': {'max_size': 1920, 'quality': 80},
+    'proof': {'max_size': 2000, 'quality': 80},
+}
+
+
+def optimize_uploaded_image(image, preset='chat'):
+    """Resize (if needed) and convert an uploaded image to WebP.
+
+    Returns a new ``InMemoryUploadedFile`` ready for storage.
+    The original file object is left unchanged (seeked back to 0).
+
+    Parameters
+    ----------
+    image : UploadedFile
+        A Django ``UploadedFile`` that has already passed ``validate_uploaded_image``.
+    preset : str
+        One of ``IMAGE_OPTIMIZE_PRESETS`` keys: 'avatar', 'chat', 'proof'.
+    """
+    from io import BytesIO
+    from django.core.files.uploadedfile import InMemoryUploadedFile
+
+    config = IMAGE_OPTIMIZE_PRESETS.get(preset, IMAGE_OPTIMIZE_PRESETS['chat'])
+    max_dim = config['max_size']
+    quality = config['quality']
+
+    try:
+        img = Image.open(image)
+
+        # Handle EXIF orientation (auto-rotate phone photos)
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+
+        # Convert palette/CMYK images to RGB(A)
+        if img.mode in ('P', 'CMYK'):
+            img = img.convert('RGBA' if 'transparency' in img.info else 'RGB')
+        elif img.mode == 'LA':
+            img = img.convert('RGBA')
+        elif img.mode not in ('RGB', 'RGBA'):
+            img = img.convert('RGB')
+
+        # Resize if larger than max dimensions
+        width, height = img.size
+        if width > max_dim or height > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+
+        # Flatten alpha for WebP (use white background)
+        if img.mode == 'RGBA':
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[3])
+            img = background
+
+        # Save as WebP to buffer
+        buffer = BytesIO()
+        img.save(buffer, format='WEBP', quality=quality, method=4)
+        buffer.seek(0)
+
+        # Build a new filename
+        original_name = getattr(image, 'name', 'image.webp')
+        base_name = original_name.rsplit('.', 1)[0] if '.' in original_name else original_name
+        new_name = f'{base_name}.webp'
+
+        optimized = InMemoryUploadedFile(
+            file=buffer,
+            field_name=image.field_name if hasattr(image, 'field_name') else None,
+            name=new_name,
+            content_type='image/webp',
+            size=buffer.getbuffer().nbytes,
+            charset=None,
+        )
+        return optimized
+
+    except Exception:
+        # If optimization fails for any reason, fall back to the original
+        image.seek(0)
+        return image
+    finally:
+        image.seek(0)
+
+
+
 def validate_chat_message_content(content, *, allow_empty=False):
     """Return normalized chat text plus a validation error string, if any."""
     if content is None:
@@ -980,40 +1099,30 @@ def consume_email_change_token(token):
 
 def send_email_change_code(user, code):
     """Send the verification code to the user's current email."""
-    from django.core.mail import send_mail
-    from django.conf import settings as django_settings
-
-    send_mail(
+    _send_html_email(
+        user.email,
         subject='GamesBazaar — Email Change Verification Code',
-        message=(
-            f'Hi {user.username},\n\n'
-            f'Your email change verification code is: {code}\n\n'
-            f'This code expires in 15 minutes.\n'
-            f'If you did not request this, please ignore this email.\n\n'
-            f'— GamesBazaar'
-        ),
-        from_email=django_settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
+        template_name='email/verification_code.html',
+        context={
+            'username': user.username,
+            'code': code,
+            'message_body': 'Use the code below to verify your email change request.',
+        },
         fail_silently=False,
     )
 
 
 def send_new_email_change_code(user, new_email, code):
     """Send the verification code to the requested new email address."""
-    from django.core.mail import send_mail
-    from django.conf import settings as django_settings
-
-    send_mail(
+    _send_html_email(
+        new_email,
         subject='GamesBazaar — Confirm Your New Email',
-        message=(
-            f'Hi {user.username},\n\n'
-            f'Use this code to confirm this email address for your GamesBazaar account: {code}\n\n'
-            f'This code expires in 15 minutes.\n'
-            f'If you did not request this, please ignore this email.\n\n'
-            f'— GamesBazaar'
-        ),
-        from_email=django_settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[new_email],
+        template_name='email/verification_code.html',
+        context={
+            'username': user.username,
+            'code': code,
+            'message_body': 'Use the code below to confirm this email address for your GamesBazaar account.',
+        },
         fail_silently=False,
     )
 
@@ -1060,19 +1169,14 @@ def consume_password_reset_token(token):
 
 def send_password_reset_code(user, code):
     """Send the password reset code to the user's email."""
-    from django.core.mail import send_mail
-    from django.conf import settings as django_settings
-
-    send_mail(
+    _send_html_email(
+        user.email,
         subject='GamesBazaar — Password Reset Code',
-        message=(
-            f'Hi {user.username},\n\n'
-            f'Your password reset code is: {code}\n\n'
-            f'This code expires in 15 minutes.\n'
-            f'If you did not request this, please ignore this email.\n\n'
-            f'— GamesBazaar'
-        ),
-        from_email=django_settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
+        template_name='email/verification_code.html',
+        context={
+            'username': user.username,
+            'code': code,
+            'message_body': 'Use the code below to reset your password.',
+        },
         fail_silently=False,
     )

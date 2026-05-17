@@ -22,6 +22,7 @@ from .services import (
     send_topup_status_email,
     send_withdraw_status_email,
     validate_uploaded_image,
+    optimize_uploaded_image,
 )
 from .serializers import get_auto_delivery_inventory_lines
 
@@ -406,6 +407,8 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
             if validation_error:
                 self.message_user(request, f'Invalid receipt image: {validation_error}', level=messages.ERROR)
                 return
+            # Optimize the receipt image
+            obj.payment_receipt = optimize_uploaded_image(uploaded_receipt, preset='proof')
 
         if change and 'status' in form.changed_data:
             with transaction.atomic():

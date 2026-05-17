@@ -1,11 +1,12 @@
 import json
 import os
+import tempfile
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
 from threading import Barrier, Thread
 from urllib.parse import urlsplit
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from cryptography.fernet import Fernet
 from django.conf import settings
@@ -19,6 +20,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
+from django.http import Http404
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import resolve
 from django.utils import timezone
@@ -52,6 +54,19 @@ from .services import (
     BUYER_PROTECTION_HOLD,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
+    optimize_uploaded_image,
+    send_email_change_code,
+    send_new_email_change_code,
+    send_password_reset_code,
+    send_transactional_email,
+)
+from .storage_backends import (
+    AVATAR_CACHE_SECONDS,
+    CLOUDFLARE_R2_NAME_PREFIX,
+    CloudflareR2Storage,
+    GAME_ICON_CACHE_SECONDS,
+    R2_SIGNED_URL_MAX_SECONDS,
+    is_cloudflare_r2_name,
 )
 
 
@@ -67,6 +82,385 @@ def path_with_query(url):
     if parsed.query:
         return f'{parsed.path}?{parsed.query}'
     return parsed.path
+
+
+def html_alternative(message):
+    alternative = message.alternatives[0]
+    if hasattr(alternative, 'content'):
+        return alternative.content, alternative.mimetype
+    return alternative[0], alternative[1]
+
+
+def assert_storage_name_under(testcase, name, directory):
+    normalized = str(name).replace('\\', '/')
+    testcase.assertTrue(
+        normalized.startswith(directory) or
+        normalized.startswith(f'{CLOUDFLARE_R2_NAME_PREFIX}{directory}'),
+        f'{normalized!r} is not stored under {directory!r}',
+    )
+
+
+def assert_private_media_response(testcase, response, content_type='image/png'):
+    if response.status_code == 302:
+        testcase.assertTrue(response['Location'])
+        testcase.assertNotIn('/media/', response['Location'])
+        testcase.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+    else:
+        testcase.assertEqual(response.status_code, 200)
+        testcase.assertEqual(response['Content-Type'], content_type)
+        testcase.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+    testcase.assertEqual(response['Cache-Control'], 'private, no-store')
+    testcase.assertEqual(response['Referrer-Policy'], 'no-referrer')
+
+
+class ImageOptimizationTests(TestCase):
+    def test_optimizes_upload_to_webp_and_respects_preset_dimensions(self):
+        upload = make_image_file(name='avatar.png', size=(1200, 800))
+
+        optimized = optimize_uploaded_image(upload, preset='avatar')
+
+        self.assertIsNot(optimized, upload)
+        self.assertEqual(optimized.name, 'avatar.webp')
+        self.assertEqual(optimized.content_type, 'image/webp')
+        self.assertLess(optimized.size, upload.size)
+        self.assertEqual(upload.tell(), 0)
+
+        with Image.open(optimized) as image:
+            self.assertEqual(image.format, 'WEBP')
+            self.assertLessEqual(max(image.size), 512)
+
+    def test_optimization_falls_back_to_original_upload_on_failure(self):
+        upload = make_image_file(name='chat.png', size=(10, 10))
+        upload.seek(5)
+
+        with patch('core.services.Image.open', side_effect=OSError):
+            optimized = optimize_uploaded_image(upload, preset='chat')
+
+        self.assertIs(optimized, upload)
+        self.assertEqual(upload.tell(), 0)
+
+
+@override_settings(
+    CLOUDFLARE_R2_BUCKET_NAME='gamesbazaar-media',
+    CLOUDFLARE_R2_ACCESS_KEY_ID='access-key-id',
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY='secret-access-key',
+    CLOUDFLARE_R2_ENDPOINT_URL='https://account-id.r2.cloudflarestorage.com',
+    CLOUDFLARE_R2_PUBLIC_URL_EXPIRATION_SECONDS=86400,
+    CLOUDFLARE_R2_PRIVATE_URL_EXPIRATION_SECONDS=300,
+)
+class CloudflareR2StorageTests(TestCase):
+    def test_new_uploads_are_stored_with_r2_prefix(self):
+        from storages.backends.s3 import S3Storage
+
+        storage = CloudflareR2Storage()
+        upload = SimpleUploadedFile('avatar.png', b'image-bytes', content_type='image/png')
+
+        with patch.object(S3Storage, 'save', return_value='r2/avatars/avatar.png') as mock_save:
+            stored_name = storage.save('avatars/avatar.png', upload)
+
+        self.assertEqual(stored_name, 'r2/avatars/avatar.png')
+        self.assertEqual(mock_save.call_args.args[0], 'r2/avatars/avatar.png')
+
+    def test_new_upload_names_are_normalized_without_double_prefix(self):
+        from storages.backends.s3 import S3Storage
+
+        storage = CloudflareR2Storage()
+        upload = SimpleUploadedFile('avatar.png', b'image-bytes', content_type='image/png')
+
+        with patch.object(S3Storage, 'save', side_effect=lambda name, *_args, **_kwargs: name):
+            self.assertEqual(storage.save('/avatars/avatar.png', upload), 'r2/avatars/avatar.png')
+            self.assertEqual(storage.save('avatars\\avatar.png', upload), 'r2/avatars/avatar.png')
+            self.assertEqual(storage.save('r2/avatars/avatar.png', upload), 'r2/avatars/avatar.png')
+
+    def test_existing_local_media_keeps_using_local_media_url(self):
+        storage = CloudflareR2Storage()
+
+        self.assertEqual(storage.url('avatars/old-avatar.png'), '/media/avatars/old-avatar.png')
+
+    def test_file_operations_delegate_by_storage_location(self):
+        from storages.backends.s3 import S3Storage
+
+        storage = CloudflareR2Storage()
+
+        with (
+            patch.object(storage.local_storage, 'exists', return_value=True) as local_exists,
+            patch.object(S3Storage, 'exists', return_value=False) as r2_exists,
+        ):
+            self.assertTrue(storage.exists('avatars/old-avatar.png'))
+            self.assertFalse(storage.exists('r2/avatars/new-avatar.png'))
+
+        local_exists.assert_called_once_with('avatars/old-avatar.png')
+        r2_exists.assert_called_once_with('r2/avatars/new-avatar.png')
+
+        with (
+            patch.object(storage.local_storage, 'delete') as local_delete,
+            patch.object(S3Storage, 'delete') as r2_delete,
+        ):
+            storage.delete('avatars/old-avatar.png')
+            storage.delete('r2/avatars/new-avatar.png')
+            storage.delete('')
+
+        local_delete.assert_called_once_with('avatars/old-avatar.png')
+        r2_delete.assert_called_once_with('r2/avatars/new-avatar.png')
+
+    def test_r2_media_uses_s3_signed_url_generation(self):
+        from storages.backends.s3 import S3Storage
+
+        storage = CloudflareR2Storage()
+
+        with patch.object(S3Storage, 'url', return_value='https://signed-r2.example/avatar.png') as mock_url:
+            url = storage.url('r2/avatars/avatar.png')
+
+        self.assertEqual(url, 'https://signed-r2.example/avatar.png')
+        self.assertEqual(mock_url.call_args.args[0], 'r2/avatars/avatar.png')
+
+    def test_private_file_response_redirects_r2_media_after_app_permission(self):
+        from .views import private_file_response
+
+        class DummyStorage:
+            def url(self, name, parameters=None, expire=None):
+                self.name = name
+                self.parameters = parameters
+                self.expire = expire
+                return 'https://signed-r2.example/private.webp'
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.webp'
+            storage = DummyStorage()
+
+            def __bool__(self):
+                return True
+
+        dummy_file = DummyR2File()
+        response = private_file_response(dummy_file)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], 'https://signed-r2.example/private.webp')
+        self.assertEqual(dummy_file.storage.name, f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.webp')
+        self.assertEqual(dummy_file.storage.expire, 300)
+        self.assertEqual(dummy_file.storage.parameters['ResponseCacheControl'], 'private, no-store')
+        self.assertEqual(dummy_file.storage.parameters['ResponseContentType'], 'image/webp')
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.assertEqual(response['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+
+    def test_private_file_response_redirects_cacheable_r2_media_without_stale_redirect(self):
+        from .views import private_file_response
+
+        class DummyStorage:
+            def url(self, name, parameters=None, expire=None):
+                self.name = name
+                self.parameters = parameters
+                self.expire = expire
+                return 'https://signed-r2.example/private.png'
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.png'
+            storage = DummyStorage()
+
+            def __bool__(self):
+                return True
+
+        dummy_file = DummyR2File()
+        response = private_file_response(dummy_file, cache_seconds=86400)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], 'https://signed-r2.example/private.png')
+        self.assertEqual(dummy_file.storage.name, f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.png')
+        self.assertEqual(dummy_file.storage.expire, 300)
+        self.assertEqual(dummy_file.storage.parameters['ResponseCacheControl'], 'private, max-age=86400')
+        self.assertEqual(dummy_file.storage.parameters['ResponseContentType'], 'image/png')
+        self.assertEqual(response['Cache-Control'], 'private, max-age=240')
+        self.assertEqual(response['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+        self.assertIn('Cookie', response['Vary'])
+        self.assertIn('Authorization', response['Vary'])
+
+    def test_private_file_response_can_proxy_cacheable_r2_media_for_stable_browser_cache(self):
+        from .views import private_file_response
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.webp'
+
+            def __bool__(self):
+                return True
+
+            def open(self, mode='rb'):
+                self.open_mode = mode
+                return BytesIO(b'webp-bytes')
+
+        dummy_file = DummyR2File()
+        response = private_file_response(
+            dummy_file,
+            cache_seconds=86400,
+            redirect_r2=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('Location', response)
+        self.assertEqual(dummy_file.open_mode, 'rb')
+        self.assertEqual(response.content, b'webp-bytes')
+        self.assertEqual(response['Content-Type'], 'image/webp')
+        self.assertEqual(response['Cache-Control'], 'private, max-age=86400')
+        self.assertEqual(response['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
+        self.assertIn('Cookie', response['Vary'])
+        self.assertIn('Authorization', response['Vary'])
+        response.close()
+
+    def test_private_file_response_rejects_r2_media_with_unsafe_content_type(self):
+        from .views import private_file_response
+
+        class DummyStorage:
+            def url(self, name, parameters=None, expire=None):
+                raise AssertionError('Unsafe R2 media should not receive a signed URL')
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}chat_images/private.svg'
+            storage = DummyStorage()
+
+            def __bool__(self):
+                return True
+
+        with self.assertRaises(Http404):
+            private_file_response(DummyR2File())
+
+    def test_cached_media_url_adds_r2_response_cache_control(self):
+        from .storage_backends import cached_media_url
+
+        class DummyStorage:
+            def url(self, name, parameters=None, expire=None):
+                self.name = name
+                self.parameters = parameters
+                self.expire = expire
+                return 'https://signed-r2.example/icon.png'
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}game_icons/icon.png'
+            storage = DummyStorage()
+
+            def __bool__(self):
+                return True
+
+        dummy_file = DummyR2File()
+        url = cached_media_url(
+            dummy_file,
+            cache_seconds=GAME_ICON_CACHE_SECONDS,
+            cache_scope='public',
+        )
+
+        self.assertEqual(url, 'https://signed-r2.example/icon.png')
+        self.assertEqual(dummy_file.storage.name, f'{CLOUDFLARE_R2_NAME_PREFIX}game_icons/icon.png')
+        self.assertEqual(dummy_file.storage.expire, R2_SIGNED_URL_MAX_SECONDS)
+        self.assertEqual(
+            dummy_file.storage.parameters['ResponseCacheControl'],
+            f'public, max-age={GAME_ICON_CACHE_SECONDS}',
+        )
+        self.assertEqual(dummy_file.storage.parameters['ResponseContentType'], 'image/png')
+
+    def test_cached_media_url_reuses_signed_r2_url_until_rotation_window(self):
+        from .storage_backends import cached_media_url
+
+        class DummyStorage:
+            def __init__(self):
+                self.call_count = 0
+
+            def url(self, name, parameters=None, expire=None):
+                self.call_count += 1
+                self.name = name
+                self.parameters = parameters
+                self.expire = expire
+                return f'https://signed-r2.example/icon-{self.call_count}.png'
+
+        class DummyR2File:
+            name = f'{CLOUDFLARE_R2_NAME_PREFIX}game_icons/stable-icon.png'
+
+            def __init__(self):
+                self.storage = DummyStorage()
+
+            def __bool__(self):
+                return True
+
+        dummy_file = DummyR2File()
+
+        first_url = cached_media_url(
+            dummy_file,
+            cache_seconds=GAME_ICON_CACHE_SECONDS,
+            cache_scope='public',
+        )
+        second_url = cached_media_url(
+            dummy_file,
+            cache_seconds=GAME_ICON_CACHE_SECONDS,
+            cache_scope='public',
+        )
+
+        self.assertEqual(first_url, second_url)
+        self.assertEqual(dummy_file.storage.call_count, 1)
+
+
+class DevMediaCacheTests(TestCase):
+    def test_cached_media_serve_adds_browser_cache_header(self):
+        from gamesbazaar.urls import cached_media_serve
+
+        with tempfile.TemporaryDirectory() as media_root:
+            avatar_dir = os.path.join(media_root, 'avatars')
+            os.makedirs(avatar_dir)
+            avatar_path = os.path.join(avatar_dir, 'avatar.png')
+            with open(avatar_path, 'wb') as avatar_file:
+                avatar_file.write(make_image_file().read())
+
+            request = RequestFactory().get('/media/avatars/avatar.png')
+            response = cached_media_serve(
+                request,
+                'avatars/avatar.png',
+                document_root=media_root,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Content-Type'], 'image/png')
+            self.assertEqual(response['Cache-Control'], f'private, max-age={AVATAR_CACHE_SECONDS}')
+            response.close()
+
+    def test_cached_media_serve_caches_game_icons_longer(self):
+        from gamesbazaar.urls import cached_media_serve
+
+        with tempfile.TemporaryDirectory() as media_root:
+            icon_dir = os.path.join(media_root, 'game_icons')
+            os.makedirs(icon_dir)
+            icon_path = os.path.join(icon_dir, 'icon.png')
+            with open(icon_path, 'wb') as icon_file:
+                icon_file.write(make_image_file().read())
+
+            request = RequestFactory().get('/media/game_icons/icon.png')
+            response = cached_media_serve(
+                request,
+                'game_icons/icon.png',
+                document_root=media_root,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Content-Type'], 'image/png')
+            self.assertEqual(response['Cache-Control'], f'public, max-age={GAME_ICON_CACHE_SECONDS}')
+            response.close()
+
+    def test_cached_media_serve_rejects_paths_outside_media_root(self):
+        from gamesbazaar.urls import cached_media_serve
+
+        with tempfile.TemporaryDirectory() as temp_root:
+            media_root = os.path.join(temp_root, 'media')
+            outside_root = os.path.join(temp_root, 'outside')
+            os.makedirs(media_root)
+            os.makedirs(outside_root)
+            with open(os.path.join(outside_root, 'secret.png'), 'wb') as secret_file:
+                secret_file.write(make_image_file().read())
+
+            request = RequestFactory().get('/media/../outside/secret.png')
+            with self.assertRaises(Http404):
+                cached_media_serve(
+                    request,
+                    '../outside/secret.png',
+                    document_root=media_root,
+                )
 
 
 class SettingsHelperTests(TestCase):
@@ -85,6 +479,185 @@ class SettingsHelperTests(TestCase):
 
         with self.assertRaises(ImproperlyConfigured):
             project_settings.env_key_map('TEST_FIELD_KEYS')
+
+
+class DKIMEmailBackendTests(TestCase):
+    def _private_key_pem(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+        return private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode('ascii')
+
+    def test_signs_message_with_configured_domain_and_selector(self):
+        from django.core.mail import EmailMessage
+
+        from .email_backends import DKIMSMTPEmailBackend
+
+        message = EmailMessage(
+            subject='DKIM test',
+            body='Signed body',
+            from_email='GamesBazaar <noreply@gamesbazaar.pk>',
+            to=['buyer@example.com'],
+        ).message().as_bytes(linesep='\r\n')
+
+        with override_settings(
+            DKIM_DOMAIN='gamesbazaar.pk',
+            DKIM_SELECTOR='gb1',
+            DKIM_PRIVATE_KEY=self._private_key_pem(),
+            DKIM_PRIVATE_KEY_PATH='',
+        ):
+            signed = DKIMSMTPEmailBackend()._dkim_sign(message)
+
+        self.assertTrue(signed.startswith(b'DKIM-Signature:'))
+        self.assertIn(b' d=gamesbazaar.pk;', signed)
+        self.assertIn(b' s=gb1;', signed)
+        self.assertIn(message, signed)
+
+    def test_requires_complete_dkim_settings(self):
+        from .email_backends import DKIMSMTPEmailBackend
+
+        with override_settings(
+            DKIM_DOMAIN='gamesbazaar.pk',
+            DKIM_SELECTOR='',
+            DKIM_PRIVATE_KEY='',
+            DKIM_PRIVATE_KEY_PATH='',
+        ):
+            with self.assertRaisesMessage(ImproperlyConfigured, 'DKIM_SELECTOR'):
+                DKIMSMTPEmailBackend()._dkim_sign(b'From: sender@example.com\r\n\r\nBody')
+
+    def test_send_respects_fail_silently_for_signing_errors(self):
+        from django.core.mail import EmailMessage
+
+        from .email_backends import DKIMSMTPEmailBackend
+
+        message = EmailMessage(
+            subject='DKIM test',
+            body='Signed body',
+            from_email='GamesBazaar <noreply@gamesbazaar.pk>',
+            to=['buyer@example.com'],
+        )
+
+        with override_settings(
+            DKIM_DOMAIN='gamesbazaar.pk',
+            DKIM_SELECTOR='',
+            DKIM_PRIVATE_KEY='',
+            DKIM_PRIVATE_KEY_PATH='',
+        ):
+            silent_backend = DKIMSMTPEmailBackend(fail_silently=True)
+            silent_backend.connection = Mock()
+            self.assertFalse(silent_backend._send(message))
+            silent_backend.connection.sendmail.assert_not_called()
+
+            loud_backend = DKIMSMTPEmailBackend(fail_silently=False)
+            loud_backend.connection = Mock()
+            with self.assertRaises(ImproperlyConfigured):
+                loud_backend._send(message)
+
+    def test_private_key_can_come_from_env_or_file(self):
+        from .email_backends import DKIMSMTPEmailBackend
+
+        backend = DKIMSMTPEmailBackend()
+        with override_settings(DKIM_PRIVATE_KEY='first\\nsecond', DKIM_PRIVATE_KEY_PATH=''):
+            self.assertEqual(backend._dkim_private_key(), b'first\nsecond')
+
+        key_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as key_file:
+                key_file.write(b'file-key')
+                key_file_path = key_file.name
+
+            with override_settings(DKIM_PRIVATE_KEY='', DKIM_PRIVATE_KEY_PATH=key_file_path):
+                self.assertEqual(backend._dkim_private_key(), b'file-key')
+        finally:
+            if key_file_path:
+                os.unlink(key_file_path)
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class TransactionalEmailTemplateTests(TestCase):
+    def setUp(self):
+        mail.outbox = []
+        self.user = User.objects.create_user(
+            username='emailuser',
+            email='email-user@example.com',
+            password='password123',
+        )
+
+    def test_send_transactional_email_builds_plain_text_and_html_parts(self):
+        sent = send_transactional_email(
+            self.user,
+            subject='GamesBazaar - Wallet Updated',
+            message_body='Your wallet request was processed.',
+            detail_rows=[('Amount', 'PKR 500')],
+            status_text='Approved',
+            status_class='success',
+            admin_note='Receipt verified.',
+            extra_message='The funds have been credited to your wallet.',
+        )
+
+        self.assertTrue(sent)
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.to, ['email-user@example.com'])
+        self.assertIn('Your wallet request was processed.', message.body)
+        self.assertIn('Amount: PKR 500', message.body)
+        self.assertIn('Status: Approved', message.body)
+        self.assertIn('Admin note: Receipt verified.', message.body)
+        self.assertIn('The funds have been credited to your wallet.', message.body)
+
+        html_body, mimetype = html_alternative(message)
+        self.assertEqual(mimetype, 'text/html')
+        self.assertIn('GamesBazaar', html_body)
+        self.assertIn('<td class="label">Amount</td>', html_body)
+        self.assertIn('<td class="value">PKR 500</td>', html_body)
+        self.assertIn('status-badge success', html_body)
+        self.assertIn('Receipt verified.', html_body)
+
+    def test_send_transactional_email_skips_disabled_or_missing_recipient(self):
+        self.user.email = ''
+        self.user.save(update_fields=['email'])
+
+        self.assertFalse(send_transactional_email(
+            self.user,
+            subject='GamesBazaar - No Recipient',
+            message_body='This should not be sent.',
+        ))
+        self.assertEqual(mail.outbox, [])
+
+        self.user.email = 'email-user@example.com'
+        self.user.save(update_fields=['email'])
+        with override_settings(TRANSACTIONAL_EMAILS_ENABLED=False):
+            self.assertFalse(send_transactional_email(
+                self.user,
+                subject='GamesBazaar - Disabled',
+                message_body='This should not be sent.',
+            ))
+        self.assertEqual(mail.outbox, [])
+
+    def test_security_code_emails_use_verification_template(self):
+        send_email_change_code(self.user, '111111')
+        send_new_email_change_code(self.user, 'new-email@example.com', '222222')
+        send_password_reset_code(self.user, '333333')
+
+        self.assertEqual(len(mail.outbox), 3)
+        self.assertEqual(mail.outbox[0].to, ['email-user@example.com'])
+        self.assertIn('Email Change Verification Code', mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[1].to, ['new-email@example.com'])
+        self.assertIn('Confirm Your New Email', mail.outbox[1].subject)
+        self.assertEqual(mail.outbox[2].to, ['email-user@example.com'])
+        self.assertIn('Password Reset Code', mail.outbox[2].subject)
+
+        for expected_code, message in zip(('111111', '222222', '333333'), mail.outbox):
+            self.assertIn(f'Your code: {expected_code}', message.body)
+            html_body, mimetype = html_alternative(message)
+            self.assertEqual(mimetype, 'text/html')
+            self.assertIn('Your Verification Code', html_body)
+            self.assertIn(expected_code, html_body)
 
 
 class PurchaseFlowTests(TestCase):
@@ -1485,16 +2058,13 @@ class TopUpProofUploadTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         topup = TopUpRequest.objects.get(transaction_id='valid-proof')
-        self.assertTrue(topup.payment_proof.name.startswith('topup_proofs/'))
+        assert_storage_name_under(self, topup.payment_proof.name, 'topup_proofs/')
+        self.assertTrue(topup.payment_proof.name.endswith('.webp'))
         self.assertIn(f'/api/wallet/top-up/{topup.pk}/proof/', response.data['payment_proof_url'])
         self.assertNotIn('/media/', response.data['payment_proof_url'])
 
         proof_response = self.client.get(path_with_query(response.data['payment_proof_url']))
-        self.assertEqual(proof_response.status_code, 200)
-        self.assertEqual(proof_response['Content-Type'], 'image/png')
-        self.assertEqual(proof_response['X-Content-Type-Options'], 'nosniff')
-        self.assertEqual(proof_response['Cache-Control'], 'private, no-store')
-        self.assertEqual(proof_response['Referrer-Policy'], 'no-referrer')
+        assert_private_media_response(self, proof_response)
 
         self.client.force_authenticate(user=None)
         unauthenticated_signed_response = self.client.get(
@@ -1773,11 +2343,7 @@ class WithdrawalRequestTests(TestCase):
         self.assertNotIn('/media/', receipt_url)
 
         owner_response = self.client.get(path_with_query(receipt_url))
-        self.assertEqual(owner_response.status_code, 200)
-        self.assertEqual(owner_response['Content-Type'], 'image/png')
-        self.assertEqual(owner_response['X-Content-Type-Options'], 'nosniff')
-        self.assertEqual(owner_response['Cache-Control'], 'private, no-store')
-        self.assertEqual(owner_response['Referrer-Policy'], 'no-referrer')
+        assert_private_media_response(self, owner_response)
 
         self.client.force_authenticate(user=None)
         unauthenticated_response = self.client.get(path_with_query(receipt_url))
@@ -1811,7 +2377,7 @@ class WithdrawalRequestTests(TestCase):
         permitted_staff.user_permissions.add(permission)
         self.client.force_authenticate(user=permitted_staff)
         permitted_staff_response = self.client.get(f'/api/wallet/withdraw/{withdraw.pk}/receipt/')
-        self.assertEqual(permitted_staff_response.status_code, 200)
+        assert_private_media_response(self, permitted_staff_response)
 
     def test_withdrawal_receipt_endpoint_404s_without_receipt(self):
         withdraw = WithdrawRequest.objects.create(
@@ -1866,7 +2432,7 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['wallet-buyer@example.com'])
-        self.assertIn('Top-up request received', mail.outbox[0].subject)
+        self.assertIn('Top-up Request Received', mail.outbox[0].subject)
 
         topup = TopUpRequest.objects.get(transaction_id='email-topup')
         mail.outbox.clear()
@@ -1917,7 +2483,7 @@ class WalletTransactionalEmailTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('Withdrawal request received', mail.outbox[0].subject)
+        self.assertIn('Withdrawal Request Received', mail.outbox[0].subject)
         withdraw = WithdrawRequest.objects.get(pk=response.data['id'])
         withdraw.payment_receipt = make_image_file(name='withdraw-approved-receipt.png')
         withdraw.save(update_fields=['payment_receipt'])
@@ -2880,6 +3446,58 @@ class TopUpAmountValidationTests(TestCase):
         self.assertEqual(topup.amount, Decimal('1.00'))
 
 
+class GameCatalogCacheHeaderTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.game = Game.objects.create(name='Test Game', slug='test-game')
+        self.category = Category.objects.create(name='Accounts', slug='accounts')
+        self.game_category = GameCategory.objects.create(
+            game=self.game,
+            category=self.category,
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_game_list_sets_public_cache_header_and_serves_cached_payload(self):
+        from .views import GAME_LIST_CACHE_SECONDS, game_list_cache_key
+
+        response = self.client.get('/api/games/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'public, max-age=60')
+        cache_key = game_list_cache_key(response.wsgi_request)
+        cached_payload = cache.get(cache_key)
+        self.assertIsNotNone(cached_payload)
+        self.assertEqual(cached_payload[0]['slug'], 'test-game')
+
+        cache.set(
+            cache_key,
+            [{
+                'id': 999,
+                'name': 'Cached Game',
+                'slug': 'cached-game',
+                'description': '',
+                'icon_url': None,
+                'category_count': 0,
+            }],
+            GAME_LIST_CACHE_SECONDS,
+        )
+
+        cached_response = self.client.get('/api/games/')
+
+        self.assertEqual(cached_response.status_code, 200)
+        self.assertEqual(cached_response['Cache-Control'], 'public, max-age=60')
+        self.assertEqual(cached_response.data[0]['slug'], 'cached-game')
+
+    def test_game_detail_sets_public_cache_header(self):
+        response = self.client.get('/api/games/test-game/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'public, max-age=120')
+
+
 class GameCategoryListingPaginationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -3393,6 +4011,25 @@ class AccessControlTests(TestCase):
         self.assertIn('error', start_response.data)
         self.assertFalse(Message.objects.filter(conversation=self.conversation).exists())
 
+    def test_chat_image_upload_optimizes_stored_image(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send-image/',
+            {'image': make_image_file(name='chat.png', size=(2200, 1200))},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        message = Message.objects.get(conversation=self.conversation, sender=self.buyer)
+        assert_storage_name_under(self, message.image.name, 'chat_images/')
+        self.assertTrue(message.image.name.endswith('.webp'))
+
+        with message.image.open('rb'):
+            with Image.open(message.image) as image:
+                self.assertEqual(image.format, 'WEBP')
+                self.assertLessEqual(max(image.size), 1920)
+
     def test_start_conversation_rejects_invalid_user_id(self):
         self.client.force_authenticate(user=self.buyer)
         before_count = Conversation.objects.count()
@@ -3437,9 +4074,18 @@ class AccessControlTests(TestCase):
         )
         self.assertIn(f'/api/chat/messages/{message.pk}/image/', image_url)
         self.assertNotIn('/media/', image_url)
+        self.assertNotIn('ticket=', image_url)
 
         signed_response = self.client.get(path_with_query(image_url))
-        self.assertEqual(signed_response.status_code, 200)
+        # Chat images are browser-cacheable (unlike payment proofs)
+        self.assertIn(signed_response.status_code, (200, 302))
+        if signed_response.status_code == 302:
+            self.assertEqual(signed_response['Cache-Control'], 'private, max-age=240')
+        else:
+            self.assertEqual(signed_response['Cache-Control'], 'private, max-age=86400')
+        self.assertEqual(signed_response['Referrer-Policy'], 'no-referrer')
+        self.assertIn('Cookie', signed_response['Vary'])
+        self.assertIn('Authorization', signed_response['Vary'])
 
         self.client.force_authenticate(user=None)
         unauthenticated_signed_response = self.client.get(path_with_query(image_url))
@@ -3454,7 +4100,13 @@ class AccessControlTests(TestCase):
 
         self.client.force_authenticate(user=self.seller)
         participant_response = self.client.get(f'/api/chat/messages/{message.pk}/image/')
-        self.assertEqual(participant_response.status_code, 200)
+        self.assertIn(participant_response.status_code, (200, 302))
+        if participant_response.status_code == 302:
+            self.assertEqual(participant_response['Cache-Control'], 'private, max-age=240')
+        else:
+            self.assertEqual(participant_response['Cache-Control'], 'private, max-age=86400')
+        self.assertIn('Cookie', participant_response['Vary'])
+        self.assertIn('Authorization', participant_response['Vary'])
 
     def test_conversation_detail_messages_are_paginated_from_latest(self):
         for index in range(60):
@@ -4249,7 +4901,7 @@ class DisputeResolutionApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         recipients = {message.to[0] for message in mail.outbox}
         self.assertEqual(recipients, {'dispute-buyer@example.com', 'dispute-seller@example.com'})
-        self.assertTrue(all('Dispute result' in message.subject for message in mail.outbox))
+        self.assertTrue(all('Dispute Result' in message.subject for message in mail.outbox))
 
     def test_resolve_dispute_refund_does_not_restore_auto_delivery_stock(self):
         listing = Listing.objects.create(
@@ -5473,7 +6125,7 @@ class AutoConfirmOrderTests(TestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['auto-seller@example.com'])
-        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertIn('Order Completed', mail.outbox[0].subject)
         self.assertNotIn('auto_buyer', mail.outbox[0].body)
 
     def test_auto_confirm_command_dry_run_does_not_complete_due_order(self):
@@ -5543,7 +6195,7 @@ class AutoConfirmOrderTests(TestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['protected-seller@example.com'])
-        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertIn('Order Completed', mail.outbox[0].subject)
         self.assertNotIn('buyer protection', mail.outbox[0].body.lower())
         self.assertNotIn('buyer protection', mail.outbox[0].subject.lower())
 
@@ -6427,7 +7079,7 @@ class NotificationTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['notif-seller@example.com'])
-        self.assertIn('Order placed', mail.outbox[0].subject)
+        self.assertIn('New Order Received', mail.outbox[0].subject)
         self.assertNotIn('notif_buyer', mail.outbox[0].subject)
         self.assertNotIn('notif_buyer', mail.outbox[0].body)
 
@@ -6463,7 +7115,7 @@ class NotificationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['deliver-buyer@example.com'])
-        self.assertIn('Order delivered', mail.outbox[0].subject)
+        self.assertIn('Order Delivered', mail.outbox[0].subject)
         self.assertNotIn('notif_buyer', mail.outbox[0].body)
 
     def test_confirm_creates_notification_for_seller(self):
@@ -6504,7 +7156,7 @@ class NotificationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['confirm-seller@example.com'])
-        self.assertIn('Order completed', mail.outbox[0].subject)
+        self.assertIn('Order Completed', mail.outbox[0].subject)
         self.assertNotIn('confirm_buyer', mail.outbox[0].body)
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -6730,7 +7382,7 @@ class NotificationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['refund-buyer@example.com'])
-        self.assertIn('Order refunded', mail.outbox[0].subject)
+        self.assertIn('Order Refunded', mail.outbox[0].subject)
 
 
 class AccountSecurityFlowTests(TestCase):
@@ -7056,8 +7708,14 @@ class AccountSecurityFlowTests(TestCase):
 
         self.assertEqual(upload_response.status_code, 200)
         self.user.profile.refresh_from_db()
-        self.assertTrue(self.user.profile.avatar.name.startswith('avatars/'))
-        self.assertIn('/media/avatars/', upload_response.data['user']['avatar_url'])
+        assert_storage_name_under(self, self.user.profile.avatar.name, 'avatars/')
+        self.assertTrue(self.user.profile.avatar.name.endswith('.webp'))
+        avatar_url = upload_response.data['user']['avatar_url']
+        self.assertTrue(avatar_url)
+        if is_cloudflare_r2_name(self.user.profile.avatar.name):
+            self.assertNotIn('/media/', avatar_url)
+        else:
+            self.assertIn('/media/avatars/', avatar_url)
 
         remove_response = self.client.delete(
             '/api/auth/avatar/',

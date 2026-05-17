@@ -1,7 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
 import hashlib
-import mimetypes
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from rest_framework import generics, status, permissions
@@ -16,7 +15,7 @@ from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from django.core import signing
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect
 from django.db.models import (
     Avg, Case, Count, ExpressionWrapper, F, IntegerField, OuterRef,
     Prefetch, Q, Subquery, Sum, Value, When,
@@ -24,6 +23,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
@@ -72,6 +72,7 @@ from .services import (
     encrypt_sensitive_text,
     validate_chat_message_content,
     validate_uploaded_image,
+    optimize_uploaded_image,
     generate_email_change_code,
     create_email_change_token,
     verify_email_change_token,
@@ -86,7 +87,24 @@ from .services import (
     send_topup_request_received_email,
     send_withdraw_request_received_email,
 )
+from .storage_backends import (
+    AVATAR_CACHE_SECONDS,
+    GAME_ICON_CACHE_SECONDS,
+    R2_SIGNED_URL_CACHE_SAFETY_SECONDS,
+    R2_SIGNED_URL_MAX_SECONDS,
+    cached_media_url,
+    is_cloudflare_r2_name,
+    media_content_type,
+)
 from .authentication import enforce_trusted_origin
+
+
+def request_origin_cache_scope(request):
+    return f'{request.scheme}://{request.get_host()}'
+
+
+def game_list_cache_key(request):
+    return f'{GAME_LIST_CACHE_KEY}:{request_origin_cache_scope(request)}'
 
 
 DEFAULT_LISTING_PAGE_SIZE = 48
@@ -143,21 +161,80 @@ def has_valid_private_media_ticket(request, *, kind, object_id):
     )
 
 
-def private_file_response(file_field):
+def private_file_response(file_field, cache_seconds=0, redirect_r2=True):
+    """Serve a private media file.
+
+    Args:
+        file_field: Django FieldFile / ImageFieldFile to serve.
+        cache_seconds: If >0, allow the browser (but not shared proxies) to
+            cache the response for this many seconds.  Default ``0`` means
+            ``no-store`` (e.g. for payment proofs).
+        redirect_r2: If True, R2 objects are served through signed redirects.
+            Set False for stable private URLs that need browser caching without
+            exposing a long-lived object-storage URL.
+    """
     if not file_field:
         raise Http404
+    cache_header = (
+        f'private, max-age={cache_seconds}'
+        if cache_seconds > 0
+        else 'private, no-store'
+    )
+    if redirect_r2 and is_cloudflare_r2_name(file_field.name):
+        signed_url_expire = min(
+            settings.CLOUDFLARE_R2_PRIVATE_URL_EXPIRATION_SECONDS,
+            R2_SIGNED_URL_MAX_SECONDS,
+        )
+        redirect_cache_seconds = 0
+        if cache_seconds > 0:
+            redirect_cache_seconds = max(
+                0,
+                min(cache_seconds, signed_url_expire - R2_SIGNED_URL_CACHE_SAFETY_SECONDS),
+            )
+        redirect_cache_header = (
+            f'private, max-age={redirect_cache_seconds}'
+            if redirect_cache_seconds > 0
+            else 'private, no-store'
+        )
+        response_parameters = {'ResponseCacheControl': cache_header}
+        content_type = media_content_type(file_field.name)
+        if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+            raise Http404
+        if content_type:
+            response_parameters['ResponseContentType'] = content_type
+        redirect_url = file_field.storage.url(
+            file_field.name,
+            parameters=response_parameters,
+            expire=signed_url_expire,
+        )
+        response = HttpResponseRedirect(redirect_url)
+        response['Cache-Control'] = redirect_cache_header
+        response['Referrer-Policy'] = 'no-referrer'
+        response['X-Content-Type-Options'] = 'nosniff'
+        if redirect_cache_seconds > 0:
+            patch_vary_headers(response, ['Cookie', 'Authorization'])
+        return response
+    content_type = media_content_type(file_field.name) or 'application/octet-stream'
+    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        raise Http404
+
     try:
         opened_file = file_field.open('rb')
     except (FileNotFoundError, OSError):
         raise Http404
-    content_type = mimetypes.guess_type(file_field.name)[0] or 'application/octet-stream'
-    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
-        opened_file.close()
-        raise Http404
-    response = FileResponse(opened_file, content_type=content_type)
+
+    if is_cloudflare_r2_name(file_field.name):
+        try:
+            response = HttpResponse(opened_file.read(), content_type=content_type)
+        finally:
+            opened_file.close()
+    else:
+        response = FileResponse(opened_file, content_type=content_type)
     response['X-Content-Type-Options'] = 'nosniff'
-    response['Cache-Control'] = 'private, no-store'
+    response['Cache-Control'] = cache_header
     response['Referrer-Policy'] = 'no-referrer'
+    if cache_seconds > 0:
+        patch_vary_headers(response, ['Cookie', 'Authorization'])
     return response
 
 
@@ -432,11 +509,14 @@ class GameListView(generics.ListAPIView):
         )
 
     def list(self, request, *args, **kwargs):
-        cached = cache.get(GAME_LIST_CACHE_KEY)
+        cache_key = game_list_cache_key(request)
+        cached = cache.get(cache_key)
         if cached is not None:
-            return Response(cached)
-        response = super().list(request, *args, **kwargs)
-        cache.set(GAME_LIST_CACHE_KEY, response.data, GAME_LIST_CACHE_SECONDS)
+            response = Response(cached)
+        else:
+            response = super().list(request, *args, **kwargs)
+            cache.set(cache_key, response.data, GAME_LIST_CACHE_SECONDS)
+        response['Cache-Control'] = 'public, max-age=60'
         return response
 
 
@@ -448,6 +528,11 @@ class GameDetailView(generics.RetrieveAPIView):
     queryset = Game.objects.filter(is_active=True).prefetch_related(
         'game_categories__category'
     )
+
+    def retrieve(self, request, *args, **kwargs):
+        response = super().retrieve(request, *args, **kwargs)
+        response['Cache-Control'] = 'public, max-age=120'
+        return response
 
 
 class GameCategoryDetailView(APIView):
@@ -1145,6 +1230,8 @@ class AvatarUploadView(ScopedPostThrottleMixin, APIView):
         error = validate_uploaded_image(image)
         if error:
             return Response({'error': error}, status=400)
+
+        image = optimize_uploaded_image(image, preset='avatar')
 
         profile = request.user.profile
         # Delete old avatar file if exists
@@ -1882,6 +1969,8 @@ class SendImageView(ScopedPostThrottleMixin, APIView):
         )
         if validation_error and validation_error != CHAT_MESSAGE_EMPTY_ERROR:
             return Response({'error': validation_error}, status=400)
+        image = optimize_uploaded_image(image, preset='chat')
+
         message = Message.objects.create(
             conversation=conversation,
             sender=request.user,
@@ -1917,7 +2006,7 @@ class ChatMessageImageView(APIView):
         )
         if not (has_ticket or is_participant):
             raise Http404
-        return private_file_response(message.image)
+        return private_file_response(message.image, cache_seconds=86400, redirect_r2=False)
 
 
 class UnreadCountView(APIView):
@@ -2100,6 +2189,8 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
             validation_error = validate_uploaded_image(payment_proof)
             if validation_error:
                 return Response({'error': validation_error}, status=400)
+
+        payment_proof = optimize_uploaded_image(payment_proof, preset='proof')
 
         try:
             with db_transaction.atomic():
@@ -3022,7 +3113,12 @@ class SellerProfileView(APIView):
             cached['is_online'] = profile.is_online
             cached['last_active'] = profile.last_active
             if profile.avatar:
-                cached['avatar_url'] = request.build_absolute_uri(profile.avatar.url)
+                cached['avatar_url'] = cached_media_url(
+                    profile.avatar,
+                    request=request,
+                    cache_seconds=AVATAR_CACHE_SECONDS,
+                    cache_scope='private',
+                )
             else:
                 cached['avatar_url'] = None
             return Response(cached)
@@ -3097,7 +3193,12 @@ class SellerProfileView(APIView):
         # Avatar URL
         avatar_url = None
         if profile.avatar:
-            avatar_url = request.build_absolute_uri(profile.avatar.url)
+            avatar_url = cached_media_url(
+                profile.avatar,
+                request=request,
+                cache_seconds=AVATAR_CACHE_SECONDS,
+                cache_scope='private',
+            )
 
         payload = {
             'username': seller.username,
@@ -3135,7 +3236,7 @@ class SearchView(APIView):
 
         normalized_query = ' '.join(query.split()).casefold()
         cache_key = 'search:v1:' + hashlib.sha256(
-            normalized_query.encode('utf-8')
+            f'{request_origin_cache_scope(request)}:{normalized_query}'.encode('utf-8')
         ).hexdigest()
         cached_results = cache.get(cache_key)
         if cached_results is not None:
@@ -3156,7 +3257,12 @@ class SearchView(APIView):
         for gc in game_categories:
             icon_url = None
             if gc.game.icon:
-                icon_url = request.build_absolute_uri(gc.game.icon.url)
+                icon_url = cached_media_url(
+                    gc.game.icon,
+                    request=request,
+                    cache_seconds=GAME_ICON_CACHE_SECONDS,
+                    cache_scope='public',
+                )
             results.append({
                 'id': gc.id,
                 'display_name': f'{gc.game.name} {gc.category.name}',

@@ -190,6 +190,45 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+CLOUDFLARE_R2_ENABLED = env_bool('CLOUDFLARE_R2_ENABLED', False)
+CLOUDFLARE_R2_BUCKET_NAME = os.environ.get('CLOUDFLARE_R2_BUCKET_NAME', '').strip()
+CLOUDFLARE_R2_ACCESS_KEY_ID = os.environ.get('CLOUDFLARE_R2_ACCESS_KEY_ID', '').strip()
+CLOUDFLARE_R2_SECRET_ACCESS_KEY = os.environ.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY', '').strip()
+CLOUDFLARE_R2_ENDPOINT_URL = os.environ.get('CLOUDFLARE_R2_ENDPOINT_URL', '').strip()
+CLOUDFLARE_R2_PUBLIC_URL_EXPIRATION_SECONDS = env_int(
+    'CLOUDFLARE_R2_PUBLIC_URL_EXPIRATION_SECONDS',
+    24 * 60 * 60,
+)
+CLOUDFLARE_R2_PRIVATE_URL_EXPIRATION_SECONDS = env_int(
+    'CLOUDFLARE_R2_PRIVATE_URL_EXPIRATION_SECONDS',
+    5 * 60,
+)
+
+if CLOUDFLARE_R2_ENABLED:
+    missing_cloudflare_r2_settings = [
+        name for name, value in {
+            'CLOUDFLARE_R2_BUCKET_NAME': CLOUDFLARE_R2_BUCKET_NAME,
+            'CLOUDFLARE_R2_ACCESS_KEY_ID': CLOUDFLARE_R2_ACCESS_KEY_ID,
+            'CLOUDFLARE_R2_SECRET_ACCESS_KEY': CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+            'CLOUDFLARE_R2_ENDPOINT_URL': CLOUDFLARE_R2_ENDPOINT_URL,
+        }.items()
+        if not value
+    ]
+    if missing_cloudflare_r2_settings:
+        raise ImproperlyConfigured(
+            'CLOUDFLARE_R2_ENABLED=True requires: '
+            + ', '.join(missing_cloudflare_r2_settings)
+        )
+
+    STORAGES = {
+        'default': {
+            'BACKEND': 'core.storage_backends.CloudflareR2Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        },
+    }
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Cache. DRF throttles use Django's default cache, so production must use a
@@ -308,6 +347,11 @@ EMAIL_BACKEND = os.environ.get(
     'django.core.mail.backends.console.EmailBackend' if DEBUG
     else 'django.core.mail.backends.smtp.EmailBackend',
 )
+DKIM_EMAIL_BACKEND = 'core.email_backends.DKIMSMTPEmailBackend'
+SMTP_EMAIL_BACKENDS = {
+    'django.core.mail.backends.smtp.EmailBackend',
+    DKIM_EMAIL_BACKEND,
+}
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gamesbazaar.pk')
 TRANSACTIONAL_EMAILS_ENABLED = env_bool('TRANSACTIONAL_EMAILS_ENABLED', True)
 TRANSACTIONAL_EMAIL_FAIL_SILENTLY = env_bool('TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True)
@@ -318,18 +362,48 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', not DEBUG)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 20)
+DKIM_DOMAIN = os.environ.get('DKIM_DOMAIN', '').strip()
+DKIM_SELECTOR = os.environ.get('DKIM_SELECTOR', '').strip()
+DKIM_PRIVATE_KEY = os.environ.get('DKIM_PRIVATE_KEY', '').strip()
+DKIM_PRIVATE_KEY_PATH = os.environ.get('DKIM_PRIVATE_KEY_PATH', '').strip()
+if DKIM_PRIVATE_KEY_PATH and not Path(DKIM_PRIVATE_KEY_PATH).is_absolute():
+    DKIM_PRIVATE_KEY_PATH = str(BASE_DIR / DKIM_PRIVATE_KEY_PATH)
 
 if EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise ImproperlyConfigured('EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be True.')
 
 if (
     not DEBUG and
-    EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend' and
+    EMAIL_BACKEND in SMTP_EMAIL_BACKENDS and
     not EMAIL_HOST
 ):
     raise ImproperlyConfigured(
         'EMAIL_HOST must be set when using SMTP email in production.'
     )
+
+if EMAIL_BACKEND == DKIM_EMAIL_BACKEND:
+    missing_dkim_settings = [
+        name for name, value in {
+            'DKIM_DOMAIN': DKIM_DOMAIN,
+            'DKIM_SELECTOR': DKIM_SELECTOR,
+            'DKIM_PRIVATE_KEY or DKIM_PRIVATE_KEY_PATH': (
+                DKIM_PRIVATE_KEY or DKIM_PRIVATE_KEY_PATH
+            ),
+        }.items()
+        if not value
+    ]
+    if missing_dkim_settings:
+        raise ImproperlyConfigured(
+            f'{DKIM_EMAIL_BACKEND} requires: ' + ', '.join(missing_dkim_settings)
+        )
+    if (
+        not DKIM_PRIVATE_KEY and
+        DKIM_PRIVATE_KEY_PATH and
+        not Path(DKIM_PRIVATE_KEY_PATH).is_file()
+    ):
+        raise ImproperlyConfigured(
+            f'DKIM_PRIVATE_KEY_PATH does not exist: {DKIM_PRIVATE_KEY_PATH}'
+        )
 
 # ASGI / Channels
 ASGI_APPLICATION = 'gamesbazaar.asgi.application'

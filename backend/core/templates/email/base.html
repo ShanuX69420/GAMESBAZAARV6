@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{% block title %}GamesBazaar{% endblock %}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td { font-family: Arial, Helvetica, sans-serif !important; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    /* Reset */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+
+    /* Main styles */
+    body {
+      background-color: #F8FAF9;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: #111827;
+      line-height: 1.6;
+    }
+
+    .email-wrapper {
+      width: 100%;
+      background-color: #F8FAF9;
+      padding: 32px 16px;
+    }
+
+    .email-container {
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #FFFFFF;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #E5E7EB;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Header */
+    .email-header {
+      background: linear-gradient(135deg, #16A34A 0%, #22C55E 50%, #4ADE80 100%);
+      padding: 32px 40px;
+      text-align: center;
+    }
+
+    .email-header .brand-name {
+      font-size: 26px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+      margin: 0;
+      text-transform: none;
+    }
+
+    .email-header .brand-tagline {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+      margin: 4px 0 0 0;
+      font-weight: 400;
+    }
+
+    /* Subject banner */
+    .email-subject-banner {
+      background-color: #F0FDF4;
+      padding: 20px 40px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .email-subject-banner h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #111827;
+      margin: 0;
+    }
+
+    /* Body */
+    .email-body {
+      padding: 32px 40px;
+    }
+
+    .greeting {
+      font-size: 16px;
+      color: #6B7280;
+      margin: 0 0 20px 0;
+    }
+
+    .email-body p {
+      font-size: 15px;
+      color: #6B7280;
+      margin: 0 0 14px 0;
+      line-height: 1.65;
+    }
+
+    /* Info card (order details, amounts, etc.) */
+    .info-card {
+      background-color: #F8FAF9;
+      border: 1px solid #E5E7EB;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin: 20px 0;
+    }
+
+    .info-card table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .info-card table td {
+      padding: 8px 0;
+      border-bottom: 1px solid #E5E7EB;
+      font-size: 14px;
+    }
+
+    .info-card table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .info-card .label {
+      color: #9CA3AF;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .info-card .value {
+      color: #111827;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    /* Verification code */
+    .code-block {
+      background: #F0FDF4;
+      border: 2px solid #22C55E;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      margin: 24px 0;
+    }
+
+    .code-block .code-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #16A34A;
+      margin: 0 0 8px 0;
+      font-weight: 700;
+    }
+
+    .code-block .code-value {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: 8px;
+      color: #111827;
+      font-family: 'Courier New', Courier, monospace;
+      margin: 0;
+    }
+
+    .code-block .code-expiry {
+      font-size: 13px;
+      color: #9CA3AF;
+      margin: 12px 0 0 0;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge.success {
+      background-color: #F0FDF4;
+      color: #16A34A;
+      border: 1px solid #BBF7D0;
+    }
+
+    .status-badge.warning {
+      background-color: #FFFBEB;
+      color: #D97706;
+      border: 1px solid #FDE68A;
+    }
+
+    .status-badge.danger {
+      background-color: #FEF2F2;
+      color: #DC2626;
+      border: 1px solid #FECACA;
+    }
+
+    .status-badge.info {
+      background-color: #F0FDF4;
+      color: #15803D;
+      border: 1px solid #DCFCE7;
+    }
+
+    /* Admin note */
+    .admin-note {
+      background-color: #F8FAF9;
+      border-left: 3px solid #22C55E;
+      padding: 14px 18px;
+      margin: 16px 0;
+      border-radius: 0 10px 10px 0;
+    }
+
+    .admin-note .note-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #16A34A;
+      margin: 0 0 4px 0;
+      font-weight: 700;
+    }
+
+    .admin-note .note-text {
+      font-size: 14px;
+      color: #6B7280;
+      margin: 0;
+      font-style: italic;
+    }
+
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid #E5E7EB;
+      margin: 24px 0;
+    }
+
+    /* CTA button */
+    .cta-wrapper {
+      text-align: center;
+      margin: 28px 0;
+    }
+
+    .cta-button {
+      display: inline-block;
+      background: linear-gradient(135deg, #16A34A 0%, #22C55E 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 36px;
+      border-radius: 9999px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    /* Footer */
+    .email-footer {
+      background-color: #F8FAF9;
+      padding: 24px 40px;
+      text-align: center;
+      border-top: 1px solid #E5E7EB;
+    }
+
+    .email-footer p {
+      font-size: 12px;
+      color: #9CA3AF;
+      margin: 0 0 4px 0;
+      line-height: 1.5;
+    }
+
+    .email-footer .footer-brand {
+      font-weight: 700;
+      color: #22C55E;
+      font-size: 13px;
+    }
+
+    /* Responsive */
+    @media only screen and (max-width: 600px) {
+      .email-wrapper { padding: 16px 8px !important; }
+      .email-header { padding: 24px 24px !important; }
+      .email-subject-banner { padding: 16px 24px !important; }
+      .email-body { padding: 24px 24px !important; }
+      .email-footer { padding: 20px 24px !important; }
+      .info-card { padding: 16px 18px !important; }
+      .code-block .code-value { font-size: 28px !important; letter-spacing: 5px !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <!--[if mso]>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="580" align="center"><tr><td>
+    <![endif]-->
+    <div class="email-container">
+
+      <!-- Header -->
+      <div class="email-header">
+        <p class="brand-name">GamesBazaar</p>
+        <p class="brand-tagline">Pakistan's Digital Marketplace</p>
+      </div>
+
+      <!-- Subject Banner -->
+      {% block subject_banner %}
+      <div class="email-subject-banner">
+        <h1>{% block subject_heading %}{{ subject }}{% endblock %}</h1>
+      </div>
+      {% endblock %}
+
+      <!-- Body -->
+      <div class="email-body">
+        <p class="greeting">{% block greeting %}Hi{% if username %} {{ username }}{% endif %},{% endblock %}</p>
+        {% block content %}{% endblock %}
+      </div>
+
+      <!-- Footer -->
+      <div class="email-footer">
+        <p class="footer-brand">GamesBazaar</p>
+        <p>This is an automated message. Please do not reply to this email.</p>
+        <p>&copy; {% now "Y" %} GamesBazaar. All rights reserved.</p>
+      </div>
+
+    </div>
+    <!--[if mso]>
+    </td></tr></table>
+    <![endif]-->
+  </div>
+</body>
+</html>

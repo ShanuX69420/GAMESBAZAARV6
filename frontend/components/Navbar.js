@@ -229,7 +229,7 @@ export default function Navbar() {
               <a key={item.id} href={`/games/${item.game_slug}/${item.category_slug}`}
                 className="search-dropdown-item" onClick={(e) => handleResultClick(e, item)}>
                 <span className="search-dropdown-item-icon">
-                  {item.game_icon_url ? <img src={item.game_icon_url} alt="" className="search-dropdown-item-img" /> : '🎮'}
+                  {item.game_icon_url ? <img src={item.game_icon_url} alt="" className="search-dropdown-item-img" loading="lazy" /> : '🎮'}
                 </span>
                 <span className="search-dropdown-item-label">{item.display_name}</span>
               </a>

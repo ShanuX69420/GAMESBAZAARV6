@@ -118,7 +118,7 @@ export default function InboxPage() {
               >
                 <div className="inbox-avatar">
                   {convo.other_user?.avatar_url ? (
-                    <img src={convo.other_user.avatar_url} alt={convo.other_user.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                    <img src={convo.other_user.avatar_url} alt={convo.other_user.username} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                   ) : (
                     convo.other_user?.username?.[0]?.toUpperCase() || '?'
                   )}
@@ -172,7 +172,7 @@ export default function InboxPage() {
                   </button>
                   <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
                     {activeChat.other_user?.avatar_url ? (
-                      <img src={activeChat.other_user.avatar_url} alt={activeChat.other_user.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      <img src={activeChat.other_user.avatar_url} alt={activeChat.other_user.username} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     ) : (
                       activeChat.other_user?.username?.[0]?.toUpperCase() || '?'
                     )}

@@ -4,6 +4,7 @@ Django==5.2.14
 djangorestframework==3.17.1
 djangorestframework-simplejwt==5.5.1
 django-cors-headers==4.9.0
+django-storages[boto3]==1.14.6
 channels==4.3.2
 channels-redis==4.3.0
 daphne==4.2.1
@@ -11,4 +12,5 @@ cryptography==46.0.7
 Pillow==12.2.0
 psycopg2-binary==2.9.11
 google-auth==2.38.0
+dkimpy==1.1.8
 python-dotenv>=1.0.0

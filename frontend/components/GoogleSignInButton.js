@@ -3,6 +3,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { GOOGLE_CLIENT_ID } from '@/lib/config';
 import { useAuth } from '@/lib/auth';
+import {
+  getGoogleIdentityState,
+  initializeGoogleIdentity,
+  loadGoogleIdentityScript,
+} from '@/lib/googleIdentity';
 
 /**
  * Renders Google's "Sign in with Google" button using the GSI library.
@@ -15,7 +20,6 @@ import { useAuth } from '@/lib/auth';
 export default function GoogleSignInButton({ onSuccess, onError }) {
   const { googleLogin } = useAuth();
   const buttonRef = useRef(null);
-  const initializedRef = useRef(false);
   const latestHandlersRef = useRef({ googleLogin, onSuccess, onError });
 
   useEffect(() => {
@@ -43,23 +47,22 @@ export default function GoogleSignInButton({ onSuccess, onError }) {
   }, []);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || initializedRef.current) return;
+    if (!GOOGLE_CLIENT_ID) return;
 
-    let script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-    let listenerAttached = false;
+    const state = getGoogleIdentityState();
+    if (!state) return;
 
-    function initializeGoogle() {
-      if (!window.google?.accounts?.id || initializedRef.current) return;
-      initializedRef.current = true;
+    let isMounted = true;
+    state.credentialHandler = handleCredentialResponse;
 
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      });
+    loadGoogleIdentityScript(state)
+      .then(() => {
+        if (!isMounted) return;
+        initializeGoogleIdentity(state);
 
-      if (buttonRef.current) {
+        if (!window.google?.accounts?.id) return;
+        if (!buttonRef.current) return;
+
         buttonRef.current.replaceChildren();
         window.google.accounts.id.renderButton(buttonRef.current, {
           type: 'standard',
@@ -70,31 +73,20 @@ export default function GoogleSignInButton({ onSuccess, onError }) {
           shape: 'pill',
           logo_alignment: 'left',
         });
-      }
-    }
-
-    if (script) {
-      if (window.google?.accounts?.id) {
-        initializeGoogle();
-      } else {
-        script.addEventListener('load', initializeGoogle);
-        listenerAttached = true;
-      }
-    } else {
-      script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.addEventListener('load', initializeGoogle);
-      listenerAttached = true;
-      document.head.appendChild(script);
-    }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        latestHandlersRef.current.onError?.(err.message || 'Google sign-in failed to load');
+      });
 
     return () => {
-      if (listenerAttached && script) {
-        script.removeEventListener('load', initializeGoogle);
+      isMounted = false;
+      if (state.credentialHandler === handleCredentialResponse) {
+        state.credentialHandler = null;
       }
-      initializedRef.current = false;
+      if (buttonRef.current) {
+        buttonRef.current.replaceChildren();
+      }
     };
   }, [handleCredentialResponse]);
 
@@ -107,7 +99,7 @@ export default function GoogleSignInButton({ onSuccess, onError }) {
         <span className="auth-divider-text">or</span>
         <span className="auth-divider-line" />
       </div>
-      <div ref={buttonRef} className="google-signin-btn" id="google-signin-button" />
+      <div ref={buttonRef} className="google-signin-btn" />
     </div>
   );
 }

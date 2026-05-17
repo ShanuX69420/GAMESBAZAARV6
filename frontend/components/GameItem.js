@@ -6,7 +6,7 @@ export default function GameItem({ game }) {
     <Link href={`/games/${game.slug}`} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
-          <img src={game.icon_url} alt={game.name} />
+          <img src={game.icon_url} alt={game.name} loading="lazy" />
         ) : (
           getGameIcon(game.slug)
         )}

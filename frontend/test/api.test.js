@@ -7,6 +7,7 @@ import {
   confirmPasswordReset,
   deliverOrder,
   disputeOrder,
+  fetchGames,
   fetchGame,
   fetchGameCategory,
   getAutoDeliveryStock,
@@ -144,18 +145,26 @@ describe('API client helpers', () => {
   });
 
   it('encodes public catalog path segments and keeps catalog revalidation options', async () => {
+    await fetchGames();
     await fetchGame('pubg mobile');
     await fetchGameCategory('pubg mobile', 'accounts & boosts', 'filter_1=Gold+Rank');
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
+      `${API_BASE}/api/games/`,
+      {
+        next: { revalidate: 60 },
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
       `${API_BASE}/api/games/pubg%20mobile/`,
       {
         next: { revalidate: 120 },
       }
     );
     expect(fetch).toHaveBeenNthCalledWith(
-      2,
+      3,
       `${API_BASE}/api/games/pubg%20mobile/accounts%20%26%20boosts/?filter_1=Gold+Rank`,
       {
         next: { revalidate: 120 },

@@ -44,6 +44,9 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   const loadingOlderRef = useRef(false);
   const mountedRef = useRef(true);
   const fileInputRef = useRef(null);
+  const initialImageAutoScrollRef = useRef(false);
+  const pendingInitialImageLoadsRef = useRef(0);
+  const initialImageScrollTimerRef = useRef(null);
 
   function handleScroll() {
     const el = messagesContainerRef.current;
@@ -63,6 +66,29 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     }
   }
 
+  function stopInitialImageAutoScroll() {
+    initialImageAutoScrollRef.current = false;
+    pendingInitialImageLoadsRef.current = 0;
+    clearTimeout(initialImageScrollTimerRef.current);
+  }
+
+  function armInitialImageAutoScroll(nextMessages) {
+    clearTimeout(initialImageScrollTimerRef.current);
+    const imageCount = (nextMessages || []).filter(msg => msg.image_url).length;
+    pendingInitialImageLoadsRef.current = imageCount;
+    initialImageAutoScrollRef.current = imageCount > 0;
+
+    requestAnimationFrame(() => scrollToBottom(true));
+    setTimeout(() => scrollToBottom(true), 80);
+    setTimeout(() => scrollToBottom(true), 350);
+
+    if (imageCount > 0) {
+      initialImageScrollTimerRef.current = setTimeout(() => {
+        stopInitialImageAutoScroll();
+      }, 8000);
+    }
+  }
+
   function showChatError(message) {
     setChatError(message);
     clearTimeout(errorTimerRef.current);
@@ -73,8 +99,30 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
 
   // Scroll when messages change (after DOM renders)
   useEffect(() => {
-    setTimeout(() => scrollToBottom(), 50);
+    if (loadingOlderRef.current) return;
+    const firstScroll = setTimeout(() => scrollToBottom(), 50);
+    // Secondary scroll to catch images that finish loading after the first scroll
+    const secondScroll = setTimeout(() => scrollToBottom(), 300);
+    return () => {
+      clearTimeout(firstScroll);
+      clearTimeout(secondScroll);
+    };
   }, [messages.length]);
+
+  // Re-scroll image loads only while opening a conversation or when the user
+  // was already parked at the newest message.
+  function handleImageLoad() {
+    if (initialImageAutoScrollRef.current) {
+      scrollToBottom(true);
+      pendingInitialImageLoadsRef.current -= 1;
+      if (pendingInitialImageLoadsRef.current <= 0) {
+        stopInitialImageAutoScroll();
+      }
+      return;
+    }
+    if (loadingOlderRef.current || !isNearBottom.current) return;
+    scrollToBottom();
+  }
 
   // On mount: look up existing conversation with seller
   useEffect(() => {
@@ -99,10 +147,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     try {
       const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE });
       if (!mountedRef.current) return;
+      const nextMessages = data.messages || [];
       setConvo(data);
-      setMessages(data.messages || []);
+      setMessages(nextMessages);
       setMessagePagination(data.message_pagination || null);
-      requestAnimationFrame(() => scrollToBottom(true));
+      armInitialImageAutoScroll(nextMessages);
     } catch { }
   }, [activeConvoId]);
 
@@ -222,6 +271,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
       clearTimeout(errorTimerRef.current);
+      clearTimeout(initialImageScrollTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
@@ -273,6 +323,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         if (prev.some(m => m.id === data.id)) return prev;
         return [...prev, { ...data, is_mine: true }];
       });
+      requestAnimationFrame(() => scrollToBottom(true));
       setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
       window.dispatchEvent(new Event('chatUpdate'));
       cancelPreview();
@@ -300,10 +351,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
         const data = await startConversation(sellerId, messageText);
         setActiveConvoId(data.id);
         setConvo(data);
-        setMessages(data.messages || []);
+        const nextMessages = data.messages || [];
+        setMessages(nextMessages);
         setMessagePagination(data.message_pagination || null);
         if (onConversationStart) onConversationStart(data.id);
-        requestAnimationFrame(() => scrollToBottom(true));
+        armInitialImageAutoScroll(nextMessages);
       } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'chat_message',
@@ -370,6 +422,9 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
               <img
                 src={msg.image_url}
                 alt="Shared image"
+                loading="lazy"
+                onLoad={handleImageLoad}
+                onError={handleImageLoad}
                 onClick={() => window.open(msg.image_url, '_blank', 'noopener,noreferrer')}
               />
             </div>

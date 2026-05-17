@@ -1,5 +1,6 @@
 import { API_BASE } from '@/lib/config';
 let refreshAuthPromise = null;
+const GAME_LIST_REVALIDATE_SECONDS = 60;
 const PUBLIC_CATALOG_REVALIDATE_SECONDS = 120;
 
 function pathSegment(value) {
@@ -22,7 +23,7 @@ function paginationQuery({ limit, offset, beforeId, before_id, otherUserId, othe
 
 export async function fetchGames() {
   const res = await fetch(`${API_BASE}/api/games/`, {
-    next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
+    next: { revalidate: GAME_LIST_REVALIDATE_SECONDS },
   });
   if (!res.ok) throw new Error('Failed to fetch games');
   return res.json();
