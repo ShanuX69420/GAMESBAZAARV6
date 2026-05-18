@@ -11,12 +11,11 @@ export default function GlobalError({ error, reset }) {
     <html lang="en">
       <head>
         <title>Something went wrong — GamesBazaar</title>
-        <link rel="icon" href="/logo.png" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <link rel="icon" href="/icons/icon-96x96.png" />
         <style>{`
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
           body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             color: #111827;
             background: #FFFFFF;
             min-height: 100vh;
@@ -34,6 +33,19 @@ export default function GlobalError({ error, reset }) {
             width: 48px;
             height: 48px;
             margin: 0 auto 24px;
+          }
+          .ge-logo-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #22C55E, #15803D);
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0;
+            line-height: 1;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
           }
           .ge-icon {
             font-size: 4rem;
@@ -86,7 +98,7 @@ export default function GlobalError({ error, reset }) {
       </head>
       <body>
         <div className="ge-container">
-          <img src="/logo.png" alt="GamesBazaar" className="ge-logo" />
+          <span className="ge-logo ge-logo-mark" aria-hidden="true">GB</span>
           <div className="ge-icon">⚠️</div>
           <h1 className="ge-title">Something went wrong</h1>
           <p className="ge-desc">

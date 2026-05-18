@@ -12,7 +12,7 @@ export const metadata = {
   description: 'Buy & sell game accounts, top-ups, items, and boosting services. Pakistan\'s trusted gaming marketplace with secure payments and verified sellers.',
   manifest: '/manifest.json',
   icons: {
-    icon: '/logo.png',
+    icon: '/icons/icon-96x96.png',
     apple: '/apple-touch-icon.png',
   },
   appleWebApp: {

@@ -4,7 +4,7 @@ export default function Footer() {
   return (
     <footer className="footer">
       <div className="container footer-inner">
-        <div className="footer-brand"><img src="/logo.png" alt="GamesBazaar" className="footer-brand-logo" loading="lazy" /> GamesBazaar</div>
+        <div className="footer-brand"><span className="brand-mark footer-brand-mark" aria-hidden="true">GB</span> GamesBazaar</div>
         <ul className="footer-links">
           <li><Link href="/">Home</Link></li>
           <li><Link href="/support">Support</Link></li>

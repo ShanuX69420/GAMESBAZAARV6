@@ -41,4 +41,40 @@ describe('frontend config', () => {
       'NEXT_PUBLIC_API_URL cannot point to localhost in production.'
     );
   });
+
+  it('allows localhost defaults for local production bundle testing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LOCAL_PRODUCTION_BUILD', '1');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', '');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+
+    const config = await importFreshConfig();
+
+    expect(config.API_BASE).toBe('http://localhost:8000');
+    expect(config.WS_BASE).toBe('ws://localhost:8000');
+  });
+
+  it('allows explicit localhost endpoints for local production bundle testing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LOCAL_PRODUCTION_BUILD', 'true');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:8000');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'ws://localhost:8000');
+
+    const config = await importFreshConfig();
+
+    expect(config.API_BASE).toBe('http://localhost:8000');
+    expect(config.WS_BASE).toBe('ws://localhost:8000');
+  });
+
+  it('does not throw config validation errors in the browser bundle', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:8000');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'ws://localhost:8000');
+    vi.stubGlobal('window', {});
+
+    const config = await importFreshConfig();
+
+    expect(config.API_BASE).toBe('http://localhost:8000');
+    expect(config.WS_BASE).toBe('ws://localhost:8000');
+  });
 });

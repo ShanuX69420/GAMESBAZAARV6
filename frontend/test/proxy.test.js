@@ -104,6 +104,18 @@ describe('security proxy', () => {
     expect(response.headers.get('Permissions-Policy')).toContain('camera=()');
   });
 
+  it('skips custom security headers for local production bundle testing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LOCAL_PRODUCTION_BUILD', '1');
+    const { module, nextCalls } = await importFreshProxy();
+
+    const response = module.proxy({ headers: new Headers() });
+
+    expect(nextCalls).toHaveLength(1);
+    expect(nextCalls[0].options).toBeUndefined();
+    expect([...response.headers.entries()]).toEqual([]);
+  });
+
   it('omits invalid API and websocket origins from CSP directives', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'not a url');

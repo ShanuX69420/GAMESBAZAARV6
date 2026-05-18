@@ -214,6 +214,7 @@ export default function Navbar() {
   }
 
   const results = searchResults?.results || [];
+  const username = user?.username || 'User';
 
   function renderSearchDropdown(isMobile = false) {
     if (!searchOpen || searchQuery.length < 2) return null;
@@ -242,8 +243,7 @@ export default function Navbar() {
 
   // Get user initials for avatar
   function getInitials() {
-    if (!user) return '?';
-    return user.username.charAt(0).toUpperCase();
+    return username.charAt(0).toUpperCase();
   }
 
   return (
@@ -252,7 +252,7 @@ export default function Navbar() {
         <div className="container navbar-inner">
           {/* ── Left: Logo ── */}
           <Link href="/" className="navbar-logo">
-            <img src="/logo.png" alt="GamesBazaar" className="navbar-logo-img" />
+            <span className="brand-mark" aria-hidden="true">GB</span>
             <span className="navbar-logo-text">GamesBazaar</span>
           </Link>
 
@@ -342,7 +342,7 @@ export default function Navbar() {
                   <div className="nav-icon-wrapper" ref={profileRef}>
                     <button className="nav-avatar-btn" onClick={toggleProfileDropdown} aria-label="Profile menu">
                       {user.avatar_url ? (
-                        <img src={user.avatar_url} alt={user.username} className="nav-avatar nav-avatar-img" />
+                        <img src={user.avatar_url} alt={username} className="nav-avatar nav-avatar-img" />
                       ) : (
                         <span className="nav-avatar">{getInitials()}</span>
                       )}
@@ -352,11 +352,11 @@ export default function Navbar() {
                       <div className="profile-dropdown">
                         <div className="profile-dropdown-header">
                           {user.avatar_url ? (
-                            <img src={user.avatar_url} alt={user.username} className="profile-dropdown-avatar profile-dropdown-avatar-img" />
+                            <img src={user.avatar_url} alt={username} className="profile-dropdown-avatar profile-dropdown-avatar-img" />
                           ) : (
                             <span className="profile-dropdown-avatar">{getInitials()}</span>
                           )}
-                          <div className="profile-dropdown-name">{user.username}</div>
+                          <div className="profile-dropdown-name">{username}</div>
                         </div>
                         <div className="profile-dropdown-body">
                           {/* Mobile-only links */}
@@ -405,7 +405,7 @@ export default function Navbar() {
                             Settings
                           </Link>
                           {user.is_seller && (
-                            <Link href={`/seller/${user.username}`} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
+                            <Link href={`/seller/${encodeURIComponent(username)}`} className="profile-dropdown-item" onClick={() => setProfileOpen(false)}>
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="7" r="4"/></svg>
                               My Profile
                             </Link>

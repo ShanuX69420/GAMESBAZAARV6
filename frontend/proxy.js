@@ -145,7 +145,7 @@ function buildCspHeader() {
 // ---------------------------------------------------------------------------
 
 export function proxy(request) {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' || envFlag(process.env.LOCAL_PRODUCTION_BUILD)) {
     return NextResponse.next();
   }
 
