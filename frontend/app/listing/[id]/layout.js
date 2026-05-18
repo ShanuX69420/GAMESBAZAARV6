@@ -10,7 +10,7 @@ export async function generateMetadata({ params }) {
     openGraph: {
       title,
       description,
-      type: 'product',
+      type: 'website',
       siteName: 'GamesBazaar',
     },
   };

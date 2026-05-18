@@ -52,4 +52,12 @@ describe('Next configuration', () => {
       { protocol: 'https', hostname: 'cdn.gamesbazaar.pk' },
     ]);
   });
+
+  it('leaves runtime security headers to proxy', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+
+    const { default: nextConfig } = await importFreshNextConfig();
+
+    expect(nextConfig.headers).toBeUndefined();
+  });
 });

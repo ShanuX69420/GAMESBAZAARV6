@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 async function importFresh(modulePath) {
   vi.resetModules();
   return import(modulePath);
+}
+
+function readProjectFile(path) {
+  return readFileSync(join(testDir, '..', path), 'utf8');
 }
 
 describe('SEO route metadata', () => {
@@ -110,10 +119,16 @@ describe('SEO route metadata', () => {
       description: 'View this GamesBazaar listing with secure checkout, buyer protection, and seller chat.',
       openGraph: {
         title: metadata.title,
-        type: 'product',
+        type: 'website',
         siteName: 'GamesBazaar',
       },
     });
+  });
+
+  it('renders the not-found page dynamically so nonce CSP can be applied', () => {
+    const notFoundSource = readProjectFile('app/not-found.js');
+
+    expect(notFoundSource).toContain("export const dynamic = 'force-dynamic'");
   });
 
   it('marks authenticated account pages as noindex', async () => {

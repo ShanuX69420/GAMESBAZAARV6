@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Page Not Found — GamesBazaar',
   description: 'The page you are looking for does not exist or has been moved.',

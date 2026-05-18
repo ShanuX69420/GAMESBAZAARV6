@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { API_BASE } from '@/lib/config';
+import { requestLogout } from '@/lib/authRequests';
 
 const AuthContext = createContext(null);
 
@@ -12,14 +13,8 @@ export function AuthProvider({ children }) {
   const getToken = useCallback(() => null, []);
 
   const logout = useCallback(async () => {
-    try {
-      await fetch(`${API_BASE}/api/auth/logout/`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } finally {
-      setUser(null);
-    }
+    await requestLogout();
+    setUser(null);
   }, []);
 
   const fetchUser = useCallback(async () => {

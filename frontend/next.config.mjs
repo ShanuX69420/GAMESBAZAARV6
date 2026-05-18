@@ -45,12 +45,6 @@ const imageRemotePatterns = [
   ))
 ));
 
-const securityHeaders = [
-  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'X-Content-Type-Options', value: 'nosniff' },
-  { key: 'X-Frame-Options', value: 'DENY' },
-];
-
 const nextConfig = {
   turbopack: {
     root: projectRoot,
@@ -58,15 +52,6 @@ const nextConfig = {
   images: {
     formats: ['image/webp'],
     remotePatterns: imageRemotePatterns,
-  },
-  async headers() {
-    if (!isProduction) return [];
-    return [
-      {
-        source: '/:path*',
-        headers: securityHeaders,
-      },
-    ];
   },
 };
 
