@@ -5,8 +5,7 @@ Adds Content-Security-Policy, Permissions-Policy, and other hardening
 headers that Django's built-in SecurityMiddleware does not cover.
 
 These headers protect the API layer; the Next.js frontend has its own
-proxy that sets equivalent headers (with nonce-based CSP) for
-browser-rendered pages.
+proxy that sets equivalent static headers for browser-rendered pages.
 """
 
 from django.conf import settings

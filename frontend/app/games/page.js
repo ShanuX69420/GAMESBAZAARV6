@@ -2,8 +2,6 @@ import { fetchGames } from '@/lib/api';
 import GameItem from '@/components/GameItem';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
-
 export const metadata = {
   title: 'All Games',
   description: 'Browse all games available on GamesBazaar. Find accounts, items, top-ups, and services for your favorite games.',

@@ -1,9 +1,37 @@
 import { NextResponse } from 'next/server';
 
-const GOOGLE_IDENTITY_PARENT_SRC = 'https://accounts.google.com/gsi/';
+const GOOGLE_IDENTITY_ORIGIN = 'https://accounts.google.com';
 const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 const GOOGLE_IDENTITY_STYLE_SRC = 'https://accounts.google.com/gsi/style';
-const STATIC_CSP_PATHS = new Set(['/privacy-policy', '/terms-of-service']);
+const GOOGLE_TAG_MANAGER_ORIGIN = 'https://www.googletagmanager.com';
+const GOOGLE_ANALYTICS_ORIGINS = [
+  'https://www.google-analytics.com',
+  'https://ssl.google-analytics.com',
+  'https://analytics.google.com',
+  'https://region1.google-analytics.com',
+  'https://stats.g.doubleclick.net',
+];
+const GOOGLE_ADS_ORIGINS = [
+  'https://pagead2.googlesyndication.com',
+  'https://www.googleadservices.com',
+  'https://googleads.g.doubleclick.net',
+  'https://adservice.google.com',
+  'https://tpc.googlesyndication.com',
+  'https://td.doubleclick.net',
+  'https://www.google.com',
+  'https://www.google.com.pk',
+];
+const META_ORIGINS = [
+  'https://connect.facebook.net',
+  'https://www.facebook.com',
+  'https://web.facebook.com',
+  'https://graph.facebook.com',
+  'https://static.xx.fbcdn.net',
+];
+const META_IMAGE_ORIGINS = [
+  ...META_ORIGINS,
+  'https://*.fbcdn.net',
+];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,28 +59,66 @@ function originsFromEnvList(value, allowedProtocols = ['http:', 'https:']) {
   ];
 }
 
-function pathnameFromRequest(request) {
-  const pathname = request.nextUrl?.pathname || (request.url ? new URL(request.url).pathname : '');
-  return pathname.replace(/\/+$/, '') || '/';
-}
-
 function envFlag(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-function buildCspHeader(nonce) {
+function sourceList(values) {
+  return [...new Set(values.filter(Boolean))].join(' ');
+}
+
+function buildCspHeader() {
   const apiOrigin = originFromEnv(process.env.NEXT_PUBLIC_API_URL, ['https:']);
   const wsOrigin = originFromEnv(process.env.NEXT_PUBLIC_WS_URL, ['wss:']);
   const imageOrigins = originsFromEnvList(process.env.NEXT_PUBLIC_IMAGE_HOSTS, ['http:', 'https:']);
 
-  const connectSrc = ["'self'", apiOrigin, wsOrigin, GOOGLE_IDENTITY_PARENT_SRC].filter(Boolean).join(' ');
-  const imgSrc = ["'self'", 'data:', 'blob:', apiOrigin, ...imageOrigins].filter(Boolean).join(' ');
-  const scriptSrc = nonce
-    ? ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", GOOGLE_IDENTITY_SCRIPT_SRC]
-    : ["'self'", "'unsafe-inline'", GOOGLE_IDENTITY_SCRIPT_SRC];
-  const styleSrc = nonce
-    ? ["'self'", `'nonce-${nonce}'`, 'https://fonts.googleapis.com', GOOGLE_IDENTITY_STYLE_SRC]
-    : ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', GOOGLE_IDENTITY_STYLE_SRC];
+  const analyticsAndAdsOrigins = [
+    GOOGLE_TAG_MANAGER_ORIGIN,
+    ...GOOGLE_ANALYTICS_ORIGINS,
+    ...GOOGLE_ADS_ORIGINS,
+  ];
+  const scriptSrc = sourceList([
+    "'self'",
+    "'unsafe-inline'",
+    GOOGLE_IDENTITY_SCRIPT_SRC,
+    GOOGLE_TAG_MANAGER_ORIGIN,
+    ...GOOGLE_ANALYTICS_ORIGINS,
+    ...GOOGLE_ADS_ORIGINS,
+    'https://connect.facebook.net',
+  ]);
+  const styleSrc = sourceList([
+    "'self'",
+    "'unsafe-inline'",
+    'https://fonts.googleapis.com',
+    GOOGLE_IDENTITY_STYLE_SRC,
+  ]);
+  const connectSrc = sourceList([
+    "'self'",
+    apiOrigin,
+    wsOrigin,
+    GOOGLE_IDENTITY_ORIGIN,
+    ...analyticsAndAdsOrigins,
+    ...META_ORIGINS,
+  ]);
+  const imgSrc = sourceList([
+    "'self'",
+    'data:',
+    'blob:',
+    apiOrigin,
+    ...imageOrigins,
+    'https://www.gstatic.com',
+    'https://ssl.gstatic.com',
+    'https://lh3.googleusercontent.com',
+    ...analyticsAndAdsOrigins,
+    ...META_IMAGE_ORIGINS,
+  ]);
+  const frameSrc = sourceList([
+    GOOGLE_IDENTITY_ORIGIN,
+    GOOGLE_TAG_MANAGER_ORIGIN,
+    ...GOOGLE_ADS_ORIGINS,
+    'https://www.facebook.com',
+    'https://web.facebook.com',
+  ]);
 
   return [
     "default-src 'self'",
@@ -60,22 +126,18 @@ function buildCspHeader(nonce) {
     "frame-ancestors 'none'",
     "object-src 'none'",
     "form-action 'self'",
-    `font-src 'self' https://fonts.gstatic.com`,
+    "font-src 'self' data: https://fonts.gstatic.com",
     `img-src ${imgSrc}`,
-    `style-src ${styleSrc.join(' ')}`,
+    `style-src ${styleSrc}`,
     "style-src-attr 'unsafe-inline'",
-    `script-src ${scriptSrc.join(' ')}`,
+    `script-src ${scriptSrc}`,
     "script-src-attr 'none'",
     `connect-src ${connectSrc}`,
-    `frame-src ${GOOGLE_IDENTITY_PARENT_SRC}`,
+    `frame-src ${frameSrc}`,
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
     'upgrade-insecure-requests',
   ].join('; ');
-}
-
-function createNonce() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes));
 }
 
 // ---------------------------------------------------------------------------
@@ -87,23 +149,9 @@ export function proxy(request) {
     return NextResponse.next();
   }
 
-  const useStaticCsp = STATIC_CSP_PATHS.has(pathnameFromRequest(request));
-  const nonce = useStaticCsp ? null : createNonce();
-  const cspHeader = buildCspHeader(nonce);
+  const response = NextResponse.next();
 
-  const requestHeaders = new Headers(request.headers);
-  if (nonce) {
-    requestHeaders.set('x-nonce', nonce);
-  }
-  requestHeaders.set('Content-Security-Policy', cspHeader);
-
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
-
-  response.headers.set('Content-Security-Policy', cspHeader);
+  response.headers.set('Content-Security-Policy', buildCspHeader());
   const hstsValue = 'max-age=63072000; includeSubDomains' + (envFlag(process.env.SECURE_HSTS_PRELOAD) ? '; preload' : '');
   response.headers.set('Strict-Transport-Security', hstsValue);
   response.headers.set('X-Content-Type-Options', 'nosniff');

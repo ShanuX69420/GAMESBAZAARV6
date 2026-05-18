@@ -56,7 +56,7 @@ describe('security proxy', () => {
     expect([...response.headers.entries()]).toEqual([]);
   });
 
-  it('sets nonce-based CSP and hardening headers in production without Node Buffer', async () => {
+  it('sets a static allowlist CSP and hardening headers in production without Node Buffer', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk/v1');
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://realtime.gamesbazaar.pk/socket');
@@ -67,21 +67,28 @@ describe('security proxy', () => {
     const response = runWithoutNodeBuffer(() => module.proxy(request));
 
     expect(nextCalls).toHaveLength(1);
-    const forwardedHeaders = nextCalls[0].options.request.headers;
-    const nonce = forwardedHeaders.get('x-nonce');
+    expect(nextCalls[0].options).toBeUndefined();
+    expect(request.headers.get('x-nonce')).toBeNull();
     const csp = response.headers.get('Content-Security-Policy');
 
-    expect(nonce).toMatch(/^[A-Za-z0-9+/=]+$/);
-    expect(forwardedHeaders.get('Content-Security-Policy')).toBe(csp);
-    expect(csp).toContain(`'nonce-${nonce}'`);
+    expect(csp).not.toContain("'nonce-");
+    expect(csp).not.toContain("'strict-dynamic'");
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain('https://api.gamesbazaar.pk');
     expect(csp).toContain('wss://realtime.gamesbazaar.pk');
     expect(csp).toContain('https://accounts.google.com/gsi/client');
     expect(csp).toContain('https://accounts.google.com/gsi/style');
+    expect(csp).toContain('https://www.googletagmanager.com');
+    expect(csp).toContain('https://www.google-analytics.com');
+    expect(csp).toContain('https://pagead2.googlesyndication.com');
+    expect(csp).toContain('https://googleads.g.doubleclick.net');
+    expect(csp).toContain('https://connect.facebook.net');
+    expect(csp).toContain('https://www.facebook.com');
+    expect(csp).toContain('https://fonts.googleapis.com');
+    expect(csp).toContain('https://fonts.gstatic.com');
     expect(csp).toContain('connect-src');
-    expect(csp).toContain('https://accounts.google.com/gsi/');
-    expect(csp).toContain('frame-src https://accounts.google.com/gsi/');
+    expect(csp).toContain('https://accounts.google.com');
+    expect(csp).toContain('frame-src https://accounts.google.com');
     expect(csp).toContain('https://cdn.gamesbazaar.pk');
     expect(csp).toContain('https://media.gamesbazaar.pk');
     expect(csp).toContain('upgrade-insecure-requests');
@@ -115,38 +122,28 @@ describe('security proxy', () => {
     expect(csp).not.toContain('wss://not-an-image.example');
   });
 
-  it('uses a static CSP for prerendered public pages', async () => {
+  it('uses the same static CSP for prerendered and dynamic routes', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     const { module, nextCalls } = await importFreshProxy();
 
-    const response = module.proxy({
+    const publicResponse = module.proxy({
       headers: new Headers(),
       nextUrl: { pathname: '/privacy-policy/' },
     });
-    const forwardedHeaders = nextCalls[0].options.request.headers;
-    const csp = response.headers.get('Content-Security-Policy');
-
-    expect(forwardedHeaders.get('x-nonce')).toBeNull();
-    expect(csp).not.toContain("'nonce-");
-    expect(csp).not.toContain("'strict-dynamic'");
-    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client");
-  });
-
-  it('uses nonce-based CSP for the dynamic not-found route', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    const { module, nextCalls } = await importFreshProxy();
-
-    const response = module.proxy({
+    const notFoundResponse = module.proxy({
       headers: new Headers(),
       nextUrl: { pathname: '/_not-found' },
     });
-    const forwardedHeaders = nextCalls[0].options.request.headers;
-    const nonce = forwardedHeaders.get('x-nonce');
-    const csp = response.headers.get('Content-Security-Policy');
+    const publicCsp = publicResponse.headers.get('Content-Security-Policy');
+    const notFoundCsp = notFoundResponse.headers.get('Content-Security-Policy');
 
-    expect(nonce).toMatch(/^[A-Za-z0-9+/=]+$/);
-    expect(csp).toContain(`'nonce-${nonce}'`);
-    expect(csp).toContain("'strict-dynamic'");
+    expect(nextCalls).toHaveLength(2);
+    expect(nextCalls[0].options).toBeUndefined();
+    expect(nextCalls[1].options).toBeUndefined();
+    expect(publicCsp).toBe(notFoundCsp);
+    expect(publicCsp).not.toContain("'nonce-");
+    expect(publicCsp).not.toContain("'strict-dynamic'");
+    expect(publicCsp).toContain("script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client");
   });
 
   it('includes HSTS preload when SECURE_HSTS_PRELOAD is set', async () => {

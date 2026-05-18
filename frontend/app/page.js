@@ -5,8 +5,6 @@ import Link from 'next/link';
 
 const HOMEPAGE_GAME_LIMIT = 18;
 
-export const dynamic = 'force-dynamic';
-
 export default async function HomePage() {
   let games = [];
   try {

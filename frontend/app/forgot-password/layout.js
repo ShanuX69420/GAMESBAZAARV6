@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic';
-
 export const metadata = {
   title: 'Reset Password',
   description: 'Reset your GamesBazaar account password securely.',

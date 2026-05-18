@@ -125,10 +125,29 @@ describe('SEO route metadata', () => {
     });
   });
 
-  it('renders the not-found page dynamically so nonce CSP can be applied', () => {
-    const notFoundSource = readProjectFile('app/not-found.js');
+  it('does not force static/client-rendered shells dynamic for CSP', () => {
+    const nonceOnlyDynamicPaths = [
+      'app/not-found.js',
+      'app/page.js',
+      'app/games/page.js',
+      'app/login/layout.js',
+      'app/register/layout.js',
+      'app/forgot-password/layout.js',
+      'app/support/layout.js',
+      'app/seller/apply/layout.js',
+      'app/dashboard/layout.js',
+      'app/inbox/layout.js',
+      'app/my-listings/layout.js',
+      'app/notifications/layout.js',
+      'app/orders/layout.js',
+      'app/sales/layout.js',
+      'app/settings/layout.js',
+      'app/wallet/layout.js',
+    ];
 
-    expect(notFoundSource).toContain("export const dynamic = 'force-dynamic'");
+    for (const path of nonceOnlyDynamicPaths) {
+      expect(readProjectFile(path)).not.toContain("force-dynamic");
+    }
   });
 
   it('marks authenticated account pages as noindex', async () => {
