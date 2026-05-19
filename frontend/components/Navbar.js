@@ -251,8 +251,14 @@ export default function Navbar() {
       <nav className="navbar">
         <div className="container navbar-inner">
           {/* ── Left: Logo ── */}
-          <Link href="/" className="navbar-logo">
-            <span className="brand-mark" aria-hidden="true">GB</span>
+          <Link href="/" className="navbar-logo" aria-label="GamesBazaar home">
+            <img
+              src="/icons/icon-96x96.png"
+              alt=""
+              className="navbar-logo-img"
+              width="36"
+              height="36"
+            />
             <span className="navbar-logo-text">GamesBazaar</span>
           </Link>
 
@@ -443,7 +449,7 @@ export default function Navbar() {
               onFocus={() => { if (searchResults) setSearchOpen(true); }} id="mobile-search-input" />
             {searchLoading && <div className="navbar-search-spinner" style={{ right: '12px' }}></div>}
             {searchQuery && !searchLoading && (
-              <button className="navbar-search-clear" onClick={clearSearch} type="button">✕</button>
+              <button className="navbar-search-clear" onClick={clearSearch} type="button" aria-label="Clear search">✕</button>
             )}
             {renderSearchDropdown(true)}
           </div>

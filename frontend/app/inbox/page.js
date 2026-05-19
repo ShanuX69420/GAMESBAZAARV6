@@ -167,7 +167,7 @@ export default function InboxPage() {
             {activeChat ? (
               <>
                 <div className="inbox-chat-header">
-                  <button className="inbox-back-btn" onClick={handleBackToList}>
+                  <button className="inbox-back-btn" onClick={handleBackToList} aria-label="Back to conversations">
                     ←
                   </button>
                   <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>

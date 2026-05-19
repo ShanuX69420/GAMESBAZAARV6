@@ -234,7 +234,7 @@ export default function GameCategoryPage() {
         <div className="filters-container">
           {filters.map((filter) => (
             <div key={filter.id} className="filter-group">
-              <label className="filter-label">{filter.name}</label>
+              <label className="filter-label" htmlFor={`filter-${filter.id}`}>{filter.name}</label>
               {filter.filter_type === 'button' ? (
                 <div className="filter-chips">
                   {filter.options.map((opt) => (
@@ -249,6 +249,7 @@ export default function GameCategoryPage() {
                 </div>
               ) : (
                 <select
+                  id={`filter-${filter.id}`}
                   className="filter-select"
                   value={activeFilters[filter.id] || ''}
                   onChange={(e) => handleDropdownChange(filter.id, e.target.value)}
@@ -316,7 +317,7 @@ export default function GameCategoryPage() {
                 onChange={(e) => setSearchInput(e.target.value)}
               />
               {searchInput && (
-                <button className="filter-search-clear" onClick={() => setSearchInput('')}>×</button>
+                <button className="filter-search-clear" onClick={() => setSearchInput('')} aria-label="Clear search">×</button>
               )}
             </div>
           </div>
@@ -340,6 +341,7 @@ export default function GameCategoryPage() {
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               id="listing-sort-select"
+              aria-label="Sort listings"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>

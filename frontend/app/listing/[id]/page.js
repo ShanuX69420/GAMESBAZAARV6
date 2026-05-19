@@ -116,14 +116,14 @@ export default function ListingDetailPage() {
 
           {listing.description && (
             <div className="listing-detail-desc">
-              <h3>Description</h3>
+              <h2>Description</h2>
               <p>{listing.description}</p>
             </div>
           )}
 
           {listing.delivery_instructions && (
             <div className="listing-detail-desc" style={{ marginTop: '16px' }}>
-              <h3>📋 Delivery Instructions</h3>
+              <h2>📋 Delivery Instructions</h2>
               <p style={{ color: 'var(--text-secondary)' }}>{listing.delivery_instructions}</p>
             </div>
           )}
@@ -296,9 +296,9 @@ export default function ListingDetailPage() {
                   <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
                   <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
                 </svg>
-                <h3>Confirm Your Order</h3>
+                <h2>Confirm Your Order</h2>
               </div>
-              <button className="confirm-order-close" onClick={() => !buying && setShowConfirm(false)}>
+              <button className="confirm-order-close" onClick={() => !buying && setShowConfirm(false)} aria-label="Close">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
