@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
         <p className="legal-subtitle">
           Your privacy matters to us. Here&rsquo;s a clear explanation of how we handle your information &mdash; no confusing legal jargon, we promise.
         </p>
-        <div className="legal-updated">Last updated: May 14, 2026</div>
+        <div className="legal-updated">Last updated: May 20, 2026</div>
       </div>
 
       <div className="legal-content">
@@ -52,7 +52,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Usage data:</strong> Which pages you visit, what you search for, and how you interact with the platform.</li>
               <li><strong>Device info:</strong> Your browser type, operating system, and screen size to give you a better experience.</li>
               <li><strong>IP address:</strong> Used for security, fraud prevention, and to ensure the platform is used within Pakistan.</li>
-              <li><strong>Cookies:</strong> Small files stored on your device to keep you logged in and remember your preferences.</li>
+              <li><strong>Cookies and similar technologies:</strong> Small files and tracking tools used to keep you logged in, remember preferences, measure site performance, and understand how our ads are working.</li>
             </ul>
           </div>
         </section>
@@ -106,6 +106,13 @@ export default function PrivacyPolicyPage() {
               </div>
             </div>
             <div className="legal-grid-item">
+              <span className="legal-grid-icon">📣</span>
+              <div>
+                <strong>Measure ads and marketing</strong>
+                <p>Understand which campaigns bring people to GamesBazaar, measure ad performance, and show more relevant promotions.</p>
+              </div>
+            </div>
+            <div className="legal-grid-item">
               <span className="legal-grid-icon">⚖️</span>
               <div>
                 <strong>Resolve disputes</strong>
@@ -123,6 +130,7 @@ export default function PrivacyPolicyPage() {
           <ul>
             <li><strong>Other users:</strong> Your username, profile picture, and seller profile (if applicable) are visible to other users on the platform.</li>
             <li><strong>Payment processors:</strong> We share necessary details to process your withdrawals through Pakistani banking channels.</li>
+            <li><strong>Analytics and advertising partners:</strong> We may use tools such as Google Analytics, Google Ads, Google Tag Manager, and Meta Pixel. These tools may receive limited usage, device, browser, and event information to help us measure traffic, understand ad performance, and improve our marketing.</li>
             <li><strong>Law enforcement:</strong> If required by Pakistani law or a valid court order, we may share information with authorities.</li>
             <li><strong>Platform safety:</strong> To investigate fraud, abuse, or violations of our terms.</li>
           </ul>
@@ -153,7 +161,10 @@ export default function PrivacyPolicyPage() {
           <div className="legal-section-icon">🍪</div>
           <h2>Cookies</h2>
           <p>
-            We use cookies (small text files) to keep you logged in and make the platform work smoothly. We don&rsquo;t use cookies for advertising or tracking you across other websites.
+            We use cookies (small text files) and similar technologies to keep you logged in, remember your preferences, make the platform work smoothly, measure site performance, and understand how our advertising is performing.
+          </p>
+          <p>
+            We may use trusted analytics and advertising tools, including Google Analytics, Google Ads, Google Tag Manager, and Meta Pixel. These tools can help us understand visits, actions taken on GamesBazaar, and whether our ads are useful. They may set or read their own cookies according to their own privacy policies.
           </p>
           <p>
             You can disable cookies in your browser settings, but this may prevent some features from working properly (like staying logged in).
