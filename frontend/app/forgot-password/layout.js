@@ -1,6 +1,11 @@
+import { createPublicMetadata } from '@/lib/seo';
+
 export const metadata = {
-  title: 'Reset Password',
-  description: 'Reset your GamesBazaar account password securely.',
+  ...createPublicMetadata({
+    title: 'Reset Password',
+    description: 'Reset your GamesBazaar account password securely.',
+    path: '/forgot-password',
+  }),
 };
 
 export default function ForgotPasswordLayout({ children }) {

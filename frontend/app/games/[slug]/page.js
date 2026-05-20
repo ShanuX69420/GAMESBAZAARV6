@@ -1,16 +1,26 @@
 import { fetchGame } from '@/lib/api';
+import { createPublicMetadata } from '@/lib/seo';
 import { redirect, notFound } from 'next/navigation';
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
   try {
     const game = await fetchGame(slug);
-    return {
+    return createPublicMetadata({
       title: game.name,
       description: game.description || `Buy & sell ${game.name} accounts, items, and services on GamesBazaar.`,
-    };
+      path: `/games/${encodeURIComponent(slug)}`,
+    });
   } catch {
-    return { title: 'Game Not Found' };
+    return createPublicMetadata({
+      title: 'Game Not Found',
+      description: 'This GamesBazaar game page could not be found.',
+      path: `/games/${encodeURIComponent(slug)}`,
+      robots: {
+        index: false,
+        follow: false,
+      },
+    });
   }
 }
 

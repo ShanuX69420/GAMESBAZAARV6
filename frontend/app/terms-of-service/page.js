@@ -1,6 +1,11 @@
+import { createPublicMetadata } from '@/lib/seo';
+
 export const metadata = {
-  title: 'Terms of Service',
-  description: 'Read the Terms of Service for GamesBazaar, Pakistan\'s trusted digital gaming marketplace. Know your rights and responsibilities.',
+  ...createPublicMetadata({
+    title: 'Terms of Service',
+    description: 'Read the Terms of Service for GamesBazaar, Pakistan\'s trusted digital gaming marketplace. Know your rights and responsibilities.',
+    path: '/terms-of-service',
+  }),
 };
 
 export default function TermsOfServicePage() {

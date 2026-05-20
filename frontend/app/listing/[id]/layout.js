@@ -1,4 +1,5 @@
 import { getListingDetail } from '@/lib/api';
+import { createPublicMetadata } from '@/lib/seo';
 
 function formatPrice(value) {
   const price = Number(value);
@@ -52,43 +53,31 @@ export async function generateMetadata({ params }) {
     );
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
-    return {
+    return createPublicMetadata({
       title,
       description,
-      alternates: {
-        canonical: canonicalPath,
-      },
+      path: canonicalPath,
       openGraph: {
-        title,
-        description,
-        url: canonicalPath,
         type: 'website',
-        siteName: 'GamesBazaar',
       },
-      twitter: {
-        card: 'summary',
-        title,
-        description,
-      },
-    };
+    });
   } catch {
     const title = listingId ? `Listing ${listingId}` : 'Listing';
     const description = 'View this GamesBazaar listing with secure checkout, buyer protection, and seller chat.';
+    const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
-    return {
+    return createPublicMetadata({
       title,
       description,
+      path: canonicalPath,
       robots: {
         index: false,
         follow: false,
       },
       openGraph: {
-        title,
-        description,
         type: 'website',
-        siteName: 'GamesBazaar',
       },
-    };
+    });
   }
 }
 

@@ -1,10 +1,15 @@
 import { fetchGames } from '@/lib/api';
 import GameItem from '@/components/GameItem';
+import JsonLd from '@/components/JsonLd';
 import Link from 'next/link';
+import { breadcrumbJsonLd, collectionPageJsonLd, createPublicMetadata } from '@/lib/seo';
 
 export const metadata = {
-  title: 'All Games',
-  description: 'Browse all games available on GamesBazaar. Find accounts, items, top-ups, and services for your favorite games.',
+  ...createPublicMetadata({
+    title: 'All Games',
+    description: 'Browse all games available on GamesBazaar. Find accounts, items, top-ups, and services for your favorite games.',
+    path: '/games',
+  }),
 };
 
 export default async function AllGamesPage() {
@@ -17,6 +22,19 @@ export default async function AllGamesPage() {
 
   return (
     <div className="container">
+      <JsonLd
+        data={[
+          breadcrumbJsonLd([
+            { name: 'Home', path: '/' },
+            { name: 'All Games', path: '/games' },
+          ]),
+          collectionPageJsonLd({
+            name: 'All Games',
+            description: metadata.description,
+            path: '/games',
+          }),
+        ]}
+      />
       <div className="page-header">
         <div className="breadcrumb">
           <Link href="/">Home</Link>

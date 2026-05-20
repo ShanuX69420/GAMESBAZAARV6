@@ -1,6 +1,11 @@
+import { createPublicMetadata } from '@/lib/seo';
+
 export const metadata = {
-  title: 'Privacy Policy',
-  description: 'Learn how GamesBazaar collects, uses, and protects your personal information. Your privacy matters to us.',
+  ...createPublicMetadata({
+    title: 'Privacy Policy',
+    description: 'Learn how GamesBazaar collects, uses, and protects your personal information. Your privacy matters to us.',
+    path: '/privacy-policy',
+  }),
 };
 
 export default function PrivacyPolicyPage() {

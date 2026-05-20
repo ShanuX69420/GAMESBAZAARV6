@@ -2,14 +2,28 @@ import './globals.css';
 import './reviews.css';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import JsonLd from '@/components/JsonLd';
 import { AuthProvider } from '@/lib/auth';
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_OG_IMAGE,
+  DEFAULT_TITLE,
+  SITE_NAME,
+  getSiteUrl,
+  organizationJsonLd,
+  websiteJsonLd,
+} from '@/lib/seo';
 
 export const metadata = {
   title: {
-    default: 'GamesBazaar — Pakistan\'s #1 Digital Gaming Marketplace',
-    template: '%s | GamesBazaar',
+    default: DEFAULT_TITLE,
+    template: `%s | ${SITE_NAME}`,
   },
-  description: 'Buy & sell game accounts, top-ups, items, and boosting services. Pakistan\'s trusted gaming marketplace with secure payments and verified sellers.',
+  description: DEFAULT_DESCRIPTION,
+  metadataBase: new URL(getSiteUrl()),
+  alternates: {
+    canonical: '/',
+  },
   manifest: '/manifest.json',
   icons: {
     icon: '/icons/icon-96x96.png',
@@ -18,27 +32,34 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'GamesBazaar',
+    title: SITE_NAME,
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'GamesBazaar',
-    title: 'GamesBazaar — Pakistan\'s #1 Digital Gaming Marketplace',
-    description: 'Buy & sell game accounts, top-ups, items, and boosting services. Secure payments, verified sellers, and fast delivery.',
+    siteName: SITE_NAME,
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    url: '/',
+    images: [DEFAULT_OG_IMAGE],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+    images: [DEFAULT_OG_IMAGE.url],
   },
   robots: {
     index: true,
     follow: true,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
 };
-
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
         <AuthProvider>
           <Navbar />
           <main>{children}</main>

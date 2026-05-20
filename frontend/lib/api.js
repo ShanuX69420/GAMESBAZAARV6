@@ -169,9 +169,10 @@ export async function getMyListings({ limit, offset, status, search, game, categ
   return res.json();
 }
 
-export async function getListingDetail(id) {
+export async function getListingDetail(id, options = {}) {
   const res = await fetch(`${API_BASE}/api/listings/${id}/`, {
-    cache: 'no-store',
+    next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
+    ...options,
   });
   if (!res.ok) throw new Error('Failed to get listing');
   return res.json();
@@ -577,8 +578,10 @@ export async function createReview(orderId, rating, comment = '') {
   return data;
 }
 
-export async function getSellerReviews(username, pagination = {}) {
-  const res = await fetch(`${API_BASE}/api/reviews/seller/${pathSegment(username)}/${paginationQuery(pagination)}`);
+export async function getSellerReviews(username, pagination = {}, options = {}) {
+  const url = `${API_BASE}/api/reviews/seller/${pathSegment(username)}/${paginationQuery(pagination)}`;
+  const hasOptions = Object.keys(options).length > 0;
+  const res = hasOptions ? await fetch(url, options) : await fetch(url);
   if (!res.ok) throw new Error('Failed to get reviews');
   return res.json();
 }
@@ -607,8 +610,8 @@ export async function replyToReview(reviewId, reply) {
 
 export async function getSellerProfile(username, options = {}) {
   const url = `${API_BASE}/api/seller/profile/${pathSegment(username)}/`;
-  const requestOptions = options.signal ? { signal: options.signal } : undefined;
-  const res = requestOptions ? await fetch(url, requestOptions) : await fetch(url);
+  const hasOptions = Object.keys(options).length > 0;
+  const res = hasOptions ? await fetch(url, options) : await fetch(url);
   updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to get seller profile');
   return res.json();

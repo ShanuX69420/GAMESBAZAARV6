@@ -82,9 +82,11 @@ describe('SEO route metadata', () => {
     expect(entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk', priority: 1.0 }),
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games', priority: 0.9 }),
-      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant', priority: 0.8 }),
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/accounts', priority: 0.7 }),
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/boosting', priority: 0.7 }),
+    ]));
+    expect(entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant' }),
     ]));
   });
 
@@ -107,22 +109,81 @@ describe('SEO route metadata', () => {
     ]);
   });
 
-  it('generates listing metadata from route params without an extra API request', async () => {
-    vi.stubGlobal('fetch', vi.fn());
+  it('looks up category slugs for sitemap games when the list endpoint only returns counts', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue([
+          { slug: 'valorant', category_count: 1 },
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          slug: 'valorant',
+          categories: [
+            { category: { slug: 'accounts' } },
+          ],
+        }),
+      }));
+
+    const { default: sitemap } = await importFresh('../app/sitemap.js');
+    const entries = await sitemap();
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/games/valorant/',
+      { next: { revalidate: 3600 } }
+    );
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/accounts' }),
+    ]));
+    expect(entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant' }),
+    ]));
+  });
+
+  it('generates rich listing metadata from public listing data', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        title: 'Rare Valorant Account',
+        price: '12500',
+        game_name: 'Valorant',
+        category_name: 'Accounts',
+        seller_name: 'sellerpk',
+        buyer_protection_enabled: true,
+        filter_display: {
+          Platform: 'PC',
+        },
+      }),
+    }));
 
     const { generateMetadata } = await importFresh('../app/listing/[id]/layout.js');
     const metadata = await generateMetadata({ params: Promise.resolve({ id: 'GB-123' }) });
 
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/listings/GB-123/',
+      { next: { revalidate: 120 } }
+    );
     expect(metadata).toMatchObject({
-      title: 'Listing GB-123',
-      description: 'View this GamesBazaar listing with secure checkout, buyer protection, and seller chat.',
+      title: 'Rare Valorant Account - PKR 12,500',
+      alternates: {
+        canonical: '/listing/GB-123',
+      },
       openGraph: {
         title: metadata.title,
+        url: '/listing/GB-123',
         type: 'website',
         siteName: 'GamesBazaar',
       },
+      twitter: {
+        card: 'summary_large_image',
+      },
     });
+    expect(metadata.description).toContain('Valorant PC Accounts listing sold by sellerpk');
   });
 
   it('does not force static/client-rendered shells dynamic for CSP', () => {
