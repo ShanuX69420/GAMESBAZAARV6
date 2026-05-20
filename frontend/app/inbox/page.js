@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getConversations, formatLastActive } from '@/lib/api';
+import { getConversations, formatLastActive, isOnlineFromLastActive } from '@/lib/api';
 import ChatBox from '@/components/ChatBox';
 
 const CONVERSATION_PAGE_SIZE = 30;
+const PRESENCE_TICK_MS = 30000;
 
 export default function InboxPage() {
   const { user, loading: authLoading } = useAuth();
@@ -17,11 +18,24 @@ export default function InboxPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeChatId, setActiveChatId] = useState(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const loadedLimitRef = useRef(CONVERSATION_PAGE_SIZE);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   const fetchConvos = useCallback(() => {
     if (!user) return;
@@ -122,7 +136,7 @@ export default function InboxPage() {
                   ) : (
                     convo.other_user?.username?.[0]?.toUpperCase() || '?'
                   )}
-                  {convo.other_user?.is_online && <span className="online-dot"></span>}
+                  {isOnlineFromLastActive(convo.other_user?.last_active, presenceNow) && <span className="online-dot"></span>}
                 </div>
                 <div className="inbox-info">
                   <div className="inbox-name">
@@ -176,7 +190,7 @@ export default function InboxPage() {
                     ) : (
                       activeChat.other_user?.username?.[0]?.toUpperCase() || '?'
                     )}
-                    {activeChat.other_user?.is_online && <span className="online-dot"></span>}
+                    {isOnlineFromLastActive(activeChat.other_user?.last_active, presenceNow) && <span className="online-dot"></span>}
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
@@ -184,7 +198,7 @@ export default function InboxPage() {
                         {activeChat.other_user?.username}
                       </a>
                     </div>
-                    <div className={`presence-text ${activeChat.other_user?.is_online ? 'is-online' : ''}`}>
+                    <div className={`presence-text ${isOnlineFromLastActive(activeChat.other_user?.last_active, presenceNow) ? 'is-online' : ''}`}>
                       {formatLastActive(activeChat.other_user?.last_active)}
                     </div>
                   </div>

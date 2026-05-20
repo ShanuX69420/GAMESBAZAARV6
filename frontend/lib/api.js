@@ -325,13 +325,22 @@ export async function sendHeartbeat() {
   return res.ok;
 }
 
+const ONLINE_WINDOW_MS = 120000;
+
+export function isOnlineFromLastActive(isoString, nowMs = Date.now()) {
+  if (!isoString) return false;
+  const lastActiveMs = new Date(isoString).getTime();
+  if (Number.isNaN(lastActiveMs)) return false;
+  return nowMs - lastActiveMs < ONLINE_WINDOW_MS;
+}
+
 export function formatLastActive(isoString) {
   if (!isoString) return 'Offline';
   const date = new Date(isoString);
   const now = new Date();
   const diff = (now - date) / 1000; // seconds
 
-  if (diff < 120) return 'Online';
+  if (isOnlineFromLastActive(isoString, now.getTime())) return 'Online';
   if (diff < 3600) return `Active ${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
   return `Active ${Math.floor(diff / 86400)}d ago`;

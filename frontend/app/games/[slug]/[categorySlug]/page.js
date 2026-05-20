@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
+import { isOnlineFromLastActive } from '@/lib/api';
 import {
   buildGameCategoryListingUrl,
   buildSellerListingsPath,
@@ -11,6 +12,7 @@ import {
 } from '@/lib/marketplaceUrls';
 
 const LISTING_PAGE_SIZE = 48;
+const PRESENCE_TICK_MS = 30000;
 
 const SORT_OPTIONS = [
   { value: '', label: 'Recommended' },
@@ -77,6 +79,7 @@ export default function GameCategoryPage() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('');
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
 
   const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, onlineOnly = false, search = '', ordering = '') => {
     if (append) {
@@ -126,6 +129,18 @@ export default function GameCategoryPage() {
     setSortBy('');
     fetchData({}, 0, false, false, false, '', '');
   }, [fetchData]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Debounce search input
   useEffect(() => {
@@ -384,7 +399,7 @@ export default function GameCategoryPage() {
                           listing.seller_name?.charAt(0).toUpperCase()
                         )}
                       </div>
-                      <span className={`listing-card-status-dot ${listing.seller_is_online ? 'online' : 'offline'}`} />
+                      <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="listing-card-seller-info">
                       <span

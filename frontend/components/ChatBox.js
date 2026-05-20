@@ -11,17 +11,27 @@ import {
   sendMessage,
   sendImageMessage,
   formatLastActive,
+  isOnlineFromLastActive,
 } from '@/lib/api';
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const CHAT_SUBPROTOCOL = 'gb.chat';
+const PRESENCE_TICK_MS = 30000;
 
 function encodeWebSocketTicket(ticket) {
   return btoa(ticket).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export default function ChatBox({ conversationId, sellerId, sellerName, onConversationStart, compact = false }) {
+export default function ChatBox({
+  conversationId,
+  sellerId,
+  sellerName,
+  sellerAvatarUrl,
+  sellerLastActive,
+  onConversationStart,
+  compact = false,
+}) {
   const { user } = useAuth();
   const [convo, setConvo] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -34,6 +44,7 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
   const [pendingImage, setPendingImage] = useState(null); // { file, preview }
   const [imageUploading, setImageUploading] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -57,6 +68,18 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       loadOlderMessages();
     }
   }
+
+  useEffect(() => {
+    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   function scrollToBottom(instant = false) {
     const el = messagesContainerRef.current;
@@ -439,6 +462,11 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
     return elements;
   }
 
+  const chatHeaderName = convo?.other_user?.username || sellerName || 'Seller';
+  const chatHeaderAvatarUrl = convo?.other_user?.avatar_url || sellerAvatarUrl;
+  const chatHeaderLastActive = convo?.other_user?.last_active || sellerLastActive;
+  const chatHeaderIsOnline = isOnlineFromLastActive(chatHeaderLastActive, presenceNow);
+
   if (!user) {
     return (
       <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
@@ -457,22 +485,22 @@ export default function ChatBox({ conversationId, sellerId, sellerName, onConver
       {!compact && (
         <div className="chatbox-header">
           <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
-            {(convo?.other_user?.avatar_url) ? (
-              <img src={convo.other_user.avatar_url} alt={convo?.other_user?.username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            {chatHeaderAvatarUrl ? (
+              <img src={chatHeaderAvatarUrl} alt={chatHeaderName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
             ) : (
-              (convo?.other_user?.username || sellerName || '?')[0].toUpperCase()
+              chatHeaderName[0].toUpperCase()
             )}
-            {convo?.other_user?.is_online && <span className="online-dot"></span>}
+            {chatHeaderIsOnline && <span className="online-dot"></span>}
           </div>
           <div>
             <div className="chatbox-header-name">
-              <a href={`/seller/${convo?.other_user?.username || sellerName}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                {convo?.other_user?.username || sellerName || 'Chat'}
+              <a href={`/seller/${chatHeaderName}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                {chatHeaderName}
               </a>
             </div>
-            {convo?.other_user?.last_active && (
-              <div className={`presence-text ${convo.other_user.is_online ? 'is-online' : ''}`}>
-                {formatLastActive(convo.other_user.last_active)}
+            {chatHeaderLastActive && (
+              <div className={`presence-text ${chatHeaderIsOnline ? 'is-online' : ''}`}>
+                {formatLastActive(chatHeaderLastActive)}
               </div>
             )}
           </div>

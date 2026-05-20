@@ -10,6 +10,9 @@ import { notificationOrderPath } from '@/lib/orderNumbers';
 const UNREAD_POLL_INTERVAL_MS = 15000;
 const SEARCH_DEBOUNCE_MS = 300;
 const NOTIF_POLL_INTERVAL_MS = 30000;
+const HEARTBEAT_INTERVAL_MS = 60000;
+const HEARTBEAT_ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+const HEARTBEAT_ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'scroll', 'touchstart'];
 
 const NOTIF_ICONS = {
   new_order: '🛒',
@@ -24,6 +27,7 @@ export default function Navbar() {
   const { user, loading, logout } = useAuth();
   const [unread, setUnread] = useState(0);
   const prevUnread = useRef(0);
+  const lastActivityRef = useRef(Date.now());
   const router = useRouter();
 
   // ── Search state ───────────────────────────────────────────────────────
@@ -82,9 +86,43 @@ export default function Navbar() {
   // Heartbeat
   useEffect(() => {
     if (!user) return;
-    sendHeartbeat();
-    const hb = setInterval(() => sendHeartbeat(), 60000);
-    return () => clearInterval(hb);
+
+    lastActivityRef.current = Date.now();
+
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const canHeartbeat = () => (
+      document.visibilityState === 'visible' &&
+      Date.now() - lastActivityRef.current <= HEARTBEAT_ACTIVE_WINDOW_MS
+    );
+    const sendActiveHeartbeat = () => {
+      if (canHeartbeat()) sendHeartbeat();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        markActivity();
+        sendHeartbeat();
+      }
+    };
+    const activityOptions = { passive: true };
+
+    sendActiveHeartbeat();
+    const hb = setInterval(sendActiveHeartbeat, HEARTBEAT_INTERVAL_MS);
+    HEARTBEAT_ACTIVITY_EVENTS.forEach(eventName => {
+      window.addEventListener(eventName, markActivity, activityOptions);
+    });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      clearInterval(hb);
+      HEARTBEAT_ACTIVITY_EVENTS.forEach(eventName => {
+        window.removeEventListener(eventName, markActivity, activityOptions);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
   }, [user]);
 
   // ── Notification polling ───────────────────────────────────────────────

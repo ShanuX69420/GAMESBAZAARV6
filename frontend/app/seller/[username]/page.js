@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getSellerProfile, getSellerReviews, formatLastActive, startConversation, replyToReview } from '@/lib/api';
+import { getSellerProfile, getSellerReviews, formatLastActive, isOnlineFromLastActive, startConversation, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 import { useAuth } from '@/lib/auth';
 import ReportModal from '@/components/ReportModal';
 
 const REVIEW_PAGE_SIZE = 20;
+const PRESENCE_TICK_MS = 30000;
 
 export default function SellerProfilePage() {
   const params = useParams();
@@ -28,10 +29,23 @@ export default function SellerProfilePage() {
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState('');
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
 
   useEffect(() => {
     loadData();
   }, [username]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   async function loadData() {
     setLoading(true);
@@ -100,6 +114,7 @@ export default function SellerProfilePage() {
   }
 
   const isOwnProfile = user && user.username === username;
+  const sellerIsOnline = isOnlineFromLastActive(profile?.last_active, presenceNow);
 
   if (loading) {
     return (
@@ -132,7 +147,7 @@ export default function SellerProfilePage() {
             ) : (
               <span>{profile.username.charAt(0).toUpperCase()}</span>
             )}
-            <span className={`sp-avatar-dot ${profile.is_online ? 'online' : ''}`} />
+            <span className={`sp-avatar-dot ${sellerIsOnline ? 'online' : ''}`} />
           </div>
           <div className="sp-header-info">
             <div className="sp-name-row">
@@ -158,7 +173,7 @@ export default function SellerProfilePage() {
               <span className="sp-review-count-inline">{profile.review_count} review{profile.review_count !== 1 ? 's' : ''}</span>
             </div>
             <div className="sp-status-row">
-              {profile.is_online ? (
+              {sellerIsOnline ? (
                 <span className="sp-online-badge">● Online</span>
               ) : (
                 <span className="sp-offline-text">{formatLastActive(profile.last_active)}</span>

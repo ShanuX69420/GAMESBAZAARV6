@@ -248,6 +248,8 @@ export default function ListingDetailPage() {
               <ChatBox
                 sellerId={listing.seller_id}
                 sellerName={listing.seller_name}
+                sellerAvatarUrl={listing.seller_avatar_url}
+                sellerLastActive={listing.seller_last_active}
               />
             </div>
           )}
