@@ -991,6 +991,10 @@ class PurchaseFlowTests(TestCase):
         self.assertNotEqual(listing.auto_delivery_data, 'code-one\ncode-two')
         self.assertEqual(decrypt_sensitive_text(listing.auto_delivery_data), 'code-one\ncode-two')
 
+        listing_response = self.client.get(f'/api/listings/{listing.pk}/')
+        self.assertEqual(listing_response.status_code, 200)
+        self.assertNotIn('delivery_instructions', listing_response.data)
+
         self.client.force_authenticate(user=self.buyer)
         buy_response = self.client.post(
             '/api/orders/buy/',
@@ -1020,7 +1024,13 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(detail_response.data['auto_delivery_data'], 'code-one')
         self.assertEqual(detail_response.data['delivery_instructions'], 'Change the password after login.')
 
+        self.client.force_authenticate(user=self.seller)
+        detail_response = self.client.get(f'/api/orders/{order.pk}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertIsNone(detail_response.data['delivery_instructions'])
+
         listing.delete()
+        self.client.force_authenticate(user=self.buyer)
         detail_response = self.client.get(f'/api/orders/{order.pk}/')
         self.assertEqual(detail_response.status_code, 200)
         self.assertTrue(detail_response.data['is_auto_delivery'])

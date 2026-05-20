@@ -12,5 +12,6 @@ cryptography==46.0.7
 Pillow==12.2.0
 psycopg2-binary==2.9.11
 google-auth==2.38.0
+requests==2.34.2
 dkimpy==1.1.8
 python-dotenv>=1.0.0

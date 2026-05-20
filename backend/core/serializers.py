@@ -438,7 +438,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'game_name', 'category_name', 'buyer_protection_enabled',
             'filter_values', 'filter_display', 'delivery_time',
-            'is_auto_delivery', 'delivery_instructions', 'created_at',
+            'is_auto_delivery', 'created_at',
         ]
 
     def get_seller_is_online(self, obj):
@@ -1041,7 +1041,10 @@ class OrderSerializer(serializers.ModelSerializer):
         return None
 
     def get_delivery_instructions(self, obj):
-        """Return delivery instructions captured at purchase time."""
+        """Return purchase-time instructions only to the buyer."""
+        request = self.context.get('request')
+        if request and getattr(request.user, 'id', None) != obj.buyer_id:
+            return None
         if obj.delivery_instructions_snapshot:
             return obj.delivery_instructions_snapshot
         return None

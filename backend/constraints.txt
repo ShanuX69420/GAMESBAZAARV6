@@ -4,9 +4,11 @@ autobahn==24.4.2
 Automat==25.4.16
 boto3==1.43.9
 botocore==1.43.9
+certifi==2026.4.22
 cffi==2.0.0
 channels==4.3.2
 channels-redis==4.3.0
+charset-normalizer==3.4.7
 constantly==23.10.4
 cryptography==46.0.7
 daphne==4.2.1
@@ -31,6 +33,7 @@ PyJWT==2.12.0
 pyOpenSSL==26.0.0
 python-dateutil==2.9.0.post0
 redis==6.4.0
+requests==2.34.2
 s3transfer==0.17.0
 service-identity==24.2.0
 setuptools==80.9.0

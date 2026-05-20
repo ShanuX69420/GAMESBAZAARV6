@@ -121,12 +121,6 @@ export default function ListingDetailPage() {
             </div>
           )}
 
-          {listing.delivery_instructions && (
-            <div className="listing-detail-desc" style={{ marginTop: '16px' }}>
-              <h2>📋 Delivery Instructions</h2>
-              <p style={{ color: 'var(--text-secondary)' }}>{listing.delivery_instructions}</p>
-            </div>
-          )}
         </div>
 
         {/* Right side: price card + buy + chat */}

@@ -103,13 +103,6 @@ export default function SellerApplyPage() {
                   </div>
                 </div>
                 <div className="seller-benefit">
-                  <span className="seller-benefit-icon">🔒</span>
-                  <div>
-                    <strong>Buyer Protection</strong>
-                    <p>Your payment is safe — sellers get paid only after you confirm</p>
-                  </div>
-                </div>
-                <div className="seller-benefit">
                   <span className="seller-benefit-icon">📊</span>
                   <div>
                     <strong>Seller Dashboard</strong>

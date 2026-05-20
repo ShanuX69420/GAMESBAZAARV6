@@ -2503,7 +2503,7 @@ class BuyListingView(APIView):
                     order=order,
                 )
 
-        return Response(OrderSerializer(order).data, status=201)
+        return Response(OrderSerializer(order, context={'request': request}).data, status=201)
 
 
 class MyOrdersView(APIView):
@@ -2573,7 +2573,10 @@ class MyOrdersView(APIView):
             'orders': OrderSerializer(
                 orders,
                 many=True,
-                context={'released_seller_payout_order_refs': released_payout_refs},
+                context={
+                    'request': request,
+                    'released_seller_payout_order_refs': released_payout_refs,
+                },
             ).data,
             'pagination': pagination,
             'status_counts': counts,
@@ -2653,7 +2656,10 @@ class MySalesView(APIView):
             'sales': OrderSerializer(
                 orders,
                 many=True,
-                context={'released_seller_payout_order_refs': released_payout_refs},
+                context={
+                    'request': request,
+                    'released_seller_payout_order_refs': released_payout_refs,
+                },
             ).data,
             'pagination': pagination,
             'summary': summary,
@@ -2684,7 +2690,7 @@ class OrderDetailView(APIView):
             order.conversation = conversation
             order.save(update_fields=['conversation'])
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class DeliverOrderView(APIView):
@@ -2720,7 +2726,7 @@ class DeliverOrderView(APIView):
                 order=order,
             )
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class ConfirmOrderView(APIView):
@@ -2736,7 +2742,7 @@ class ConfirmOrderView(APIView):
             )
 
             if order.status == 'completed':
-                return Response(OrderSerializer(order).data)
+                return Response(OrderSerializer(order, context={'request': request}).data)
 
             if order.status != 'delivered':
                 return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
@@ -2757,7 +2763,7 @@ class ConfirmOrderView(APIView):
                 order=order,
             )
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class DisputeOrderView(APIView):
@@ -2793,7 +2799,7 @@ class DisputeOrderView(APIView):
                 order=order,
             )
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class ResolveDisputeView(APIView):
@@ -2882,7 +2888,7 @@ class ResolveDisputeView(APIView):
 
             order.save(update_fields=['status', 'updated_at'])
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class RefundOrderView(APIView):
@@ -2898,7 +2904,7 @@ class RefundOrderView(APIView):
             )
 
             if order.status == 'cancelled':
-                return Response(OrderSerializer(order).data)
+                return Response(OrderSerializer(order, context={'request': request}).data)
 
             listing = None
             if order.listing_id:
@@ -2964,7 +2970,7 @@ class RefundOrderView(APIView):
                 order=order,
             )
 
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 # ── Reviews ───────────────────────────────────────────────────────────────────────
