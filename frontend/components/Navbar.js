@@ -10,9 +10,9 @@ import { notificationOrderPath } from '@/lib/orderNumbers';
 const UNREAD_POLL_INTERVAL_MS = 15000;
 const SEARCH_DEBOUNCE_MS = 300;
 const NOTIF_POLL_INTERVAL_MS = 30000;
-const HEARTBEAT_INTERVAL_MS = 60000;
-const HEARTBEAT_ACTIVE_WINDOW_MS = 2 * 60 * 1000;
-const HEARTBEAT_ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'scroll', 'touchstart'];
+const HEARTBEAT_INTERVAL_MS = 65000;
+const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
+const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
 
 const NOTIF_ICONS = {
   new_order: '🛒',
@@ -27,7 +27,7 @@ export default function Navbar() {
   const { user, loading, logout } = useAuth();
   const [unread, setUnread] = useState(0);
   const prevUnread = useRef(0);
-  const lastActivityRef = useRef(Date.now());
+  const heartbeatInFlightRef = useRef(false);
   const router = useRouter();
 
   // ── Search state ───────────────────────────────────────────────────────
@@ -87,39 +87,108 @@ export default function Navbar() {
   useEffect(() => {
     if (!user) return;
 
-    lastActivityRef.current = Date.now();
-
-    const markActivity = () => {
-      lastActivityRef.current = Date.now();
-    };
-    const canHeartbeat = () => (
-      document.visibilityState === 'visible' &&
-      Date.now() - lastActivityRef.current <= HEARTBEAT_ACTIVE_WINDOW_MS
-    );
-    const sendActiveHeartbeat = () => {
-      if (canHeartbeat()) sendHeartbeat();
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        markActivity();
-        sendHeartbeat();
+    const readLastHeartbeatAt = () => {
+      try {
+        return Number(window.localStorage.getItem(HEARTBEAT_STORAGE_KEY)) || 0;
+      } catch {
+        return 0;
       }
     };
-    const activityOptions = { passive: true };
 
+    const writeLastHeartbeatAt = (timestamp) => {
+      try {
+        window.localStorage.setItem(HEARTBEAT_STORAGE_KEY, String(timestamp));
+      } catch {
+        // Ignore storage failures; the in-tab guard still prevents overlap.
+      }
+    };
+
+    const canHeartbeat = () => {
+      const now = Date.now();
+      return (
+        now - readLastHeartbeatAt() >= HEARTBEAT_MIN_SEND_GAP_MS &&
+        !heartbeatInFlightRef.current
+      );
+    };
+
+    const sendActiveHeartbeat = async () => {
+      if (!canHeartbeat()) return;
+      heartbeatInFlightRef.current = true;
+      writeLastHeartbeatAt(Date.now());
+      try {
+        await sendHeartbeat();
+      } catch {
+        // Presence will retry on the next eligible tick.
+      } finally {
+        heartbeatInFlightRef.current = false;
+      }
+    };
+
+    const handleTick = () => {
+      sendActiveHeartbeat();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        sendActiveHeartbeat();
+      }
+    };
+
+    // Send immediate heartbeat on mount
     sendActiveHeartbeat();
-    const hb = setInterval(sendActiveHeartbeat, HEARTBEAT_INTERVAL_MS);
-    HEARTBEAT_ACTIVITY_EVENTS.forEach(eventName => {
-      window.addEventListener(eventName, markActivity, activityOptions);
-    });
+
+    let worker = null;
+    let workerUrl = null;
+    let fallbackInterval = null;
+
+    if (typeof window !== 'undefined' && window.Worker) {
+      try {
+        const blob = new Blob([
+          `let intervalId = null;
+           self.onmessage = function(e) {
+             if (e.data === 'start') {
+               if (intervalId) clearInterval(intervalId);
+               intervalId = setInterval(() => {
+                 self.postMessage('tick');
+               }, ${HEARTBEAT_INTERVAL_MS});
+             } else if (e.data === 'stop') {
+               if (intervalId) {
+                 clearInterval(intervalId);
+                 intervalId = null;
+               }
+             }
+           };`
+        ], { type: 'application/javascript' });
+        workerUrl = URL.createObjectURL(blob);
+        worker = new Worker(workerUrl);
+        worker.onmessage = (e) => {
+          if (e.data === 'tick') {
+            handleTick();
+          }
+        };
+        worker.postMessage('start');
+      } catch (err) {
+        console.error('Failed to start presence worker, falling back to interval:', err);
+        fallbackInterval = setInterval(handleTick, HEARTBEAT_INTERVAL_MS);
+      }
+    } else {
+      fallbackInterval = setInterval(handleTick, HEARTBEAT_INTERVAL_MS);
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
 
     return () => {
-      clearInterval(hb);
-      HEARTBEAT_ACTIVITY_EVENTS.forEach(eventName => {
-        window.removeEventListener(eventName, markActivity, activityOptions);
-      });
+      if (worker) {
+        worker.postMessage('stop');
+        worker.terminate();
+      }
+      if (workerUrl) {
+        URL.revokeObjectURL(workerUrl);
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
     };

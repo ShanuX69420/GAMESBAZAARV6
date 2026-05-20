@@ -38,6 +38,8 @@ import {
   updateAutoDeliveryStock,
   updateReview,
   uploadAvatar,
+  isOnlineFromLastActive,
+  formatLastActive,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -573,5 +575,35 @@ describe('API client helpers', () => {
         headers: { 'Content-Type': 'application/json' },
       }
     );
+  });
+
+  it('correctly manages client-server clock drift for presence indicators', async () => {
+    const now = Date.now();
+    const activeTimeIso = new Date(now - 10000).toISOString(); // 10 seconds ago
+    expect(isOnlineFromLastActive(activeTimeIso, now)).toBe(true);
+
+    // Mock a response with a Date header that is 5 minutes ahead of client time
+    // Client time is now, Server time is now + 5 mins (300,000 ms)
+    const serverTime = now + 300000;
+    const dateHeader = new Date(serverTime).toUTCString();
+
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name) => (name.toLowerCase() === 'date' ? dateHeader : null)
+      },
+      json: vi.fn().mockResolvedValue({ status: 'ok' })
+    });
+
+    await getSellerProfile('testuser');
+
+    // With clock drift, the user active 10 seconds ago on server is serverTime - 10000.
+    const lastActiveServerTime = serverTime - 10000;
+    const lastActiveIso = new Date(lastActiveServerTime).toISOString();
+
+    // Synced functions should return true and 'Online' because serverTimeOffset corrects it!
+    expect(isOnlineFromLastActive(lastActiveIso, now)).toBe(true);
+    expect(formatLastActive(lastActiveIso)).toBe('Online');
   });
 });

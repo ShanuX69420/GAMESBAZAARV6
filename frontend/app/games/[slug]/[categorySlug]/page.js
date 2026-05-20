@@ -80,6 +80,8 @@ export default function GameCategoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  const hasListingData = Boolean(data);
+  const loadedListingCount = data?.listings?.length || 0;
 
   const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, onlineOnly = false, search = '', ordering = '') => {
     if (append) {
@@ -141,6 +143,79 @@ export default function GameCategoryPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
+
+  // Background polling for listing updates (specifically seller presence)
+  useEffect(() => {
+    if (!hasListingData) return;
+
+    let inFlight = false;
+    let cancelled = false;
+    let controller = null;
+
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
+      try {
+        const url = buildGameCategoryListingUrl({
+          apiBase: API_BASE,
+          gameSlug: slug,
+          categorySlug,
+          limit: loadedListingCount || LISTING_PAGE_SIZE,
+          offset: 0,
+          filters: activeFilters,
+          instantOnly: instantDeliveryFilter,
+          onlineOnly: onlineSellerFilter,
+          search: searchQuery,
+          seller: sellerFilter,
+          ordering: sortBy,
+        });
+        const res = await fetch(url, { signal: controller.signal });
+        if (res.ok && !cancelled) {
+          const freshData = await res.json();
+          setData(prev => {
+            if (cancelled) return prev;
+            if (!prev) return freshData;
+            const freshMap = new Map((freshData.listings || []).map(l => [l.id, l]));
+            const updatedListings = (prev.listings || []).map(existing => {
+              const fresh = freshMap.get(existing.id);
+              if (fresh) {
+                return {
+                  ...existing,
+                  seller_last_active: fresh.seller_last_active,
+                  seller_is_online: fresh.seller_is_online,
+                  price: fresh.price,
+                  seller_avg_rating: fresh.seller_avg_rating,
+                  seller_review_count: fresh.seller_review_count,
+                  seller_avatar_url: fresh.seller_avatar_url,
+                };
+              }
+              return existing;
+            });
+            return {
+              ...prev,
+              listings: updatedListings,
+            };
+          });
+        }
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          console.error('Failed to background poll listings presence:', err);
+        }
+      } finally {
+        inFlight = false;
+        controller = null;
+      }
+    };
+
+    const interval = setInterval(poll, PRESENCE_TICK_MS);
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+      clearInterval(interval);
+    };
+  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sellerFilter, sortBy]);
 
   // Debounce search input
   useEffect(() => {

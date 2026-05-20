@@ -3,6 +3,22 @@ let refreshAuthPromise = null;
 const GAME_LIST_REVALIDATE_SECONDS = 60;
 const PUBLIC_CATALOG_REVALIDATE_SECONDS = 120;
 
+let serverTimeOffset = 0;
+
+function updateServerTimeOffset(res) {
+  try {
+    const serverDateStr = res.headers.get('Date');
+    if (serverDateStr) {
+      const serverTime = new Date(serverDateStr).getTime();
+      if (!Number.isNaN(serverTime)) {
+        serverTimeOffset = serverTime - Date.now();
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
+
 function pathSegment(value) {
   return encodeURIComponent(String(value));
 }
@@ -25,6 +41,7 @@ export async function fetchGames() {
   const res = await fetch(`${API_BASE}/api/games/`, {
     next: { revalidate: GAME_LIST_REVALIDATE_SECONDS },
   });
+  updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to fetch games');
   return res.json();
 }
@@ -33,6 +50,7 @@ export async function fetchGame(slug) {
   const res = await fetch(`${API_BASE}/api/games/${pathSegment(slug)}/`, {
     next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
   });
+  updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to fetch game');
   return res.json();
 }
@@ -42,6 +60,7 @@ export async function fetchGameCategory(gameSlug, categorySlug, filterParams = '
   const res = await fetch(url, {
     next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },
   });
+  updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to fetch game category');
   return res.json();
 }
@@ -77,6 +96,7 @@ async function authFetch(url, options = {}, retry = true) {
     credentials: 'include',
     ...options,
   });
+  updateServerTimeOffset(res);
   if (res.status !== 401 || !retry) {
     return res;
   }
@@ -86,7 +106,9 @@ async function authFetch(url, options = {}, retry = true) {
     return res;
   }
 
-  return authFetch(url, options, false);
+  const retryRes = await authFetch(url, options, false);
+  updateServerTimeOffset(retryRes);
+  return retryRes;
 }
 
 export async function applyAsSeller(note) {
@@ -264,8 +286,10 @@ export async function startConversation(userId, message = '') {
 }
 
 export async function getConversation(id, pagination = {}) {
-  const res = await authFetch(`${API_BASE}/api/chat/${id}/${paginationQuery(pagination)}`, {
+  const { signal, ...paginationParams } = pagination;
+  const res = await authFetch(`${API_BASE}/api/chat/${id}/${paginationQuery(paginationParams)}`, {
     headers: authHeaders(),
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) throw new Error('Failed to get conversation');
   return res.json();
@@ -331,19 +355,20 @@ export function isOnlineFromLastActive(isoString, nowMs = Date.now()) {
   if (!isoString) return false;
   const lastActiveMs = new Date(isoString).getTime();
   if (Number.isNaN(lastActiveMs)) return false;
-  return nowMs - lastActiveMs < ONLINE_WINDOW_MS;
+  const adjustedNow = nowMs + serverTimeOffset;
+  return adjustedNow - lastActiveMs < ONLINE_WINDOW_MS;
 }
 
 export function formatLastActive(isoString) {
   if (!isoString) return 'Offline';
   const date = new Date(isoString);
-  const now = new Date();
-  const diff = (now - date) / 1000; // seconds
+  const adjustedNow = Date.now() + serverTimeOffset;
+  const diff = (adjustedNow - date.getTime()) / 1000; // seconds
 
-  if (isOnlineFromLastActive(isoString, now.getTime())) return 'Online';
-  if (diff < 3600) return `Active ${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
-  return `Active ${Math.floor(diff / 86400)}d ago`;
+  if (isOnlineFromLastActive(isoString, Date.now())) return 'Online';
+  if (diff < 3600) return `Active ${Math.floor(Math.max(0, diff) / 60)}m ago`;
+  if (diff < 86400) return `Active ${Math.floor(Math.max(0, diff) / 3600)}h ago`;
+  return `Active ${Math.floor(Math.max(0, diff) / 86400)}d ago`;
 }
 
 // ── Wallet API ──────────────────────────────────────────────────────────────
@@ -580,8 +605,11 @@ export async function replyToReview(reviewId, reply) {
   return data;
 }
 
-export async function getSellerProfile(username) {
-  const res = await fetch(`${API_BASE}/api/seller/profile/${pathSegment(username)}/`);
+export async function getSellerProfile(username, options = {}) {
+  const url = `${API_BASE}/api/seller/profile/${pathSegment(username)}/`;
+  const requestOptions = options.signal ? { signal: options.signal } : undefined;
+  const res = requestOptions ? await fetch(url, requestOptions) : await fetch(url);
+  updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to get seller profile');
   return res.json();
 }
@@ -591,6 +619,7 @@ export async function getSellerProfile(username) {
 export async function searchMarketplace(query) {
   const params = new URLSearchParams({ q: query });
   const res = await fetch(`${API_BASE}/api/search/?${params.toString()}`);
+  updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Search failed');
   return res.json();
 }

@@ -47,6 +47,40 @@ export default function SellerProfilePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!username || loading) return;
+    let inFlight = false;
+    let cancelled = false;
+    let controller = null;
+
+    const pollProfile = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
+      try {
+        const profileData = await getSellerProfile(username, { signal: controller.signal });
+        if (!cancelled) setProfile(profileData);
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          // Silently ignore background polling errors
+        }
+      } finally {
+        inFlight = false;
+        controller = null;
+      }
+    };
+
+    const pollInterval = setInterval(pollProfile, PRESENCE_TICK_MS);
+
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+      clearInterval(pollInterval);
+    };
+  }, [username, loading]);
+
+
   async function loadData() {
     setLoading(true);
     try {

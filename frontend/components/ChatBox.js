@@ -81,6 +81,42 @@ export default function ChatBox({
     };
   }, []);
 
+  useEffect(() => {
+    if (!activeConvoId) return;
+    let inFlight = false;
+    let cancelled = false;
+    let controller = null;
+
+    const pollPresence = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
+      try {
+        const data = await getConversation(activeConvoId, { limit: 1, signal: controller.signal });
+        if (!cancelled && data && data.other_user && mountedRef.current) {
+          setConvo(prev => prev ? { ...prev, other_user: data.other_user } : data);
+        }
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          // Silently ignore background polling errors
+        }
+      } finally {
+        inFlight = false;
+        controller = null;
+      }
+    };
+
+    const pollInterval = setInterval(pollPresence, PRESENCE_TICK_MS);
+
+    return () => {
+      cancelled = true;
+      if (controller) controller.abort();
+      clearInterval(pollInterval);
+    };
+  }, [activeConvoId]);
+
+
   function scrollToBottom(instant = false) {
     const el = messagesContainerRef.current;
     if (!el) return;
