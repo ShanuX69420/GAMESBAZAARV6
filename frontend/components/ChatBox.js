@@ -38,6 +38,7 @@ export default function ChatBox({
   const [messagePagination, setMessagePagination] = useState(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [activeConvoId, setActiveConvoId] = useState(conversationId);
   const [connected, setConnected] = useState(false);
@@ -197,12 +198,17 @@ export default function ChatBox({
 
   // Sync conversationId prop
   useEffect(() => {
-    if (conversationId) setActiveConvoId(conversationId);
+    if (conversationId) {
+      setActiveConvoId(conversationId);
+      setMessages([]);
+      setLoadingMessages(true);
+    }
   }, [conversationId]);
 
   // Load messages via REST
   const loadMessages = useCallback(async () => {
     if (!activeConvoId) return;
+    setLoadingMessages(true);
     try {
       const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE });
       if (!mountedRef.current) return;
@@ -211,7 +217,9 @@ export default function ChatBox({
       setMessages(nextMessages);
       setMessagePagination(data.message_pagination || null);
       armInitialImageAutoScroll(nextMessages);
-    } catch { }
+    } catch { } finally {
+      if (mountedRef.current) setLoadingMessages(false);
+    }
   }, [activeConvoId]);
 
   // Initial load
@@ -553,7 +561,37 @@ export default function ChatBox({
             Loading older messages...
           </div>
         )}
-        {messages.length === 0 ? (
+        {loadingMessages ? (
+          <div className="chat-skeleton-loader">
+            <div className="chat-skeleton-row">
+              <div className="chat-skeleton-avatar"></div>
+              <div className="chat-skeleton-lines">
+                <div className="chat-skeleton-line" style={{ width: '40%' }}></div>
+                <div className="chat-skeleton-line" style={{ width: '70%' }}></div>
+              </div>
+            </div>
+            <div className="chat-skeleton-row right">
+              <div className="chat-skeleton-lines">
+                <div className="chat-skeleton-line" style={{ width: '30%', marginLeft: 'auto' }}></div>
+                <div className="chat-skeleton-line" style={{ width: '55%', marginLeft: 'auto' }}></div>
+              </div>
+            </div>
+            <div className="chat-skeleton-row">
+              <div className="chat-skeleton-avatar"></div>
+              <div className="chat-skeleton-lines">
+                <div className="chat-skeleton-line" style={{ width: '50%' }}></div>
+                <div className="chat-skeleton-line" style={{ width: '80%' }}></div>
+                <div className="chat-skeleton-line" style={{ width: '35%' }}></div>
+              </div>
+            </div>
+            <div className="chat-skeleton-row right">
+              <div className="chat-skeleton-lines">
+                <div className="chat-skeleton-line" style={{ width: '45%', marginLeft: 'auto' }}></div>
+              </div>
+            </div>
+            <p className="chat-skeleton-label">Loading messages…</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="chatbox-empty-msg">
             No messages yet. Say hello!
           </div>

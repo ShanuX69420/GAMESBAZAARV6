@@ -2988,6 +2988,82 @@ img {
   margin: auto 0;
 }
 
+/* ── Chat Skeleton Loader ──────────────────────────────────────────────────── */
+
+@keyframes chatSkeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.chat-skeleton-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px 8px;
+  height: 100%;
+  justify-content: center;
+  animation: chatSkeletonFadeIn 0.3s ease-out;
+}
+
+@keyframes chatSkeletonFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chat-skeleton-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chat-skeleton-row.right {
+  justify-content: flex-end;
+  padding-left: 56px;
+}
+
+.chat-skeleton-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green-100), var(--green-50));
+  flex-shrink: 0;
+  animation: chatSkeletonPulse 1.6s ease-in-out infinite;
+}
+
+.chat-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.chat-skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--green-50) 0%, var(--green-100) 40%, var(--green-50) 80%);
+  background-size: 200% 100%;
+  animation: chatSkeletonShimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes chatSkeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.chat-skeleton-row:nth-child(1) .chat-skeleton-line { animation-delay: 0s; }
+.chat-skeleton-row:nth-child(2) .chat-skeleton-line { animation-delay: 0.15s; }
+.chat-skeleton-row:nth-child(3) .chat-skeleton-line { animation-delay: 0.3s; }
+.chat-skeleton-row:nth-child(4) .chat-skeleton-line { animation-delay: 0.45s; }
+
+.chat-skeleton-label {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  margin: 8px 0 0;
+  animation: chatSkeletonPulse 1.6s ease-in-out infinite;
+  letter-spacing: 0.02em;
+}
+
 .chat-loading-older {
   text-align: center;
   color: var(--text-tertiary);
