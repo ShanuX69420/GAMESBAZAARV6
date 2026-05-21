@@ -17,11 +17,27 @@ export default async function HomePage() {
     <div className="container">
       {/* Hero Section */}
       <section className="hero">
-        <h1>Pakistan&apos;s Gaming<br />Marketplace</h1>
+        <div className="hero-badge">
+          <span className="hero-badge-dot"></span>
+          Now Live — Start Trading Today
+        </div>
+        <h1>
+          Pakistan&apos;s First <span className="hero-accent">Gaming</span>
+          <br />Marketplace
+        </h1>
         <p>
           Buy &amp; sell game accounts, items, top-ups, and services.
           Safe payments, verified sellers, and fast delivery.
         </p>
+        <div className="hero-actions">
+          <Link href="/games" className="hero-btn-primary">
+            Browse Games
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </Link>
+          <Link href="/register" className="hero-btn-outline">
+            Start Selling
+          </Link>
+        </div>
       </section>
 
       {/* Trust Strip */}
@@ -74,7 +90,7 @@ export default async function HomePage() {
 
       {/* How It Works */}
       <section className="section how-it-works">
-        <div className="section-header">
+        <div className="section-header-accent">
           <h2 className="section-title">How It Works</h2>
         </div>
         <div className="steps-grid">
