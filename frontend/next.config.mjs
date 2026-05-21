@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
+const manifestCacheControl = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+const iconCacheControl = 'public, max-age=2592000, stale-while-revalidate=604800';
 
 function imageRemotePatternFromUrl(value) {
   if (!value) return null;
@@ -46,12 +48,41 @@ const imageRemotePatterns = [
 ));
 
 const nextConfig = {
+  poweredByHeader: false,
   turbopack: {
     root: projectRoot,
   },
   images: {
     formats: ['image/webp'],
     remotePatterns: imageRemotePatterns,
+  },
+  async headers() {
+    return [
+      {
+        source: '/manifest.json',
+        headers: [
+          { key: 'Cache-Control', value: manifestCacheControl },
+        ],
+      },
+      {
+        source: '/icons/:path*',
+        headers: [
+          { key: 'Cache-Control', value: iconCacheControl },
+        ],
+      },
+      {
+        source: '/apple-touch-icon.png',
+        headers: [
+          { key: 'Cache-Control', value: iconCacheControl },
+        ],
+      },
+      {
+        source: '/favicon.ico',
+        headers: [
+          { key: 'Cache-Control', value: iconCacheControl },
+        ],
+      },
+    ];
   },
 };
 

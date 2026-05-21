@@ -2931,6 +2931,7 @@ class ApiPermissionConfigurationTests(TestCase):
             '/api/auth/login/',
             '/api/auth/google/',
             '/api/auth/refresh/',
+            '/api/auth/me/',
             '/api/auth/register/',
             '/api/reviews/seller/seller/',
             '/api/seller/profile/seller/',
@@ -3237,6 +3238,20 @@ class CookieJWTAuthTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['username'], 'cookiebuyer')
+
+    def test_me_returns_no_content_for_anonymous_user_without_refresh_cookie(self):
+        response = self.client.get('/api/auth/me/')
+
+        self.assertEqual(response.status_code, 204)
+
+    def test_me_still_prompts_refresh_when_only_refresh_cookie_exists(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+        self.client.cookies.pop(settings.JWT_AUTH_COOKIE_ACCESS)
+
+        response = self.client.get('/api/auth/me/')
+
+        self.assertEqual(response.status_code, 401)
 
     def test_refresh_works_from_refresh_cookie(self):
         login_response = self.login()

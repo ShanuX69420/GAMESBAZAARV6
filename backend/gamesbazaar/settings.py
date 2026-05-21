@@ -130,6 +130,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'core.security_middleware.SecurityHeadersMiddleware',
+    'core.security_middleware.AdminIpAllowlistMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -309,6 +310,12 @@ JWT_AUTH_COOKIE_SAMESITE = os.environ.get('JWT_AUTH_COOKIE_SAMESITE', 'Lax').str
 if JWT_AUTH_COOKIE_SAMESITE not in {'Lax', 'Strict', 'None'}:
     raise ImproperlyConfigured('JWT_AUTH_COOKIE_SAMESITE must be one of Lax, Strict, or None.')
 JWT_AUTH_COOKIE_PATH = '/'
+
+# Optional Django admin IP allowlist. Leave ADMIN_ALLOWED_IPS empty to rely on
+# Django's staff/superuser authentication; set it to comma-separated IPs/CIDRs
+# to block /admin/ before the login page for all other clients.
+ADMIN_ALLOWED_IPS = env_list('ADMIN_ALLOWED_IPS', [])
+ADMIN_TRUSTED_PROXY_IPS = env_list('ADMIN_TRUSTED_PROXY_IPS', [])
 
 # Browser / proxy security. Defaults stay relaxed in local development and
 # become strict automatically when DJANGO_DEBUG=False.

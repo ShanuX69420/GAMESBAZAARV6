@@ -1055,9 +1055,16 @@ class ConfirmPasswordResetView(ScopedPostThrottleMixin, APIView):
 
 class MeView(APIView):
     """GET /api/auth/me/ — Get current user info."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
+        if not request.user.is_authenticated:
+            if request.COOKIES.get(settings.JWT_AUTH_COOKIE_REFRESH):
+                return Response(
+                    {'detail': 'Authentication credentials were not provided.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(UserSerializer(request.user, context={'request': request}).data)
 
 

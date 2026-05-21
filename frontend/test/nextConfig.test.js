@@ -57,7 +57,58 @@ describe('Next configuration', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
     const { default: nextConfig } = await importFreshNextConfig();
+    const headers = await nextConfig.headers();
 
-    expect(nextConfig.headers).toBeUndefined();
+    expect(nextConfig.poweredByHeader).toBe(false);
+    expect(headers).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        headers: expect.arrayContaining([
+          expect.objectContaining({ key: 'Content-Security-Policy' }),
+        ]),
+      }),
+    ]));
+  });
+
+  it('sets stronger cache headers for the web app manifest and icons', async () => {
+    const { default: nextConfig } = await importFreshNextConfig();
+
+    await expect(nextConfig.headers()).resolves.toEqual([
+      {
+        source: '/manifest.json',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/icons/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2592000, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/apple-touch-icon.png',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2592000, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        source: '/favicon.ico',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2592000, stale-while-revalidate=604800',
+          },
+        ],
+      },
+    ]);
   });
 });
