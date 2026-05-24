@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { getGameIcon } from '@/lib/icons';
 
 export default function GameItem({ game }) {
@@ -6,11 +7,12 @@ export default function GameItem({ game }) {
     <Link href={`/games/${game.slug}`} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
-          <img
+          <Image
             src={game.icon_url}
             alt={game.name}
+            width={40}
+            height={40}
             loading="lazy"
-            decoding="async"
           />
         ) : (
           getGameIcon(game.slug)

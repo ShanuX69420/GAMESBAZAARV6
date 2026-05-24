@@ -1,5 +1,6 @@
 import { fetchGame } from '@/lib/api';
 import { createPublicMetadata } from '@/lib/seo';
+import Image from 'next/image';
 import { redirect, notFound } from 'next/navigation';
 
 export async function generateMetadata({ params }) {
@@ -53,7 +54,14 @@ export default async function GameDetailPage({ params }) {
         </div>
         <div className="game-header">
           <div className="game-header-icon">
-            {game.icon_url ? <img src={game.icon_url} alt={game.name} /> : '🎮'}
+            {game.icon_url ? (
+              <Image
+                src={game.icon_url}
+                alt={game.name}
+                width={56}
+                height={56}
+              />
+            ) : '🎮'}
           </div>
           <div className="game-header-info">
             <h1>{game.name}</h1>

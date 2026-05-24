@@ -22,6 +22,7 @@ describe('Next configuration', () => {
     const { default: nextConfig } = await importFreshNextConfig();
 
     expect(nextConfig.images.formats).toEqual(['image/webp']);
+    expect(nextConfig.images.dangerouslyAllowLocalIP).toBe(true);
     expect(nextConfig.images.remotePatterns).toEqual(expect.arrayContaining([
       { protocol: 'https', hostname: 'api.gamesbazaar.pk' },
       { protocol: 'https', hostname: 'www.gamesbazaar.pk' },
@@ -51,6 +52,17 @@ describe('Next configuration', () => {
     expect(nextConfig.images.remotePatterns).toEqual([
       { protocol: 'https', hostname: 'cdn.gamesbazaar.pk' },
     ]);
+    expect(nextConfig.images.dangerouslyAllowLocalIP).toBe(false);
+  });
+
+  it('allows local image optimization for explicit local production builds', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LOCAL_PRODUCTION_BUILD', '1');
+    vi.stubEnv('NEXT_PUBLIC_IMAGE_HOSTS', 'localhost:8000');
+
+    const { default: nextConfig } = await importFreshNextConfig();
+
+    expect(nextConfig.images.dangerouslyAllowLocalIP).toBe(true);
   });
 
   it('leaves runtime security headers to proxy', async () => {

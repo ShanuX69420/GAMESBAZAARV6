@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
+const allowLocalProductionBuild = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.LOCAL_PRODUCTION_BUILD || '').trim().toLowerCase()
+);
 const manifestCacheControl = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
 const iconCacheControl = 'public, max-age=2592000, stale-while-revalidate=604800';
 
@@ -55,6 +58,7 @@ const nextConfig = {
   images: {
     formats: ['image/webp'],
     remotePatterns: imageRemotePatterns,
+    dangerouslyAllowLocalIP: !isProduction || allowLocalProductionBuild,
   },
   async headers() {
     return [

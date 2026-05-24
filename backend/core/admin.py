@@ -1,9 +1,11 @@
+from django import forms
 from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
 from django.db import transaction
 from django.core.exceptions import PermissionDenied
+from django.core.files.uploadedfile import UploadedFile
 from .models import (
     Game, Category, GameCategory, Filter, FilterOption,
     GameCategoryFilter, UserProfile, SocialAccount, Listing,
@@ -120,8 +122,23 @@ class GameCategoryFilterInline(admin.TabularInline):
 
 # ── Visible in Sidebar ──────────────────────────────────────────────────────
 
+class GameAdminForm(forms.ModelForm):
+    class Meta:
+        model = Game
+        fields = '__all__'
+
+    def clean_icon(self):
+        icon = self.cleaned_data.get('icon')
+        if isinstance(icon, UploadedFile):
+            validation_error = validate_uploaded_image(icon)
+            if validation_error:
+                raise forms.ValidationError(validation_error)
+        return icon
+
+
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
+    form = GameAdminForm
     list_display = ['name', 'is_active', 'order', 'category_count', 'search_keywords_preview', 'created_at']
     list_filter = ['is_active']
     list_editable = ['order', 'is_active']
@@ -138,6 +155,12 @@ class GameAdmin(admin.ModelAdmin):
         if obj.search_keywords:
             return obj.search_keywords[:60] + ('...' if len(obj.search_keywords) > 60 else '')
         return '—'
+
+    def save_model(self, request, obj, form, change):
+        icon = form.cleaned_data.get('icon') if form else None
+        if isinstance(icon, UploadedFile):
+            obj.icon = optimize_uploaded_image(icon, preset='game_icon')
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Category)

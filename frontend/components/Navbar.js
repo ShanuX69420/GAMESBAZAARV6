@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount } from '@/lib/api';
@@ -337,7 +338,16 @@ export default function Navbar() {
               <a key={item.id} href={`/games/${item.game_slug}/${item.category_slug}`}
                 className="search-dropdown-item" onClick={(e) => handleResultClick(e, item)}>
                 <span className="search-dropdown-item-icon">
-                  {item.game_icon_url ? <img src={item.game_icon_url} alt="" className="search-dropdown-item-img" loading="lazy" /> : '🎮'}
+                  {item.game_icon_url ? (
+                    <Image
+                      src={item.game_icon_url}
+                      alt=""
+                      width={28}
+                      height={28}
+                      className="search-dropdown-item-img"
+                      loading="lazy"
+                    />
+                  ) : '🎮'}
                 </span>
                 <span className="search-dropdown-item-label">{item.display_name}</span>
               </a>

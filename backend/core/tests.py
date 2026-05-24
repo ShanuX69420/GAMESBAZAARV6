@@ -29,6 +29,8 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
 
 from .admin import (
+    GameAdmin,
+    GameAdminForm,
     GamesBazaarUserAdmin,
     OrderAdmin,
     TopUpRequestAdmin,
@@ -91,6 +93,20 @@ def html_alternative(message):
     return alternative[0], alternative[1]
 
 
+def local_media_storage_settings(media_root):
+    return override_settings(
+        MEDIA_ROOT=media_root,
+        STORAGES={
+            'default': {
+                'BACKEND': 'django.core.files.storage.FileSystemStorage',
+            },
+            'staticfiles': {
+                'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+            },
+        },
+    )
+
+
 def assert_storage_name_under(testcase, name, directory):
     normalized = str(name).replace('\\', '/')
     testcase.assertTrue(
@@ -128,6 +144,95 @@ class ImageOptimizationTests(TestCase):
         with Image.open(optimized) as image:
             self.assertEqual(image.format, 'WEBP')
             self.assertLessEqual(max(image.size), 512)
+
+    def test_game_icon_preset_optimizes_for_small_display(self):
+        upload = make_image_file(name='game.png', size=(1200, 1200))
+
+        optimized = optimize_uploaded_image(upload, preset='game_icon')
+
+        self.assertIsNot(optimized, upload)
+        self.assertEqual(optimized.name, 'game.webp')
+        self.assertEqual(optimized.content_type, 'image/webp')
+        self.assertLess(optimized.size, upload.size)
+
+        with Image.open(optimized) as image:
+            self.assertEqual(image.format, 'WEBP')
+            self.assertLessEqual(max(image.size), 256)
+
+    def test_game_admin_upload_optimizes_icon(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                form = GameAdminForm(
+                    data={
+                        'name': 'Admin Icon Game',
+                        'slug': 'admin-icon-game',
+                        'description': '',
+                        'search_keywords': '',
+                        'is_active': 'on',
+                        'order': '0',
+                    },
+                    files={'icon': make_image_file(name='admin-icon.png', size=(1200, 1200))},
+                )
+                self.assertTrue(form.is_valid(), form.errors.as_json())
+                game = form.save(commit=False)
+                request = RequestFactory().post('/admin/core/game/add/')
+                request.user = User.objects.create_superuser(
+                    username='admin-icon-test',
+                    email='admin-icon-test@example.com',
+                    password='password123',
+                )
+
+                GameAdmin(Game, AdminSite()).save_model(request, game, form, change=False)
+
+                assert_storage_name_under(self, game.icon.name, 'game_icons/')
+                self.assertTrue(game.icon.name.endswith('.webp'))
+                with game.icon.open('rb'):
+                    with Image.open(game.icon) as image:
+                        self.assertEqual(image.format, 'WEBP')
+                        self.assertLessEqual(max(image.size), 256)
+
+    def test_optimize_game_icons_command_rewrites_existing_icons(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                game = Game.objects.create(
+                    name='Existing Icon Game',
+                    slug='existing-icon-game',
+                    icon=make_image_file(name='existing-icon.png', size=(1200, 1200)),
+                )
+                old_name = game.icon.name
+                old_path = game.icon.path
+
+                output = StringIO()
+                call_command('optimize_game_icons', '--delete-originals', stdout=output)
+
+                game.refresh_from_db()
+                assert_storage_name_under(self, game.icon.name, 'game_icons/')
+                self.assertNotEqual(game.icon.name, old_name)
+                self.assertTrue(game.icon.name.endswith('.webp'))
+                self.assertFalse(os.path.exists(old_path))
+                self.assertIn('Optimized 1 game icon', output.getvalue())
+
+                with game.icon.open('rb'):
+                    with Image.open(game.icon) as image:
+                        self.assertEqual(image.format, 'WEBP')
+                        self.assertLessEqual(max(image.size), 256)
+
+    def test_optimize_game_icons_command_dry_run_does_not_save(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                game = Game.objects.create(
+                    name='Dry Run Icon Game',
+                    slug='dry-run-icon-game',
+                    icon=make_image_file(name='dry-run-icon.png', size=(1200, 1200)),
+                )
+                old_name = game.icon.name
+
+                output = StringIO()
+                call_command('optimize_game_icons', '--dry-run', stdout=output)
+
+                game.refresh_from_db()
+                self.assertEqual(game.icon.name, old_name)
+                self.assertIn('Would optimize 1 game icon', output.getvalue())
 
     def test_optimization_falls_back_to_original_upload_on_failure(self):
         upload = make_image_file(name='chat.png', size=(10, 10))

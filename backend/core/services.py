@@ -795,6 +795,7 @@ def validate_uploaded_image(image):
 # Presets for different upload contexts
 IMAGE_OPTIMIZE_PRESETS = {
     'avatar': {'max_size': 512, 'quality': 85},
+    'game_icon': {'max_size': 256, 'quality': 85},
     'chat': {'max_size': 1920, 'quality': 80},
     'proof': {'max_size': 2000, 'quality': 80},
 }
@@ -811,7 +812,7 @@ def optimize_uploaded_image(image, preset='chat'):
     image : UploadedFile
         A Django ``UploadedFile`` that has already passed ``validate_uploaded_image``.
     preset : str
-        One of ``IMAGE_OPTIMIZE_PRESETS`` keys: 'avatar', 'chat', 'proof'.
+        One of ``IMAGE_OPTIMIZE_PRESETS`` keys: 'avatar', 'game_icon', 'chat', 'proof'.
     """
     from io import BytesIO
     from django.core.files.uploadedfile import InMemoryUploadedFile
