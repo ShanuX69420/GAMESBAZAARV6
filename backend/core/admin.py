@@ -56,6 +56,11 @@ class GamesBazaarUserAdmin(BaseUserAdmin):
     list_display = list(BaseUserAdmin.list_display) + ['message_user_link']
     actions = list(BaseUserAdmin.actions or []) + ['send_admin_message']
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change and 'is_active' in form.changed_data:
+            UserProfile.objects.filter(user=obj).update(email_verification_pending=False)
+
     @admin.display(description='Message')
     def message_user_link(self, obj):
         url = reverse('admin:admin_message_user', args=[obj.pk])

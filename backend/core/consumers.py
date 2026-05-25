@@ -11,6 +11,7 @@ from .services import (
     CHAT_MESSAGE_NOT_TEXT_ERROR,
     CHAT_MESSAGE_TOO_LONG_ERROR,
     consume_chat_ws_message_quota,
+    validate_chat_listing_reference,
     validate_chat_message_content,
 )
 
@@ -77,8 +78,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_chat_error(self.error_code_for(validation_error), validation_error)
                 return
 
-            # Save to database
-            msg_data = await self.save_message(text)
+            # Save to database after resolving any server-trusted listing reference.
+            msg_data, listing_error = await self.save_message(text, content.get('listing_id'))
+            if listing_error:
+                await self.send_chat_error('invalid_listing_reference', listing_error)
+                return
 
             # Broadcast to all participants in the room
             await self.channel_layer.group_send(
@@ -134,12 +138,21 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         ).exists()
 
     @database_sync_to_async
-    def save_message(self, content):
+    def save_message(self, content, listing_id=None):
         conversation = Conversation.objects.get(id=self.conversation_id)
+        referenced_listing, listing_error = validate_chat_listing_reference(
+            listing_id,
+            conversation_id=conversation.id,
+        )
+        if listing_error:
+            return None, listing_error
         msg = Message.objects.create(
             conversation=conversation,
             sender=self.user,
             content=content,
+            referenced_listing=referenced_listing,
+            referenced_listing_title=referenced_listing.title if referenced_listing else '',
+            referenced_listing_price=referenced_listing.price if referenced_listing else None,
         )
         conversation.save()  # Update updated_at
         return {
@@ -148,9 +161,17 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             'sender_name': msg.sender.username,
             'content': msg.content,
             'image_url': msg.image.url if msg.image else None,
+            'listing_reference': (
+                {
+                    'id': referenced_listing.id,
+                    'title': msg.referenced_listing_title,
+                    'price': str(msg.referenced_listing_price),
+                }
+                if referenced_listing else None
+            ),
             'is_read': msg.is_read,
             'created_at': msg.created_at.isoformat(),
-        }
+        }, None
 
     @database_sync_to_async
     def mark_messages_read(self):

@@ -202,6 +202,14 @@ class UserProfile(models.Model):
     seller_application_note = models.TextField(blank=True, default='',
                                                 help_text='Why do you want to become a seller?')
     seller_reviewed_at = models.DateTimeField(null=True, blank=True)
+    has_accepted_terms = models.BooleanField(
+        default=False,
+        help_text='Whether the user has accepted the Terms of Service and Privacy Policy.',
+    )
+    email_verification_pending = models.BooleanField(
+        default=False,
+        help_text='Whether password registration is awaiting email verification.',
+    )
     last_active = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -353,6 +361,20 @@ class Message(models.Model):
                                       related_name='messages')
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='sent_messages')
+    referenced_listing = models.ForeignKey(
+        Listing,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='chat_messages',
+    )
+    referenced_listing_title = models.CharField(max_length=300, blank=True, default='')
+    referenced_listing_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
     content = models.TextField(blank=True, default='')
     image = models.ImageField(upload_to='chat_images/', blank=True, null=True)
     is_read = models.BooleanField(default=False)

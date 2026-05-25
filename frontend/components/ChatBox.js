@@ -31,6 +31,9 @@ export default function ChatBox({
   sellerLastActive,
   onConversationStart,
   compact = false,
+  listingId,
+  listingTitle,
+  listingPrice,
 }) {
   const { user } = useAuth();
   const [convo, setConvo] = useState(null);
@@ -59,6 +62,8 @@ export default function ChatBox({
   const initialImageAutoScrollRef = useRef(false);
   const pendingInitialImageLoadsRef = useRef(0);
   const initialImageScrollTimerRef = useRef(null);
+  const [listingContextSent, setListingContextSent] = useState(false);
+
 
   function handleScroll() {
     const el = messagesContainerRef.current;
@@ -187,13 +192,27 @@ export default function ChatBox({
   // On mount: look up existing conversation with seller
   useEffect(() => {
     if (activeConvoId || !sellerId || !user) return;
+    let cancelled = false;
+    setLoadingMessages(true);
+
     getConversations({ otherUserId: sellerId, limit: 1 })
       .then(data => {
+        if (cancelled || !mountedRef.current) return;
         const convos = data.conversations || data;
         const existing = convos.find(c => c.other_user?.id === sellerId);
-        if (existing && mountedRef.current) setActiveConvoId(existing.id);
+        if (existing) {
+          setActiveConvoId(existing.id);
+        } else {
+          setLoadingMessages(false);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled && mountedRef.current) setLoadingMessages(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [sellerId, user, activeConvoId]);
 
   // Sync conversationId prop
@@ -312,6 +331,12 @@ export default function ChatBox({
         try {
           const data = JSON.parse(e.data);
           if (data.type === 'new_message') {
+            if (
+              data.message.is_mine &&
+              data.message.listing_reference?.id === Number(listingId)
+            ) {
+              setListingContextSent(true);
+            }
             setMessages(prev => {
               if (prev.some(m => m.id === data.message.id)) return prev;
               return [...prev, data.message];
@@ -345,7 +370,7 @@ export default function ChatBox({
         wsRef.current = null;
       }
     };
-  }, [activeConvoId, user, loadMessages]);
+  }, [activeConvoId, user, loadMessages, listingId]);
 
   // Handle paste for images
   function handlePaste(e) {
@@ -405,8 +430,9 @@ export default function ChatBox({
     e.preventDefault();
     if (!input.trim()) return;
 
-    const messageText = input.trim();
-    if (messageText.length > MAX_CHAT_MESSAGE_LENGTH) {
+    const rawText = input.trim();
+    const messageListingId = listingId && !listingContextSent ? listingId : null;
+    if (rawText.length > MAX_CHAT_MESSAGE_LENGTH) {
       showChatError(`Message cannot be longer than ${MAX_CHAT_MESSAGE_LENGTH} characters.`);
       return;
     }
@@ -415,7 +441,7 @@ export default function ChatBox({
 
     try {
       if (!activeConvoId && sellerId) {
-        const data = await startConversation(sellerId, messageText);
+        const data = await startConversation(sellerId, rawText, messageListingId);
         setActiveConvoId(data.id);
         setConvo(data);
         const nextMessages = data.messages || [];
@@ -423,25 +449,28 @@ export default function ChatBox({
         setMessagePagination(data.message_pagination || null);
         if (onConversationStart) onConversationStart(data.id);
         armInitialImageAutoScroll(nextMessages);
+        if (messageListingId) setListingContextSent(true);
       } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'chat_message',
-          content: messageText,
+          content: rawText,
+          ...(messageListingId ? { listing_id: messageListingId } : {}),
         }));
       } else if (activeConvoId) {
-        const data = await sendMessage(activeConvoId, messageText);
+        const data = await sendMessage(activeConvoId, rawText, messageListingId);
         setMessages(prev => {
           if (prev.some(m => m.id === data.id)) return prev;
           return [...prev, { ...data, is_mine: true }];
         });
         setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
         window.dispatchEvent(new Event('chatUpdate'));
+        if (messageListingId && data.listing_reference) setListingContextSent(true);
       } else {
-        setInput(messageText);
+        setInput(rawText);
         showChatError('Chat is still connecting. Please try again.');
       }
     } catch (err) {
-      setInput(messageText);
+      setInput(rawText);
       showChatError(err.message || 'Message could not be sent.');
     } finally {
       setSending(false);
@@ -494,6 +523,16 @@ export default function ChatBox({
                 onError={handleImageLoad}
                 onClick={() => window.open(msg.image_url, '_blank', 'noopener,noreferrer')}
               />
+            </div>
+          )}
+          {msg.listing_reference && (
+            <div className="chat-msg-listing-ref">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+              </svg>
+              <span className="chat-msg-listing-ref-title">{msg.listing_reference.title}</span>
+              <span className="chat-msg-listing-ref-price">PKR {msg.listing_reference.price}</span>
             </div>
           )}
           {msg.content && <div className="chat-msg-content">{msg.content}</div>}
@@ -624,6 +663,21 @@ export default function ChatBox({
 
       {/* Input Area */}
       {chatError && <div className="chatbox-error">{chatError}</div>}
+
+      {/* Listing context banner — shown when messaging from a listing page */}
+      {listingId && listingTitle && !listingContextSent && (
+        <div className="chat-listing-context">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+          <span className="chat-listing-context-text">
+            Messaging about: <strong>{listingTitle}</strong>
+            {listingPrice && <span className="chat-listing-context-price"> — PKR {listingPrice}</span>}
+          </span>
+        </div>
+      )}
+
       <form className="chatbox-input" onSubmit={handleSend} onPaste={handlePaste}>
         <input type="hidden" />
         <input

@@ -275,11 +275,13 @@ export async function getConversations(pagination = {}) {
   return res.json();
 }
 
-export async function startConversation(userId, message = '') {
+export async function startConversation(userId, message = '', listingId = null) {
+  const body = { user_id: userId, message };
+  if (listingId) body.listing_id = listingId;
   const res = await authFetch(`${API_BASE}/api/chat/start/`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ user_id: userId, message }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to start conversation');
@@ -307,11 +309,13 @@ export async function getChatWebSocketTicket(conversationId) {
   return data;
 }
 
-export async function sendMessage(conversationId, content) {
+export async function sendMessage(conversationId, content, listingId = null) {
+  const body = { content };
+  if (listingId) body.listing_id = listingId;
   const res = await authFetch(`${API_BASE}/api/chat/${conversationId}/send/`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to send message');

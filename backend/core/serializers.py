@@ -32,6 +32,7 @@ from .storage_backends import (
     GAME_ICON_CACHE_SECONDS,
     cached_media_url,
 )
+from .permissions import add_profile_setup_token_claim, user_needs_profile_setup
 
 
 MAX_AUTO_DELIVERY_PAYLOAD_LENGTH = 100_000
@@ -213,10 +214,16 @@ class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=True)
     password = serializers.CharField(write_only=True, min_length=6)
     password2 = serializers.CharField(write_only=True, min_length=6)
+    accepted_terms = serializers.BooleanField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password2']
+        fields = ['username', 'email', 'password', 'password2', 'accepted_terms']
+
+    def validate_accepted_terms(self, value):
+        if not value:
+            raise serializers.ValidationError('You must accept the Terms of Service and Privacy Policy.')
+        return value
 
     def validate_email(self, value):
         value = User.objects.normalize_email(value.strip())
@@ -248,9 +255,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password2')
+        validated_data.pop('accepted_terms')
         try:
             with transaction.atomic():
-                return User.objects.create_user(**validated_data)
+                user = User.objects.create_user(is_active=False, **validated_data)
+                user.profile.has_accepted_terms = True
+                user.profile.email_verification_pending = True
+                user.profile.save(update_fields=['has_accepted_terms', 'email_verification_pending'])
+                return user
         except IntegrityError:
             errors = {}
             username = validated_data.get('username')
@@ -266,6 +278,10 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = 'email'
+
+    @classmethod
+    def get_token(cls, user):
+        return add_profile_setup_token_claim(super().get_token(user), user)
 
     def validate(self, attrs):
         email = User.objects.normalize_email(attrs.get('email', '').strip())
@@ -309,11 +325,16 @@ class UserSerializer(serializers.ModelSerializer):
     wallet_balance = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     username_changed_at = serializers.DateTimeField(source='profile.username_changed_at', read_only=True)
+    needs_setup = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'seller_status', 'is_seller', 'wallet_balance',
-                  'avatar_url', 'date_joined', 'username_changed_at']
+                  'avatar_url', 'date_joined', 'username_changed_at', 'needs_setup']
+
+    def get_needs_setup(self, obj):
+        """True when a Google-linked user has not yet accepted terms / chosen a username."""
+        return user_needs_profile_setup(obj)
 
     def get_wallet_balance(self, obj):
         wallet = getattr(obj, 'wallet', None)
@@ -407,6 +428,16 @@ class ChangePasswordSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError({'new_password': list(exc.messages)})
         return attrs
+
+
+class CompleteProfileSerializer(UpdateProfileSerializer):
+    """Set username and accept terms for Google-linked accounts."""
+    accepted_terms = serializers.BooleanField(required=True)
+
+    def validate_accepted_terms(self, value):
+        if not value:
+            raise serializers.ValidationError('You must accept the Terms of Service and Privacy Policy.')
+        return value
 
 
 class SellerApplicationSerializer(serializers.Serializer):
@@ -694,10 +725,14 @@ class MessageSerializer(serializers.ModelSerializer):
     sender_id = serializers.IntegerField(source='sender.id', read_only=True)
     is_mine = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
+    listing_reference = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ['id', 'sender_id', 'sender_name', 'content', 'image_url', 'is_read', 'is_mine', 'created_at']
+        fields = [
+            'id', 'sender_id', 'sender_name', 'content', 'image_url',
+            'listing_reference', 'is_read', 'is_mine', 'created_at',
+        ]
 
     def get_is_mine(self, obj):
         request = self.context.get('request')
@@ -716,6 +751,20 @@ class MessageSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(path)
             return path
         return None
+
+    def get_listing_reference(self, obj):
+        listing = getattr(obj, 'referenced_listing', None)
+        if not listing:
+            return None
+        return {
+            'id': listing.id,
+            'title': obj.referenced_listing_title or listing.title,
+            'price': str(
+                obj.referenced_listing_price
+                if obj.referenced_listing_price is not None
+                else listing.price
+            ),
+        }
 
 
 class ConversationListSerializer(serializers.ModelSerializer):
@@ -825,7 +874,7 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
     def get_messages(self, obj):
         msgs = self.context.get('messages')
         if msgs is None:
-            msgs = obj.messages.select_related('sender').all()
+            msgs = obj.messages.select_related('sender', 'referenced_listing').all()
         return MessageSerializer(msgs, many=True, context=self.context).data
 
 

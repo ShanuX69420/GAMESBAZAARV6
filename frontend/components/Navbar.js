@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount } from '@/lib/api';
 import { notificationOrderPath } from '@/lib/orderNumbers';
@@ -14,6 +14,7 @@ const NOTIF_POLL_INTERVAL_MS = 30000;
 const HEARTBEAT_INTERVAL_MS = 65000;
 const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
 const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
+const SETUP_ALLOWED_PATHS = new Set(['/complete-profile', '/terms-of-service', '/privacy-policy']);
 
 const NOTIF_ICONS = {
   new_order: '🛒',
@@ -30,6 +31,15 @@ export default function Navbar() {
   const prevUnread = useRef(0);
   const heartbeatInFlightRef = useRef(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const setupPending = Boolean(user?.needs_setup);
+
+  // Keep setup and its linked policies reachable while onboarding is pending.
+  useEffect(() => {
+    if (!loading && setupPending && !SETUP_ALLOWED_PATHS.has(pathname)) {
+      router.replace('/complete-profile');
+    }
+  }, [setupPending, loading, pathname, router]);
 
   // ── Search state ───────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,7 +64,7 @@ export default function Navbar() {
 
   // ── Chat unread ────────────────────────────────────────────────────────
   const fetchUnread = useCallback(() => {
-    if (!user) return;
+    if (!user || setupPending) return;
     getUnreadCount().then(d => {
       const count = d.unread_count || 0;
       setUnread(count);
@@ -63,10 +73,10 @@ export default function Navbar() {
         window.dispatchEvent(new Event('chatUpdate'));
       }
     }).catch(() => {});
-  }, [user]);
+  }, [user, setupPending]);
 
   useEffect(() => {
-    if (!user) { setUnread(0); prevUnread.current = 0; return; }
+    if (!user || setupPending) { setUnread(0); prevUnread.current = 0; return; }
     fetchUnread();
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchUnread();
@@ -82,11 +92,11 @@ export default function Navbar() {
       window.removeEventListener('chatUpdate', handleChatUpdate);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user, fetchUnread]);
+  }, [user, setupPending, fetchUnread]);
 
   // Heartbeat
   useEffect(() => {
-    if (!user) return;
+    if (!user || setupPending) return;
 
     const readLastHeartbeatAt = () => {
       try {
@@ -193,34 +203,34 @@ export default function Navbar() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
     };
-  }, [user]);
+  }, [user, setupPending]);
 
   // ── Notification polling ───────────────────────────────────────────────
   const fetchNotifCount = useCallback(() => {
-    if (!user) return;
+    if (!user || setupPending) return;
     getNotificationUnreadCount().then(d => {
       setNotifUnread(d.unread_count || 0);
     }).catch(() => {});
-  }, [user]);
+  }, [user, setupPending]);
 
   useEffect(() => {
-    if (!user) { setNotifUnread(0); return; }
+    if (!user || setupPending) { setNotifUnread(0); return; }
     fetchNotifCount();
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchNotifCount();
     }, NOTIF_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [user, fetchNotifCount]);
+  }, [user, setupPending, fetchNotifCount]);
 
   const loadNotifications = useCallback(async () => {
-    if (!user) return;
+    if (!user || setupPending) return;
     setNotifLoading(true);
     try {
       const data = await getNotifications({ limit: 15 });
       setNotifications(data.notifications || []);
       setNotifUnread(data.unread_count || 0);
     } catch { /* ignore */ } finally { setNotifLoading(false); }
-  }, [user]);
+  }, [user, setupPending]);
 
   function toggleNotifDropdown() {
     const newState = !notifOpen;
@@ -258,6 +268,13 @@ export default function Navbar() {
   // ── Search logic ──────────────────────────────────────────────────────
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (setupPending) {
+      setSearchQuery('');
+      setSearchResults(null);
+      setSearchOpen(false);
+      setSearchLoading(false);
+      return;
+    }
     const requestId = ++searchRequestRef.current;
     if (!searchQuery || searchQuery.length < 2) {
       setSearchResults(null);
@@ -279,7 +296,7 @@ export default function Navbar() {
       }
     }, SEARCH_DEBOUNCE_MS);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [searchQuery]);
+  }, [searchQuery, setupPending]);
 
   // Close all dropdowns on outside click
   useEffect(() => {
@@ -368,7 +385,7 @@ export default function Navbar() {
       <nav className="navbar">
         <div className="container navbar-inner">
           {/* ── Left: Logo ── */}
-          <Link href="/" className="navbar-logo" aria-label="GamesBazaar home">
+          <Link href={setupPending ? '/complete-profile' : '/'} className="navbar-logo" aria-label="GamesBazaar home">
             <img
               src="/icons/icon-96x96.png"
               alt=""
@@ -380,6 +397,7 @@ export default function Navbar() {
           </Link>
 
           {/* ── Center: Desktop Search ── */}
+          {!setupPending && (
           <div className="navbar-search desktop-only" ref={searchRef}>
             <div className="navbar-search-form">
               <svg className="navbar-search-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
@@ -395,11 +413,18 @@ export default function Navbar() {
             </div>
             {renderSearchDropdown(false)}
           </div>
+          )}
 
           {/* ── Right: Nav actions ── */}
           <div className="navbar-actions">
             {!loading && (
               user ? (
+                setupPending ? (
+                  <div className="navbar-auth-links">
+                    <Link href="/complete-profile" className="nav-btn-primary">Complete Setup</Link>
+                    <button type="button" className="nav-quick-link setup-logout-button" onClick={logout}>Logout</button>
+                  </div>
+                ) : (
                 <>
                   {/* Desktop-only quick links */}
                   <div className="navbar-quick-links desktop-only">
@@ -543,6 +568,7 @@ export default function Navbar() {
                     )}
                   </div>
                 </>
+                )
               ) : (
                 <div className="navbar-auth-links">
                   <Link href="/login" className="nav-quick-link">Login</Link>
@@ -555,6 +581,7 @@ export default function Navbar() {
       </nav>
 
       {/* ── Mobile Search Bar ── */}
+      {!setupPending && (
       <div className="mobile-search-bar" ref={mobileSearchRef}>
         <div className="container">
           <div className="mobile-search-wrapper">
@@ -572,6 +599,7 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+      )}
     </>
   );
 }

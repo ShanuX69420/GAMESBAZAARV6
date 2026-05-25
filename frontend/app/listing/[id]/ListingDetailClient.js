@@ -425,6 +425,9 @@ export default function ListingDetailClient({ initialListing = null }) {
                 sellerName={listing.seller_name}
                 sellerAvatarUrl={listing.seller_avatar_url}
                 sellerLastActive={listing.seller_last_active}
+                listingId={listing.id}
+                listingTitle={listing.title}
+                listingPrice={listing.price}
               />
             )}
 

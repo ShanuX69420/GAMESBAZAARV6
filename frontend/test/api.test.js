@@ -13,6 +13,8 @@ import {
   getAutoDeliveryStock,
   getAutoDeliveryStockItem,
   getConversations,
+  sendMessage,
+  startConversation,
   getHeldOrders,
   getMySupportTickets,
   getMyListings,
@@ -142,6 +144,39 @@ describe('API client helpers', () => {
       {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  });
+
+  it('sends listing references as structured chat data', async () => {
+    await startConversation(5, 'Is this available?', 91);
+    await sendMessage(12, 'I can buy today.', 91);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/chat/start/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 5,
+          message: 'Is this available?',
+          listing_id: 91,
+        }),
+      }
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/chat/12/send/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: 'I can buy today.',
+          listing_id: 91,
+        }),
       }
     );
   });

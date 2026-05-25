@@ -10,32 +10,47 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [emailUnverified, setEmailUnverified] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { user, loading, login } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace(user.is_seller ? '/dashboard' : '/');
+      if (user.needs_setup) {
+        router.replace('/complete-profile');
+      } else {
+        router.replace(user.is_seller ? '/dashboard' : '/');
+      }
     }
   }, [user, loading, router]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setEmailUnverified(false);
     setSubmitting(true);
     try {
       const userData = await login(email, password);
       router.push(userData?.is_seller ? '/dashboard' : '/');
     } catch (err) {
-      setError(err.message || 'Invalid credentials');
+      if (err.emailUnverified) {
+        setEmailUnverified(true);
+        setError(err.message || 'Please verify your email address before signing in.');
+      } else {
+        setError(err.message || 'Invalid credentials');
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
   function handleGoogleSuccess(userData) {
-    router.push(userData?.is_seller ? '/dashboard' : '/');
+    if (userData?.needs_setup) {
+      router.push('/complete-profile');
+    } else {
+      router.push(userData?.is_seller ? '/dashboard' : '/');
+    }
   }
 
   function handleGoogleError(message) {
@@ -57,7 +72,19 @@ export default function LoginPage() {
           <h1 className="auth-title">Welcome Back</h1>
           <p className="auth-subtitle">Sign in to your GamesBazaar account</p>
 
-          {error && <div className="alert alert-error">{error}</div>}
+          {error && (
+            <div className="alert alert-error">
+              {error}
+              {emailUnverified && (
+                <>
+                  {' '}
+                  <Link href={`/verify-email?email=${encodeURIComponent(email)}`} style={{ fontWeight: 600 }}>
+                    Verify now →
+                  </Link>
+                </>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">

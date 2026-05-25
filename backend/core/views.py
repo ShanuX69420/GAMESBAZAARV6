@@ -39,7 +39,7 @@ UNREAD_COUNT_CACHE_SECONDS = 5
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
     RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
-    UpdateProfileSerializer, ChangePasswordSerializer,
+    UpdateProfileSerializer, ChangePasswordSerializer, CompleteProfileSerializer,
     build_listing_filter_display_map, get_auto_delivery_inventory_lines,
     ListingSerializer, CreateListingSerializer,
     AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES, MAX_AUTO_DELIVERY_LINE_LENGTH,
@@ -70,6 +70,7 @@ from .services import (
     ALLOWED_IMAGE_CONTENT_TYPES,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
+    validate_chat_listing_reference,
     validate_chat_message_content,
     validate_uploaded_image,
     optimize_uploaded_image,
@@ -86,6 +87,11 @@ from .services import (
     send_password_reset_code,
     send_topup_request_received_email,
     send_withdraw_request_received_email,
+    generate_email_verification_code,
+    create_email_verification_token,
+    verify_email_verification_token,
+    consume_email_verification_token,
+    send_email_verification_code,
 )
 from .storage_backends import (
     AVATAR_CACHE_SECONDS,
@@ -97,6 +103,11 @@ from .storage_backends import (
     media_content_type,
 )
 from .authentication import enforce_trusted_origin
+from .permissions import (
+    HasCompletedProfile,
+    add_profile_setup_token_claim,
+    user_needs_profile_setup,
+)
 
 
 def request_origin_cache_scope(request):
@@ -715,7 +726,32 @@ class LoginView(ScopedPostThrottleMixin, TokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         enforce_trusted_origin(request)
-        response = super().post(request, *args, **kwargs)
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception as exc:
+            # Check if this is an inactive (unverified) user
+            from rest_framework.exceptions import AuthenticationFailed
+            if isinstance(exc, (AuthenticationFailed, InvalidToken)):
+                email = request.data.get('email', '').strip()
+                if email:
+                    from django.contrib.auth.hashers import check_password
+                    try:
+                        user = User.objects.select_related('profile').get(email__iexact=email)
+                        if (
+                            not user.is_active and
+                            user.profile.email_verification_pending and
+                            user.has_usable_password() and
+                            check_password(request.data.get('password', ''), user.password)
+                        ):
+                            return Response(
+                                {'detail': 'Please verify your email address before signing in.',
+                                 'email_unverified': True},
+                                status=status.HTTP_403_FORBIDDEN,
+                            )
+                    except User.DoesNotExist:
+                        pass
+            raise
+
         if response.status_code == status.HTTP_200_OK:
             access = response.data.get('access')
             refresh = response.data.get('refresh')
@@ -770,20 +806,120 @@ class LogoutView(APIView):
 
 
 class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
-    """POST /api/auth/register/ — Register a new user."""
+    """POST /api/auth/register/ — Register a new user (inactive until email verified)."""
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
     throttle_scope = 'auth_register'
 
     def create(self, request, *args, **kwargs):
+        enforce_trusted_origin(request)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # Send verification email
+        code = generate_email_verification_code()
+        token = create_email_verification_token(user.pk, code)
+        send_email_verification_code(user.email, user.username, code)
+
         return Response({
-            'message': 'Account created successfully.',
-            'user': UserSerializer(user).data,
+            'message': 'Account created. Please check your email for a verification code.',
+            'verification_token': token,
         }, status=status.HTTP_201_CREATED)
+
+
+class VerifyEmailView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/verify-email/ — Verify email with 6-digit code."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'email_verify'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        token = request.data.get('token', '').strip()
+        code = request.data.get('code', '').strip()
+
+        if not token or not code:
+            return Response(
+                {'error': 'Verification token and code are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = verify_email_verification_token(token, code)
+        if not payload:
+            return Response(
+                {'error': 'Invalid or expired verification code. Please request a new one.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            with db_transaction.atomic():
+                user = User.objects.select_for_update().get(pk=payload['user_id'])
+                profile = UserProfile.objects.select_for_update().get(user=user)
+
+                if user.is_active:
+                    if profile.email_verification_pending:
+                        profile.email_verification_pending = False
+                        profile.save(update_fields=['email_verification_pending'])
+                    consume_email_verification_token(token)
+                    return Response({'message': 'Email already verified. You can sign in.'})
+
+                if not profile.email_verification_pending:
+                    consume_email_verification_token(token)
+                    return Response(
+                        {'error': 'Invalid or expired verification code. Please request a new one.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                user.is_active = True
+                user.save(update_fields=['is_active'])
+                profile.email_verification_pending = False
+                profile.save(update_fields=['email_verification_pending'])
+        except (User.DoesNotExist, UserProfile.DoesNotExist):
+            consume_email_verification_token(token)
+            return Response({'error': 'Invalid token.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        consume_email_verification_token(token)
+
+        return Response({'message': 'Email verified successfully! You can now sign in.'})
+
+
+class ResendVerificationView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/resend-verification/ — Resend email verification code."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'email_resend'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        email = request.data.get('email', '').strip()
+        if not email:
+            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Always return the same shape to prevent user enumeration.
+        try:
+            user = User.objects.get(
+                email__iexact=email,
+                is_active=False,
+                profile__email_verification_pending=True,
+            )
+        except User.DoesNotExist:
+            # Return a dummy token so the shape is identical
+            import secrets as _secrets
+            return Response({
+                'message': 'If that email has a pending account, a new verification code has been sent.',
+                'verification_token': _secrets.token_urlsafe(32),
+            })
+
+        code = generate_email_verification_code()
+        token = create_email_verification_token(user.pk, code)
+        send_email_verification_code(user.email, user.username, code)
+
+        return Response({
+            'message': 'If that email has a pending account, a new verification code has been sent.',
+            'verification_token': token,
+        })
 
 
 class GoogleAuthLinkError(Exception):
@@ -893,8 +1029,19 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
 
         # Issue JWT cookies
         from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken.for_user(user)
-        response = Response({'message': 'Logged in with Google.'})
+        needs_setup = user_needs_profile_setup(user)
+        refresh = add_profile_setup_token_claim(
+            RefreshToken.for_user(user),
+            user,
+            needs_setup=needs_setup,
+        )
+        response_data = {'message': 'Logged in with Google.'}
+
+        # Check if the user still needs to set up their profile
+        if needs_setup:
+            response_data['needs_setup'] = True
+
+        response = Response(response_data)
         set_jwt_auth_cookies(
             response,
             access=str(refresh.access_token),
@@ -923,7 +1070,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                 if social_account.email != google_email:
                     social_account.email = google_email
                     social_account.save(update_fields=['email', 'updated_at'])
-                return social_account.user
+                return cls._claim_pending_google_registration(social_account.user)
 
             matching_users = list(
                 User.objects.select_for_update()
@@ -935,12 +1082,15 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                     'More than one account uses this email. Please sign in with your password or contact support.'
                 )
 
-            user = matching_users[0] if matching_users else cls._create_google_user(
-                google_email=google_email,
-                google_name=google_name,
-                re_module=re_module,
-                secrets_module=secrets_module,
-            )
+            if matching_users:
+                user = cls._claim_pending_google_registration(matching_users[0])
+            else:
+                user = cls._create_google_user(
+                    google_email=google_email,
+                    google_name=google_name,
+                    re_module=re_module,
+                    secrets_module=secrets_module,
+                )
 
             SocialAccount.objects.create(
                 user=user,
@@ -949,6 +1099,30 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                 email=google_email,
             )
             return user
+
+    @staticmethod
+    def _claim_pending_google_registration(user):
+        """Safely reclaim an unverified email signup proven by Google ownership."""
+        user = User.objects.select_for_update().get(pk=user.pk)
+        if user.is_active:
+            return user
+
+        try:
+            profile = UserProfile.objects.select_for_update().get(user=user)
+        except UserProfile.DoesNotExist:
+            return user
+        if not profile.email_verification_pending:
+            return user
+
+        # The unverified password and consent may have been supplied by a third
+        # party. Keep neither after Google proves control of the email address.
+        user.set_unusable_password()
+        user.is_active = True
+        user.save(update_fields=['password', 'is_active'])
+        profile.email_verification_pending = False
+        profile.has_accepted_terms = False
+        profile.save(update_fields=['email_verification_pending', 'has_accepted_terms'])
+        return user
 
     @staticmethod
     def _create_google_user(*, google_email, google_name, re_module, secrets_module):
@@ -973,6 +1147,66 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                 continue
 
         raise IntegrityError('Could not create a unique username for Google sign-in.')
+
+
+class CompleteProfileView(ScopedPostThrottleMixin, APIView):
+    """POST /api/auth/complete-profile/ — Set username and accept terms (Google sign-up)."""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'complete_profile'
+
+    def post(self, request):
+        if not request.user.social_accounts.filter(
+            provider=SocialAccount.PROVIDER_GOOGLE,
+        ).exists():
+            return Response(
+                {'error': 'Profile setup is only available for Google sign-ups.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            with db_transaction.atomic():
+                profile = UserProfile.objects.select_for_update().get(user=request.user)
+                if profile.has_accepted_terms:
+                    return Response(
+                        {'error': 'Profile setup already completed.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                serializer = CompleteProfileSerializer(
+                    data=request.data,
+                    context={'user': request.user, 'profile': profile},
+                )
+                serializer.is_valid(raise_exception=True)
+
+                new_username = serializer.validated_data['username']
+                update_fields = ['has_accepted_terms']
+                if new_username != request.user.username:
+                    request.user.username = new_username
+                    request.user.save(update_fields=['username'])
+                    profile.username_changed_at = timezone.now()
+                    update_fields.append('username_changed_at')
+                profile.has_accepted_terms = True
+                profile.save(update_fields=update_fields)
+        except IntegrityError:
+            return Response(
+                {'username': ['This username is already taken.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.select_related('profile').get(pk=request.user.pk)
+        response = Response({
+            'message': 'Profile setup completed.',
+            'user': UserSerializer(user, context={'request': request}).data,
+        })
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = add_profile_setup_token_claim(RefreshToken.for_user(user), user)
+        set_jwt_auth_cookies(
+            response,
+            access=str(refresh.access_token),
+            refresh=str(refresh),
+        )
+        return response
+
 
 class RequestPasswordResetView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/password/reset-request/ — Send reset code to email."""
@@ -1070,7 +1304,7 @@ class MeView(APIView):
 
 class UpdateProfileView(APIView):
     """PUT /api/auth/profile/ — Update username (90-day cooldown enforced)."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def put(self, request):
         try:
@@ -1105,7 +1339,7 @@ class UpdateProfileView(APIView):
 
 class RequestEmailChangeView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/email/request-change/ — Send verification codes to both emails."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'email_change_request'
 
     def post(self, request):
@@ -1134,7 +1368,7 @@ class RequestEmailChangeView(ScopedPostThrottleMixin, APIView):
 
 class ConfirmEmailChangeView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/email/confirm-change/ — Verify code and update email."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'email_change_confirm'
 
     def post(self, request):
@@ -1184,7 +1418,7 @@ class ConfirmEmailChangeView(ScopedPostThrottleMixin, APIView):
 
 class ChangePasswordView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/password/ — Change password."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'password_change'
 
     def post(self, request):
@@ -1212,7 +1446,7 @@ class ChangePasswordView(ScopedPostThrottleMixin, APIView):
 
         # Re-issue JWT cookies so the session stays valid
         from rest_framework_simplejwt.tokens import RefreshToken
-        refresh = RefreshToken.for_user(user)
+        refresh = add_profile_setup_token_claim(RefreshToken.for_user(user), user)
         response = Response({'message': 'Password changed successfully.'})
         set_jwt_auth_cookies(
             response,
@@ -1226,7 +1460,7 @@ class AvatarUploadView(ScopedPostThrottleMixin, APIView):
     """POST /api/auth/avatar/ — Upload profile picture.
        DELETE /api/auth/avatar/ — Remove profile picture.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'avatar_upload'
 
     def post(self, request):
@@ -1265,7 +1499,7 @@ class AvatarUploadView(ScopedPostThrottleMixin, APIView):
 
 class SellerApplyView(ScopedPostThrottleMixin, APIView):
     """POST /api/seller/apply/ — Submit a seller application."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'seller_apply'
 
     def post(self, request):
@@ -1289,7 +1523,7 @@ class SellerApplyView(ScopedPostThrottleMixin, APIView):
 
 class SellerStatusView(APIView):
     """GET /api/seller/status/ — Check seller application status."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         profile = request.user.profile
@@ -1305,7 +1539,7 @@ class SellerStatusView(APIView):
 class ListingCreateView(ScopedPostThrottleMixin, generics.CreateAPIView):
     """POST /api/listings/ — Create a listing (sellers only)."""
     serializer_class = CreateListingSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'listing_create'
 
     def perform_create(self, serializer):
@@ -1318,7 +1552,7 @@ class ListingCreateView(ScopedPostThrottleMixin, generics.CreateAPIView):
 class MyListingsView(generics.ListAPIView):
     """GET /api/listings/mine/ — Get current user's listings."""
     serializer_class = ListingSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get_queryset(self):
         return Listing.objects.filter(
@@ -1435,7 +1669,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
+        return [HasCompletedProfile()]
 
     def get(self, request, pk):
         listings_qs = Listing.objects.select_related(
@@ -1484,7 +1718,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
 
 class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
     """POST /api/listings/{id}/restock/ - Append automated delivery stock."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'listing_restock'
 
     def post(self, request, pk):
@@ -1540,7 +1774,7 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
     PUT   /api/listings/{id}/stock/ — Update specific items by index.
     DELETE /api/listings/{id}/stock/ — Remove items by index.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_methods = {'PUT', 'DELETE'}
     throttle_scope = 'listing_restock'
 
@@ -1748,7 +1982,7 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
 
 class ConversationListView(APIView):
     """GET /api/chat/ — List all conversations for current user."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         conversations_qs = Conversation.objects.filter(participants=request.user)
@@ -1798,7 +2032,7 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/start/ — Find or create a conversation with a user.
     Body: {"user_id": 5, "message": "Hi, is this still available?"}
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'chat_start'
 
     def post(self, request):
@@ -1825,6 +2059,12 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
             return Response({'error': 'Cannot chat with yourself.'}, status=400)
 
         other_user = get_object_or_404(User, id=other_user_id)
+        referenced_listing, listing_error = validate_chat_listing_reference(
+            request.data.get('listing_id'),
+            seller_id=other_user.id,
+        )
+        if listing_error:
+            return Response({'error': listing_error}, status=400)
 
         conversation, _ = get_or_create_private_conversation(request.user, other_user)
 
@@ -1834,6 +2074,9 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
                 conversation=conversation,
                 sender=request.user,
                 content=initial_message,
+                referenced_listing=referenced_listing,
+                referenced_listing_title=referenced_listing.title if referenced_listing else '',
+                referenced_listing_price=referenced_listing.price if referenced_listing else None,
             )
             conversation.save()  # Update updated_at
             broadcast_chat_message(message, request)
@@ -1844,7 +2087,7 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
 
 class ConversationDetailView(APIView):
     """GET /api/chat/{id}/ — Get conversation with messages."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request, pk):
         conversation = get_object_or_404(
@@ -1865,7 +2108,9 @@ class ConversationDetailView(APIView):
             default_limit=DEFAULT_MESSAGE_PAGE_SIZE,
             max_limit=MAX_MESSAGE_PAGE_SIZE,
         )
-        messages_qs = conversation.messages.select_related('sender').order_by('-pk')
+        messages_qs = conversation.messages.select_related(
+            'sender', 'referenced_listing'
+        ).order_by('-pk')
         total_count = messages_qs.count()
         before_id = None
         if request.query_params.get('before_id') not in (None, ''):
@@ -1915,7 +2160,7 @@ class ConversationDetailView(APIView):
 
 class ChatWebSocketTicketView(APIView):
     """POST /api/chat/{id}/ws-ticket/ — Issue a short-lived chat WebSocket ticket."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'chat_ws_ticket'
 
@@ -1929,7 +2174,7 @@ class ChatWebSocketTicketView(APIView):
 
 class SendMessageView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/{id}/send/ — Send a message in a conversation."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'chat_message'
 
     def post(self, request, pk):
@@ -1940,11 +2185,20 @@ class SendMessageView(ScopedPostThrottleMixin, APIView):
         content, validation_error = validate_chat_message_content(request.data.get('content', ''))
         if validation_error:
             return Response({'error': validation_error}, status=400)
+        referenced_listing, listing_error = validate_chat_listing_reference(
+            request.data.get('listing_id'),
+            conversation_id=conversation.id,
+        )
+        if listing_error:
+            return Response({'error': listing_error}, status=400)
 
         message = Message.objects.create(
             conversation=conversation,
             sender=request.user,
             content=content,
+            referenced_listing=referenced_listing,
+            referenced_listing_title=referenced_listing.title if referenced_listing else '',
+            referenced_listing_price=referenced_listing.price if referenced_listing else None,
         )
         conversation.save()  # Update updated_at
 
@@ -1954,7 +2208,7 @@ class SendMessageView(ScopedPostThrottleMixin, APIView):
 
 class SendImageView(ScopedPostThrottleMixin, APIView):
     """POST /api/chat/{id}/send-image/ — Send an image message."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'chat_upload'
 
     def post(self, request, pk):
@@ -2018,7 +2272,7 @@ class ChatMessageImageView(APIView):
 
 class UnreadCountView(APIView):
     """GET /api/chat/unread/ — Count of conversations with unread messages."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         cache_key = f'chat-unread:v1:{request.user.pk}'
@@ -2037,7 +2291,7 @@ class UnreadCountView(APIView):
 
 class HeartbeatView(ScopedPostThrottleMixin, APIView):
     """POST /api/heartbeat/ — Update user's last_active timestamp."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'heartbeat'
 
     def post(self, request):
@@ -2057,7 +2311,7 @@ class HeartbeatView(ScopedPostThrottleMixin, APIView):
 
 class WalletView(APIView):
     """GET /api/wallet/ — Get wallet balance + recent transactions."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
@@ -2082,7 +2336,7 @@ class WalletView(APIView):
 
 class WalletTransactionsView(APIView):
     """GET /api/wallet/transactions/ — Full transaction history."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
@@ -2102,7 +2356,7 @@ class WalletTransactionsView(APIView):
 
 class HeldOrdersView(APIView):
     """GET /api/wallet/held-orders/ — List orders with buyer protection holds."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         held_orders_qs = Order.objects.filter(
@@ -2158,7 +2412,7 @@ class TopUpRequestView(ScopedPostThrottleMixin, APIView):
     """POST /api/wallet/top-up/ — Create a top-up request.
     GET /api/wallet/top-up/ — List my top-up requests.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'topup_request'
 
     def get(self, request):
@@ -2274,7 +2528,7 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
     """POST /api/wallet/withdraw/ — Create a withdrawal request.
     GET /api/wallet/withdraw/ — List my withdrawal requests.
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'withdraw_request'
 
     def get(self, request):
@@ -2371,7 +2625,7 @@ def get_order_by_reference_or_404(queryset, order_ref, **filters):
 
 class BuyListingView(APIView):
     """POST /api/orders/buy/ — Purchase a listing. Deducts from buyer wallet (escrow)."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request):
         serializer = BuyListingSerializer(data=request.data)
@@ -2517,7 +2771,7 @@ class MyOrdersView(APIView):
     """GET /api/orders/mine/ — Orders where I'm the buyer.
     Query params: status, search, date_from, date_to, limit, offset
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def _apply_filters(self, request, orders_qs):
         status_filter = request.query_params.get('status', '').strip()
@@ -2594,7 +2848,7 @@ class MySalesView(APIView):
     """GET /api/orders/sales/ — Orders where I'm the seller.
     Query params: status, search, date_from, date_to, limit, offset
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def _apply_filters(self, request, orders_qs):
         status_filter = request.query_params.get('status', '').strip()
@@ -2676,7 +2930,7 @@ class MySalesView(APIView):
 
 class OrderDetailView(APIView):
     """GET /api/orders/<id>/ — Get order detail."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request, order_ref):
         order = get_order_by_reference_or_404(
@@ -2702,7 +2956,7 @@ class OrderDetailView(APIView):
 
 class DeliverOrderView(APIView):
     """POST /api/orders/<id>/deliver/ — Seller marks order as delivered."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request, order_ref):
         serializer = DeliverOrderSerializer(data=request.data)
@@ -2738,7 +2992,7 @@ class DeliverOrderView(APIView):
 
 class ConfirmOrderView(APIView):
     """POST /api/orders/<id>/confirm/ — Buyer confirms delivery. Releases funds to seller."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request, order_ref):
         with db_transaction.atomic():
@@ -2775,7 +3029,7 @@ class ConfirmOrderView(APIView):
 
 class DisputeOrderView(APIView):
     """POST /api/orders/<id>/dispute/ — Buyer opens a dispute."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request, order_ref):
         serializer = DisputeOrderSerializer(data=request.data)
@@ -2900,7 +3154,7 @@ class ResolveDisputeView(APIView):
 
 class RefundOrderView(APIView):
     """POST /api/orders/<id>/refund/ — Seller voluntarily refunds the buyer."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request, order_ref):
         with db_transaction.atomic():
@@ -2984,7 +3238,7 @@ class RefundOrderView(APIView):
 
 class CreateReviewView(APIView):
     """POST /api/reviews/ — Submit a review for a completed order."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request):
         serializer = CreateReviewSerializer(data=request.data)
@@ -3031,7 +3285,7 @@ class CreateReviewView(APIView):
 
 class UpdateReviewView(APIView):
     """PUT /api/reviews/<id>/ — Buyer edits their own review."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def put(self, request, pk):
         serializer = UpdateReviewSerializer(data=request.data)
@@ -3057,7 +3311,7 @@ class UpdateReviewView(APIView):
 
 class ReplyToReviewView(APIView):
     """POST /api/reviews/<id>/reply/ — Seller replies once to a review."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request, pk):
         serializer = ReplyToReviewSerializer(data=request.data)
@@ -3294,7 +3548,7 @@ class SearchView(APIView):
 
 class NotificationListView(APIView):
     """GET /api/notifications/ — List user's notifications (paginated)."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         qs = Notification.objects.filter(recipient=request.user).select_related('order')
@@ -3315,7 +3569,7 @@ class NotificationListView(APIView):
 
 class NotificationMarkReadView(APIView):
     """POST /api/notifications/read/ — Mark notification(s) as read."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def post(self, request):
         notification_id = request.data.get('notification_id')
@@ -3342,7 +3596,7 @@ class NotificationMarkReadView(APIView):
 
 class NotificationUnreadCountView(APIView):
     """GET /api/notifications/unread-count/ — Unread notification count."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         cache_key = f'notif-unread:v1:{request.user.pk}'
@@ -3359,7 +3613,7 @@ class NotificationUnreadCountView(APIView):
 
 class SellerDashboardView(APIView):
     """GET /api/seller/dashboard/ — Comprehensive seller analytics dashboard."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         profile = request.user.profile
@@ -3534,7 +3788,7 @@ class SellerDashboardView(APIView):
 
 class CreateReportView(ScopedPostThrottleMixin, APIView):
     """POST /api/reports/ — Submit a report/flag for a listing or user."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
     throttle_scope = 'create_report'
 
     def post(self, request):
@@ -3593,7 +3847,7 @@ class CreateReportView(ScopedPostThrottleMixin, APIView):
 
 class MyReportsView(APIView):
     """GET /api/reports/mine/ — List reports submitted by the current user."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         limit, offset = get_pagination_params(
@@ -3647,7 +3901,7 @@ class CreateSupportTicketView(ScopedPostThrottleMixin, APIView):
 
 class MySupportTicketsView(APIView):
     """GET /api/support/mine/ — List support tickets submitted by the current user."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasCompletedProfile]
 
     def get(self, request):
         limit, offset = get_pagination_params(

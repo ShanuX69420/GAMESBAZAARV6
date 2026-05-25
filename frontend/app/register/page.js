@@ -13,6 +13,7 @@ export default function RegisterPage() {
     password: '',
     password2: '',
   });
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { user, loading, register } = useAuth();
@@ -20,7 +21,11 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/');
+      if (user.needs_setup) {
+        router.replace('/complete-profile');
+      } else {
+        router.replace('/');
+      }
     }
   }, [user, loading, router]);
 
@@ -33,8 +38,19 @@ export default function RegisterPage() {
     setError('');
     setSubmitting(true);
     try {
-      await register(formData.username, formData.email, formData.password, formData.password2);
-      router.push('/login?registered=true');
+      const data = await register(
+        formData.username,
+        formData.email,
+        formData.password,
+        formData.password2,
+        acceptedTerms
+      );
+      // Redirect to verify-email page with token and email
+      const params = new URLSearchParams({
+        token: data.verification_token,
+        email: formData.email,
+      });
+      router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -43,7 +59,11 @@ export default function RegisterPage() {
   }
 
   function handleGoogleSuccess(userData) {
-    router.push(userData?.is_seller ? '/dashboard' : '/');
+    if (userData?.needs_setup) {
+      router.push('/complete-profile');
+    } else {
+      router.push(userData?.is_seller ? '/dashboard' : '/');
+    }
   }
 
   function handleGoogleError(message) {
@@ -120,7 +140,23 @@ export default function RegisterPage() {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
+            <div className="terms-checkbox-group">
+              <input
+                type="checkbox"
+                id="register-accept-terms"
+                className="terms-checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+              />
+              <label htmlFor="register-accept-terms" className="terms-label">
+                I agree to the{' '}
+                <Link href="/terms-of-service" target="_blank">Terms of Service</Link>
+                {' '}and{' '}
+                <Link href="/privacy-policy" target="_blank">Privacy Policy</Link>
+              </label>
+            </div>
+
+            <button type="submit" className="btn btn-primary btn-full" disabled={submitting || !acceptedTerms}>
               {submitting ? 'Creating Account...' : 'Create Account'}
             </button>
           </form>

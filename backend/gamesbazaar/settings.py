@@ -261,13 +261,16 @@ REST_FRAMEWORK = {
         'core.authentication.CookieJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'core.permissions.HasCompletedProfile',
     ],
     'DEFAULT_PAGINATION_CLASS': None,
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '10/min',
         'auth_refresh': '30/min',
         'auth_register': '5/hour',
+        'email_verify': '10/hour',
+        'email_resend': '5/hour',
+        'complete_profile': '10/hour',
         'password_change': '10/hour',
         'password_reset_request': '5/hour',
         'password_reset_confirm': '10/hour',

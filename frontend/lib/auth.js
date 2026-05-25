@@ -71,7 +71,9 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || 'Login failed');
+      const err = new Error(data.detail || 'Login failed');
+      err.emailUnverified = data.email_unverified || false;
+      throw err;
     }
     return fetchUser();
   }, [fetchUser]);
@@ -87,15 +89,20 @@ export function AuthProvider({ children }) {
     if (!res.ok) {
       throw new Error(data.error || 'Google sign-in failed');
     }
+    // If user needs to complete profile setup (Google sign-up)
+    if (data.needs_setup) {
+      const userData = await fetchUser();
+      return { ...userData, needs_setup: true };
+    }
     return fetchUser();
   }, [fetchUser]);
 
-  const register = useCallback(async (username, email, password, password2) => {
+  const register = useCallback(async (username, email, password, password2, acceptedTerms) => {
     const res = await fetch(`${API_BASE}/api/auth/register/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, password, password2 }),
+      body: JSON.stringify({ username, email, password, password2, accepted_terms: acceptedTerms }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -103,8 +110,25 @@ export function AuthProvider({ children }) {
       const errors = Object.values(data).flat();
       throw new Error(errors[0] || 'Registration failed');
     }
+    // Return verification token and message (user is inactive until verified)
     return data;
   }, []);
+
+  const completeProfile = useCallback(async (username, acceptedTerms) => {
+    const res = await fetch(`${API_BASE}/api/auth/complete-profile/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, accepted_terms: acceptedTerms }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const errors = Object.values(data).flat();
+      throw new Error(errors[0] || 'Profile setup failed');
+    }
+    // Refresh user data after completing profile
+    return fetchUser();
+  }, [fetchUser]);
 
   const value = useMemo(() => ({
     user,
@@ -115,7 +139,8 @@ export function AuthProvider({ children }) {
     logout,
     getToken,
     fetchUser,
-  }), [user, loading, login, googleLogin, register, logout, getToken, fetchUser]);
+    completeProfile,
+  }), [user, loading, login, googleLogin, register, logout, getToken, fetchUser, completeProfile]);
 
   return (
     <AuthContext.Provider value={value}>

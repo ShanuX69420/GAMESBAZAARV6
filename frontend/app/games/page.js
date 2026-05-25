@@ -1,8 +1,10 @@
+import { Fragment } from 'react';
 import { fetchGames } from '@/lib/api';
 import GameItem from '@/components/GameItem';
 import JsonLd from '@/components/JsonLd';
 import Link from 'next/link';
 import { breadcrumbJsonLd, collectionPageJsonLd, createPublicMetadata } from '@/lib/seo';
+import { groupGamesByAlphabet } from '@/lib/gameGroups';
 
 export const metadata = {
   ...createPublicMetadata({
@@ -19,6 +21,10 @@ export default async function AllGamesPage() {
   } catch (error) {
     console.error('Failed to fetch games:', error);
   }
+
+  const grouped = groupGamesByAlphabet(games);
+  const allLetters = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+  const activeLetters = new Set(grouped.map((g) => g.letter));
 
   return (
     <div className="container">
@@ -45,11 +51,38 @@ export default async function AllGamesPage() {
       </div>
 
       {games.length > 0 ? (
-        <div className="games-grid">
-          {[...games].sort((a, b) => a.name.localeCompare(b.name)).map((game) => (
-            <GameItem key={game.id} game={game} />
-          ))}
-        </div>
+        <>
+          {/* Alphabet quick-jump nav */}
+          <nav className="alpha-nav" aria-label="Jump to letter">
+            {allLetters.map((letter) => (
+              <a
+                key={letter}
+                href={activeLetters.has(letter) ? `#section-${letter === '#' ? 'other' : letter}` : undefined}
+                className={`alpha-nav-item ${activeLetters.has(letter) ? 'active' : 'disabled'}`}
+                aria-disabled={!activeLetters.has(letter)}
+              >
+                {letter}
+              </a>
+            ))}
+          </nav>
+
+          {/* Single continuous list with inline letter dividers */}
+          <div className="games-grid games-grid-alpha">
+            {grouped.map(({ letter, games: sectionGames }) => (
+              <Fragment key={letter}>
+                <div
+                  className="alpha-divider"
+                  id={`section-${letter === '#' ? 'other' : letter}`}
+                >
+                  <span className="alpha-divider-letter">{letter}</span>
+                </div>
+                {sectionGames.map((game) => (
+                  <GameItem key={game.id} game={game} />
+                ))}
+              </Fragment>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="empty-state">
           <div className="empty-state-icon">🎮</div>

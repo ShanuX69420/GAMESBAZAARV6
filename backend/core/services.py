@@ -19,7 +19,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
-from .models import Notification, Order, PlatformLedgerEntry, Wallet, WalletTransaction
+from .models import Listing, Notification, Order, PlatformLedgerEntry, Wallet, WalletTransaction
 
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
@@ -32,6 +32,7 @@ MAX_CHAT_MESSAGE_LENGTH = 2000
 CHAT_MESSAGE_EMPTY_ERROR = 'Message cannot be empty.'
 CHAT_MESSAGE_NOT_TEXT_ERROR = 'Message must be text.'
 CHAT_MESSAGE_TOO_LONG_ERROR = f'Message cannot be longer than {MAX_CHAT_MESSAGE_LENGTH} characters.'
+CHAT_LISTING_REFERENCE_INVALID_ERROR = 'Listing reference is invalid for this conversation.'
 CHAT_WS_MESSAGE_LIMIT = 20
 CHAT_WS_MESSAGE_WINDOW_SECONDS = 60
 CHAT_WS_RATE_LIMIT_CACHE_PREFIX = 'chat-ws-rate'
@@ -897,6 +898,35 @@ def validate_chat_message_content(content, *, allow_empty=False):
     return text, None
 
 
+def validate_chat_listing_reference(listing_id, *, seller_id=None, conversation_id=None):
+    """Resolve a listing reference only when it belongs in this conversation."""
+    if listing_id in (None, ''):
+        return None, None
+    if isinstance(listing_id, bool):
+        return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
+    try:
+        listing_id = int(listing_id)
+    except (TypeError, ValueError):
+        return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
+    if listing_id <= 0:
+        return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
+
+    # References can be created only from listings visible to buyers. Messages
+    # retain their snapshot after the listing later becomes unavailable.
+    listings = Listing.objects.filter(pk=listing_id, status='active')
+    if seller_id is not None:
+        listings = listings.filter(seller_id=seller_id)
+    elif conversation_id is not None:
+        listings = listings.filter(seller__conversations__pk=conversation_id)
+    else:
+        return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
+
+    listing = listings.first()
+    if listing is None:
+        return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
+    return listing, None
+
+
 def consume_chat_ws_message_quota(user_id, conversation_id):
     bucket = int(time() // CHAT_WS_MESSAGE_WINDOW_SECONDS)
     cache_key = (
@@ -1178,6 +1208,55 @@ def send_password_reset_code(user, code):
             'username': user.username,
             'code': code,
             'message_body': 'Use the code below to reset your password.',
+        },
+        fail_silently=False,
+    )
+
+
+# ── Email verification (registration) ───────────────────────────────────────
+
+EMAIL_VERIFICATION_CODE_MAX_AGE = 15 * 60  # 15 minutes
+EMAIL_VERIFICATION_CACHE_PREFIX = 'email-verify'
+
+
+def generate_email_verification_code():
+    """Generate a 6-digit verification code."""
+    return _generate_six_digit_code()
+
+
+def create_email_verification_token(user_id, code):
+    """Create an opaque email-verification challenge ID stored server-side."""
+    return _create_cached_challenge(
+        EMAIL_VERIFICATION_CACHE_PREFIX,
+        code,
+        {'user_id': user_id},
+        EMAIL_VERIFICATION_CODE_MAX_AGE,
+    )
+
+
+def verify_email_verification_token(token, code):
+    return _verify_cached_challenge(
+        EMAIL_VERIFICATION_CACHE_PREFIX,
+        token,
+        code,
+        EMAIL_VERIFICATION_CODE_MAX_AGE,
+    )
+
+
+def consume_email_verification_token(token):
+    _delete_cached_challenge(EMAIL_VERIFICATION_CACHE_PREFIX, token)
+
+
+def send_email_verification_code(email, username, code):
+    """Send the email verification code to the user's email."""
+    _send_html_email(
+        email,
+        subject='GamesBazaar — Verify Your Email',
+        template_name='email/verification_code.html',
+        context={
+            'username': username,
+            'code': code,
+            'message_body': 'Use the code below to verify your email address and activate your account.',
         },
         fail_silently=False,
     )

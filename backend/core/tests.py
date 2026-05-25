@@ -22,6 +22,7 @@ from django.db import connections, IntegrityError, transaction as db_transaction
 from PIL import Image
 from django.http import Http404
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import resolve
 from django.utils import timezone
 from rest_framework import permissions
@@ -49,11 +50,13 @@ from .serializers import (
     MAX_AUTO_DELIVERY_LINES,
     MAX_DELIVERY_NOTE_LENGTH,
     MAX_DISPUTE_REASON_LENGTH,
+    RegisterSerializer,
     WalletTransactionSerializer,
 )
 from .services import (
     AUTO_CONFIRM_ORDER_AFTER,
     BUYER_PROTECTION_HOLD,
+    create_email_verification_token,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
     optimize_uploaded_image,
@@ -2958,6 +2961,7 @@ class GoogleAuthTests(TestCase):
         self.assertEqual(user.username, 'New_Player')
         self.assertFalse(user.has_usable_password())
         self.assertIn(settings.JWT_AUTH_COOKIE_ACCESS, response.cookies)
+        self.assertTrue(response.data['needs_setup'])
         self.assertTrue(
             SocialAccount.objects.filter(
                 user=user,
@@ -2966,6 +2970,133 @@ class GoogleAuthTests(TestCase):
                 email='new.player@example.com',
             ).exists()
         )
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_auth_claims_pending_password_registration_safely(self, verify_google_token):
+        pending_user = User.objects.create_user(
+            username='reserved_by_attacker',
+            email='claimed-owner@example.com',
+            password='AttackerPassphrase42!',
+            is_active=False,
+        )
+        pending_user.profile.has_accepted_terms = True
+        pending_user.profile.email_verification_pending = True
+        pending_user.profile.save(update_fields=['has_accepted_terms', 'email_verification_pending'])
+        verify_google_token.return_value = {
+            'sub': 'verified-owner-google-sub',
+            'email': 'claimed-owner@example.com',
+            'email_verified': True,
+            'name': 'Verified Owner',
+        }
+
+        response = self.post_google({'credential': 'verified-owner-token'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['needs_setup'])
+        pending_user.refresh_from_db()
+        pending_user.profile.refresh_from_db()
+        self.assertTrue(pending_user.is_active)
+        self.assertFalse(pending_user.has_usable_password())
+        self.assertFalse(pending_user.profile.email_verification_pending)
+        self.assertFalse(pending_user.profile.has_accepted_terms)
+        self.assertTrue(
+            SocialAccount.objects.filter(
+                user=pending_user,
+                provider=SocialAccount.PROVIDER_GOOGLE,
+                uid='verified-owner-google-sub',
+            ).exists()
+        )
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_auth_repairs_already_linked_pending_registration(self, verify_google_token):
+        pending_user = User.objects.create_user(
+            username='already_linked_pending',
+            email='already-linked@example.com',
+            password='AttackerPassphrase42!',
+            is_active=False,
+        )
+        pending_user.profile.has_accepted_terms = True
+        pending_user.profile.email_verification_pending = True
+        pending_user.profile.save(update_fields=['has_accepted_terms', 'email_verification_pending'])
+        SocialAccount.objects.create(
+            user=pending_user,
+            provider=SocialAccount.PROVIDER_GOOGLE,
+            uid='already-linked-google-sub',
+            email=pending_user.email,
+        )
+        verify_google_token.return_value = {
+            'sub': 'already-linked-google-sub',
+            'email': 'already-linked@example.com',
+            'email_verified': True,
+            'name': 'Linked Owner',
+        }
+
+        response = self.post_google({'credential': 'already-linked-owner-token'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['needs_setup'])
+        pending_user.refresh_from_db()
+        pending_user.profile.refresh_from_db()
+        self.assertTrue(pending_user.is_active)
+        self.assertFalse(pending_user.has_usable_password())
+        self.assertFalse(pending_user.profile.email_verification_pending)
+        self.assertFalse(pending_user.profile.has_accepted_terms)
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_new_google_account_cannot_use_account_features_until_setup_is_complete(
+        self,
+        verify_google_token,
+    ):
+        verify_google_token.return_value = {
+            'sub': 'pending-setup-google-sub',
+            'email': 'pending-setup@example.com',
+            'email_verified': True,
+            'name': 'Pending Setup',
+        }
+
+        login_response = self.post_google({'credential': 'pending-setup-token'})
+
+        self.assertEqual(login_response.status_code, 200)
+        self.assertTrue(login_response.data['needs_setup'])
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        self.assertTrue(
+            AccessToken(
+                login_response.cookies[settings.JWT_AUTH_COOKIE_ACCESS].value
+            )['needs_setup']
+        )
+
+        for path in ['/api/wallet/', '/api/orders/mine/', '/api/chat/', '/api/seller/status/']:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(
+                    str(response.data['detail']),
+                    'Complete your profile setup before continuing.',
+                )
+
+        legacy_client = APIClient()
+        pending_user = User.objects.get(email='pending-setup@example.com')
+        legacy_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(pending_user)}'
+        )
+        self.assertEqual(legacy_client.get('/api/wallet/').status_code, 403)
+
+        setup_response = self.client.post(
+            '/api/auth/complete-profile/',
+            {'username': 'ready_player', 'accepted_terms': True},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+        self.assertEqual(setup_response.status_code, 200)
+        self.assertFalse(
+            AccessToken(
+                setup_response.cookies[settings.JWT_AUTH_COOKIE_ACCESS].value
+            )['needs_setup']
+        )
+
+        wallet_response = self.client.get('/api/wallet/')
+        self.assertEqual(wallet_response.status_code, 200)
 
 THROTTLE_TEST_REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
@@ -3025,7 +3156,7 @@ class ApiPermissionConfigurationTests(TestCase):
     def test_default_api_permission_is_authenticated(self):
         self.assertEqual(
             settings.REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'],
-            ['rest_framework.permissions.IsAuthenticated'],
+            ['core.permissions.HasCompletedProfile'],
         )
 
     def test_public_endpoints_are_explicitly_marked_public(self):
@@ -3073,8 +3204,10 @@ class ApiThrottleBehaviorTests(TestCase):
                 'email': 'buyer1@example.com',
                 'password': strong_password,
                 'password2': strong_password,
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
         second = self.client.post(
             '/api/auth/register/',
@@ -3083,8 +3216,10 @@ class ApiThrottleBehaviorTests(TestCase):
                 'email': 'buyer2@example.com',
                 'password': strong_password,
                 'password2': strong_password,
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
 
         self.assertEqual(first.status_code, 201)
@@ -3216,6 +3351,35 @@ class RegistrationPasswordValidationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
+    def test_register_serializer_creates_inactive_user_until_email_is_verified(self):
+        serializer = RegisterSerializer(data={
+            'username': 'pendingbuyer',
+            'email': 'pendingbuyer@example.com',
+            'password': 'S3cure!Passphrase42',
+            'password2': 'S3cure!Passphrase42',
+            'accepted_terms': True,
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        user = serializer.save()
+
+        self.assertFalse(user.is_active)
+        self.assertTrue(user.profile.has_accepted_terms)
+        self.assertTrue(user.profile.email_verification_pending)
+
+    def test_register_serializer_requires_terms_acceptance(self):
+        serializer = RegisterSerializer(data={
+            'username': 'noconsentbuyer',
+            'email': 'noconsentbuyer@example.com',
+            'password': 'S3cure!Passphrase42',
+            'password2': 'S3cure!Passphrase42',
+            'accepted_terms': False,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('accepted_terms', serializer.errors)
+        self.assertFalse(User.objects.filter(username='noconsentbuyer').exists())
+
     def test_register_rejects_password_failing_django_validators(self):
         response = self.client.post(
             '/api/auth/register/',
@@ -3224,8 +3388,10 @@ class RegistrationPasswordValidationTests(TestCase):
                 'email': 'weakbuyer@example.com',
                 'password': 'short7',
                 'password2': 'short7',
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
 
         self.assertEqual(response.status_code, 400)
@@ -3241,8 +3407,10 @@ class RegistrationPasswordValidationTests(TestCase):
                 'email': 'strongbuyer@example.com',
                 'password': strong_password,
                 'password2': strong_password,
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
 
         self.assertEqual(response.status_code, 201)
@@ -3263,8 +3431,10 @@ class RegistrationPasswordValidationTests(TestCase):
                 'email': 'seller-name-2@example.com',
                 'password': strong_password,
                 'password2': strong_password,
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
 
         self.assertEqual(response.status_code, 400)
@@ -3279,8 +3449,10 @@ class RegistrationPasswordValidationTests(TestCase):
                 'email': 'bad-name@example.com',
                 'password': strong_password,
                 'password2': strong_password,
+                'accepted_terms': True,
             },
             format='json',
+            HTTP_ORIGIN='http://testserver',
         )
 
         self.assertEqual(response.status_code, 400)
@@ -3343,6 +3515,22 @@ class CookieJWTAuthTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['username'], 'cookiebuyer')
+
+    def test_completed_token_skips_profile_setup_query_on_polled_endpoint(self):
+        from .serializers import EmailTokenObtainPairSerializer
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        access = EmailTokenObtainPairSerializer.get_token(self.user).access_token
+        self.client.cookies[settings.JWT_AUTH_COOKIE_ACCESS] = str(access)
+        self.assertFalse(AccessToken(str(access))['needs_setup'])
+
+        with CaptureQueriesContext(connections['default']) as query_context:
+            response = self.client.get('/api/chat/unread/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            any('core_userprofile' in query['sql'].lower() for query in query_context.captured_queries)
+        )
 
     def test_me_returns_no_content_for_anonymous_user_without_refresh_cookie(self):
         response = self.client.get('/api/auth/me/')
@@ -4141,6 +4329,107 @@ class AccessControlTests(TestCase):
         self.assertIn('error', start_response.data)
         self.assertFalse(Message.objects.filter(conversation=self.conversation).exists())
 
+    def test_chat_listing_reference_is_created_only_from_validated_listing_id(self):
+        self.client.force_authenticate(user=self.buyer)
+        fake_badge_text = '[Re: Fake listing \u2014 PKR 1]\nInterested'
+        expected_reference = {
+            'id': self.listing.id,
+            'title': self.listing.title,
+            'price': str(self.listing.price),
+        }
+
+        untrusted_response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send/',
+            {'content': fake_badge_text},
+            format='json',
+        )
+        trusted_response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send/',
+            {'content': 'Interested', 'listing_id': self.listing.id},
+            format='json',
+        )
+
+        self.assertEqual(untrusted_response.status_code, 201)
+        self.assertEqual(untrusted_response.data['content'], fake_badge_text)
+        self.assertIsNone(untrusted_response.data['listing_reference'])
+        self.assertEqual(trusted_response.status_code, 201)
+        self.assertEqual(trusted_response.data['listing_reference'], expected_reference)
+        self.assertEqual(
+            Message.objects.get(pk=trusted_response.data['id']).referenced_listing,
+            self.listing,
+        )
+
+        self.listing.title = 'Edited after message'
+        self.listing.price = Decimal('999.00')
+        self.listing.save(update_fields=['title', 'price'])
+        detail_response = self.client.get(f'/api/chat/{self.conversation.id}/')
+        stored_message = next(
+            message
+            for message in detail_response.data['messages']
+            if message['id'] == trusted_response.data['id']
+        )
+        self.assertEqual(stored_message['listing_reference'], expected_reference)
+
+    def test_chat_rejects_listing_reference_not_owned_by_a_participant(self):
+        unrelated_listing = Listing.objects.create(
+            seller=self.other_seller,
+            game_category=self.game_category,
+            title='Unrelated listing',
+            price=Decimal('999.00'),
+            quantity=1,
+            status='active',
+        )
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send/',
+            {'content': 'Suspicious reference', 'listing_id': unrelated_listing.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Message.objects.filter(content='Suspicious reference').exists())
+
+    def test_chat_rejects_hidden_listing_reference_owned_by_participant(self):
+        self.listing.status = 'inactive'
+        self.listing.save(update_fields=['status'])
+        self.client.force_authenticate(user=self.buyer)
+
+        send_response = self.client.post(
+            f'/api/chat/{self.conversation.id}/send/',
+            {'content': 'Probe hidden listing', 'listing_id': self.listing.id},
+            format='json',
+        )
+        start_response = self.client.post(
+            '/api/chat/start/',
+            {
+                'user_id': self.seller.id,
+                'message': 'Probe hidden listing on start',
+                'listing_id': self.listing.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(send_response.status_code, 400)
+        self.assertEqual(start_response.status_code, 400)
+        self.assertFalse(Message.objects.filter(content__startswith='Probe hidden listing').exists())
+
+    def test_start_conversation_rejects_listing_from_a_different_seller(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/chat/start/',
+            {
+                'user_id': self.other_seller.id,
+                'message': 'Wrong seller reference',
+                'listing_id': self.listing.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Message.objects.filter(content='Wrong seller reference').exists())
+
     def test_chat_image_upload_optimizes_stored_image(self):
         self.client.force_authenticate(user=self.buyer)
 
@@ -4694,6 +4983,61 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
             self.assertFalse(connected)
 
         async_to_sync(run_jwt_rejection)()
+
+    def test_websocket_message_returns_server_validated_listing_reference(self):
+        from asgiref.sync import async_to_sync
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket
+
+        game = Game.objects.create(name='Chat Game', slug='chat-game')
+        category = Category.objects.create(
+            name='Chat Accounts',
+            slug='chat-accounts',
+            commission_rate=Decimal('0.00'),
+        )
+        game_category = GameCategory.objects.create(game=game, category=category)
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category,
+            title='Verified socket listing',
+            price=Decimal('125.00'),
+            status='active',
+        )
+
+        async def run_listing_reference_flow():
+            ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            await communicator.send_json_to({
+                'type': 'chat_message',
+                'content': 'Interested',
+                'listing_id': listing.id,
+            })
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'new_message')
+            self.assertEqual(
+                event['message']['listing_reference'],
+                {
+                    'id': listing.id,
+                    'title': listing.title,
+                    'price': str(listing.price),
+                },
+            )
+            await communicator.disconnect()
+
+        async_to_sync(run_listing_reference_flow)()
+        self.assertTrue(
+            Message.objects.filter(
+                conversation=self.conversation,
+                referenced_listing=listing,
+            ).exists()
+        )
 
     def test_websocket_rejects_ticket_for_different_conversation(self):
         from asgiref.sync import async_to_sync
@@ -5710,6 +6054,22 @@ class UserAdminMessageShortcutTests(TestCase):
                 self.request,
                 User.objects.filter(pk=self.target.pk),
             )
+
+    def test_user_admin_activation_change_cancels_pending_email_verification(self):
+        self.target.profile.email_verification_pending = True
+        self.target.profile.save(update_fields=['email_verification_pending'])
+        self.target.is_active = False
+        form = type('ChangedActivationForm', (), {'changed_data': ['is_active']})()
+
+        GamesBazaarUserAdmin(User, self.site).save_model(
+            self.request,
+            self.target,
+            form,
+            change=True,
+        )
+
+        self.target.profile.refresh_from_db()
+        self.assertFalse(self.target.profile.email_verification_pending)
 
 
 class AdminMessageUserViewTests(TestCase):
@@ -7537,6 +7897,79 @@ class AccountSecurityFlowTests(TestCase):
             HTTP_ORIGIN=self.origin,
         )
 
+    def test_registration_rejects_missing_terms_consent(self):
+        response = self.post_public(
+            '/api/auth/register/',
+            {
+                'username': 'no_terms_user',
+                'email': 'no-terms@example.com',
+                'password': 'S3cure!Passphrase42',
+                'password2': 'S3cure!Passphrase42',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('accepted_terms', response.data)
+        self.assertFalse(User.objects.filter(username='no_terms_user').exists())
+
+    @patch('core.views.send_email_verification_code')
+    @patch('core.views.generate_email_verification_code', return_value='123456')
+    def test_registration_verification_activates_only_pending_account(self, _code_mock, _send_mock):
+        registration = self.post_public(
+            '/api/auth/register/',
+            {
+                'username': 'pending_activation',
+                'email': 'pending-activation@example.com',
+                'password': 'S3cure!Passphrase42',
+                'password2': 'S3cure!Passphrase42',
+                'accepted_terms': True,
+            },
+        )
+        token = registration.data['verification_token']
+        pending_user = User.objects.get(email='pending-activation@example.com')
+
+        self.assertEqual(registration.status_code, 201)
+        self.assertFalse(pending_user.is_active)
+        self.assertTrue(pending_user.profile.email_verification_pending)
+
+        verification = self.post_public(
+            '/api/auth/verify-email/',
+            {'token': token, 'code': '123456'},
+        )
+        pending_user.refresh_from_db()
+        pending_user.profile.refresh_from_db()
+
+        self.assertEqual(verification.status_code, 200)
+        self.assertTrue(pending_user.is_active)
+        self.assertFalse(pending_user.profile.email_verification_pending)
+
+    @patch('core.views.send_email_verification_code')
+    def test_deactivated_account_cannot_be_reactivated_through_email_verification(self, send_mock):
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+
+        resend = self.post_public(
+            '/api/auth/resend-verification/',
+            {'email': self.user.email},
+        )
+        stale_token = create_email_verification_token(self.user.pk, '123456')
+        verification = self.post_public(
+            '/api/auth/verify-email/',
+            {'token': stale_token, 'code': '123456'},
+        )
+        login = self.post_public(
+            '/api/auth/login/',
+            {'email': self.user.email, 'password': 'OriginalPass123!x'},
+        )
+        self.user.refresh_from_db()
+
+        self.assertEqual(resend.status_code, 200)
+        send_mock.assert_not_called()
+        self.assertEqual(verification.status_code, 400)
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(login.status_code, 401)
+        self.assertNotIn('email_unverified', login.data)
+
     @patch('core.views.send_password_reset_code')
     @patch('core.views.generate_password_reset_code', return_value='123456')
     def test_password_reset_token_is_opaque_and_unknown_email_shape_matches(self, code_mock, send_mock):
@@ -7782,6 +8215,74 @@ class AccountSecurityFlowTests(TestCase):
         self.assertIn('username', response.data)
         self.user.refresh_from_db()
         self.assertEqual(self.user.username, 'secureuser')
+
+    def test_complete_profile_rejects_non_google_account_with_unset_terms_flag(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/auth/complete-profile/',
+            {'username': 'shortcut_name', 'accepted_terms': True},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.user.refresh_from_db()
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.username, 'secureuser')
+        self.assertFalse(self.user.profile.has_accepted_terms)
+
+    def test_complete_profile_enforces_cooldown_for_google_linked_account(self):
+        SocialAccount.objects.create(
+            user=self.user,
+            provider=SocialAccount.PROVIDER_GOOGLE,
+            uid='existing-google-user',
+            email=self.user.email,
+        )
+        UserProfile.objects.filter(user=self.user).update(username_changed_at=timezone.now())
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/auth/complete-profile/',
+            {'username': 'shortcut_name', 'accepted_terms': True},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('once every 90 days', str(response.data['username'][0]))
+        self.user.refresh_from_db()
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.username, 'secureuser')
+        self.assertFalse(self.user.profile.has_accepted_terms)
+
+    def test_complete_profile_tracks_initial_google_username_choice(self):
+        google_user = User.objects.create_user(
+            username='generated_name',
+            email='new-google@example.com',
+            password=None,
+        )
+        SocialAccount.objects.create(
+            user=google_user,
+            provider=SocialAccount.PROVIDER_GOOGLE,
+            uid='new-google-user',
+            email=google_user.email,
+        )
+        self.client.force_authenticate(user=google_user)
+
+        response = self.client.post(
+            '/api/auth/complete-profile/',
+            {'username': 'chosen_name', 'accepted_terms': True},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        google_user.refresh_from_db()
+        google_user.profile.refresh_from_db()
+        self.assertEqual(google_user.username, 'chosen_name')
+        self.assertTrue(google_user.profile.has_accepted_terms)
+        self.assertIsNotNone(google_user.profile.username_changed_at)
 
     def test_email_change_rejects_current_or_existing_email(self):
         User.objects.create_user(
