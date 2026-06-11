@@ -1,5 +1,7 @@
+import { Fragment, createElement } from 'react';
+import JsonLd from '@/components/JsonLd';
 import { getListingDetail } from '@/lib/api';
-import { createPublicMetadata } from '@/lib/seo';
+import { createPublicMetadata, productJsonLd } from '@/lib/seo';
 
 function formatPrice(value) {
   const price = Number(value);
@@ -81,6 +83,45 @@ export async function generateMetadata({ params }) {
   }
 }
 
-export default function ListingLayout({ children }) {
-  return children;
+function availabilityFromStatus(status) {
+  if (status === 'active') return 'InStock';
+  if (status === 'sold') return 'SoldOut';
+  return 'OutOfStock';
+}
+
+export default async function ListingLayout({ children, params }) {
+  const { id } = await params;
+  const listingId = String(id || '').trim();
+
+  let listing;
+  try {
+    listing = await getListingDetail(listingId);
+  } catch {
+    return children;
+  }
+
+  const price = Number(listing.price);
+  if (!Number.isFinite(price)) return children;
+
+  const categoryParts = [listing.game_name, listing.category_name]
+    .map(cleanText)
+    .filter(Boolean);
+
+  return createElement(
+    Fragment,
+    null,
+    createElement(JsonLd, {
+      data: productJsonLd({
+        name: cleanText(listing.title) || `Listing ${listingId}`,
+        description: cleanText(listing.description),
+        path: `/listing/${encodeURIComponent(listingId)}`,
+        sku: listingId,
+        category: categoryParts.join(' - '),
+        price: price.toFixed(2),
+        availability: availabilityFromStatus(listing.status),
+        sellerName: cleanText(listing.seller_name),
+      }),
+    }),
+    children,
+  );
 }

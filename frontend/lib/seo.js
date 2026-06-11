@@ -97,6 +97,38 @@ export function breadcrumbJsonLd(items) {
   };
 }
 
+export function productJsonLd({
+  name,
+  description,
+  path,
+  sku,
+  category,
+  price,
+  priceCurrency = 'PKR',
+  availability = 'InStock',
+  sellerName,
+}) {
+  const url = absoluteUrl(path);
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name,
+    ...(description ? { description } : {}),
+    ...(sku ? { sku } : {}),
+    ...(category ? { category } : {}),
+    url,
+    offers: {
+      '@type': 'Offer',
+      url,
+      price,
+      priceCurrency,
+      availability: `https://schema.org/${availability}`,
+      ...(sellerName ? { seller: { '@type': 'Person', name: sellerName } } : {}),
+    },
+  };
+}
+
 export function collectionPageJsonLd({ name, description, path }) {
   return {
     '@context': 'https://schema.org',
