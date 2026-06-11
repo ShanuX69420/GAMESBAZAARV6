@@ -681,10 +681,10 @@ class WithdrawRequest(models.Model):
     )
     payment_method = models.CharField(max_length=200, blank=True, default='',
                                        help_text='e.g., JazzCash, EasyPaisa, Bank Transfer')
-    account_title = models.CharField(max_length=300, blank=True, default='',
-                                      help_text='Name on the account')
-    account_details = models.CharField(max_length=500, blank=True, default='',
-                                        help_text='Account number, IBAN, or mobile wallet number')
+    account_title = models.TextField(blank=True, default='',
+                                     help_text='Name on the account (encrypted at rest)')
+    account_details = models.TextField(blank=True, default='',
+                                       help_text='Account number, IBAN, or mobile wallet number (encrypted at rest)')
     bank_name = models.CharField(max_length=300, blank=True, default='',
                                   help_text='Bank name (for bank transfers only)')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -934,6 +934,9 @@ class Review(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['seller', '-created_at'], name='review_seller_created_idx'),
+        ]
 
     def __str__(self):
         return f"{self.reviewer.username} → {self.seller.username}: {self.rating}★"

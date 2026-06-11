@@ -24,7 +24,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from . import jazzcash
-from .models import JazzCashPayment
+from .models import JazzCashPayment, Listing
 from .services import apply_wallet_delta_once, create_notification
 
 logger = logging.getLogger(__name__)
@@ -202,6 +202,13 @@ def finalize_jazzcash_payment(payment_id, *, response_code='', response_message=
         if payment.status == 'completed':
             return payment
 
+        if payment.purpose == 'purchase' and payment.listing_id:
+            # Lock the listing before the wallet so the lock order matches
+            # BuyListingView (listing -> wallet); the reverse order can
+            # deadlock when the same buyer wallet-buys this listing while
+            # the gateway confirmation is being finalized.
+            list(Listing.objects.select_for_update().filter(pk=payment.listing_id))
+
         _, credited = apply_wallet_delta_once(
             payment.user,
             delta=payment.amount,
@@ -293,10 +300,10 @@ def mark_jazzcash_payment_failed(payment_id, *, response_code='', response_messa
     return payment
 
 
-def run_status_inquiry(payment):
+def run_status_inquiry(payment, timeout=None):
     """Query the Status Inquiry API for a payment and apply the verdict."""
     try:
-        response = jazzcash.inquire_transaction_status(payment.txn_ref_no)
+        response = jazzcash.inquire_transaction_status(payment.txn_ref_no, timeout=timeout)
     except jazzcash.JazzCashError as exc:
         logger.warning('JazzCash status inquiry for %s failed: %s',
                        payment.txn_ref_no, exc)
@@ -347,7 +354,9 @@ def maybe_refresh_payment_status(payment):
     last = payment.last_status_inquiry_at
     if last is not None and (now - last).total_seconds() < STATUS_INQUIRY_REPOLL_SECONDS:
         return payment
-    return run_status_inquiry(payment)
+    # Short (connect, read) timeout: this runs inside a user-facing GET, so a
+    # hung gateway must not pin a worker for the full 65s reconciler budget.
+    return run_status_inquiry(payment, timeout=(5, 15))
 
 
 def reconcile_pending_jazzcash_payments(*, batch_size=50, min_age=STATUS_INQUIRY_MIN_AGE):

@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from core.models import Listing, Order
+from core.models import Listing, Order, WithdrawRequest
 from core.services import (
     ENCRYPTED_TEXT_V1_PREFIX,
     decrypt_sensitive_text,
@@ -13,6 +13,8 @@ from core.services import (
 SENSITIVE_FIELDS = (
     (Listing, 'auto_delivery_data'),
     (Order, 'delivery_note'),
+    (WithdrawRequest, 'account_title'),
+    (WithdrawRequest, 'account_details'),
 )
 
 

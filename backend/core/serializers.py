@@ -1116,6 +1116,14 @@ class JazzCashPaymentSerializer(serializers.ModelSerializer):
 class WithdrawRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     payment_receipt_url = serializers.SerializerMethodField()
+    account_title = serializers.SerializerMethodField()
+    account_details = serializers.SerializerMethodField()
+
+    def get_account_title(self, obj):
+        return decrypt_sensitive_text(obj.account_title)
+
+    def get_account_details(self, obj):
+        return decrypt_sensitive_text(obj.account_details)
 
     class Meta:
         model = WithdrawRequest

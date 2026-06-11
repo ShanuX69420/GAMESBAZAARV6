@@ -471,13 +471,26 @@ class JazzCashPaymentAdmin(admin.ModelAdmin):
 
 @admin.register(WithdrawRequest)
 class WithdrawRequestAdmin(admin.ModelAdmin):
-    list_display = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name', 'status', 'created_at', 'reviewed_at']
+    # account_title/account_details are encrypted at rest — the *_display
+    # methods decrypt them for processing; the raw columns are not searchable.
+    list_display = ['user', 'amount', 'payment_method', 'account_title_display',
+                    'account_details_display', 'bank_name', 'status', 'created_at', 'reviewed_at']
     list_filter = ['status']
-    search_fields = ['user__username', 'account_details', 'account_title']
-    readonly_fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name', 'created_at']
-    fields = ['user', 'amount', 'payment_method', 'account_title', 'account_details', 'bank_name',
+    search_fields = ['user__username']
+    readonly_fields = ['user', 'amount', 'payment_method', 'account_title_display',
+                       'account_details_display', 'bank_name', 'created_at']
+    fields = ['user', 'amount', 'payment_method', 'account_title_display',
+              'account_details_display', 'bank_name',
               'status', 'admin_note', 'payment_receipt', 'reviewed_at', 'created_at']
     actions = ['approve_withdrawals', 'reject_withdrawals']
+
+    @admin.display(description='Account title')
+    def account_title_display(self, obj):
+        return decrypt_sensitive_text(obj.account_title) or '—'
+
+    @admin.display(description='Account details')
+    def account_details_display(self, obj):
+        return decrypt_sensitive_text(obj.account_details) or '—'
 
     def _create_withdraw_notification(self, wd):
         """Create in-app notification for withdrawal status change."""

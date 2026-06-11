@@ -2694,6 +2694,35 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertIn('Withdrawal rejected', rejected_notification.title)
         self.assertIn('returned to your wallet', rejected_notification.message)
 
+    def test_withdraw_account_details_are_encrypted_at_rest(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/wallet/withdraw/',
+                {
+                    'amount': '500.00',
+                    'payment_method': 'JazzCash',
+                    'account_title': 'Wallet Buyer',
+                    'account_details': '03001234567',
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        # API returns plaintext to the owner…
+        self.assertEqual(response.data['account_title'], 'Wallet Buyer')
+        self.assertEqual(response.data['account_details'], '03001234567')
+
+        # …but the database stores ciphertext.
+        withdraw = WithdrawRequest.objects.get(pk=response.data['id'])
+        self.assertTrue(withdraw.account_title.startswith('enc:'))
+        self.assertTrue(withdraw.account_details.startswith('enc:'))
+        self.assertNotIn('03001234567', withdraw.account_details)
+
+        # Admin display methods decrypt for processing.
+        admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
+        self.assertEqual(admin_obj.account_title_display(withdraw), 'Wallet Buyer')
+        self.assertEqual(admin_obj.account_details_display(withdraw), '03001234567')
+
     def test_admin_withdrawal_receipt_upload_rejects_invalid_image(self):
         withdraw = WithdrawRequest.objects.create(
             user=self.user,

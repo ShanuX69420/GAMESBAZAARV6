@@ -138,7 +138,7 @@ def generate_txn_ref_no(now=None):
     return f'{prefix}{format_gateway_datetime(now)}{secrets.randbelow(1000):03d}'
 
 
-def _post(path, payload):
+def _post(path, payload, timeout=None):
     if not is_configured():
         raise JazzCashNotConfigured('JazzCash gateway credentials are not configured.')
 
@@ -148,7 +148,7 @@ def _post(path, payload):
             url,
             json=payload,
             headers={'Accept': 'application/json'},
-            timeout=settings.JAZZCASH_REQUEST_TIMEOUT_SECONDS,
+            timeout=timeout or settings.JAZZCASH_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
         logger.warning('JazzCash request to %s failed: %s', path, exc)
@@ -198,7 +198,7 @@ def initiate_mwallet_payment(*, amount, mobile_number, txn_ref_no, bill_referenc
     return _post(MWALLET_PATH, payload)
 
 
-def inquire_transaction_status(txn_ref_no):
+def inquire_transaction_status(txn_ref_no, timeout=None):
     """Call the mandatory Status Inquiry API (v1.1) for a transaction."""
     payload = {
         'pp_TxnRefNo': txn_ref_no,
@@ -206,7 +206,7 @@ def inquire_transaction_status(txn_ref_no):
         'pp_Password': settings.JAZZCASH_PASSWORD,
     }
     payload['pp_SecureHash'] = generate_secure_hash(payload)
-    return _post(STATUS_INQUIRY_PATH, payload)
+    return _post(STATUS_INQUIRY_PATH, payload, timeout=timeout)
 
 
 def refund_mwallet_payment(*, txn_ref_no, amount):

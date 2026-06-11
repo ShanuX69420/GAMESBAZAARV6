@@ -2212,7 +2212,16 @@ class StartConversationView(ScopedPostThrottleMixin, APIView):
             conversation.save()  # Update updated_at
             broadcast_chat_message(message, request)
 
-        data = ConversationDetailSerializer(conversation, context={'request': request}).data
+        # Cap the payload to the latest messages — an existing conversation
+        # can hold thousands and the serializer fallback would load them all.
+        recent_messages = list(reversed(
+            conversation.messages.select_related('sender', 'referenced_listing')
+            .order_by('-pk')[:DEFAULT_MESSAGE_PAGE_SIZE]
+        ))
+        data = ConversationDetailSerializer(
+            conversation,
+            context={'request': request, 'messages': recent_messages},
+        ).data
         return Response(data, status=201)
 
 
@@ -2704,8 +2713,8 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
                 user=request.user,
                 amount=amount,
                 payment_method=data.get('payment_method', ''),
-                account_title=data.get('account_title', ''),
-                account_details=data.get('account_details', ''),
+                account_title=encrypt_sensitive_text(data.get('account_title', '')),
+                account_details=encrypt_sensitive_text(data.get('account_details', '')),
                 bank_name=data.get('bank_name', ''),
             )
 
@@ -3150,7 +3159,7 @@ class MyOrdersView(APIView):
         orders_qs = Order.objects.filter(
             buyer=request.user
         ).select_related(
-            'listing', 'seller', 'conversation',
+            'listing', 'buyer', 'seller', 'conversation',
             'review', 'review__reviewer',
         ).annotate(
             _has_review_annotation=Q(review__isnull=False),
@@ -3227,7 +3236,7 @@ class MySalesView(APIView):
         orders_qs = Order.objects.filter(
             seller=request.user
         ).select_related(
-            'listing', 'buyer', 'conversation',
+            'listing', 'buyer', 'seller', 'conversation',
             'review', 'review__reviewer',
         ).annotate(
             _has_review_annotation=Q(review__isnull=False),
@@ -3930,6 +3939,10 @@ class NotificationMarkReadView(APIView):
             ).update(is_read=True)
             return Response({'marked_read': updated})
         elif notification_id:
+            try:
+                notification_id = int(notification_id)
+            except (TypeError, ValueError):
+                return Response({'error': 'notification_id must be a valid id.'}, status=400)
             # Mark a single notification as read
             notification = get_object_or_404(
                 Notification, pk=notification_id, recipient=request.user,

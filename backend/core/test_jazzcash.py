@@ -483,7 +483,7 @@ class JazzCashPaymentFlowTests(TestCase):
             created_at=timezone.now() - timedelta(minutes=20),
         )
 
-        def fake_inquiry(path, payload):
+        def fake_inquiry(path, payload, timeout=None):
             response = {
                 'pp_ResponseCode': '000',
                 'pp_ResponseMessage': 'Operation processed successfully.',
@@ -510,7 +510,7 @@ class JazzCashPaymentFlowTests(TestCase):
             created_at=timezone.now() - timedelta(hours=26),
         )
 
-        def fake_inquiry(path, payload):
+        def fake_inquiry(path, payload, timeout=None):
             response = {
                 'pp_ResponseCode': '000',
                 'pp_ResponseMessage': 'Operation processed successfully.',
