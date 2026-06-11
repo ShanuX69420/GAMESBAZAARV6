@@ -229,7 +229,7 @@ def finalize_jazzcash_payment(payment_id, *, response_code='', response_message=
                     message=(
                         'Your JazzCash payment was received, but the purchase could not '
                         f'be completed: {purchase_error} '
-                        'The full amount has been added to your wallet instead.'
+                        'The payment has been added to your wallet instead.'
                     ),
                 )
 

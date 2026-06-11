@@ -184,7 +184,7 @@ class JazzCashPaymentFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
 
-    def test_direct_buy_success_creates_order_with_net_zero_wallet(self):
+    def test_direct_buy_charges_min_topup_and_keeps_change_in_wallet(self):
         def fake_post(path, payload):
             return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
 
@@ -202,16 +202,110 @@ class JazzCashPaymentFlowTests(TestCase):
         self.assertTrue(response.data['order_number'])
 
         payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        # The 150.00 shortfall is below the minimum top-up, so 500.00 is charged.
+        self.assertEqual(payment.amount, Decimal('500.00'))
         order = Order.objects.get(pk=payment.order_id)
         self.assertEqual(order.buyer, self.buyer)
         self.assertEqual(order.total_amount, Decimal('150.00'))
 
-        # JazzCash credit then purchase debit — wallet nets to zero.
+        # JazzCash credit (500) then purchase debit (150) — change stays in wallet.
         self.buyer_wallet.refresh_from_db()
-        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+        self.assertEqual(self.buyer_wallet.balance, Decimal('350.00'))
 
         self.listing.refresh_from_db()
         self.assertEqual(self.listing.quantity, 1)
+
+    def test_direct_buy_tops_up_only_the_shortfall(self):
+        self.buyer_wallet.balance = Decimal('750.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Pricey JazzCash item',
+            price=Decimal('1000.00'),
+            quantity=1,
+            status='active',
+        )
+
+        def fake_post(path, payload):
+            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+
+        with patch('core.jazzcash._post', side_effect=fake_post):
+            response = self.client.post(
+                '/api/payments/jazzcash/buy/',
+                {'listing_id': listing.id, 'quantity': 1,
+                 'mobile_number': '03001234567'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'completed')
+
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        # Shortfall is 250.00 but the minimum top-up is 500.00.
+        self.assertEqual(payment.amount, Decimal('500.00'))
+        order = Order.objects.get(pk=payment.order_id)
+        self.assertEqual(order.total_amount, Decimal('1000.00'))
+
+        # 750 wallet + 500 JazzCash - 1000 purchase = 250 stays in the wallet.
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('250.00'))
+
+    def test_direct_buy_charges_full_shortfall_when_above_min_topup(self):
+        self.buyer_wallet.balance = Decimal('200.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Expensive JazzCash item',
+            price=Decimal('1000.00'),
+            quantity=1,
+            status='active',
+        )
+
+        def fake_post(path, payload):
+            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+
+        with patch('core.jazzcash._post', side_effect=fake_post):
+            response = self.client.post(
+                '/api/payments/jazzcash/buy/',
+                {'listing_id': listing.id, 'quantity': 1,
+                 'mobile_number': '03001234567'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.amount, Decimal('800.00'))
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+
+    def test_direct_buy_rejected_when_wallet_covers_total(self):
+        self.buyer_wallet.balance = Decimal('150.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        response = self.client.post(
+            '/api/payments/jazzcash/buy/',
+            {'listing_id': self.listing.id, 'quantity': 1,
+             'mobile_number': '03001234567'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('wallet balance', response.data['error'])
+        self.assertFalse(JazzCashPayment.objects.exists())
+
+    def test_topup_rejects_amount_below_minimum(self):
+        response = self.client.post(
+            '/api/payments/jazzcash/top-up/',
+            {'amount': '499.99', 'mobile_number': '03001234567'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Minimum top-up is PKR 500.', str(response.data['amount']))
+        self.assertFalse(JazzCashPayment.objects.exists())
 
     def test_direct_buy_falls_back_to_wallet_credit_when_listing_sold_out(self):
         payment = self._start_pending_payment(

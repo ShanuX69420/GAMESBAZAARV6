@@ -13,7 +13,7 @@ from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 from .models import (
-    Game, Category, GameCategory, Filter, FilterOption,
+    Game, Category, GameCategory, CategoryOption, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
@@ -194,6 +194,7 @@ class GameCategoryDetailSerializer(serializers.Serializer):
     category = CategorySerializer()
     filters = serializers.SerializerMethodField()
     allow_auto_delivery = serializers.BooleanField(read_only=True)
+    listing_mode = serializers.CharField(read_only=True)
 
     def get_game(self, obj):
         return {
@@ -205,7 +206,12 @@ class GameCategoryDetailSerializer(serializers.Serializer):
     def get_filters(self, obj):
         # Use .all() to leverage the prefetched cache from the view
         # instead of re-querying with select_related/prefetch_related.
-        return [FilterSerializer(gcf.filter).data for gcf in obj.assigned_filters.all()]
+        payload = []
+        for gcf in obj.assigned_filters.all():
+            data = FilterSerializer(gcf.filter).data
+            data['require_selection'] = gcf.require_selection
+            payload.append(data)
+        return payload
 
 
 # ── Auth Serializers ─────────────────────────────────────────────────────────
@@ -461,6 +467,9 @@ class ListingSerializer(serializers.ModelSerializer):
         source='game_category.category.buyer_protection_enabled', read_only=True,
     )
     filter_display = serializers.SerializerMethodField()
+    option_id = serializers.IntegerField(read_only=True)
+    option_name = serializers.SerializerMethodField()
+    delivery_instructions = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -469,9 +478,24 @@ class ListingSerializer(serializers.ModelSerializer):
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'game_name', 'category_name', 'buyer_protection_enabled',
+            'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
-            'is_auto_delivery', 'created_at',
+            'delivery_instructions', 'is_auto_delivery', 'created_at',
         ]
+
+    def get_option_name(self, obj):
+        return obj.option.name if obj.option_id else None
+
+    def get_delivery_instructions(self, obj):
+        """Offer listings show instructions to buyers before purchase; standard
+        listings only reveal them after ordering (via the order snapshot)."""
+        if obj.option_id:
+            return obj.delivery_instructions
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and request.user.id == obj.seller_id:
+            # Sellers still see their own instructions (e.g., in My Listings).
+            return obj.delivery_instructions
+        return ''
 
     def get_seller_is_online(self, obj):
         profile = getattr(obj.seller, 'profile', None)
@@ -529,6 +553,8 @@ class ListingSerializer(serializers.ModelSerializer):
 class CreateListingSerializer(serializers.ModelSerializer):
     game_slug = serializers.SlugField(write_only=True)
     category_slug = serializers.SlugField(write_only=True)
+    title = serializers.CharField(max_length=300, required=False, allow_blank=True, default='')
+    option_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, default=None)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
     is_auto_delivery = serializers.BooleanField(required=False, default=False)
@@ -548,9 +574,9 @@ class CreateListingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Listing
-        fields = ['game_slug', 'category_slug', 'title', 'description', 'price', 'quantity',
-                  'delivery_time', 'filter_values', 'is_auto_delivery', 'auto_delivery_data',
-                  'delivery_instructions']
+        fields = ['game_slug', 'category_slug', 'option_id', 'title', 'description', 'price',
+                  'quantity', 'delivery_time', 'filter_values', 'is_auto_delivery',
+                  'auto_delivery_data', 'delivery_instructions']
 
     def validate(self, attrs):
         game_slug = attrs.pop('game_slug')
@@ -562,6 +588,40 @@ class CreateListingSerializer(serializers.ModelSerializer):
         except GameCategory.DoesNotExist:
             raise serializers.ValidationError('Invalid game/category combination.')
         attrs['game_category'] = gc
+
+        option_id = attrs.pop('option_id', None)
+        if gc.listing_mode == 'offer':
+            if not option_id:
+                raise serializers.ValidationError({
+                    'option_id': 'Please choose an option for this category.',
+                })
+            try:
+                option = CategoryOption.objects.get(pk=option_id, game_category=gc)
+            except CategoryOption.DoesNotExist:
+                raise serializers.ValidationError({
+                    'option_id': 'Invalid option for this game/category.',
+                })
+            seller = self.context['request'].user
+            if Listing.objects.filter(seller=seller, option=option, status='active').exists():
+                raise serializers.ValidationError({
+                    'option_id': f'You already have an active offer for {option.name}. '
+                                 'Edit your existing offer instead.',
+                })
+            if not (attrs.get('delivery_instructions') or '').strip():
+                raise serializers.ValidationError({
+                    'delivery_instructions': 'Delivery instructions are required for this '
+                                             'category (e.g., what you need from the buyer '
+                                             'and how delivery works).',
+                })
+            attrs['option'] = option
+            attrs['title'] = option.name
+        else:
+            if option_id:
+                raise serializers.ValidationError({
+                    'option_id': 'Options are not available for this category.',
+                })
+            if not (attrs.get('title') or '').strip():
+                raise serializers.ValidationError({'title': 'Title is required.'})
 
         # Validate auto-delivery
         is_auto = attrs.get('is_auto_delivery', False)
@@ -667,16 +727,41 @@ class CreateListingSerializer(serializers.ModelSerializer):
 class UpdateListingSerializer(serializers.ModelSerializer):
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    delivery_instructions = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=MAX_DELIVERY_INSTRUCTIONS_LENGTH,
+    )
 
     class Meta:
         model = Listing
-        fields = ['title', 'description', 'price', 'quantity', 'delivery_time', 'status']
+        fields = ['title', 'description', 'price', 'quantity', 'delivery_time',
+                  'delivery_instructions', 'status']
 
     def validate(self, attrs):
         listing = self.instance
         next_status = attrs.get('status', listing.status)
         next_quantity = attrs.get('quantity', listing.quantity)
         next_delivery_time = attrs.get('delivery_time', listing.delivery_time)
+
+        if listing.option_id:
+            # Offer listings keep their title in sync with the option name.
+            attrs.pop('title', None)
+            if 'delivery_instructions' in attrs and not attrs['delivery_instructions'].strip():
+                raise serializers.ValidationError({
+                    'delivery_instructions': 'Delivery instructions are required for this category.',
+                })
+            if next_status == 'active' and listing.status != 'active':
+                duplicate = Listing.objects.filter(
+                    seller=listing.seller,
+                    option_id=listing.option_id,
+                    status='active',
+                ).exclude(pk=listing.pk).exists()
+                if duplicate:
+                    raise serializers.ValidationError({
+                        'status': 'You already have an active offer for this option. '
+                                  'Deactivate it first or edit it instead.',
+                    })
 
         if listing.is_auto_delivery:
             if 'quantity' in attrs and next_quantity != listing.quantity:
@@ -937,13 +1022,18 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
         return None
 
 
+MIN_TOPUP_AMOUNT = Decimal('500.00')
+MIN_TOPUP_ERROR = 'Minimum top-up is PKR 500.'
+
+
 class CreateTopUpRequestSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
-        min_value=Decimal('1.00'),
+        min_value=MIN_TOPUP_AMOUNT,
         max_value=Decimal('10000.00'),
         error_messages={
+            'min_value': MIN_TOPUP_ERROR,
             'max_value': 'Max is 10000. Please contact support if you want to add more.',
         },
     )
@@ -977,9 +1067,10 @@ class JazzCashTopUpInitiateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
-        min_value=Decimal('1.00'),
+        min_value=MIN_TOPUP_AMOUNT,
         max_value=MAX_JAZZCASH_TOPUP_AMOUNT,
         error_messages={
+            'min_value': MIN_TOPUP_ERROR,
             'max_value': 'Max is 10000. Please contact support if you want to add more.',
         },
     )

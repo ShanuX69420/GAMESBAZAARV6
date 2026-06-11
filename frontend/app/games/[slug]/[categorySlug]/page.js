@@ -6,7 +6,7 @@ import GameCategoryClient from './GameCategoryClient';
 const LISTING_PAGE_SIZE = 48;
 const PUBLIC_CATEGORY_REVALIDATE_SECONDS = 120;
 
-async function fetchInitialCategoryData({ slug, categorySlug, seller }) {
+async function fetchInitialCategoryData({ slug, categorySlug, seller, option }) {
   const url = buildGameCategoryListingUrl({
     apiBase: API_BASE,
     gameSlug: slug,
@@ -14,6 +14,7 @@ async function fetchInitialCategoryData({ slug, categorySlug, seller }) {
     limit: LISTING_PAGE_SIZE,
     offset: 0,
     seller,
+    option,
   });
 
   const res = await fetch(url, {
@@ -28,10 +29,11 @@ export default async function GameCategoryPage({ params, searchParams }) {
   const { slug, categorySlug } = await params;
   const query = await searchParams;
   const seller = String(query?.seller || '');
+  const option = String(query?.option || '');
   let initialData = null;
 
   try {
-    initialData = await fetchInitialCategoryData({ slug, categorySlug, seller });
+    initialData = await fetchInitialCategoryData({ slug, categorySlug, seller, option });
   } catch (error) {
     if (error?.digest?.startsWith?.('NEXT_HTTP_ERROR_FALLBACK;404')) {
       throw error;

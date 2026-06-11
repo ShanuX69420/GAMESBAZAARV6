@@ -7,7 +7,7 @@ from django.db import transaction
 from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import UploadedFile
 from .models import (
-    Game, Category, GameCategory, Filter, FilterOption,
+    Game, Category, GameCategory, CategoryOption, Filter, FilterOption,
     GameCategoryFilter, UserProfile, SocialAccount, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
@@ -98,8 +98,9 @@ class GameCategoryInline(admin.TabularInline):
     model = GameCategory
     extra = 1
     autocomplete_fields = ['category']
-    fields = ['category', 'order', 'allow_auto_delivery', 'manage_filters_link']
-    readonly_fields = ['manage_filters_link']
+    fields = ['category', 'order', 'allow_auto_delivery', 'listing_mode',
+              'manage_filters_link', 'manage_options_link']
+    readonly_fields = ['manage_filters_link', 'manage_options_link']
 
     @admin.display(description='Filters')
     def manage_filters_link(self, obj):
@@ -109,6 +110,44 @@ class GameCategoryInline(admin.TabularInline):
             label = f'{count} filter{"s" if count != 1 else ""}'
             return format_html('<a href="{}">⚙️ {} — manage</a>', url, label)
         return '—save game first—'
+
+    @admin.display(description='Options')
+    def manage_options_link(self, obj):
+        if obj.pk:
+            url = reverse('admin:core_gamecategory_change', args=[obj.pk])
+            count = obj.options.count()
+            label = f'{count} option{"s" if count != 1 else ""}'
+            return format_html('<a href="{}">🧩 {} — manage</a>', url, label)
+        return '—save game first—'
+
+
+class CategoryOptionInlineForm(forms.ModelForm):
+    class Meta:
+        model = CategoryOption
+        fields = '__all__'
+
+    def clean_icon(self):
+        icon = self.cleaned_data.get('icon')
+        if isinstance(icon, UploadedFile):
+            validation_error = validate_uploaded_image(icon)
+            if validation_error:
+                raise forms.ValidationError(validation_error)
+        return icon
+
+
+class CategoryOptionInline(admin.TabularInline):
+    """Inline to manage offer options (e.g., 60 UC / 325 UC) on a GameCategory."""
+    model = CategoryOption
+    form = CategoryOptionInlineForm
+    extra = 1
+    fields = ['name', 'icon', 'order', 'is_popular', 'offer_count']
+    readonly_fields = ['offer_count']
+
+    @admin.display(description='Active Offers')
+    def offer_count(self, obj):
+        if obj.pk:
+            return obj.listings.filter(status='active').count()
+        return '—'
 
 
 class FilterOptionInline(admin.TabularInline):
@@ -772,16 +811,38 @@ class HiddenModelAdmin(admin.ModelAdmin):
 
 @admin.register(GameCategory)
 class GameCategoryAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'order', 'allow_auto_delivery', 'filter_count']
-    list_filter = ['game', 'allow_auto_delivery']
-    list_editable = ['order', 'allow_auto_delivery']
+    list_display = ['__str__', 'order', 'allow_auto_delivery', 'listing_mode',
+                    'filter_count', 'option_count']
+    list_filter = ['game', 'allow_auto_delivery', 'listing_mode']
+    list_editable = ['order', 'allow_auto_delivery', 'listing_mode']
     search_fields = ['game__name', 'category__name']
     autocomplete_fields = ['game', 'category']
-    inlines = [GameCategoryFilterInline]
+    inlines = [GameCategoryFilterInline, CategoryOptionInline]
 
     @admin.display(description='Filters')
     def filter_count(self, obj):
         return obj.assigned_filters.count()
+
+    @admin.display(description='Options')
+    def option_count(self, obj):
+        return obj.options.count()
+
+    def save_formset(self, request, form, formset, change):
+        if formset.model is CategoryOption:
+            for inline_form in formset.forms:
+                icon = inline_form.cleaned_data.get('icon') if inline_form.cleaned_data else None
+                if isinstance(icon, UploadedFile):
+                    inline_form.instance.icon = optimize_uploaded_image(icon, preset='game_icon')
+        super().save_formset(request, form, formset, change)
+
+
+@admin.register(CategoryOption)
+class CategoryOptionAdmin(HiddenModelAdmin):
+    list_display = ['name', 'game_category', 'order', 'is_popular']
+    list_filter = ['game_category__game']
+    list_editable = ['order', 'is_popular']
+    search_fields = ['name', 'game_category__game__name', 'game_category__category__name']
+    autocomplete_fields = ['game_category']
 
 
 @admin.register(FilterOption)
@@ -793,9 +854,9 @@ class FilterOptionAdmin(HiddenModelAdmin):
 
 @admin.register(GameCategoryFilter)
 class GameCategoryFilterAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'order']
+    list_display = ['__str__', 'order', 'require_selection']
     list_filter = ['game_category__game']
-    list_editable = ['order']
+    list_editable = ['order', 'require_selection']
     autocomplete_fields = ['game_category', 'filter']
 
 

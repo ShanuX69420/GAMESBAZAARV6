@@ -10368,3 +10368,491 @@ img {
     font-size: 1.8rem;
   }
 }
+
+/* ── Offer Mode (options + competing seller offers) ─────────────────────── */
+
+.offer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-areas:
+    "options sidebar"
+    "sellers sidebar";
+  gap: 20px;
+  align-items: start;
+}
+
+.offer-options-card {
+  grid-area: options;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.offer-options-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.offer-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.offer-option-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 30px 14px 14px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: all 0.2s ease;
+}
+
+.offer-option-card:hover {
+  border-color: var(--green-300);
+  box-shadow: var(--shadow-md);
+}
+
+.offer-option-card-selected {
+  border-color: var(--green-500);
+  background: var(--green-50);
+  box-shadow: var(--shadow-sm);
+}
+
+.offer-option-popular {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #FbbF24;
+  color: #422006;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-md) 0 var(--radius-md) 0;
+}
+
+.offer-option-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--green-500);
+  color: var(--text-inverse);
+}
+
+.offer-option-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+.offer-option-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.3;
+}
+
+.offer-option-price {
+  color: var(--green-600);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.offer-option-price-empty {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.offer-option-count {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+/* Buy box */
+
+.offer-sidebar {
+  grid-area: sidebar;
+  position: sticky;
+  top: 84px;
+}
+
+.offer-buybox {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.offer-buybox-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.offer-buybox-option-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+.offer-buybox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.offer-buybox-label {
+  color: var(--text-secondary);
+}
+
+.offer-buybox-value {
+  font-weight: 600;
+}
+
+.offer-buybox-total {
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.offer-buybox-total .offer-buybox-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.offer-buybox-price {
+  color: var(--green-600);
+  font-weight: 800;
+  font-size: 1.35rem;
+}
+
+.offer-buybox-protection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-600);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.offer-buybox-seller {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.offer-buybox-seller-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.offer-seller-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.offer-seller-name:hover {
+  color: var(--green-600);
+}
+
+.offer-delivery {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.offer-delivery-instant {
+  color: #D97706;
+}
+
+/* Competing seller offers */
+
+.offer-sellers {
+  grid-area: sellers;
+  min-width: 0;
+}
+
+.offer-seller-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.offer-seller-row {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  transition: all 0.2s ease;
+}
+
+.offer-seller-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.offer-seller-row:hover {
+  border-color: var(--green-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.offer-seller-row-seller {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.offer-seller-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.offer-seller-row-delivery {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.offer-seller-row-label {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+}
+
+.offer-seller-row-price {
+  font-weight: 700;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+
+.offer-seller-row-buy {
+  white-space: nowrap;
+}
+
+.offer-no-others {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  text-align: center;
+}
+
+@media (max-width: 1024px) {
+  .offer-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "options"
+      "sidebar"
+      "sellers";
+  }
+
+  .offer-sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .offer-options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .offer-seller-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 10px;
+  }
+
+  .offer-seller-row-delivery {
+    grid-column: 1;
+  }
+
+  .offer-seller-row-price {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .offer-seller-row-buy {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  .offer-seller-row-instructions-btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+/* Offer mode: gate filters (e.g., select Region before offers show) */
+
+.offer-layout-gated {
+  grid-template-areas:
+    "gate sidebar"
+    "options sidebar"
+    "sellers sidebar";
+}
+
+.offer-gate-card {
+  grid-area: gate;
+  background: var(--bg-primary);
+  border: 1px solid var(--green-300);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.offer-gate-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.offer-gate-required {
+  color: var(--red-500);
+}
+
+.offer-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--green-500);
+  color: var(--text-inverse);
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.offer-options-title .offer-step-badge {
+  margin-right: 8px;
+}
+
+.offer-gate-select {
+  width: 100%;
+  max-width: 420px;
+}
+
+.offer-options-grid-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.offer-options-grid-disabled .offer-option-card {
+  cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+  .offer-layout-gated {
+    grid-template-areas:
+      "gate"
+      "options"
+      "sidebar"
+      "sellers";
+  }
+}
+
+/* Offer mode: delivery instructions toggles */
+
+.offer-instructions-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.offer-instructions-toggle:hover {
+  color: var(--green-600);
+}
+
+.offer-instructions-toggle:hover .offer-buybox-label {
+  color: var(--green-600);
+}
+
+.offer-instructions-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.offer-instructions-chevron-open {
+  transform: rotate(180deg);
+}
+
+.offer-instructions-text {
+  white-space: pre-line;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+
+.offer-buybox-instructions .offer-instructions-toggle {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.offer-seller-row-instructions {
+  border-top: 1px solid var(--border-color);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.offer-seller-row-instructions-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}

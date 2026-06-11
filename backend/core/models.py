@@ -100,12 +100,22 @@ class GameCategory(models.Model):
     - Control display order per game
     - Attach filters to specific game+category combos
     """
+    LISTING_MODE_CHOICES = [
+        ('standard', 'Standard (sellers list their own items)'),
+        ('offer', 'Offers (admin-defined options, sellers compete on price)'),
+    ]
+
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='game_categories')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='game_categories')
     order = models.PositiveIntegerField(default=0, help_text='Display order within the game')
     allow_auto_delivery = models.BooleanField(
         default=False,
         help_text='Allow sellers to create automated delivery listings in this game+category.',
+    )
+    listing_mode = models.CharField(
+        max_length=20, choices=LISTING_MODE_CHOICES, default='standard',
+        help_text='Offers mode shows admin-defined options (e.g., 60 UC, 325 UC) '
+                  'with competing seller offers — best for top-ups and subscriptions.',
     )
 
     class Meta:
@@ -116,6 +126,33 @@ class GameCategory(models.Model):
 
     def __str__(self):
         return f"{self.game.name} → {self.category.name}"
+
+
+class CategoryOption(models.Model):
+    """A buyable option in an offers-mode game category (e.g., '60 UC', 'Plus — 1 Month')."""
+    game_category = models.ForeignKey(GameCategory, on_delete=models.CASCADE,
+                                      related_name='options')
+    name = models.CharField(max_length=200, help_text='Shown to buyers (e.g., "60 UC")')
+    icon = models.ImageField(upload_to='option_icons/', blank=True, null=True,
+                             help_text='Small icon for the option (recommended: 64x64 or 128x128)')
+    order = models.PositiveIntegerField(default=0, help_text='Display order (lower = first)')
+    is_popular = models.BooleanField(
+        default=False,
+        help_text='Show a "Popular" badge and preselect this option on the browse page.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['game_category', 'name'],
+                name='category_option_gc_name_uniq',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.game_category} — {self.name}"
 
 
 class Filter(models.Model):
@@ -170,6 +207,11 @@ class GameCategoryFilter(models.Model):
     filter = models.ForeignKey(Filter, on_delete=models.CASCADE,
                                 related_name='game_category_assignments')
     order = models.PositiveIntegerField(default=0, help_text='Display order of this filter')
+    require_selection = models.BooleanField(
+        default=False,
+        help_text='Buyers must pick a value for this filter before offers are shown '
+                  '(e.g., Region for region-locked gift cards). Used by offers-mode categories.',
+    )
 
     class Meta:
         ordering = ['order']
@@ -277,6 +319,12 @@ class Listing(models.Model):
                                related_name='listings')
     game_category = models.ForeignKey(GameCategory, on_delete=models.CASCADE,
                                        related_name='listings')
+    option = models.ForeignKey(
+        CategoryOption, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='listings',
+        help_text='For offers-mode categories: the option this offer is for. '
+                  'Title is kept in sync with the option name.',
+    )
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True, default='')
     price = models.DecimalField(
@@ -320,6 +368,10 @@ class Listing(models.Model):
             models.Index(
                 fields=['seller', '-created_at'],
                 name='listing_seller_created_idx',
+            ),
+            models.Index(
+                fields=['option', 'status'],
+                name='listing_option_status_idx',
             ),
             GinIndex(fields=['filter_values'], name='listing_filter_values_gin'),
             GinIndex(fields=['title'], name='listing_title_trgm_idx', opclasses=['gin_trgm_ops']),
@@ -661,9 +713,11 @@ class JazzCashPayment(models.Model):
     """A JazzCash MWallet gateway transaction (instant top-up or direct buy).
 
     Successful payments always credit the user's wallet first (idempotently,
-    keyed on ``jazzcash_<pk>``). Purchase-purpose payments then immediately
-    execute the listing purchase; if the listing became unavailable while the
-    customer was paying, the money safely stays in the wallet.
+    keyed on ``jazzcash_<pk>``). Purchase-purpose payments only charge the
+    buyer's wallet shortfall (at least the minimum top-up) and then execute
+    the listing purchase, paid in full from the wallet; if the listing became
+    unavailable while the customer was paying, the money safely stays in the
+    wallet.
     """
     PURPOSE_CHOICES = [
         ('topup', 'Wallet Top-Up'),

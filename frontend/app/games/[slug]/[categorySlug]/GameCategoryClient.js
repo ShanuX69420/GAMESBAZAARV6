@@ -22,6 +22,34 @@ const SORT_OPTIONS = [
   { value: 'rating', label: 'Seller Rating' },
 ];
 
+const OFFER_SORT_OPTIONS = [
+  { value: '', label: 'Best Offer' },
+  { value: 'price_asc', label: 'Price: Low to High' },
+  { value: 'price_desc', label: 'Price: High to Low' },
+  { value: 'delivery', label: 'Fastest Delivery' },
+  { value: 'rating', label: 'Seller Rating' },
+  { value: 'newest', label: 'Newest First' },
+];
+
+function DeliveryTimeBadge({ listing }) {
+  return listing.is_auto_delivery ? (
+    <span className="offer-delivery offer-delivery-instant">
+      <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+      </svg>
+      Instant
+    </span>
+  ) : (
+    <span className="offer-delivery">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      {listing.delivery_time || '1-2 Hours'}
+    </span>
+  );
+}
+
 function StarRating({ rating, count }) {
   if (rating === null || rating === undefined) return null;
   const fullStars = Math.floor(rating);
@@ -82,10 +110,13 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const [sortBy, setSortBy] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  const [selectedOption, setSelectedOption] = useState(initialData?.selected_option_id ?? null);
+  const [buyboxInstructionsOpen, setBuyboxInstructionsOpen] = useState(false);
+  const [expandedInstructions, setExpandedInstructions] = useState(() => new Set());
   const hasListingData = Boolean(data);
   const loadedListingCount = data?.listings?.length || 0;
 
-  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, onlineOnly = false, search = '', ordering = '') => {
+  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, onlineOnly = false, search = '', ordering = '', option = null) => {
     if (append) {
       setLoadingMore(true);
     } else {
@@ -104,6 +135,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         search,
         seller: sellerFilter,
         ordering,
+        option: option || '',
       });
       const res = await fetch(url);
       if (res.ok) {
@@ -115,6 +147,11 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
             listings: [...(prev.listings || []), ...(nextData.listings || [])],
           };
         });
+        if (!append && nextData.listing_mode === 'offer' && !option) {
+          // First fetch without an explicit option: the backend picked the
+          // default option for us — adopt it so option cards highlight.
+          setSelectedOption(nextData.selected_option_id ?? null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -134,6 +171,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     filterEffectReadyRef.current = false;
     if (initialData) {
       setData(initialData);
+      setSelectedOption(initialData.selected_option_id ?? null);
       setLoading(false);
       setLoadingMore(false);
       return;
@@ -179,6 +217,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           search: searchQuery,
           seller: sellerFilter,
           ordering: sortBy,
+          option: selectedOption || '',
         });
         const res = await fetch(url, { signal: controller.signal });
         if (res.ok && !cancelled) {
@@ -224,7 +263,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       if (controller) controller.abort();
       clearInterval(interval);
     };
-  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sellerFilter, sortBy]);
+  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sellerFilter, sortBy, selectedOption]);
 
   // Debounce search input
   useEffect(() => {
@@ -253,7 +292,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       return;
     }
     if (data) {
-      fetchData(activeFilters, 0, false, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy);
+      fetchData(activeFilters, 0, false, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, selectedOption);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy]);
@@ -262,6 +301,30 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     if (catSlug !== categorySlug) {
       router.push(buildSellerListingsPath({ gameSlug: slug, categorySlug: catSlug, seller: sellerFilter }));
     }
+  }
+
+  function toggleInstructions(listingId) {
+    setExpandedInstructions(prev => {
+      const next = new Set(prev);
+      if (next.has(listingId)) {
+        next.delete(listingId);
+      } else {
+        next.add(listingId);
+      }
+      return next;
+    });
+  }
+
+  function handleOptionSelect(optionId) {
+    if (optionId === selectedOption) return;
+    setSelectedOption(optionId);
+    setBuyboxInstructionsOpen(false);
+    setExpandedInstructions(new Set());
+    // Shallow URL update so the selection is shareable without a navigation
+    const query = new URLSearchParams(searchParams.toString());
+    query.set('option', String(optionId));
+    window.history.replaceState(null, '', `${window.location.pathname}?${query.toString()}`);
+    fetchData(activeFilters, 0, false, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, optionId);
   }
 
   if (loading && !data) {
@@ -278,6 +341,19 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const pagination = data.listing_pagination;
   const listingCount = pagination?.count ?? listings?.length ?? 0;
   const allowAutoDelivery = data.allow_auto_delivery;
+  const isOfferMode = data.listing_mode === 'offer';
+  const options = data.options || [];
+  const selectedOptionData = options.find((opt) => opt.id === selectedOption) || null;
+  const bestOffer = isOfferMode && listings?.length > 0 ? listings[0] : null;
+  const otherOffers = isOfferMode ? (listings || []).slice(1) : [];
+  const otherSellerCount = Math.max(listingCount - 1, 0);
+  // Gate filters (e.g., Region for region-locked gift cards) must be chosen
+  // before offers are shown. Admin marks them via "require selection".
+  const gateFilters = isOfferMode ? filters.filter((f) => f.require_selection) : [];
+  const missingGateFilters = gateFilters.filter((f) => !activeFilters[f.id]);
+  const gateSatisfied = missingGateFilters.length === 0;
+  const hasGateSteps = gateFilters.length > 0;
+  const panelFilters = isOfferMode ? filters.filter((f) => !f.require_selection) : filters;
 
   return (
     <div className="container">
@@ -357,7 +433,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           className={`filters-collapsible ${filtersOpen ? 'filters-collapsible-open' : ''}`}
         >
           <div className="filters-container">
-            {filters.map((filter) => (
+            {panelFilters.map((filter) => (
               <div key={filter.id} className="filter-group">
                 <label className="filter-label" htmlFor={`filter-${filter.id}`}>{filter.name}</label>
                 {filter.filter_type === 'button' ? (
@@ -426,7 +502,8 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               </div>
             )}
 
-            {/* Search Bar (last) */}
+            {/* Search Bar (last) — searching titles is meaningless in offer mode */}
+            {!isOfferMode && (
             <div className="filter-group filter-group-search">
               <label className="filter-label">Search</label>
               <div className="filter-search-wrap">
@@ -446,11 +523,310 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
       </section>
 
+      {/* Offer mode: option grid + buy box + competing seller offers */}
+      {isOfferMode && (
+      <section className="section" style={{ paddingTop: 0 }}>
+        {options.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">🧩</div>
+            <p>No options are available in this category yet. Check back soon.</p>
+          </div>
+        ) : (
+          <div className={`offer-layout ${hasGateSteps ? 'offer-layout-gated' : ''}`}>
+            {/* Gate filters: must be selected before offers are shown */}
+            {hasGateSteps && (
+              <div className="offer-gate-card">
+                {gateFilters.map((filter, index) => (
+                  <div key={filter.id} className="offer-gate-filter">
+                    <label className="offer-gate-label" htmlFor={`offer-gate-${filter.id}`}>
+                      <span className="offer-step-badge">{index + 1}</span>
+                      Select {filter.name}
+                      <span className="offer-gate-required">*</span>
+                    </label>
+                    {filter.filter_type === 'button' ? (
+                      <div className="filter-chips">
+                        {filter.options.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            className={`filter-chip ${activeFilters[filter.id] === opt.value ? 'active' : ''}`}
+                            onClick={() => handleFilterChange(filter.id, opt.value)}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <select
+                        id={`offer-gate-${filter.id}`}
+                        className="filter-select offer-gate-select"
+                        value={activeFilters[filter.id] || ''}
+                        onChange={(e) => handleDropdownChange(filter.id, e.target.value)}
+                      >
+                        <option value="">Choose {filter.name}...</option>
+                        {filter.options.map((opt) => (
+                          <option key={opt.id} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Option cards */}
+            <div className="offer-options-card">
+              <h2 className="offer-options-title">
+                {hasGateSteps && <span className="offer-step-badge">{gateFilters.length + 1}</span>}
+                Options
+              </h2>
+              <div className={`offer-options-grid ${!gateSatisfied ? 'offer-options-grid-disabled' : ''}`}>
+                {options.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`offer-option-card ${opt.id === selectedOption ? 'offer-option-card-selected' : ''}`}
+                    onClick={() => handleOptionSelect(opt.id)}
+                    disabled={!gateSatisfied}
+                  >
+                    {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
+                    {opt.id === selectedOption && (
+                      <span className="offer-option-check" aria-hidden="true">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </span>
+                    )}
+                    {opt.icon_url && (
+                      <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
+                    )}
+                    <span className="offer-option-name">{opt.name}</span>
+                    {opt.min_price !== null && opt.min_price !== undefined ? (
+                      <span className="offer-option-price">PKR {Number(opt.min_price).toLocaleString()}</span>
+                    ) : (
+                      <span className="offer-option-price offer-option-price-empty">No offers yet</span>
+                    )}
+                    {opt.offer_count > 0 && (
+                      <span className="offer-option-count">{opt.offer_count} seller{opt.offer_count !== 1 ? 's' : ''}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Buy box for the best offer of the selected option */}
+            <aside className="offer-sidebar">
+              {!gateSatisfied ? (
+                <div className="offer-buybox">
+                  <div className="empty-state" style={{ padding: '24px 12px' }}>
+                    <div className="empty-state-icon">🌍</div>
+                    <p>Select {missingGateFilters.map((f) => f.name).join(' and ')} to see offers.</p>
+                  </div>
+                </div>
+              ) : loading ? (
+                <div className="offer-buybox">
+                  <div className="loading"><div className="loading-spinner"></div> Loading...</div>
+                </div>
+              ) : bestOffer ? (
+                <div className="offer-buybox">
+                  {selectedOptionData && (
+                    <div className="offer-buybox-option">
+                      {selectedOptionData.icon_url && (
+                        <img src={selectedOptionData.icon_url} alt="" className="offer-buybox-option-icon" />
+                      )}
+                      <span>{selectedOptionData.name}</span>
+                    </div>
+                  )}
+
+                  {bestOffer.filter_display && Object.entries(bestOffer.filter_display).map(([name, value]) => (
+                    <div key={name} className="offer-buybox-row">
+                      <span className="offer-buybox-label">{name}</span>
+                      <span className="offer-buybox-value">{value}</span>
+                    </div>
+                  ))}
+                  <div className="offer-buybox-row">
+                    <span className="offer-buybox-label">Delivery time</span>
+                    <DeliveryTimeBadge listing={bestOffer} />
+                  </div>
+                  {bestOffer.delivery_instructions && (
+                    <div className="offer-buybox-instructions">
+                      <button
+                        type="button"
+                        className="offer-instructions-toggle"
+                        onClick={() => setBuyboxInstructionsOpen(prev => !prev)}
+                        aria-expanded={buyboxInstructionsOpen}
+                      >
+                        <span className="offer-buybox-label">Delivery instructions</span>
+                        <svg className={`offer-instructions-chevron ${buyboxInstructionsOpen ? 'offer-instructions-chevron-open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </button>
+                      {buyboxInstructionsOpen && (
+                        <p className="offer-instructions-text">{bestOffer.delivery_instructions}</p>
+                      )}
+                    </div>
+                  )}
+                  <div className="offer-buybox-row offer-buybox-total">
+                    <span className="offer-buybox-label">Total</span>
+                    <span className="offer-buybox-price">PKR {Number(bestOffer.price).toLocaleString()}</span>
+                  </div>
+
+                  <Link href={`/listing/${bestOffer.id}?buy=1`} className="btn btn-primary btn-full buy-now-btn">
+                    Buy Now
+                  </Link>
+
+                  {category.buyer_protection_enabled && (
+                    <div className="offer-buybox-protection">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        <polyline points="9 12 11 14 15 10"/>
+                      </svg>
+                      <span>Buyer Protection included</span>
+                    </div>
+                  )}
+
+                  <div className="offer-buybox-seller">
+                    <div className="listing-card-avatar-wrap">
+                      <div className="listing-card-avatar">
+                        {bestOffer.seller_avatar_url ? (
+                          <img src={bestOffer.seller_avatar_url} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                        ) : (
+                          bestOffer.seller_name?.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <span className={`listing-card-status-dot ${isOnlineFromLastActive(bestOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                    </div>
+                    <div className="offer-buybox-seller-info">
+                      <Link href={buildSellerProfilePath(bestOffer.seller_name)} className="offer-seller-name">
+                        {bestOffer.seller_name}
+                      </Link>
+                      <StarRating rating={bestOffer.seller_avg_rating} count={bestOffer.seller_review_count} />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="offer-buybox">
+                  <div className="empty-state" style={{ padding: '24px 12px' }}>
+                    <div className="empty-state-icon">🛒</div>
+                    <p>No sellers are offering {selectedOptionData ? selectedOptionData.name : 'this option'} right now.</p>
+                  </div>
+                </div>
+              )}
+            </aside>
+
+            {/* Competing seller offers */}
+            <div className="offer-sellers">
+              <div className="section-header">
+                <h2 className="section-title">
+                  {gateSatisfied ? `Other sellers (${otherSellerCount})` : 'Other sellers'}
+                </h2>
+                <div className="listing-sort-wrap" id="listing-sort">
+                  <svg className="listing-sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="4" y1="6" x2="20" y2="6"/>
+                    <line x1="4" y1="12" x2="14" y2="12"/>
+                    <line x1="4" y1="18" x2="8" y2="18"/>
+                  </svg>
+                  <select
+                    className="listing-sort-select"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    id="listing-sort-select"
+                    aria-label="Sort offers"
+                  >
+                    {OFFER_SORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {!gateSatisfied ? (
+                <p className="offer-no-others">
+                  Select {missingGateFilters.map((f) => f.name).join(' and ')} above to compare seller offers.
+                </p>
+              ) : otherOffers.length > 0 ? (
+                <div className="offer-seller-list">
+                  {otherOffers.map((offer) => (
+                    <div key={offer.id} className="offer-seller-row">
+                      <div className="offer-seller-row-main">
+                        <div className="offer-seller-row-seller">
+                          <div className="listing-card-avatar-wrap">
+                            <div className="listing-card-avatar">
+                              {offer.seller_avatar_url ? (
+                                <img src={offer.seller_avatar_url} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                              ) : (
+                                offer.seller_name?.charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <span className={`listing-card-status-dot ${isOnlineFromLastActive(offer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                          </div>
+                          <div className="offer-seller-row-info">
+                            <Link href={buildSellerProfilePath(offer.seller_name)} className="offer-seller-name">
+                              {offer.seller_name}
+                            </Link>
+                            <StarRating rating={offer.seller_avg_rating} count={offer.seller_review_count} />
+                          </div>
+                        </div>
+                        <div className="offer-seller-row-delivery">
+                          <span className="offer-seller-row-label">Delivery time</span>
+                          <DeliveryTimeBadge listing={offer} />
+                        </div>
+                        <div className="offer-seller-row-price">PKR {Number(offer.price).toLocaleString()}</div>
+                        <Link href={`/listing/${offer.id}?buy=1`} className="btn btn-outline offer-seller-row-buy">
+                          Buy now
+                        </Link>
+                        {offer.delivery_instructions ? (
+                          <button
+                            type="button"
+                            className="offer-instructions-toggle offer-seller-row-instructions-btn"
+                            onClick={() => toggleInstructions(offer.id)}
+                            aria-expanded={expandedInstructions.has(offer.id)}
+                          >
+                            Delivery instructions
+                            <svg className={`offer-instructions-chevron ${expandedInstructions.has(offer.id) ? 'offer-instructions-chevron-open' : ''}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                          </button>
+                        ) : (
+                          <span className="offer-seller-row-instructions-btn" />
+                        )}
+                      </div>
+                      {expandedInstructions.has(offer.id) && offer.delivery_instructions && (
+                        <div className="offer-seller-row-instructions">
+                          <span className="offer-seller-row-instructions-title">Delivery instructions</span>
+                          <p className="offer-instructions-text">{offer.delivery_instructions}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+                    <button
+                      className="btn btn-outline btn-full"
+                      onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, selectedOption)}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? 'Loading...' : 'Load More'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="offer-no-others">
+                  {bestOffer ? 'No other sellers for this option right now.' : 'Be the first seller to make an offer for this option.'}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+      )}
+
       {/* Listings */}
+      {!isOfferMode && (
       <section className="section" style={{ paddingTop: (filters.length > 0 || allowAutoDelivery) ? 0 : undefined }}>
         <div className="section-header">
           <h2 className="section-title">
@@ -562,6 +938,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

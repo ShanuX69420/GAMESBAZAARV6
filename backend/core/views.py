@@ -18,7 +18,7 @@ from django.contrib.auth.models import User
 from django.core import signing
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect
 from django.db.models import (
-    Avg, Case, Count, ExpressionWrapper, F, IntegerField, OuterRef,
+    Avg, Case, Count, ExpressionWrapper, F, IntegerField, Min, OuterRef,
     Prefetch, Q, Subquery, Sum, Value, When,
 )
 from django.db.models.functions import Coalesce
@@ -27,7 +27,7 @@ from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from .models import (
-    Game, GameCategory, UserProfile, Listing, Conversation, Message,
+    Game, GameCategory, CategoryOption, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment, SellerCommissionOverride,
     Review, Notification, Report, SupportTicket, SocialAccount,
@@ -48,7 +48,7 @@ from .serializers import (
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     JazzCashTopUpInitiateSerializer, JazzCashBuyInitiateSerializer,
-    JazzCashPaymentSerializer,
+    JazzCashPaymentSerializer, MIN_TOPUP_AMOUNT,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
@@ -578,7 +578,65 @@ class GameCategoryDetailView(APIView):
         listings_qs = Listing.objects.filter(
             game_category=game_category,
             status='active',
-        ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
+        ).select_related('seller', 'seller__profile', 'option',
+                         'game_category__game', 'game_category__category')
+
+        # Offers mode: expose admin-defined options and scope listings to one of them
+        selected_option_id = None
+        if game_category.listing_mode == 'offer':
+            # Per-option aggregates respect the active filter params (e.g., Region)
+            # so "from" prices reflect what the buyer will actually see.
+            offer_stats_q = Q(listings__status='active')
+            for key, value in request.query_params.items():
+                if key.startswith('filter_') and value:
+                    filter_id = key.replace('filter_', '')
+                    offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
+
+            options = list(
+                game_category.options.annotate(
+                    min_price=Min('listings__price', filter=offer_stats_q),
+                    offer_count=Count('listings', filter=offer_stats_q),
+                )
+            )
+
+            requested_option = request.query_params.get('option', '').strip()
+            option_ids = {opt.id for opt in options}
+            try:
+                requested_option_id = int(requested_option)
+            except (TypeError, ValueError):
+                requested_option_id = None
+            if requested_option_id in option_ids:
+                selected_option_id = requested_option_id
+            else:
+                default_option = next(
+                    (opt for opt in options if opt.is_popular),
+                    options[0] if options else None,
+                )
+                selected_option_id = default_option.id if default_option else None
+
+            cat_data['options'] = [
+                {
+                    'id': opt.id,
+                    'name': opt.name,
+                    'order': opt.order,
+                    'is_popular': opt.is_popular,
+                    'icon_url': cached_media_url(
+                        opt.icon,
+                        request=request,
+                        cache_seconds=GAME_ICON_CACHE_SECONDS,
+                        cache_scope='public',
+                    ) if opt.icon else None,
+                    'min_price': str(opt.min_price) if opt.min_price is not None else None,
+                    'offer_count': opt.offer_count,
+                }
+                for opt in options
+            ]
+            cat_data['selected_option_id'] = selected_option_id
+
+            if selected_option_id is not None:
+                listings_qs = listings_qs.filter(option_id=selected_option_id)
+            else:
+                listings_qs = listings_qs.none()
 
         # Annotate with seller rating stats (for display on listing cards)
         seller_avg_rating_subquery = (
@@ -628,15 +686,31 @@ class GameCategoryDetailView(APIView):
             listings_qs = listings_qs.filter(seller__username=seller_username)
 
         # Sorting / Ordering
+        delivery_speed_rank = Case(
+            When(delivery_time='Instant', then=Value(0)),
+            When(delivery_time='1-2 Hours', then=Value(1)),
+            When(delivery_time='2-6 Hours', then=Value(2)),
+            When(delivery_time='6-12 Hours', then=Value(3)),
+            When(delivery_time='12-24 Hours', then=Value(4)),
+            When(delivery_time='1-3 Days', then=Value(5)),
+            default=Value(6),
+            output_field=IntegerField(),
+        )
         ALLOWED_ORDERINGS = {
-            'price_asc': F('price').asc(),
-            'price_desc': F('price').desc(),
-            'newest': F('created_at').desc(),
-            'rating': F('seller_avg_rating').desc(nulls_last=True),
+            'price_asc': (F('price').asc(), F('created_at').desc()),
+            'price_desc': (F('price').desc(), F('created_at').desc()),
+            'newest': (F('created_at').desc(),),
+            'rating': (F('seller_avg_rating').desc(nulls_last=True), F('created_at').desc()),
+            'delivery': (F('delivery_speed_rank').asc(), F('price').asc()),
         }
         ordering_param = request.query_params.get('ordering', '').strip()
         if ordering_param in ALLOWED_ORDERINGS:
-            listings_qs = listings_qs.order_by(ALLOWED_ORDERINGS[ordering_param])
+            listings_qs = listings_qs.annotate(delivery_speed_rank=delivery_speed_rank)
+            listings_qs = listings_qs.order_by(*ALLOWED_ORDERINGS[ordering_param])
+        elif game_category.listing_mode == 'offer':
+            # Best offer first: cheapest, fastest delivery as tiebreaker
+            listings_qs = listings_qs.annotate(delivery_speed_rank=delivery_speed_rank)
+            listings_qs = listings_qs.order_by('price', 'delivery_speed_rank', '-created_at')
         else:
             listings_qs = apply_recommended_listing_ordering(listings_qs)
 
@@ -1566,7 +1640,8 @@ class MyListingsView(generics.ListAPIView):
     def get_queryset(self):
         return Listing.objects.filter(
             seller=self.request.user
-        ).select_related('seller', 'seller__profile', 'game_category__game', 'game_category__category')
+        ).select_related('seller', 'seller__profile', 'option',
+                         'game_category__game', 'game_category__category')
 
     def list(self, request, *args, **kwargs):
         all_qs = self.get_queryset()
@@ -1682,7 +1757,8 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
 
     def get(self, request, pk):
         listings_qs = Listing.objects.select_related(
-            'seller', 'seller__profile', 'game_category__game', 'game_category__category'
+            'seller', 'seller__profile', 'option',
+            'game_category__game', 'game_category__category'
         )
         if request.user.is_authenticated:
             if not request.user.is_staff:
@@ -1765,6 +1841,18 @@ class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
             listing.delivery_time = 'Instant'
             update_fields = ['auto_delivery_data', 'quantity', 'delivery_time', 'updated_at']
             if serializer.validated_data['activate']:
+                if (
+                    listing.option_id and listing.status != 'active' and
+                    Listing.objects.filter(
+                        seller=request.user,
+                        option_id=listing.option_id,
+                        status='active',
+                    ).exclude(pk=listing.pk).exists()
+                ):
+                    return Response({
+                        'error': 'You already have an active offer for this option. '
+                                 'Deactivate it first or edit it instead.',
+                    }, status=400)
                 listing.status = 'active'
                 update_fields.append('status')
             listing.save(update_fields=update_fields)
@@ -2652,12 +2740,14 @@ class JazzCashTopUpView(ScopedPostThrottleMixin, APIView):
 
 
 class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
-    """POST /api/payments/jazzcash/buy/ — Pay for a listing with JazzCash.
+    """POST /api/payments/jazzcash/buy/ — Cover a wallet shortfall with JazzCash.
 
-    Charges the full order total to the customer's JazzCash wallet. Once the
-    payment is confirmed, the site wallet is credited and the purchase runs
-    atomically; if the listing sold out in the meantime the money stays in
-    the wallet.
+    Only available when the buyer's wallet cannot cover the order. Charges
+    the shortfall (at least the minimum top-up) to the customer's JazzCash
+    wallet. Once the payment is confirmed, the site wallet is credited and
+    the purchase pays the full total from the wallet, so anything above the
+    shortfall stays as balance; if the listing sold out in the meantime the
+    whole payment stays in the wallet.
     """
     permission_classes = [HasCompletedProfile]
     throttle_scope = 'jazzcash_initiate'
@@ -2693,11 +2783,19 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
         if total <= 0:
             return Response({'error': 'Invalid listing price.'}, status=400)
 
+        wallet, _ = Wallet.objects.get_or_create(user=request.user)
+        if wallet.balance >= total:
+            return Response(
+                {'error': 'You have enough wallet balance for this order — pay with your wallet.'},
+                status=400,
+            )
+        charge = max(total - wallet.balance, MIN_TOPUP_AMOUNT)
+
         try:
             payment = start_jazzcash_payment(
                 user=request.user,
                 purpose='purchase',
-                amount=total,
+                amount=charge,
                 mobile_number=data['mobile_number'],
                 description='GamesBazaar order payment',
                 listing=listing,

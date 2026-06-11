@@ -1101,9 +1101,16 @@ class PurchaseFlowTests(TestCase):
 
         listing_response = self.client.get(f'/api/listings/{listing.pk}/')
         self.assertEqual(listing_response.status_code, 200)
-        self.assertNotIn('delivery_instructions', listing_response.data)
+        # Sellers still see their own instructions on the listing page.
+        self.assertEqual(
+            listing_response.data['delivery_instructions'],
+            'Change the password after login.',
+        )
 
         self.client.force_authenticate(user=self.buyer)
+        # Standard listings hide instructions from buyers until after purchase.
+        buyer_listing_response = self.client.get(f'/api/listings/{listing.pk}/')
+        self.assertEqual(buyer_listing_response.data['delivery_instructions'], '')
         buy_response = self.client.post(
             '/api/orders/buy/',
             {'listing_id': listing.id, 'quantity': 1},
@@ -2166,7 +2173,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'payment_method': 'Bank Transfer',
                 'transaction_id': 'valid-proof',
                 'payment_proof': make_image_file(),
@@ -2204,7 +2211,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'payment_method': 'Bank Transfer',
                 'payment_proof': make_image_file(),
             },
@@ -2219,7 +2226,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'payment_method': 'Bank Transfer',
                 'transaction_id': 'missing-proof',
             },
@@ -2241,7 +2248,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'payment_method': ' bank transfer ',
                 'transaction_id': ' DUPLICATE-REF ',
                 'payment_proof': make_image_file(),
@@ -2275,11 +2282,27 @@ class TopUpProofUploadTests(TestCase):
         )
         self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-much').exists())
 
+    def test_rejects_topup_amount_below_five_hundred(self):
+        response = self.client.post(
+            '/api/wallet/top-up/',
+            {
+                'amount': '499.99',
+                'payment_method': 'Bank Transfer',
+                'transaction_id': 'too-little',
+                'payment_proof': make_image_file(),
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['amount'][0], 'Minimum top-up is PKR 500.')
+        self.assertFalse(TopUpRequest.objects.filter(transaction_id='too-little').exists())
+
     def test_rejects_payment_proof_with_invalid_content_type(self):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'transaction_id': 'invalid-type',
                 'payment_proof': SimpleUploadedFile(
                     'proof.txt',
@@ -2298,7 +2321,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'transaction_id': 'svg-proof',
                 'payment_proof': SimpleUploadedFile(
                     'proof.svg',
@@ -2317,7 +2340,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'transaction_id': 'fake-image',
                 'payment_proof': SimpleUploadedFile(
                     'proof.png',
@@ -2336,7 +2359,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'transaction_id': 'too-large',
                 'payment_proof': SimpleUploadedFile(
                     'proof.png',
@@ -2355,7 +2378,7 @@ class TopUpProofUploadTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'transaction_id': 'too-wide',
                 'payment_proof': make_image_file(size=(6001, 1)),
             },
@@ -2539,7 +2562,7 @@ class WalletTransactionalEmailTests(TestCase):
         response = self.client.post(
             '/api/wallet/top-up/',
             {
-                'amount': '100.00',
+                'amount': '500.00',
                 'payment_method': 'Bank Transfer',
                 'transaction_id': 'email-topup',
                 'payment_proof': make_image_file(),

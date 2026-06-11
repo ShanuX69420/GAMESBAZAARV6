@@ -121,6 +121,8 @@ export default function MyListingsPage() {
       price: listing.price,
       quantity: listing.quantity ?? '',
       status: listing.status,
+      deliveryInstructions: listing.delivery_instructions || '',
+      isOffer: Boolean(listing.option_id),
     });
     setEditModal(listing.id);
   }
@@ -136,6 +138,7 @@ export default function MyListingsPage() {
         price: parseFloat(editForm.price),
         quantity: editForm.quantity === '' || editForm.quantity === null ? null : parseInt(editForm.quantity),
         status: editForm.status,
+        delivery_instructions: editForm.deliveryInstructions,
       };
       await updateListing(editModal, data);
       setSuccess('Listing updated successfully!');
@@ -632,9 +635,14 @@ export default function MyListingsPage() {
                   className="form-input"
                   value={editForm.title}
                   onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  disabled={editForm.isOffer}
                   required
                 />
+                {editForm.isOffer && (
+                  <span className="form-hint">Offer titles are set automatically from the option name.</span>
+                )}
               </div>
+              {!editForm.isOffer && (
               <div className="form-group">
                 <label className="form-label">Description</label>
                 <textarea
@@ -644,6 +652,7 @@ export default function MyListingsPage() {
                   rows={3}
                 />
               </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Price (PKR)</label>
                 <input
@@ -667,6 +676,21 @@ export default function MyListingsPage() {
                   placeholder="Leave empty for unlimited"
                 />
                 <span className="form-hint">Leave empty for evergreen (unlimited) listing</span>
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Delivery Instructions {editForm.isOffer ? '' : '(Optional)'}
+                </label>
+                <textarea
+                  className="form-textarea"
+                  value={editForm.deliveryInstructions}
+                  onChange={(e) => setEditForm({ ...editForm, deliveryInstructions: e.target.value })}
+                  rows={3}
+                  placeholder="Shown to buyers before and after purchase"
+                />
+                {editForm.isOffer && (
+                  <span className="form-hint">Required — buyers see this next to your offer.</span>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">Status</label>

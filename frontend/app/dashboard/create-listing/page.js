@@ -14,6 +14,9 @@ export default function CreateListingPage() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [allowAutoDelivery, setAllowAutoDelivery] = useState(false);
+  const [listingMode, setListingMode] = useState('standard');
+  const [options, setOptions] = useState([]);
+  const [selectedOptionId, setSelectedOptionId] = useState('');
   const [filters, setFilters] = useState([]);
   const [filterValues, setFilterValues] = useState({});
   const [title, setTitle] = useState('');
@@ -48,6 +51,9 @@ export default function CreateListingPage() {
           setCategories(data.categories || []);
           setSelectedCategory(null);
           setAllowAutoDelivery(false);
+          setListingMode('standard');
+          setOptions([]);
+          setSelectedOptionId('');
           setFilters([]);
           setFilterValues({});
           setIsAutoDelivery(false);
@@ -66,6 +72,9 @@ export default function CreateListingPage() {
           setFilters(data.filters || []);
           setFilterValues({});
           setAllowAutoDelivery(data.allow_auto_delivery || false);
+          setListingMode(data.listing_mode || 'standard');
+          setOptions(data.options || []);
+          setSelectedOptionId('');
           // Reset auto delivery if not allowed
           if (!data.allow_auto_delivery) {
             setIsAutoDelivery(false);
@@ -99,6 +108,16 @@ export default function CreateListingPage() {
       return;
     }
 
+    const isOfferMode = listingMode === 'offer';
+    if (isOfferMode && !selectedOptionId) {
+      setError('Please choose an option to make an offer for.');
+      return;
+    }
+    if (isOfferMode && !deliveryInstructions.trim()) {
+      setError('Please add delivery instructions so buyers know what you need from them.');
+      return;
+    }
+
     const missingFilters = filters.filter(filter => !hasFilterValue(filter));
     if (missingFilters.length > 0) {
       setError(`Please select all required filters: ${missingFilters.map(filter => filter.name).join(', ')}.`);
@@ -110,8 +129,8 @@ export default function CreateListingPage() {
       const listingData = {
         game_slug: selectedGame.slug,
         category_slug: selectedCategory.slug,
-        title,
-        description,
+        title: isOfferMode ? '' : title,
+        description: isOfferMode ? '' : description,
         price: parseFloat(price),
         delivery_time: isAutoDelivery ? 'Instant' : deliveryTime,
         filter_values: filterValues,
@@ -119,6 +138,9 @@ export default function CreateListingPage() {
         auto_delivery_data: isAutoDelivery ? autoDeliveryData : '',
         delivery_instructions: deliveryInstructions,
       };
+      if (isOfferMode) {
+        listingData.option_id = parseInt(selectedOptionId);
+      }
       // Only include quantity if the seller set it
       if (quantity !== '') {
         listingData.quantity = parseInt(quantity);
@@ -244,28 +266,62 @@ export default function CreateListingPage() {
           {/* Step 4: Listing Details */}
           {selectedCategory && (
             <>
-              <div className="form-group">
-                <label className="form-label">Title</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Valorant Account — Diamond Rank, 50+ Skins"
-                  required
-                />
-              </div>
+              {listingMode === 'offer' ? (
+                <div className="form-group">
+                  <label className="form-label">Option</label>
+                  {options.length > 0 ? (
+                    <>
+                      <select
+                        className="form-input"
+                        value={selectedOptionId}
+                        onChange={(e) => setSelectedOptionId(e.target.value)}
+                        required
+                      >
+                        <option value="">Select an option</option>
+                        {options.map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                            {opt.min_price ? ` — lowest offer PKR ${Number(opt.min_price).toLocaleString()}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="form-hint">
+                        Your offer will appear under this option, competing with other sellers
+                        on price and delivery time. The listing title is set automatically.
+                      </span>
+                    </>
+                  ) : (
+                    <span className="form-hint">
+                      No options have been set up for this category yet. Please contact support.
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Title</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g., Valorant Account — Diamond Rank, 50+ Skins"
+                      required
+                    />
+                  </div>
 
-              <div className="form-group">
-                <label className="form-label">Description</label>
-                <textarea
-                  className="form-textarea"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe what you're selling..."
-                  rows={4}
-                />
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Description</label>
+                    <textarea
+                      className="form-textarea"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Describe what you're selling..."
+                      rows={4}
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Price (PKR)</label>
@@ -374,23 +430,30 @@ export default function CreateListingPage() {
                 </div>
               )}
 
-              {/* Delivery Instructions (optional, for all listing types) */}
+              {/* Delivery Instructions (required for offer-mode categories) */}
               <div className="form-group">
-                <label className="form-label">Delivery Instructions (Optional)</label>
+                <label className="form-label">
+                  Delivery Instructions {listingMode === 'offer' ? '' : '(Optional)'}
+                </label>
                 <textarea
                   className="form-textarea"
                   value={deliveryInstructions}
                   onChange={(e) => setDeliveryInstructions(e.target.value)}
-                  placeholder="Optional note shown to buyers, e.g., 'Please change the password immediately after receiving the account'"
+                  placeholder={listingMode === 'offer'
+                    ? "Tell buyers what you need and how delivery works, e.g., 'Only your Player ID / UID is required. No password needed. Double-check your UID before ordering.'"
+                    : "Optional note shown to buyers, e.g., 'Please change the password immediately after receiving the account'"}
                   rows={3}
+                  required={listingMode === 'offer'}
                 />
                 <span className="form-hint">
-                  This note will be visible to every buyer when they purchase.
+                  {listingMode === 'offer'
+                    ? 'Required — buyers see this next to your offer before purchasing.'
+                    : 'This note will be visible to every buyer when they purchase.'}
                 </span>
               </div>
 
-              <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
-                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : 'Create Listing'}
+              <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (listingMode === 'offer' && options.length === 0)}>
+                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : listingMode === 'offer' ? 'Create Offer' : 'Create Listing'}
               </button>
             </>
           )}

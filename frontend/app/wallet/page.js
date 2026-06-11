@@ -12,6 +12,8 @@ import {
 const TRANSACTION_PAGE_SIZE = 20;
 const TOPUP_PAGE_SIZE = 20;
 const WITHDRAW_PAGE_SIZE = 20;
+const MIN_TOP_UP_AMOUNT = 500;
+const MIN_TOP_UP_MESSAGE = 'Minimum top-up is PKR 500.';
 const MAX_TOP_UP_AMOUNT = 10000;
 const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to add more.';
 const MIN_WITHDRAW_AMOUNT = 500;
@@ -154,6 +156,10 @@ export default function WalletPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (Number(topUpAmount) < MIN_TOP_UP_AMOUNT) {
+      setError(MIN_TOP_UP_MESSAGE);
+      return;
+    }
     if (Number(topUpAmount) > MAX_TOP_UP_AMOUNT) {
       setError(MAX_TOP_UP_MESSAGE);
       return;
@@ -187,6 +193,10 @@ export default function WalletPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (Number(topUpAmount) < MIN_TOP_UP_AMOUNT) {
+      setError(MIN_TOP_UP_MESSAGE);
+      return;
+    }
     if (Number(topUpAmount) > MAX_TOP_UP_AMOUNT) {
       setError(MAX_TOP_UP_MESSAGE);
       return;
@@ -270,6 +280,7 @@ export default function WalletPage() {
   }
 
   const amountOverLimit = Number(topUpAmount) > MAX_TOP_UP_AMOUNT;
+  const topUpBelowMin = topUpAmount !== '' && Number(topUpAmount) < MIN_TOP_UP_AMOUNT;
   const jazzCashEnabled = Boolean(walletData?.jazzcash_enabled);
   const activeTopUpMethod = jazzCashEnabled ? topUpMethod : 'manual';
   const withdrawBelowMin = withdrawAmount !== '' && Number(withdrawAmount) < MIN_WITHDRAW_AMOUNT;
@@ -368,11 +379,14 @@ export default function WalletPage() {
                     className="form-input"
                     value={topUpAmount}
                     onChange={handleTopUpAmountChange}
-                    placeholder="e.g. 1000"
-                    min="1"
+                    placeholder={`Min. ${MIN_TOP_UP_AMOUNT}`}
+                    min={MIN_TOP_UP_AMOUNT}
                     step="0.01"
                     required
                   />
+                  {topUpBelowMin && (
+                    <span className="form-hint form-error-text">{MIN_TOP_UP_MESSAGE}</span>
+                  )}
                   {amountOverLimit && (
                     <span className="form-hint form-error-text">{MAX_TOP_UP_MESSAGE}</span>
                   )}
@@ -396,7 +410,7 @@ export default function WalletPage() {
                     page will update automatically.
                   </div>
                 )}
-                <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit}>
+                <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit || topUpBelowMin}>
                   {submitting
                     ? (jazzCashWaiting ? 'Waiting for confirmation...' : 'Sending request...')
                     : 'Pay with JazzCash'}
@@ -460,11 +474,14 @@ export default function WalletPage() {
                 className="form-input"
                 value={topUpAmount}
                 onChange={handleTopUpAmountChange}
-                placeholder="e.g. 1000"
-                min="1"
+                placeholder={`Min. ${MIN_TOP_UP_AMOUNT}`}
+                min={MIN_TOP_UP_AMOUNT}
                 step="0.01"
                 required
               />
+              {topUpBelowMin && (
+                <span className="form-hint form-error-text">{MIN_TOP_UP_MESSAGE}</span>
+              )}
               {amountOverLimit && (
                 <span className="form-hint form-error-text">{MAX_TOP_UP_MESSAGE}</span>
               )}
@@ -501,7 +518,7 @@ export default function WalletPage() {
                 required
               />
             </div>
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit || topUpBelowMin}>
               {submitting ? 'Submitting...' : 'Submit Top-Up Request'}
             </button>
           </form>

@@ -23,6 +23,7 @@ from django.utils import timezone
 
 from core.models import (
     Category,
+    CategoryOption,
     Conversation,
     Filter,
     FilterOption,
@@ -51,6 +52,58 @@ LARGE_LISTING_SETS = {
     ("pubg-mobile", "top-up"): 56,
     ("roblox", "currency"): 54,
 }
+
+# Offer-mode demos: admin-defined options where sellers compete on price.
+OFFER_MODE_DEMOS = [
+    {
+        "game_slug": "pubg-mobile",
+        "category_order": 10,
+        "category": {
+            "name": "UC",
+            "slug": "uc",
+            "icon": "UC",
+            "description": "PUBG Mobile UC top-ups from competing sellers.",
+            "commission_rate": Decimal("4.00"),
+        },
+        "delivery_instructions": (
+            "Only your Player ID / UID is required. No password or account login needed.\n\n"
+            "How to find your UID: open PUBG Mobile > Profile > copy your Player ID.\n\n"
+            "Please double-check your UID before ordering. Completed top-ups cannot be "
+            "cancelled or refunded."
+        ),
+        "options": [
+            {"name": "60 UC", "base_price": Decimal("220.00"), "popular": True},
+            {"name": "325 UC", "base_price": Decimal("1150.00")},
+            {"name": "660 UC", "base_price": Decimal("2300.00")},
+            {"name": "1800 UC", "base_price": Decimal("6200.00")},
+            {"name": "3850 UC", "base_price": Decimal("13000.00")},
+            {"name": "8100 UC", "base_price": Decimal("26500.00")},
+        ],
+    },
+    {
+        "game_slug": "free-fire",
+        "category_order": 10,
+        "category": {
+            "name": "Diamonds",
+            "slug": "diamonds",
+            "icon": "DIA",
+            "description": "Free Fire diamond top-ups from competing sellers.",
+            "commission_rate": Decimal("4.00"),
+        },
+        "delivery_instructions": (
+            "Send your Free Fire Player ID only. We never need your password.\n\n"
+            "Make sure your ID is correct — wrong IDs cannot be refunded after delivery."
+        ),
+        "options": [
+            {"name": "100 Diamonds", "base_price": Decimal("300.00")},
+            {"name": "310 Diamonds", "base_price": Decimal("900.00"), "popular": True},
+            {"name": "520 Diamonds", "base_price": Decimal("1500.00")},
+            {"name": "1060 Diamonds", "base_price": Decimal("3000.00")},
+            {"name": "2180 Diamonds", "base_price": Decimal("6000.00")},
+            {"name": "5600 Diamonds", "base_price": Decimal("15500.00")},
+        ],
+    },
+]
 
 
 GAMES = [
@@ -697,6 +750,94 @@ def seed_listings(game_categories, option_map, sellers):
     return created_or_updated
 
 
+def upsert_category_option(game_category, name, order, is_popular):
+    option = (
+        CategoryOption.objects.filter(game_category=game_category, name=name)
+        .order_by("id")
+        .first()
+    )
+    defaults = {"order": order, "is_popular": is_popular}
+    if not option:
+        return CategoryOption.objects.create(
+            game_category=game_category, name=name, **defaults,
+        )
+    return update_fields(option, defaults)
+
+
+def upsert_offer_listing(seller, game_category, option, price, delivery_time, filter_values,
+                         delivery_instructions):
+    listing = (
+        Listing.objects.filter(seller=seller, game_category=game_category, option=option)
+        .order_by("id")
+        .first()
+    )
+    defaults = {
+        "title": option.name,
+        "description": "",
+        "price": price,
+        "quantity": None,
+        "status": "active",
+        "delivery_time": delivery_time,
+        "filter_values": filter_values,
+        "delivery_instructions": delivery_instructions,
+    }
+    if not listing:
+        return Listing.objects.create(
+            seller=seller,
+            game_category=game_category,
+            option=option,
+            **defaults,
+        )
+    return update_fields(listing, defaults)
+
+
+def seed_offer_mode_demos(games, sellers, filters):
+    delivery_times = ["1-2 Hours", "2-6 Hours", "6-12 Hours", "12-24 Hours"]
+    # Buyers must pick a region before offers show; alternate offer regions so
+    # every region has competing sellers.
+    region_filter = filters["Region"]
+    region_values = ["global", "pakistan"]
+    total = 0
+
+    for demo in OFFER_MODE_DEMOS:
+        game = games.get(demo["game_slug"])
+        if not game:
+            continue
+        category = upsert_category(demo["category"])
+        game_category = upsert_game_category(game, category, demo["category_order"])
+        update_fields(game_category, {"listing_mode": "offer"})
+
+        assignment = upsert_game_category_filter(game_category, region_filter, 0)
+        update_fields(assignment, {"require_selection": True})
+
+        for order, option_data in enumerate(demo["options"]):
+            option = upsert_category_option(
+                game_category,
+                option_data["name"],
+                order,
+                option_data.get("popular", False),
+            )
+            base_price = option_data["base_price"]
+            competing_sellers = 3 + (order % 3)
+            for index in range(competing_sellers):
+                seller = sellers[(index + order) % len(sellers)]
+                markup = Decimal(index * 4 + (order % 2)) / Decimal("100")
+                price = (base_price * (Decimal("1.00") + markup)).quantize(Decimal("0.01"))
+                region_value = region_values[index % len(region_values)]
+                upsert_offer_listing(
+                    seller=seller,
+                    game_category=game_category,
+                    option=option,
+                    price=price,
+                    delivery_time=delivery_times[(index + order) % len(delivery_times)],
+                    filter_values={str(region_filter.id): region_value},
+                    delivery_instructions=demo["delivery_instructions"],
+                )
+                total += 1
+
+    return total
+
+
 def get_or_create_conversation(user_a, user_b):
     conversation = (
         Conversation.objects.filter(participants=user_a)
@@ -779,6 +920,8 @@ def print_summary(demo_buyer, sellers):
     print("/games/valorant/accounts")
     print("/games/pubg-mobile/top-up")
     print("/games/roblox/currency")
+    print("/games/pubg-mobile/uc (offer mode)")
+    print("/games/free-fire/diamonds (offer mode)")
 
 
 def main():
@@ -816,9 +959,11 @@ def main():
         buyers = [upsert_user(data, "none") for data in BUYERS]
 
         listing_total = seed_listings(game_categories, option_map, sellers)
+        offer_total = seed_offer_mode_demos(games, sellers, filters)
         seed_conversations(buyers[0], sellers)
 
     print(f"Seeded or updated {listing_total} demo listings.")
+    print(f"Seeded or updated {offer_total} offer-mode demo offers.")
     print_summary(buyers[0], sellers)
 
 

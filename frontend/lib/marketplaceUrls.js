@@ -18,6 +18,7 @@ export function buildGameCategoryListingUrl({
   search = '',
   seller = '',
   ordering = '',
+  option = '',
 }) {
   const query = new URLSearchParams();
 
@@ -26,6 +27,9 @@ export function buildGameCategoryListingUrl({
   }
   if (offset !== undefined && offset !== null) {
     query.set('offset', String(offset));
+  }
+  if (option) {
+    query.set('option', String(option));
   }
 
   Object.entries(filters)
