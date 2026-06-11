@@ -3,6 +3,7 @@ import hashlib
 import logging
 import secrets
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
 from time import time
@@ -103,6 +104,29 @@ def _send_html_email(recipient_email, *, subject, template_name, context, fail_s
             raise
 
 
+# Bounded pool so bursts of notifications (e.g. bulk admin approvals) queue
+# instead of spawning unbounded threads; EMAIL_TIMEOUT caps how long a hung
+# SMTP connection can occupy a worker.
+_EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix='email-send')
+
+
+def _queue_html_email(recipient_email, *, subject, template_name, context):
+    """Send the email off the calling thread.
+
+    Only safe for best-effort mail: callers must not depend on delivery or
+    see exceptions (_send_html_email logs failures itself). Synchronous under
+    tests so mail.outbox assertions still see the message.
+    """
+    if getattr(settings, 'IS_TESTING', False):
+        _send_html_email(recipient_email, subject=subject,
+                         template_name=template_name, context=context)
+        return
+    _EMAIL_EXECUTOR.submit(
+        _send_html_email, recipient_email,
+        subject=subject, template_name=template_name, context=context,
+    )
+
+
 def send_transactional_email(user, *, subject, message_body, detail_rows=None,
                              status_text=None, status_class='info',
                              admin_note=None, extra_message=None):
@@ -110,8 +134,10 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
 
     The SMTP send is deferred until the surrounding database transaction
     commits, so a slow mail server never extends wallet/listing/order row-lock
-    hold times — and no email goes out for a rolled-back change. Outside a
-    transaction the email is sent immediately.
+    hold times — and no email goes out for a rolled-back change. After commit
+    the send happens on a background worker, so the HTTP response doesn't
+    wait on the mail relay either. Outside a transaction the email is queued
+    immediately.
     """
     if not getattr(settings, 'TRANSACTIONAL_EMAILS_ENABLED', True):
         return False
@@ -131,7 +157,7 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
         'extra_message': extra_message,
     }
 
-    transaction.on_commit(lambda: _send_html_email(
+    transaction.on_commit(lambda: _queue_html_email(
         recipient,
         subject=subject,
         template_name='email/transactional.html',
