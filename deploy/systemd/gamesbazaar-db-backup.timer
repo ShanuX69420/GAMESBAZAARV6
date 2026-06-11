@@ -1,0 +1,9 @@
+[Unit]
+Description=Run GamesBazaar database backup nightly at 02:30 PKT
+
+[Timer]
+OnCalendar=*-*-* 21:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

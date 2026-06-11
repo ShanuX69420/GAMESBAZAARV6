@@ -1,0 +1,6 @@
+[Unit]
+Description=GamesBazaar nightly PostgreSQL backup to R2
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gamesbazaar/venv/bin/python /opt/gamesbazaar/backup_db.py

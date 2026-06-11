@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar reconcile pending JazzCash payments
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py reconcile_jazzcash_payments

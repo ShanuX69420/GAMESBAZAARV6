@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar auto-confirm delivered orders
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py auto_confirm_orders --batch-size 500

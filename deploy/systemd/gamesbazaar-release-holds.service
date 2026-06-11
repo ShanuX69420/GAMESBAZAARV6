@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar release held buyer-protection payouts
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py release_held_order_funds --batch-size 500

@@ -1,0 +1,18 @@
+[Unit]
+Description=GamesBazaar Next.js frontend
+After=network.target gamesbazaar-backend.service
+Wants=gamesbazaar-backend.service
+
+[Service]
+Type=simple
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/usr/bin/node /opt/gamesbazaar/app/frontend/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
