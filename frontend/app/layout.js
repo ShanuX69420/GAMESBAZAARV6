@@ -1,5 +1,6 @@
 import './globals.css';
 import './reviews.css';
+import Analytics from '@/components/Analytics';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import JsonLd from '@/components/JsonLd';
@@ -65,6 +66,7 @@ export default function RootLayout({ children }) {
           <main>{children}</main>
           <Footer />
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   );

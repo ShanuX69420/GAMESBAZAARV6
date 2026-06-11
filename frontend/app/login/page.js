@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import { trackSignUp } from '@/lib/analytics';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export default function LoginPage() {
@@ -47,6 +48,8 @@ export default function LoginPage() {
 
   function handleGoogleSuccess(userData) {
     if (userData?.needs_setup) {
+      // needs_setup marks accounts that haven't finished onboarding — i.e. new.
+      trackSignUp('google');
       router.push('/complete-profile');
     } else {
       router.push(userData?.is_seller ? '/dashboard' : '/');

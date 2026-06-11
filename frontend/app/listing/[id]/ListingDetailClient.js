@@ -9,6 +9,7 @@ import {
   initiateJazzCashPurchase, pollJazzCashPayment,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
+import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
@@ -65,6 +66,12 @@ export default function ListingDetailClient({ initialListing = null }) {
         .finally(() => setWalletFetched(true));
     }
   }, [user]);
+
+  // Ads funnel: one view_item / ViewContent per listing viewed.
+  useEffect(() => {
+    if (listing) trackViewListing(listing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listing?.id]);
 
   // Coming from an offer page with ?buy=1: jump straight into the purchase
   // confirmation once the listing and wallet are ready.
@@ -153,6 +160,7 @@ export default function ListingDetailClient({ initialListing = null }) {
     setBuyError('');
     setBuySuccess('');
     setShowConfirm(true);
+    trackBeginCheckout(listing, quantity);
   }
 
   async function handleBuy() {
@@ -163,6 +171,7 @@ export default function ListingDetailClient({ initialListing = null }) {
     setBuying(true);
     try {
       const order = await buyListing(listing.id, quantity);
+      trackPurchase(order, listing, quantity);
       setShowConfirm(false);
       setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
       setTimeout(() => router.push(orderPath(order)), 1500);
@@ -192,6 +201,7 @@ export default function ListingDetailClient({ initialListing = null }) {
       }
       if (payment?.status === 'completed' && payment.order_id) {
         const order = { id: payment.order_id, order_number: payment.order_number };
+        trackPurchase(order, listing, quantity);
         setJazzCashWaiting(false);
         setShowConfirm(false);
         setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);

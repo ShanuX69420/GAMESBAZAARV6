@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import { trackSignUp } from '@/lib/analytics';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export default function RegisterPage() {
@@ -45,6 +46,7 @@ export default function RegisterPage() {
         formData.password2,
         acceptedTerms
       );
+      trackSignUp('email');
       // Redirect to verify-email page with token and email
       const params = new URLSearchParams({
         token: data.verification_token,
@@ -60,6 +62,8 @@ export default function RegisterPage() {
 
   function handleGoogleSuccess(userData) {
     if (userData?.needs_setup) {
+      // needs_setup marks accounts that haven't finished onboarding — i.e. new.
+      trackSignUp('google');
       router.push('/complete-profile');
     } else {
       router.push(userData?.is_seller ? '/dashboard' : '/');
