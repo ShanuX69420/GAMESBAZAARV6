@@ -372,7 +372,7 @@ export default function DashboardPage() {
             <div className="sd-panel-body">
               <div className="sd-status-grid">
                 {[
-                  { key: 'pending', label: 'Pending', count: orders.pending },
+                  { key: 'pending', label: 'Awaiting Delivery', count: orders.pending },
                   { key: 'delivered', label: 'Delivered', count: orders.delivered },
                   { key: 'completed', label: 'Completed', count: orders.completed },
                   { key: 'disputed', label: 'Disputed', count: orders.disputed },

@@ -799,7 +799,7 @@ class JazzCashPayment(models.Model):
 class Order(models.Model):
     """Escrow-based order. Funds held until buyer confirms delivery."""
     STATUS_CHOICES = [
-        ('pending', 'Pending'),           # Buyer paid, waiting for seller
+        ('pending', 'Awaiting Delivery'), # Buyer paid, waiting for seller
         ('delivered', 'Delivered'),        # Seller marked as delivered
         ('completed', 'Completed'),       # Buyer confirmed, funds released
         ('disputed', 'Disputed'),         # Buyer opened a dispute

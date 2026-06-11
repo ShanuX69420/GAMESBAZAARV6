@@ -11,7 +11,7 @@ const ORDER_PAGE_SIZE = 20;
 
 const STATUS_TABS = [
   { key: '', label: 'All Orders', icon: '📋' },
-  { key: 'pending', label: 'Pending', icon: '⏳' },
+  { key: 'pending', label: 'Awaiting Delivery', icon: '⏳' },
   { key: 'delivered', label: 'Delivered', icon: '📦' },
   { key: 'completed', label: 'Completed', icon: '✅' },
   { key: 'disputed', label: 'Disputed', icon: '⚠️' },
