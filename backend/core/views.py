@@ -35,6 +35,7 @@ from .models import (
 
 GAME_LIST_CACHE_KEY = 'game-list:v1'
 GAME_LIST_CACHE_SECONDS = 60
+BROWSE_CACHE_SECONDS = 30
 SELLER_PROFILE_CACHE_SECONDS = 30
 UNREAD_COUNT_CACHE_SECONDS = 5
 from .serializers import (
@@ -561,6 +562,24 @@ class GameCategoryDetailView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, game_slug, category_slug):
+        # Only anonymous responses are cached: authenticated payloads can
+        # include owner-only fields (e.g., a seller's delivery instructions).
+        browse_cache_key = None
+        if not request.user.is_authenticated:
+            param_signature = '&'.join(
+                f'{key}={value}'
+                for key, value in sorted(request.query_params.items())
+            )
+            browse_cache_key = 'browse:v1:' + hashlib.sha256(
+                f'{request_origin_cache_scope(request)}:{game_slug}:'
+                f'{category_slug}:{param_signature}'.encode('utf-8')
+            ).hexdigest()
+            cached = cache.get(browse_cache_key)
+            if cached is not None:
+                response = Response(cached)
+                response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
+                return response
+
         game_category = get_object_or_404(
             GameCategory.objects.select_related('game', 'category').prefetch_related(
                 'assigned_filters__filter__options'
@@ -758,7 +777,13 @@ class GameCategoryDetailView(APIView):
             for gc in sibling_gcs
         ]
 
-        return Response(cat_data)
+        response = Response(cat_data)
+        if browse_cache_key is not None:
+            cache.set(browse_cache_key, cat_data, BROWSE_CACHE_SECONDS)
+            response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
+        else:
+            response['Cache-Control'] = 'private'
+        return response
 
 
 # ── Auth views ───────────────────────────────────────────────────────────────
@@ -877,12 +902,21 @@ class RefreshTokenView(ScopedPostThrottleMixin, TokenRefreshView):
 
 
 class LogoutView(APIView):
-    """POST /api/auth/logout/ - Clear auth cookies."""
+    """POST /api/auth/logout/ - Blacklist the refresh token and clear auth cookies."""
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         enforce_trusted_origin(request)
+        refresh = request.COOKIES.get(settings.JWT_AUTH_COOKIE_REFRESH)
+        if not refresh and isinstance(request.data, dict):
+            refresh = request.data.get('refresh')
+        if refresh:
+            from rest_framework_simplejwt.tokens import RefreshToken
+            try:
+                RefreshToken(str(refresh)).blacklist()
+            except TokenError:
+                pass  # already expired or invalid — nothing left to revoke
         response = Response({'message': 'Logged out.'})
         clear_jwt_auth_cookies(response)
         return response
@@ -2790,6 +2824,12 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                 status=400,
             )
         charge = max(total - wallet.balance, MIN_TOPUP_AMOUNT)
+        if charge > settings.JAZZCASH_MAX_PAYMENT_PKR:
+            return Response(
+                {'error': f'JazzCash payments are limited to PKR {settings.JAZZCASH_MAX_PAYMENT_PKR:,.0f} '
+                          'per transaction. Please contact support for larger orders.'},
+                status=400,
+            )
 
         try:
             payment = start_jazzcash_payment(
@@ -2876,6 +2916,7 @@ class JazzCashIPNView(APIView):
                 ),
                 hash_verified=True,
                 source='ipn',
+                gateway_amount=data.get('pp_Amount'),
             )
 
         return Response(self._ack('000', 'IPN received successfully'))

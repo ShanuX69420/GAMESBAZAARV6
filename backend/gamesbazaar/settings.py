@@ -4,6 +4,7 @@ Django settings for gamesbazaar project.
 
 from pathlib import Path
 from datetime import timedelta
+from decimal import Decimal
 import os
 import sys
 from django.core.exceptions import ImproperlyConfigured
@@ -118,6 +119,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # Registers OpClass as an index expression wrapper (used by the
+    # UPPER(...) trigram indexes in core.models).
+    'django.contrib.postgres',
     # Third party
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
@@ -160,7 +164,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'gamesbazaar.wsgi.application'
 
-# Database — PostgreSQL
+# Database — PostgreSQL. Connections are kept alive between requests
+# (DB_CONN_MAX_AGE seconds) instead of reconnecting per request; health
+# checks drop stale connections before reuse.
 DATABASES = {
     'default': {
         'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.postgresql'),
@@ -169,6 +175,8 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
+        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 
@@ -459,7 +467,55 @@ JAZZCASH_MERCHANT_MPIN = os.environ.get('JAZZCASH_MERCHANT_MPIN', '').strip()
 # First three letters of the merchant domain, used in pp_TxnRefNo.
 JAZZCASH_TXN_REF_PREFIX = (os.environ.get('JAZZCASH_TXN_REF_PREFIX', 'Gam').strip() or 'Gam')[:3]
 JAZZCASH_REQUEST_TIMEOUT_SECONDS = env_int('JAZZCASH_REQUEST_TIMEOUT_SECONDS', 65)
+# Sanity ceiling for a single JazzCash purchase charge (PKR). JazzCash itself
+# declines anything beyond the customer's wallet limits; this only blocks
+# absurd amounts that would overflow money fields.
+JAZZCASH_MAX_PAYMENT_PKR = Decimal(str(env_int('JAZZCASH_MAX_PAYMENT_PKR', 1_000_000)))
 JAZZCASH_ENABLED = bool(
     JAZZCASH_MERCHANT_ID and JAZZCASH_PASSWORD
     and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
 )
+
+# Error monitoring — active whenever SENTRY_DSN is set. Captures unhandled
+# exceptions and ERROR-level log records (including failed transactional
+# emails) with the Django integration enabled automatically. Never active
+# during test runs: tests deliberately trigger error paths.
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '').strip()
+if IS_TESTING:
+    SENTRY_DSN = ''
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=DJANGO_ENV or ('development' if DEBUG else 'production'),
+        send_default_pii=False,
+        traces_sample_rate=float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', '0') or '0'),
+    )
+
+# Logging — everything to stderr so systemd/journald (or the console in dev)
+# captures it; WARNING+ from third-party code, INFO+ from Django and the app.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {'level': 'INFO'},
+        'core': {'level': 'INFO'},
+    },
+}

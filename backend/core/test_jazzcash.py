@@ -115,8 +115,9 @@ class JazzCashPaymentFlowTests(TestCase):
         self.client.force_authenticate(user=self.buyer)
 
     def _gateway_response(self, code='000', txn_ref_no='Gam20260610120000123', **extra):
+        # pp_Amount is only included when the test passes one (or fake_post
+        # echoes it from the request, like the real gateway does).
         payload = {
-            'pp_Amount': '15000',
             'pp_ResponseCode': code,
             'pp_ResponseMessage': 'Test response',
             'pp_TxnRefNo': txn_ref_no,
@@ -142,7 +143,10 @@ class JazzCashPaymentFlowTests(TestCase):
 
     def test_topup_initiation_success_credits_wallet(self):
         def fake_post(path, payload):
-            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+            return self._gateway_response(
+                code='000', txn_ref_no=payload['pp_TxnRefNo'],
+                pp_Amount=payload['pp_Amount'],
+            )
 
         with patch('core.jazzcash._post', side_effect=fake_post):
             response = self.client.post(
@@ -186,7 +190,10 @@ class JazzCashPaymentFlowTests(TestCase):
 
     def test_direct_buy_charges_min_topup_and_keeps_change_in_wallet(self):
         def fake_post(path, payload):
-            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+            return self._gateway_response(
+                code='000', txn_ref_no=payload['pp_TxnRefNo'],
+                pp_Amount=payload['pp_Amount'],
+            )
 
         with patch('core.jazzcash._post', side_effect=fake_post):
             response = self.client.post(
@@ -228,7 +235,10 @@ class JazzCashPaymentFlowTests(TestCase):
         )
 
         def fake_post(path, payload):
-            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+            return self._gateway_response(
+                code='000', txn_ref_no=payload['pp_TxnRefNo'],
+                pp_Amount=payload['pp_Amount'],
+            )
 
         with patch('core.jazzcash._post', side_effect=fake_post):
             response = self.client.post(
@@ -264,7 +274,10 @@ class JazzCashPaymentFlowTests(TestCase):
         )
 
         def fake_post(path, payload):
-            return self._gateway_response(code='000', txn_ref_no=payload['pp_TxnRefNo'])
+            return self._gateway_response(
+                code='000', txn_ref_no=payload['pp_TxnRefNo'],
+                pp_Amount=payload['pp_Amount'],
+            )
 
         with patch('core.jazzcash._post', side_effect=fake_post):
             response = self.client.post(
@@ -294,6 +307,39 @@ class JazzCashPaymentFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('wallet balance', response.data['error'])
+        self.assertFalse(JazzCashPayment.objects.exists())
+
+    def test_direct_buy_rejected_when_charge_exceeds_jazzcash_limit(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Above gateway limit item',
+            price=Decimal('2000000.00'),
+            quantity=1,
+            status='active',
+        )
+
+        response = self.client.post(
+            '/api/payments/jazzcash/buy/',
+            {'listing_id': listing.id, 'quantity': 1,
+             'mobile_number': '03001234567'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('limited to PKR 1,000,000', response.data['error'])
+        self.assertFalse(JazzCashPayment.objects.exists())
+
+    def test_direct_buy_rejects_quantity_above_maximum(self):
+        response = self.client.post(
+            '/api/payments/jazzcash/buy/',
+            {'listing_id': self.listing.id, 'quantity': 999_999_999,
+             'mobile_number': '03001234567'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('quantity', response.data)
         self.assertFalse(JazzCashPayment.objects.exists())
 
     def test_topup_rejects_amount_below_minimum(self):
@@ -383,6 +429,40 @@ class JazzCashPaymentFlowTests(TestCase):
         self.assertEqual(payment.status, 'pending')
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+
+    def test_ipn_with_matching_amount_completes_payment(self):
+        payment = self._start_pending_payment()  # PKR 300.00
+
+        ipn_payload = self._gateway_response(
+            code='121', txn_ref_no=payment.txn_ref_no, pp_Amount='30000',
+        )
+        response = APIClient().post('/api/payments/jazzcash/ipn/', ipn_payload, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'completed')
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('300.00'))
+
+    def test_ipn_with_mismatched_amount_is_quarantined(self):
+        payment = self._start_pending_payment()  # PKR 300.00
+
+        ipn_payload = self._gateway_response(
+            code='121', txn_ref_no=payment.txn_ref_no, pp_Amount='15000',
+        )
+        response = APIClient().post('/api/payments/jazzcash/ipn/', ipn_payload, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertIn('Amount mismatch', payment.note)
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet=self.buyer_wallet, transaction_type='jazzcash_topup',
+            ).exists()
+        )
 
     def test_ipn_failure_code_marks_payment_failed(self):
         payment = self._start_pending_payment()

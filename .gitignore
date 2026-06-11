@@ -5,6 +5,8 @@ __pycache__/
 db.sqlite3
 *.egg-info/
 .env
+.env.*
+!.env.production.example
 venv/
 
 # Django

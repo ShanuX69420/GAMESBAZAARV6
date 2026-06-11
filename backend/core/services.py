@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import secrets
 import warnings
 from datetime import timedelta
@@ -21,6 +22,8 @@ from django.utils.crypto import constant_time_compare
 
 from .models import Listing, Notification, Order, PlatformLedgerEntry, Wallet, WalletTransaction
 
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_IMAGE_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 ALLOWED_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
@@ -92,13 +95,24 @@ def _send_html_email(recipient_email, *, subject, template_name, context, fail_s
         to=[recipient_email],
     )
     msg.attach_alternative(html_body, 'text/html')
-    msg.send(fail_silently=fail_silently)
+    try:
+        msg.send(fail_silently=False)
+    except Exception:
+        logger.exception('Email "%s" failed to send', subject)
+        if not fail_silently:
+            raise
 
 
 def send_transactional_email(user, *, subject, message_body, detail_rows=None,
                              status_text=None, status_class='info',
                              admin_note=None, extra_message=None):
-    """Send a branded HTML transactional email to a user."""
+    """Send a branded HTML transactional email to a user.
+
+    The SMTP send is deferred until the surrounding database transaction
+    commits, so a slow mail server never extends wallet/listing/order row-lock
+    hold times — and no email goes out for a rolled-back change. Outside a
+    transaction the email is sent immediately.
+    """
     if not getattr(settings, 'TRANSACTIONAL_EMAILS_ENABLED', True):
         return False
 
@@ -107,21 +121,22 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
         return False
 
     username = getattr(user, 'username', '') or ''
+    context = {
+        'username': username,
+        'message_body': message_body,
+        'detail_rows': detail_rows or [],
+        'status_text': status_text,
+        'status_class': status_class,
+        'admin_note': admin_note,
+        'extra_message': extra_message,
+    }
 
-    _send_html_email(
+    transaction.on_commit(lambda: _send_html_email(
         recipient,
         subject=subject,
         template_name='email/transactional.html',
-        context={
-            'username': username,
-            'message_body': message_body,
-            'detail_rows': detail_rows or [],
-            'status_text': status_text,
-            'status_class': status_class,
-            'admin_note': admin_note,
-            'extra_message': extra_message,
-        },
-    )
+        context=context,
+    ))
     return True
 
 

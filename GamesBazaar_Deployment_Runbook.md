@@ -86,6 +86,8 @@ Run this in Windows PowerShell:
 cd C:\Users\pc\opus
 
 git status
+# Review the git status output before adding. Never commit .env files,
+# anything from backend/secrets/, or one-off local scripts.
 git add .
 git commit -m "Describe what changed"
 git push origin main
@@ -117,10 +119,11 @@ sudo -u gamesbazaar git pull --ff-only origin main
 cd /opt/gamesbazaar/app/backend
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/pip install -r requirements.txt
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --noinput
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
 
 cd /opt/gamesbazaar/app/frontend
-sudo -u gamesbazaar npm install
+sudo -u gamesbazaar npm ci
 sudo -u gamesbazaar npm run build
 
 systemctl restart gamesbazaar-backend gamesbazaar-frontend
@@ -160,7 +163,8 @@ sudo -u gamesbazaar git pull --ff-only origin main
 cd /opt/gamesbazaar/app/backend
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/pip install -r requirements.txt
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --noinput
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
 
 systemctl restart gamesbazaar-backend
 systemctl is-active gamesbazaar-backend

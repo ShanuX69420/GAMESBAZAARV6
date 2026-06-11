@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase, override_settings
 
-from .checks import production_throttle_cache_check
+from .checks import production_error_monitoring_check, production_throttle_cache_check
 
 
 REDIS_CACHE = {
@@ -71,3 +71,19 @@ class ProductionThrottleCacheCheckTests(SimpleTestCase):
     )
     def test_skips_local_development(self):
         self.assertEqual(production_throttle_cache_check(None), [])
+
+
+class ProductionErrorMonitoringCheckTests(SimpleTestCase):
+    @override_settings(DEBUG=False, SENTRY_DSN='https://key@sentry.example.com/1')
+    def test_accepts_configured_sentry_dsn(self):
+        self.assertEqual(production_error_monitoring_check(None), [])
+
+    @override_settings(DEBUG=False, SENTRY_DSN='')
+    def test_warns_when_sentry_dsn_missing_in_production(self):
+        warnings = production_error_monitoring_check(None)
+
+        self.assertIn('core.W001', [warning.id for warning in warnings])
+
+    @override_settings(DEBUG=True, SENTRY_DSN='')
+    def test_skips_local_development(self):
+        self.assertEqual(production_error_monitoring_check(None), [])

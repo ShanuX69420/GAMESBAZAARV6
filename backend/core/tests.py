@@ -697,16 +697,17 @@ class TransactionalEmailTemplateTests(TestCase):
         )
 
     def test_send_transactional_email_builds_plain_text_and_html_parts(self):
-        sent = send_transactional_email(
-            self.user,
-            subject='GamesBazaar - Wallet Updated',
-            message_body='Your wallet request was processed.',
-            detail_rows=[('Amount', 'PKR 500')],
-            status_text='Approved',
-            status_class='success',
-            admin_note='Receipt verified.',
-            extra_message='The funds have been credited to your wallet.',
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            sent = send_transactional_email(
+                self.user,
+                subject='GamesBazaar - Wallet Updated',
+                message_body='Your wallet request was processed.',
+                detail_rows=[('Amount', 'PKR 500')],
+                status_text='Approved',
+                status_class='success',
+                admin_note='Receipt verified.',
+                extra_message='The funds have been credited to your wallet.',
+            )
 
         self.assertTrue(sent)
         self.assertEqual(len(mail.outbox), 1)
@@ -973,6 +974,26 @@ class PurchaseFlowTests(TestCase):
 
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+
+    def test_cannot_buy_more_than_max_quantity(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Evergreen unlimited item',
+            price=Decimal('10.00'),
+            quantity=None,
+            status='active',
+        )
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 999_999_999},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('quantity', response.data)
+        self.assertFalse(Order.objects.filter(listing=listing).exists())
 
     def test_auto_delivery_short_data_does_not_debit_wallet(self):
         listing = Listing.objects.create(
@@ -2559,16 +2580,17 @@ class WalletTransactionalEmailTests(TestCase):
         )
 
     def test_topup_request_and_admin_decision_send_emails(self):
-        response = self.client.post(
-            '/api/wallet/top-up/',
-            {
-                'amount': '500.00',
-                'payment_method': 'Bank Transfer',
-                'transaction_id': 'email-topup',
-                'payment_proof': make_image_file(),
-            },
-            format='multipart',
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/wallet/top-up/',
+                {
+                    'amount': '500.00',
+                    'payment_method': 'Bank Transfer',
+                    'transaction_id': 'email-topup',
+                    'payment_proof': make_image_file(),
+                },
+                format='multipart',
+            )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
@@ -2578,7 +2600,7 @@ class WalletTransactionalEmailTests(TestCase):
         topup = TopUpRequest.objects.get(transaction_id='email-topup')
         mail.outbox.clear()
         admin_obj = TopUpRequestAdmin(TopUpRequest, self.site)
-        with patch.object(admin_obj, 'message_user'):
+        with patch.object(admin_obj, 'message_user'), self.captureOnCommitCallbacks(execute=True):
             admin_obj.approve_topups(self.request, TopUpRequest.objects.filter(pk=topup.pk))
 
         self.assertEqual(len(mail.outbox), 1)
@@ -2598,7 +2620,7 @@ class WalletTransactionalEmailTests(TestCase):
             transaction_id='email-topup-rejected',
         )
         mail.outbox.clear()
-        with patch.object(admin_obj, 'message_user'):
+        with patch.object(admin_obj, 'message_user'), self.captureOnCommitCallbacks(execute=True):
             admin_obj.reject_topups(self.request, TopUpRequest.objects.filter(pk=rejected.pk))
 
         self.assertEqual(len(mail.outbox), 1)
@@ -2611,16 +2633,17 @@ class WalletTransactionalEmailTests(TestCase):
         self.assertIn('Please check your wallet', rejected_notification.message)
 
     def test_withdraw_request_and_admin_decision_send_emails(self):
-        response = self.client.post(
-            '/api/wallet/withdraw/',
-            {
-                'amount': '500.00',
-                'payment_method': 'JazzCash',
-                'account_title': 'Wallet Buyer',
-                'account_details': '03001234567',
-            },
-            format='json',
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/wallet/withdraw/',
+                {
+                    'amount': '500.00',
+                    'payment_method': 'JazzCash',
+                    'account_title': 'Wallet Buyer',
+                    'account_details': '03001234567',
+                },
+                format='json',
+            )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
@@ -2631,7 +2654,7 @@ class WalletTransactionalEmailTests(TestCase):
 
         mail.outbox.clear()
         admin_obj = WithdrawRequestAdmin(WithdrawRequest, self.site)
-        with patch.object(admin_obj, 'message_user'):
+        with patch.object(admin_obj, 'message_user'), self.captureOnCommitCallbacks(execute=True):
             admin_obj.approve_withdrawals(self.request, WithdrawRequest.objects.filter(pk=withdraw.pk))
 
         self.assertEqual(len(mail.outbox), 1)
@@ -2658,7 +2681,7 @@ class WalletTransactionalEmailTests(TestCase):
         rejected = WithdrawRequest.objects.get(pk=response.data['id'])
 
         mail.outbox.clear()
-        with patch.object(admin_obj, 'message_user'):
+        with patch.object(admin_obj, 'message_user'), self.captureOnCommitCallbacks(execute=True):
             admin_obj.reject_withdrawals(self.request, WithdrawRequest.objects.filter(pk=rejected.pk))
 
         self.assertEqual(len(mail.outbox), 1)
@@ -3499,6 +3522,7 @@ class RegistrationPasswordValidationTests(TestCase):
 
 class CookieJWTAuthTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.user = User.objects.create_user(
             username='cookiebuyer',
@@ -3664,6 +3688,39 @@ class CookieJWTAuthTests(TestCase):
             self.assertIn(cookie_name, response.cookies)
             self.assertEqual(response.cookies[cookie_name].value, '')
             self.assertEqual(response.cookies[cookie_name]['max-age'], 0)
+
+    def test_logout_blacklists_refresh_token(self):
+        login_response = self.login()
+        self.assertEqual(login_response.status_code, 200)
+        old_refresh = login_response.cookies[settings.JWT_AUTH_COOKIE_REFRESH].value
+
+        logout_response = self.client.post(
+            '/api/auth/logout/',
+            {},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+        self.assertEqual(logout_response.status_code, 200)
+
+        old_refresh_reuse = self.client.post(
+            '/api/auth/refresh/',
+            {'refresh': old_refresh},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+        self.assertEqual(old_refresh_reuse.status_code, 401)
+
+    def test_logout_with_invalid_refresh_cookie_still_succeeds(self):
+        self.client.cookies[settings.JWT_AUTH_COOKIE_REFRESH] = 'not-a-valid-refresh-token'
+
+        response = self.client.post(
+            '/api/auth/logout/',
+            {},
+            format='json',
+            HTTP_ORIGIN='http://localhost:3000',
+        )
+
+        self.assertEqual(response.status_code, 200)
 
     def test_bearer_token_auth_still_works(self):
         from rest_framework_simplejwt.tokens import AccessToken
@@ -3841,6 +3898,7 @@ class GameCatalogCacheHeaderTests(TestCase):
 
 class GameCategoryListingPaginationTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.seller = User.objects.create_user(username='seller', password='password123')
         self.seller.profile.seller_status = 'approved'
@@ -3867,6 +3925,55 @@ class GameCategoryListingPaginationTests(TestCase):
                 status='active',
                 filter_values={str(rank_filter.id): 'gold'},
             )
+
+    def test_anonymous_browse_response_is_cached(self):
+        first = self.client.get('/api/games/test-game/accounts/?limit=2')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first['Cache-Control'], 'public, max-age=30')
+
+        Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Listing created after cache fill',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+        cached = self.client.get('/api/games/test-game/accounts/?limit=2')
+        self.assertEqual(cached.status_code, 200)
+        self.assertEqual(
+            cached.data['listing_pagination']['count'],
+            first.data['listing_pagination']['count'],
+        )
+
+        different_params = self.client.get('/api/games/test-game/accounts/?limit=3')
+        self.assertEqual(
+            different_params.data['listing_pagination']['count'],
+            first.data['listing_pagination']['count'] + 1,
+        )
+
+    def test_authenticated_browse_response_is_not_cached(self):
+        self.client.force_authenticate(user=self.seller)
+
+        first = self.client.get('/api/games/test-game/accounts/?limit=2')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first['Cache-Control'], 'private')
+
+        Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Fresh listing for authenticated browse',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+        second = self.client.get('/api/games/test-game/accounts/?limit=2')
+        self.assertEqual(
+            second.data['listing_pagination']['count'],
+            first.data['listing_pagination']['count'] + 1,
+        )
 
     def test_category_listings_are_paginated_with_filter_display(self):
         response = self.client.get('/api/games/test-game/accounts/?limit=2')
@@ -5389,11 +5496,12 @@ class DisputeResolutionApiTests(TestCase):
         self.client.force_authenticate(user=self.staff)
         mail.outbox = []
 
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                f'/api/admin/orders/{order.pk}/resolve-dispute/',
+                {'resolution_action': 'refund_buyer'},
+                format='json',
+            )
 
         self.assertEqual(response.status_code, 200)
         recipients = {message.to[0] for message in mail.outbox}
@@ -6634,7 +6742,8 @@ class AutoConfirmOrderTests(TestCase):
         self.create_order(delivered_at=delivered_at)
         mail.outbox = []
 
-        call_command('auto_confirm_orders', stdout=StringIO())
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command('auto_confirm_orders', stdout=StringIO())
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['auto-seller@example.com'])
@@ -6704,7 +6813,8 @@ class AutoConfirmOrderTests(TestCase):
         order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
         mail.outbox = []
 
-        call_command('release_held_order_funds', stdout=StringIO())
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command('release_held_order_funds', stdout=StringIO())
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['protected-seller@example.com'])
@@ -7587,7 +7697,8 @@ class NotificationTests(TestCase):
         mail.outbox = []
 
         self.client.force_authenticate(user=self.buyer)
-        response = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 1)
@@ -7623,7 +7734,8 @@ class NotificationTests(TestCase):
 
         mail.outbox.clear()
         self.client.force_authenticate(user=self.seller)
-        response = self.client.post(f'/api/orders/{order_id}/deliver/', {'delivery_note': 'Here it is'})
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/orders/{order_id}/deliver/', {'delivery_note': 'Here it is'})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
@@ -7664,7 +7776,8 @@ class NotificationTests(TestCase):
 
         mail.outbox.clear()
         self.client.force_authenticate(user=self.buyer)
-        response = self.client.post(f'/api/orders/{order_id}/confirm/')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/orders/{order_id}/confirm/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
@@ -7690,7 +7803,8 @@ class NotificationTests(TestCase):
 
         mail.outbox.clear()
         self.client.force_authenticate(user=self.buyer)
-        response = self.client.post(f'/api/orders/{order_id}/confirm/')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/orders/{order_id}/confirm/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mail.outbox, [])
@@ -7890,7 +8004,8 @@ class NotificationTests(TestCase):
 
         mail.outbox.clear()
         self.client.force_authenticate(user=self.seller)
-        response = self.client.post(f'/api/orders/{order_id}/refund/')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f'/api/orders/{order_id}/refund/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)

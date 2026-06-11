@@ -1024,6 +1024,8 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
 
 MIN_TOPUP_AMOUNT = Decimal('500.00')
 MIN_TOPUP_ERROR = 'Minimum top-up is PKR 500.'
+MAX_PURCHASE_QUANTITY = 1000
+MAX_PURCHASE_QUANTITY_ERROR = 'Quantity cannot exceed 1000 per order.'
 
 
 class CreateTopUpRequestSerializer(serializers.Serializer):
@@ -1082,7 +1084,12 @@ class JazzCashTopUpInitiateSerializer(serializers.Serializer):
 
 class JazzCashBuyInitiateSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1, default=1)
+    quantity = serializers.IntegerField(
+        min_value=1,
+        max_value=MAX_PURCHASE_QUANTITY,
+        default=1,
+        error_messages={'max_value': MAX_PURCHASE_QUANTITY_ERROR},
+    )
     mobile_number = serializers.RegexField(
         PAKISTAN_MOBILE_REGEX,
         error_messages={'invalid': PAKISTAN_MOBILE_ERROR},
@@ -1286,7 +1293,12 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class BuyListingSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1, default=1)
+    quantity = serializers.IntegerField(
+        min_value=1,
+        max_value=MAX_PURCHASE_QUANTITY,
+        default=1,
+        error_messages={'max_value': MAX_PURCHASE_QUANTITY_ERROR},
+    )
 
 
 class DeliverOrderSerializer(serializers.Serializer):

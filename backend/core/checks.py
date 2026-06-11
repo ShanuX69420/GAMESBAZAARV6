@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.core.checks import Error, Tags, register
+from django.core.checks import Error, Tags, Warning, register
 
 
 REDIS_CACHE_BACKEND = 'django.core.cache.backends.redis.RedisCache'
@@ -41,3 +41,18 @@ def production_throttle_cache_check(app_configs, **kwargs):
         ))
 
     return errors
+
+
+@register(Tags.security, deploy=True)
+def production_error_monitoring_check(app_configs, **kwargs):
+    if settings.DEBUG:
+        return []
+
+    if not getattr(settings, 'SENTRY_DSN', ''):
+        return [Warning(
+            'Production error monitoring is not configured.',
+            hint='Set SENTRY_DSN so unhandled exceptions and failed transactional emails are reported.',
+            id='core.W001',
+        )]
+
+    return []

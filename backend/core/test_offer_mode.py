@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -14,6 +15,7 @@ class OfferModeTests(TestCase):
     """Offer-mode categories: admin-defined options with competing seller offers."""
 
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
         self.seller = User.objects.create_user(username='offerseller', password='password123')
         self.seller.profile.seller_status = 'approved'

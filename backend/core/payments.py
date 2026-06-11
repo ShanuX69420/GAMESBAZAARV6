@@ -18,6 +18,7 @@ opportunistically when the user polls the payment status endpoint.
 
 import logging
 from datetime import timedelta
+from decimal import InvalidOperation
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -94,17 +95,24 @@ def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
         ),
         hash_verified=jazzcash.verify_secure_hash(response),
         source='initiation',
+        gateway_amount=response.get('pp_Amount'),
     )
 
 
 def apply_gateway_result(payment, *, response_code, response_message='',
                          retrieval_reference_no='', payment_status='',
-                         hash_verified=True, source='gateway'):
+                         hash_verified=True, source='gateway',
+                         gateway_amount=None):
     """Map a gateway verdict onto the payment and return the fresh payment.
 
     ``hash_verified`` is informational for responses we fetched ourselves over
     TLS (we log mismatches but trust the channel); inbound IPNs must be
     verified by the caller *before* getting here.
+
+    ``gateway_amount`` is the raw pp_Amount (paisa) when the response carries
+    one. A successful verdict whose amount does not match the stored payment
+    amount is quarantined for manual review instead of finalized — credits
+    always use the stored amount, so a partial settlement must never finalize.
     """
     code = str(response_code or '').strip()
     message = str(response_message or '').strip()
@@ -125,6 +133,32 @@ def apply_gateway_result(payment, *, response_code, response_message='',
         code in jazzcash.PENDING_RESPONSE_CODES
         or status_value in jazzcash.PENDING_STATUS_VALUES
     )
+
+    if is_completed and gateway_amount not in (None, ''):
+        try:
+            reported_amount = jazzcash.paisa_to_amount(gateway_amount)
+        except (InvalidOperation, ValueError, TypeError):
+            reported_amount = None
+        if reported_amount != payment.amount:
+            logger.error(
+                'JazzCash %s reported amount %r for %s but PKR %s was expected; '
+                'payment quarantined for manual review',
+                source, gateway_amount, payment.txn_ref_no, payment.amount,
+            )
+            JazzCashPayment.objects.filter(pk=payment.pk).exclude(
+                status='completed',
+            ).update(
+                response_code=code[:10],
+                response_message=message[:500],
+                note=(
+                    f'Amount mismatch from {source}: gateway reported '
+                    f'{gateway_amount!r}, expected PKR {payment.amount}. '
+                    'Manual review required.'
+                )[:500],
+                updated_at=timezone.now(),
+            )
+            payment.refresh_from_db()
+            return payment
 
     if is_completed:
         return finalize_jazzcash_payment(
@@ -294,6 +328,7 @@ def run_status_inquiry(payment):
         payment_status=response.get('pp_Status'),
         hash_verified=jazzcash.verify_secure_hash(response),
         source='status inquiry',
+        gateway_amount=response.get('pp_Amount'),
     )
 
 

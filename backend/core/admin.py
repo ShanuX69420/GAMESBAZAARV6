@@ -608,9 +608,11 @@ class OrderAdmin(admin.ModelAdmin):
                     'status', 'created_at']
     list_filter = ['status', 'buyer_protection_enabled']
     search_fields = ['order_number', 'listing_title', 'buyer__username', 'seller__username']
+    # status is read-only: editing it directly would skip the refund/payout
+    # logic — use the refund_and_cancel / release_to_seller actions instead.
     readonly_fields = ['order_number', 'buyer', 'seller', 'listing', 'listing_title', 'quantity',
                        'unit_price', 'total_amount', 'commission_rate',
-                       'commission_amount', 'seller_amount', 'delivery_note_status',
+                       'commission_amount', 'seller_amount', 'status', 'delivery_note_status',
                        'delivered_at', 'buyer_protection_enabled',
                        'seller_payout_available_at', 'seller_payout_released_at',
                        'created_at', 'updated_at', 'chat_link']

@@ -1,8 +1,8 @@
 from decimal import Decimal
 import secrets
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
-from django.db.models.functions import Lower, Trim
+from django.db.models.functions import Lower, Trim, Upper
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
@@ -36,11 +36,15 @@ class Game(models.Model):
     class Meta:
         ordering = ['order', 'name']
         indexes = [
-            GinIndex(fields=['name'], name='game_name_trgm_idx', opclasses=['gin_trgm_ops']),
+            # Expression indexes on UPPER(...) so __icontains (compiled to
+            # UPPER(col) LIKE UPPER(%s) on PostgreSQL) can use them.
             GinIndex(
-                fields=['search_keywords'],
-                name='game_search_keywords_trgm_idx',
-                opclasses=['gin_trgm_ops'],
+                OpClass(Upper('name'), name='gin_trgm_ops'),
+                name='game_name_upper_trgm_idx',
+            ),
+            GinIndex(
+                OpClass(Upper('search_keywords'), name='gin_trgm_ops'),
+                name='game_keywords_upper_trgm_idx',
             ),
         ]
 
@@ -75,7 +79,10 @@ class Category(models.Model):
         ordering = ['name']
         verbose_name_plural = 'Categories'
         indexes = [
-            GinIndex(fields=['name'], name='category_name_trgm_idx', opclasses=['gin_trgm_ops']),
+            GinIndex(
+                OpClass(Upper('name'), name='gin_trgm_ops'),
+                name='category_name_upper_trgm_idx',
+            ),
         ]
         constraints = [
             models.CheckConstraint(
@@ -374,7 +381,10 @@ class Listing(models.Model):
                 name='listing_option_status_idx',
             ),
             GinIndex(fields=['filter_values'], name='listing_filter_values_gin'),
-            GinIndex(fields=['title'], name='listing_title_trgm_idx', opclasses=['gin_trgm_ops']),
+            GinIndex(
+                OpClass(Upper('title'), name='gin_trgm_ops'),
+                name='listing_title_upper_trgm_idx',
+            ),
         ]
         constraints = [
             models.CheckConstraint(
