@@ -17,6 +17,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
+    JazzCashPayment,
     SellerCommissionOverride, Review, Notification,
     Report, SupportTicket,
 )
@@ -965,6 +966,53 @@ class CreateTopUpRequestSerializer(serializers.Serializer):
         attrs['payment_method'] = payment_method
         attrs['transaction_id'] = transaction_id
         return attrs
+
+
+PAKISTAN_MOBILE_REGEX = r'^03[0-9]{9}$'
+PAKISTAN_MOBILE_ERROR = 'Enter a valid mobile wallet number (e.g., 03001234567).'
+MAX_JAZZCASH_TOPUP_AMOUNT = Decimal('10000.00')
+
+
+class JazzCashTopUpInitiateSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal('1.00'),
+        max_value=MAX_JAZZCASH_TOPUP_AMOUNT,
+        error_messages={
+            'max_value': 'Max is 10000. Please contact support if you want to add more.',
+        },
+    )
+    mobile_number = serializers.RegexField(
+        PAKISTAN_MOBILE_REGEX,
+        error_messages={'invalid': PAKISTAN_MOBILE_ERROR},
+    )
+
+
+class JazzCashBuyInitiateSerializer(serializers.Serializer):
+    listing_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1, default=1)
+    mobile_number = serializers.RegexField(
+        PAKISTAN_MOBILE_REGEX,
+        error_messages={'invalid': PAKISTAN_MOBILE_ERROR},
+    )
+
+
+class JazzCashPaymentSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    order_id = serializers.IntegerField(read_only=True)
+    order_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JazzCashPayment
+        fields = [
+            'id', 'purpose', 'amount', 'mobile_number', 'txn_ref_no',
+            'status', 'status_display', 'response_message', 'note',
+            'order_id', 'order_number', 'created_at', 'completed_at',
+        ]
+
+    def get_order_number(self, obj):
+        return obj.order.order_number if obj.order_id else None
 
 
 class WithdrawRequestSerializer(serializers.ModelSerializer):

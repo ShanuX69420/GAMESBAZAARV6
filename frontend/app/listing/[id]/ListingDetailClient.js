@@ -4,13 +4,17 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { buyListing, getWallet, getSellerReviews } from '@/lib/api';
+import {
+  buyListing, getWallet, getSellerReviews,
+  initiateJazzCashPurchase, pollJazzCashPayment,
+} from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
+const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 
 export default function ListingDetailClient({ initialListing = null }) {
   const params = useParams();
@@ -24,6 +28,9 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [buying, setBuying] = useState(false);
   const [buyError, setBuyError] = useState('');
   const [buySuccess, setBuySuccess] = useState('');
+  const [payMethod, setPayMethod] = useState('wallet');
+  const [jazzCashMobile, setJazzCashMobile] = useState('');
+  const [jazzCashWaiting, setJazzCashWaiting] = useState(false);
   const buyingRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -125,6 +132,9 @@ export default function ListingDetailClient({ initialListing = null }) {
   function openConfirmModal() {
     setBuyError('');
     setBuySuccess('');
+    const canPayFromWallet = wallet && parseFloat(wallet.balance) >= listing.price * quantity;
+    const jazzCashAvailable = Boolean(wallet?.jazzcash_enabled);
+    setPayMethod(canPayFromWallet || !jazzCashAvailable ? 'wallet' : 'jazzcash');
     setShowConfirm(true);
   }
 
@@ -143,6 +153,58 @@ export default function ListingDetailClient({ initialListing = null }) {
       setBuyError(err.message);
       buyingRef.current = false;
       setBuying(false);
+    }
+  }
+
+  async function handleJazzCashBuy() {
+    if (buyingRef.current) return;
+    const mobile = jazzCashMobile.trim();
+    if (!JAZZCASH_MOBILE_REGEX.test(mobile)) {
+      setBuyError('Enter a valid JazzCash mobile number (e.g., 03001234567).');
+      return;
+    }
+    buyingRef.current = true;
+    setBuyError('');
+    setBuySuccess('');
+    setBuying(true);
+    try {
+      let payment = await initiateJazzCashPurchase(listing.id, quantity, mobile);
+      if (payment.status === 'pending') {
+        setJazzCashWaiting(true);
+        payment = await pollJazzCashPayment(payment.id);
+      }
+      if (payment?.status === 'completed' && payment.order_id) {
+        const order = { id: payment.order_id, order_number: payment.order_number };
+        setJazzCashWaiting(false);
+        setShowConfirm(false);
+        setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
+        // Keep `buying` true so the buy button stays disabled until redirect.
+        setTimeout(() => router.push(orderPath(order)), 1500);
+        return;
+      }
+      if (payment?.status === 'completed') {
+        // Paid, but the listing was no longer available — money is in the wallet.
+        setShowConfirm(false);
+        setBuyError(payment.note || 'Your payment was received but the purchase could not be completed. The amount was added to your wallet.');
+        getWallet().then(w => setWallet(w)).catch(() => {});
+      } else if (payment?.status === 'failed') {
+        setBuyError(payment.response_message || 'JazzCash payment failed. Please try again.');
+      } else {
+        setBuyError('Your JazzCash payment is still processing. Once it is confirmed, your order will appear in My Orders automatically.');
+      }
+    } catch (err) {
+      setBuyError(err.message);
+    }
+    setJazzCashWaiting(false);
+    buyingRef.current = false;
+    setBuying(false);
+  }
+
+  function handleConfirmPurchase() {
+    if (payMethod === 'jazzcash') {
+      handleJazzCashBuy();
+    } else {
+      handleBuy();
     }
   }
 
@@ -168,6 +230,8 @@ export default function ListingDetailClient({ initialListing = null }) {
   const isOwnListing = user && user.id === listing.seller_id;
   const totalPrice = (listing.price * quantity).toFixed(2);
   const hasBalance = wallet && parseFloat(wallet.balance) >= parseFloat(totalPrice);
+  const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
+  const canBuy = hasBalance || jazzCashEnabled;
 
   return (
     <div className="container">
@@ -312,10 +376,15 @@ export default function ListingDetailClient({ initialListing = null }) {
                       <button
                         className="btn btn-primary btn-full buy-now-btn"
                         onClick={openConfirmModal}
-                        disabled={buying || !hasBalance}
+                        disabled={buying || !canBuy}
                       >
                         {buying ? 'Purchasing...' : `🛒 Buy Now — PKR ${totalPrice}`}
                       </button>
+                      {!hasBalance && jazzCashEnabled && (
+                        <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
+                          ⚡ Pay directly with JazzCash — no wallet balance needed
+                        </div>
+                      )}
                     </>
                   ) : (
                     <Link href="/login" className="btn btn-primary btn-full buy-now-btn">
@@ -510,8 +579,32 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
               </div>
 
+              {/* Payment method */}
+              {jazzCashEnabled && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className={payMethod === 'wallet' ? 'btn btn-primary' : 'btn btn-outline'}
+                    style={{ flex: 1 }}
+                    onClick={() => { setPayMethod('wallet'); setBuyError(''); }}
+                    disabled={buying}
+                  >
+                    💰 Wallet
+                  </button>
+                  <button
+                    type="button"
+                    className={payMethod === 'jazzcash' ? 'btn btn-primary' : 'btn btn-outline'}
+                    style={{ flex: 1 }}
+                    onClick={() => { setPayMethod('jazzcash'); setBuyError(''); }}
+                    disabled={buying}
+                  >
+                    ⚡ JazzCash
+                  </button>
+                </div>
+              )}
+
               {/* Wallet info */}
-              {wallet && (
+              {payMethod === 'wallet' && wallet && (
                 <div className="confirm-order-wallet">
                   <div className="confirm-order-row">
                     <span className="confirm-order-label">Wallet Balance</span>
@@ -523,6 +616,37 @@ export default function ListingDetailClient({ initialListing = null }) {
                       PKR {(parseFloat(wallet.balance) - parseFloat(totalPrice)).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
+                  {!hasBalance && (
+                    <div className="form-hint form-error-text" style={{ marginTop: '6px' }}>
+                      Insufficient wallet balance{jazzCashEnabled ? ' — pay with JazzCash instead.' : '.'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* JazzCash payment */}
+              {payMethod === 'jazzcash' && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">JazzCash Mobile Number *</label>
+                  <input
+                    type="tel"
+                    className="form-input"
+                    value={jazzCashMobile}
+                    onChange={(e) => setJazzCashMobile(e.target.value)}
+                    placeholder="03001234567"
+                    maxLength={11}
+                    disabled={buying}
+                  />
+                  <span className="form-hint">
+                    PKR {Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })} will be
+                    charged to this JazzCash account.
+                  </span>
+                  {jazzCashWaiting && (
+                    <div className="alert alert-success" style={{ marginTop: '8px', marginBottom: 0 }}>
+                      ⏳ Payment request sent! Approve it in your JazzCash app — this
+                      page will update automatically.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -549,9 +673,15 @@ export default function ListingDetailClient({ initialListing = null }) {
               <button className="btn btn-outline" onClick={() => setShowConfirm(false)} disabled={buying}>
                 Cancel
               </button>
-              <button className="btn btn-primary" onClick={handleBuy} disabled={buying}>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmPurchase}
+                disabled={buying || (payMethod === 'wallet' && !hasBalance)}
+              >
                 {buying ? (
-                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> Processing...</>
+                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> {jazzCashWaiting ? 'Waiting for JazzCash...' : 'Processing...'}</>
+                ) : payMethod === 'jazzcash' ? (
+                  `⚡ Pay with JazzCash — PKR ${Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
                 ) : (
                   `✅ Confirm Purchase — PKR ${Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
                 )}

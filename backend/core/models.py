@@ -459,6 +459,7 @@ class WalletTransaction(models.Model):
         ('topup_request', 'Top-Up Request'),
         ('topup_approved', 'Top-Up Approved'),
         ('topup_rejected', 'Top-Up Rejected'),
+        ('jazzcash_topup', 'JazzCash Payment'),
         ('purchase', 'Purchase'),
         ('sale', 'Sale Received'),
         ('commission', 'Commission Deducted'),
@@ -654,6 +655,79 @@ class WithdrawRequest(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — PKR {self.amount} — {self.get_status_display()}"
+
+
+class JazzCashPayment(models.Model):
+    """A JazzCash MWallet gateway transaction (instant top-up or direct buy).
+
+    Successful payments always credit the user's wallet first (idempotently,
+    keyed on ``jazzcash_<pk>``). Purchase-purpose payments then immediately
+    execute the listing purchase; if the listing became unavailable while the
+    customer was paying, the money safely stays in the wallet.
+    """
+    PURPOSE_CHOICES = [
+        ('topup', 'Wallet Top-Up'),
+        ('purchase', 'Direct Purchase'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='jazzcash_payments')
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('1.00'))],
+    )
+    mobile_number = models.CharField(max_length=15,
+                                     help_text='JazzCash mobile wallet number (e.g., 03001234567)')
+    txn_ref_no = models.CharField(max_length=20, unique=True,
+                                  help_text='pp_TxnRefNo sent to JazzCash')
+    bill_reference = models.CharField(max_length=30, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    response_code = models.CharField(max_length=10, blank=True, default='')
+    response_message = models.CharField(max_length=500, blank=True, default='')
+    retrieval_reference_no = models.CharField(max_length=50, blank=True, default='')
+    note = models.CharField(max_length=500, blank=True, default='')
+
+    # Purchase-purpose payments
+    listing = models.ForeignKey('Listing', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='jazzcash_payments')
+    listing_quantity = models.PositiveIntegerField(default=1)
+    order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='jazzcash_payments')
+
+    wallet_credited = models.BooleanField(default=False)
+    last_status_inquiry_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['user', '-created_at'],
+                name='jazzcash_user_created_idx',
+            ),
+            models.Index(
+                fields=['status', 'created_at'],
+                name='jazzcash_status_created_idx',
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(amount__gte=Decimal('1.00')),
+                name='jazzcash_amount_min_1',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.txn_ref_no} — {self.user.username} — PKR {self.amount} — {self.get_status_display()}"
 
 
 # ── Orders (Escrow) ──────────────────────────────────────────────────────────

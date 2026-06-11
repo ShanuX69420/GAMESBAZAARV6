@@ -281,6 +281,7 @@ REST_FRAMEWORK = {
         'chat_message': '60/min',
         'chat_upload': '20/min',
         'topup_request': '10/hour',
+        'jazzcash_initiate': '15/hour',
         'withdraw_request': '10/hour',
         'heartbeat': '120/hour',
         'search': '120/min',
@@ -441,3 +442,24 @@ else:
 
 # Google OAuth — Sign-In with Google
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '').strip()
+
+# JazzCash MWallet payment gateway (REST API v1.1). Payments stay disabled
+# until the merchant credentials are configured.
+JAZZCASH_BASE_URL = (
+    os.environ.get('JAZZCASH_BASE_URL', 'https://onlinepayments.jazzcash.com.pk')
+    .strip().rstrip('/')
+)
+JAZZCASH_MERCHANT_ID = os.environ.get('JAZZCASH_MERCHANT_ID', '').strip()
+JAZZCASH_PASSWORD = os.environ.get('JAZZCASH_PASSWORD', '').strip()
+JAZZCASH_INTEGRITY_SALT = os.environ.get('JAZZCASH_INTEGRITY_SALT', '').strip()
+# Must be pre-registered with JazzCash; the same URL is sent on every request.
+JAZZCASH_RETURN_URL = os.environ.get('JAZZCASH_RETURN_URL', '').strip()
+# Only needed for the optional Refund API.
+JAZZCASH_MERCHANT_MPIN = os.environ.get('JAZZCASH_MERCHANT_MPIN', '').strip()
+# First three letters of the merchant domain, used in pp_TxnRefNo.
+JAZZCASH_TXN_REF_PREFIX = (os.environ.get('JAZZCASH_TXN_REF_PREFIX', 'Gam').strip() or 'Gam')[:3]
+JAZZCASH_REQUEST_TIMEOUT_SECONDS = env_int('JAZZCASH_REQUEST_TIMEOUT_SECONDS', 65)
+JAZZCASH_ENABLED = bool(
+    JAZZCASH_MERCHANT_ID and JAZZCASH_PASSWORD
+    and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
+)

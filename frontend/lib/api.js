@@ -468,6 +468,72 @@ export async function getHeldOrders(pagination = {}) {
   return res.json();
 }
 
+// ── JazzCash API ────────────────────────────────────────────────────────────
+
+export async function initiateJazzCashTopUp(amount, mobileNumber) {
+  const res = await authFetch(`${API_BASE}/api/payments/jazzcash/top-up/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ amount, mobile_number: mobileNumber }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      data.error ||
+      data.amount?.[0] ||
+      data.mobile_number?.[0] ||
+      'JazzCash payment could not be started'
+    );
+  }
+  return data;
+}
+
+export async function initiateJazzCashPurchase(listingId, quantity, mobileNumber) {
+  const res = await authFetch(`${API_BASE}/api/payments/jazzcash/buy/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ listing_id: listingId, quantity, mobile_number: mobileNumber }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      data.error ||
+      data.mobile_number?.[0] ||
+      'JazzCash payment could not be started'
+    );
+  }
+  return data;
+}
+
+export async function getJazzCashPayment(paymentId) {
+  const res = await authFetch(`${API_BASE}/api/payments/jazzcash/${paymentId}/`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to get payment status');
+  return res.json();
+}
+
+// Poll a pending JazzCash payment until it settles (or the timeout passes —
+// the backend keeps reconciling, so a timeout is not a failure).
+export async function pollJazzCashPayment(paymentId, {
+  intervalMs = 4000,
+  timeoutMs = 180000,
+  shouldContinue = () => true,
+} = {}) {
+  const startedAt = Date.now();
+  let payment = null;
+  while (Date.now() - startedAt < timeoutMs && shouldContinue()) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    try {
+      payment = await getJazzCashPayment(paymentId);
+    } catch {
+      continue;
+    }
+    if (payment.status !== 'pending') return payment;
+  }
+  return payment || getJazzCashPayment(paymentId);
+}
+
 // ── Orders API ──────────────────────────────────────────────────────────────
 
 export async function buyListing(listingId, quantity = 1) {

@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 import hashlib
+import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from rest_framework import generics, status, permissions
@@ -28,7 +29,7 @@ from django.utils.dateparse import parse_date
 from .models import (
     Game, GameCategory, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
-    SellerCommissionOverride,
+    JazzCashPayment, SellerCommissionOverride,
     Review, Notification, Report, SupportTicket, SocialAccount,
 )
 
@@ -46,6 +47,8 @@ from .serializers import (
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
+    JazzCashTopUpInitiateSerializer, JazzCashBuyInitiateSerializer,
+    JazzCashPaymentSerializer,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
@@ -92,6 +95,12 @@ from .services import (
     verify_email_verification_token,
     consume_email_verification_token,
     send_email_verification_code,
+)
+from . import jazzcash
+from .payments import (
+    apply_gateway_result,
+    maybe_refresh_payment_status,
+    start_jazzcash_payment,
 )
 from .storage_backends import (
     AVATAR_CACHE_SECONDS,
@@ -2329,6 +2338,7 @@ class WalletView(APIView):
             'held_balance': str(held_summary['held_balance']),
             'held_order_count': held_summary['held_order_count'],
             'next_payout_release_at': held_summary['next_release_at'],
+            'jazzcash_enabled': settings.JAZZCASH_ENABLED,
             'transactions': WalletTransactionSerializer(transactions, many=True).data,
             'transaction_pagination': get_pagination_payload(total_count, limit, offset),
         })
@@ -2594,6 +2604,185 @@ class WithdrawRequestView(ScopedPostThrottleMixin, APIView):
         )
 
 
+# ── JazzCash gateway views ───────────────────────────────────────────────────
+
+JAZZCASH_UNAVAILABLE_ERROR = 'JazzCash payments are currently unavailable.'
+
+
+def _jazzcash_disabled_response():
+    return Response(
+        {'error': JAZZCASH_UNAVAILABLE_ERROR},
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
+class JazzCashTopUpView(ScopedPostThrottleMixin, APIView):
+    """POST /api/payments/jazzcash/top-up/ — Start an instant wallet top-up.
+
+    Sends an MWallet payment request to the customer's JazzCash account; the
+    wallet is credited as soon as JazzCash confirms (immediately, via IPN, or
+    via status inquiry).
+    """
+    permission_classes = [HasCompletedProfile]
+    throttle_scope = 'jazzcash_initiate'
+
+    def post(self, request):
+        if not settings.JAZZCASH_ENABLED:
+            return _jazzcash_disabled_response()
+
+        serializer = JazzCashTopUpInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            payment = start_jazzcash_payment(
+                user=request.user,
+                purpose='topup',
+                amount=data['amount'],
+                mobile_number=data['mobile_number'],
+                description='GamesBazaar wallet top up',
+            )
+        except jazzcash.JazzCashError:
+            return _jazzcash_disabled_response()
+
+        return Response(
+            JazzCashPaymentSerializer(payment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
+    """POST /api/payments/jazzcash/buy/ — Pay for a listing with JazzCash.
+
+    Charges the full order total to the customer's JazzCash wallet. Once the
+    payment is confirmed, the site wallet is credited and the purchase runs
+    atomically; if the listing sold out in the meantime the money stays in
+    the wallet.
+    """
+    permission_classes = [HasCompletedProfile]
+    throttle_scope = 'jazzcash_initiate'
+
+    def post(self, request):
+        if not settings.JAZZCASH_ENABLED:
+            return _jazzcash_disabled_response()
+
+        serializer = JazzCashBuyInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        qty = data.get('quantity', 1)
+
+        try:
+            listing = (
+                Listing.objects.select_related('seller', 'game_category__category')
+                .get(id=data['listing_id'])
+            )
+        except Listing.DoesNotExist:
+            return Response({'error': 'This listing is no longer available.'}, status=400)
+
+        # Fail fast on obviously invalid purchases. The authoritative checks
+        # run again (with locks) when the confirmed payment executes the
+        # purchase.
+        if listing.status != 'active':
+            return Response({'error': 'This listing is no longer available.'}, status=400)
+        if listing.seller == request.user:
+            return Response({'error': 'You cannot buy your own listing.'}, status=400)
+        if listing.quantity is not None and qty > listing.quantity:
+            return Response({'error': f'Only {listing.quantity} available.'}, status=400)
+
+        total = listing.price * qty
+        if total <= 0:
+            return Response({'error': 'Invalid listing price.'}, status=400)
+
+        try:
+            payment = start_jazzcash_payment(
+                user=request.user,
+                purpose='purchase',
+                amount=total,
+                mobile_number=data['mobile_number'],
+                description='GamesBazaar order payment',
+                listing=listing,
+                listing_quantity=qty,
+            )
+        except jazzcash.JazzCashError:
+            return _jazzcash_disabled_response()
+
+        return Response(
+            JazzCashPaymentSerializer(payment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class JazzCashPaymentDetailView(APIView):
+    """GET /api/payments/jazzcash/{id}/ — Poll the status of my payment."""
+    permission_classes = [HasCompletedProfile]
+
+    def get(self, request, pk):
+        payment = get_object_or_404(JazzCashPayment, pk=pk, user=request.user)
+        payment = maybe_refresh_payment_status(payment)
+        return Response(JazzCashPaymentSerializer(payment).data)
+
+
+class JazzCashIPNView(APIView):
+    """POST /api/payments/jazzcash/ipn/ — JazzCash Instant Payment Notification.
+
+    Public endpoint registered with JazzCash. The secure hash is the only
+    authentication, so unverifiable notifications are rejected. JazzCash
+    retries twice when it doesn't get a success acknowledgement within 60s.
+    """
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    @staticmethod
+    def _ack(code, message):
+        ack = {'pp_ResponseCode': code, 'pp_ResponseMessage': message}
+        try:
+            ack['pp_SecureHash'] = jazzcash.generate_secure_hash(ack)
+        except jazzcash.JazzCashError:
+            ack['pp_SecureHash'] = ''
+        return ack
+
+    def post(self, request):
+        logger = logging.getLogger(__name__)
+        if not settings.JAZZCASH_ENABLED:
+            return Response(
+                self._ack('199', 'JazzCash is not configured.'),
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        data = request.data
+        if not isinstance(data, dict):
+            return Response(
+                self._ack('199', 'Invalid IPN payload.'),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not jazzcash.verify_secure_hash(data):
+            logger.warning('JazzCash IPN rejected: secure hash verification failed')
+            return Response(
+                self._ack('199', 'Secure hash verification failed.'),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        txn_ref_no = str(data.get('pp_TxnRefNo') or '').strip()
+        payment = JazzCashPayment.objects.filter(txn_ref_no=txn_ref_no).first()
+        if payment is None:
+            logger.warning('JazzCash IPN for unknown transaction %s', txn_ref_no)
+        else:
+            apply_gateway_result(
+                payment,
+                response_code=data.get('pp_ResponseCode'),
+                response_message=data.get('pp_ResponseMessage'),
+                retrieval_reference_no=(
+                    data.get('pp_RetreivalReferenceNo')  # gateway spells it this way
+                    or data.get('pp_RetrievalReferenceNo')
+                ),
+                hash_verified=True,
+                source='ipn',
+            )
+
+        return Response(self._ack('000', 'IPN received successfully'))
+
+
 # ── Order views ───────────────────────────────────────────────────────────────
 
 def get_commission_rate(seller, category):
@@ -2623,6 +2812,150 @@ def get_order_by_reference_or_404(queryset, order_ref, **filters):
     return get_object_or_404(queryset.filter(order_reference_filter(order_ref), **filters))
 
 
+def execute_listing_purchase(*, buyer, listing_id, quantity):
+    """Run the full purchase flow for a listing, paying from the buyer's wallet.
+
+    Shared by BuyListingView and the JazzCash direct-buy flow (which credits
+    the wallet first, then purchases). Returns ``(order, None)`` on success or
+    ``(None, error_message)`` when the purchase cannot proceed; error paths
+    never mutate state.
+    """
+    qty = quantity
+
+    with db_transaction.atomic():
+        try:
+            listing = (
+                Listing.objects.select_for_update()
+                .select_related('seller', 'game_category__category')
+                .get(id=listing_id)
+            )
+        except Listing.DoesNotExist:
+            return None, 'This listing is no longer available.'
+
+        # Run validations after locking the listing so stock/status cannot
+        # change between the check and the stock decrement.
+        if listing.status != 'active':
+            return None, 'This listing is no longer available.'
+
+        if listing.seller == buyer:
+            return None, 'You cannot buy your own listing.'
+
+        if listing.quantity is not None and qty > listing.quantity:
+            return None, f'Only {listing.quantity} available.'
+
+        total = listing.price * qty
+        if total <= 0:
+            return None, 'Invalid listing price.'
+
+        is_auto = listing.is_auto_delivery
+        if is_auto:
+            auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
+            all_lines = get_auto_delivery_inventory_lines(auto_delivery_data)
+            if len(all_lines) < qty:
+                item_label = 'item' if len(all_lines) == 1 else 'items'
+                return None, f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'
+            delivered_lines = all_lines[:qty]
+            remaining_lines = all_lines[qty:]
+            delivery_note = '\n'.join(delivered_lines)
+            delivery_note = encrypt_sensitive_text(delivery_note)
+            initial_status = 'delivered'
+            delivered_at = timezone.now()
+        else:
+            initial_status = 'pending'
+            delivered_at = None
+            delivery_note = ''
+
+        wallet = get_or_create_locked_wallet(buyer)
+
+        if wallet.balance < total:
+            return None, 'Insufficient wallet balance.'
+
+        category = listing.game_category.category
+        rate = get_commission_rate(listing.seller, category)
+        commission = (total * rate / Decimal('100')).quantize(Decimal('0.01'))
+        seller_receives = total - commission
+
+        # Deduct from buyer only after all purchase validations have passed.
+        wallet.balance -= total
+        wallet.save(update_fields=['balance', 'updated_at'])
+
+        if is_auto:
+            # Update the listing's remaining auto_delivery_data and quantity
+            listing.auto_delivery_data = (
+                encrypt_sensitive_text('\n'.join(remaining_lines))
+                if remaining_lines else ''
+            )
+            listing.quantity = len(remaining_lines)
+            if listing.quantity <= 0:
+                listing.quantity = 0
+                listing.status = 'sold'
+            listing.save(update_fields=['auto_delivery_data', 'quantity', 'status'])
+        else:
+            # Reduce listing stock only if not evergreen (quantity is not null)
+            if listing.quantity is not None:
+                listing.quantity -= qty
+                if listing.quantity <= 0:
+                    listing.quantity = 0
+                    listing.status = 'sold'
+                listing.save(update_fields=['quantity', 'status'])
+
+        # Create order
+        order = Order.objects.create(
+            buyer=buyer,
+            seller=listing.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=qty,
+            unit_price=listing.price,
+            total_amount=total,
+            commission_rate=rate,
+            commission_amount=commission,
+            seller_amount=seller_receives,
+            status=initial_status,
+            was_auto_delivery=is_auto,
+            delivery_note=delivery_note,
+            delivered_at=delivered_at,
+            buyer_protection_enabled=category.buyer_protection_enabled,
+            delivery_instructions_snapshot=listing.delivery_instructions.strip(),
+        )
+
+        # Log transaction
+        WalletTransaction.objects.create(
+            wallet=wallet,
+            transaction_type='purchase',
+            amount=total,
+            balance_after=wallet.balance,
+            description=f'Purchase: {listing.title} (x{qty})',
+            reference_id=f'order_{order.pk}',
+        )
+
+        conversation, _ = get_or_create_private_conversation(buyer, listing.seller)
+
+        order.conversation = conversation
+        order.save(update_fields=['conversation'])
+
+        # Notify seller about new order
+        create_notification(
+            recipient=listing.seller,
+            notification_type='new_order',
+            title=f'New order from {buyer.username}',
+            message=f'{buyer.username} purchased "{listing.title}" (x{qty}) for PKR {total}.',
+            order=order,
+        )
+
+        # For auto-delivery, also notify buyer that it's delivered
+        if is_auto:
+            create_notification(
+                recipient=buyer,
+                notification_type='order_delivered',
+                title='Your order has been automatically delivered!',
+                message=f'Your order "{listing.title}" has been automatically delivered. Check your order for the delivery details.',
+                order=order,
+            )
+
+    return order, None
+
+
 class BuyListingView(APIView):
     """POST /api/orders/buy/ — Purchase a listing. Deducts from buyer wallet (escrow)."""
     permission_classes = [HasCompletedProfile]
@@ -2632,137 +2965,13 @@ class BuyListingView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        qty = data.get('quantity', 1)
-
-        with db_transaction.atomic():
-            listing = get_object_or_404(
-                Listing.objects.select_for_update().select_related(
-                    'seller',
-                    'game_category__category',
-                ),
-                id=data['listing_id'],
-            )
-
-            # Run validations after locking the listing so stock/status cannot
-            # change between the check and the stock decrement.
-            if listing.status != 'active':
-                return Response({'error': 'This listing is no longer available.'}, status=400)
-
-            if listing.seller == request.user:
-                return Response({'error': 'You cannot buy your own listing.'}, status=400)
-
-            if listing.quantity is not None and qty > listing.quantity:
-                return Response({'error': f'Only {listing.quantity} available.'}, status=400)
-
-            total = listing.price * qty
-            if total <= 0:
-                return Response({'error': 'Invalid listing price.'}, status=400)
-
-            is_auto = listing.is_auto_delivery
-            if is_auto:
-                auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
-                all_lines = get_auto_delivery_inventory_lines(auto_delivery_data)
-                if len(all_lines) < qty:
-                    item_label = 'item' if len(all_lines) == 1 else 'items'
-                    return Response({'error': f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'}, status=400)
-                delivered_lines = all_lines[:qty]
-                remaining_lines = all_lines[qty:]
-                delivery_note = '\n'.join(delivered_lines)
-                delivery_note = encrypt_sensitive_text(delivery_note)
-                initial_status = 'delivered'
-                delivered_at = timezone.now()
-            else:
-                initial_status = 'pending'
-                delivered_at = None
-                delivery_note = ''
-
-            wallet = get_or_create_locked_wallet(request.user)
-
-            if wallet.balance < total:
-                return Response({'error': 'Insufficient wallet balance.'}, status=400)
-
-            category = listing.game_category.category
-            rate = get_commission_rate(listing.seller, category)
-            commission = (total * rate / Decimal('100')).quantize(Decimal('0.01'))
-            seller_receives = total - commission
-
-            # Deduct from buyer only after all purchase validations have passed.
-            wallet.balance -= total
-            wallet.save(update_fields=['balance', 'updated_at'])
-
-            if is_auto:
-                # Update the listing's remaining auto_delivery_data and quantity
-                listing.auto_delivery_data = (
-                    encrypt_sensitive_text('\n'.join(remaining_lines))
-                    if remaining_lines else ''
-                )
-                listing.quantity = len(remaining_lines)
-                if listing.quantity <= 0:
-                    listing.quantity = 0
-                    listing.status = 'sold'
-                listing.save(update_fields=['auto_delivery_data', 'quantity', 'status'])
-            else:
-                # Reduce listing stock only if not evergreen (quantity is not null)
-                if listing.quantity is not None:
-                    listing.quantity -= qty
-                    if listing.quantity <= 0:
-                        listing.quantity = 0
-                        listing.status = 'sold'
-                    listing.save(update_fields=['quantity', 'status'])
-
-            # Create order
-            order = Order.objects.create(
-                buyer=request.user,
-                seller=listing.seller,
-                listing=listing,
-                listing_title=listing.title,
-                quantity=qty,
-                unit_price=listing.price,
-                total_amount=total,
-                commission_rate=rate,
-                commission_amount=commission,
-                seller_amount=seller_receives,
-                status=initial_status,
-                was_auto_delivery=is_auto,
-                delivery_note=delivery_note,
-                delivered_at=delivered_at,
-                buyer_protection_enabled=category.buyer_protection_enabled,
-                delivery_instructions_snapshot=listing.delivery_instructions.strip(),
-            )
-
-            # Log transaction
-            WalletTransaction.objects.create(
-                wallet=wallet,
-                transaction_type='purchase',
-                amount=total,
-                balance_after=wallet.balance,
-                description=f'Purchase: {listing.title} (x{qty})',
-                reference_id=f'order_{order.pk}',
-            )
-
-            conversation, _ = get_or_create_private_conversation(request.user, listing.seller)
-
-            order.conversation = conversation
-            order.save(update_fields=['conversation'])
-
-            # Notify seller about new order
-            create_notification(
-                recipient=listing.seller,
-                notification_type='new_order',
-                title=f'New order from {request.user.username}',
-                message=f'{request.user.username} purchased "{listing.title}" (x{qty}) for PKR {total}.',
-                order=order,
-            )
-
-            # For auto-delivery, also notify buyer that it's delivered
-            if is_auto:
-                create_notification(
-                    recipient=request.user,
-                    notification_type='order_delivered',
-                    title='Your order has been automatically delivered!',
-                    message=f'Your order "{listing.title}" has been automatically delivered. Check your order for the delivery details.',
-                    order=order,
-                )
+        order, error = execute_listing_purchase(
+            buyer=request.user,
+            listing_id=data['listing_id'],
+            quantity=data.get('quantity', 1),
+        )
+        if error:
+            return Response({'error': error}, status=400)
 
         return Response(OrderSerializer(order, context={'request': request}).data, status=201)
 

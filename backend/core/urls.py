@@ -60,6 +60,12 @@ urlpatterns = [
     path('wallet/withdraw/', views.WithdrawRequestView.as_view(), name='withdraw-request'),
     path('wallet/withdraw/<int:pk>/receipt/', views.WithdrawReceiptView.as_view(), name='withdraw-receipt'),
 
+    # JazzCash gateway payments
+    path('payments/jazzcash/top-up/', views.JazzCashTopUpView.as_view(), name='jazzcash-topup'),
+    path('payments/jazzcash/buy/', views.JazzCashBuyView.as_view(), name='jazzcash-buy'),
+    path('payments/jazzcash/ipn/', views.JazzCashIPNView.as_view(), name='jazzcash-ipn'),
+    path('payments/jazzcash/<int:pk>/', views.JazzCashPaymentDetailView.as_view(), name='jazzcash-payment-detail'),
+
     # Orders
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),
     path('orders/mine/', views.MyOrdersView.as_view(), name='my-orders'),

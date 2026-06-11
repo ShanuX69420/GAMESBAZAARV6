@@ -4,7 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getWallet, requestTopUp, getTopUpRequests, requestWithdraw, getWithdrawRequests } from '@/lib/api';
+import {
+  getWallet, requestTopUp, getTopUpRequests, requestWithdraw, getWithdrawRequests,
+  initiateJazzCashTopUp, pollJazzCashPayment,
+} from '@/lib/api';
 
 const TRANSACTION_PAGE_SIZE = 20;
 const TOPUP_PAGE_SIZE = 20;
@@ -12,6 +15,8 @@ const WITHDRAW_PAGE_SIZE = 20;
 const MAX_TOP_UP_AMOUNT = 10000;
 const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to add more.';
 const MIN_WITHDRAW_AMOUNT = 500;
+const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
+const JAZZCASH_MOBILE_MESSAGE = 'Enter a valid JazzCash mobile number (e.g., 03001234567).';
 
 export default function WalletPage() {
   const { user, loading } = useAuth();
@@ -26,6 +31,9 @@ export default function WalletPage() {
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
+  const [topUpMethod, setTopUpMethod] = useState('jazzcash');
+  const [jazzCashMobile, setJazzCashMobile] = useState('');
+  const [jazzCashWaiting, setJazzCashWaiting] = useState(false);
   const [txnId, setTxnId] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -175,6 +183,47 @@ export default function WalletPage() {
     }
   }
 
+  async function handleJazzCashTopUp(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (Number(topUpAmount) > MAX_TOP_UP_AMOUNT) {
+      setError(MAX_TOP_UP_MESSAGE);
+      return;
+    }
+    const mobile = jazzCashMobile.trim();
+    if (!JAZZCASH_MOBILE_REGEX.test(mobile)) {
+      setError(JAZZCASH_MOBILE_MESSAGE);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      let payment = await initiateJazzCashTopUp(topUpAmount, mobile);
+      if (payment.status === 'pending') {
+        setJazzCashWaiting(true);
+        payment = await pollJazzCashPayment(payment.id);
+      }
+      if (payment?.status === 'completed') {
+        setSuccess(`PKR ${Number(payment.amount).toLocaleString('en-PK', { minimumFractionDigits: 2 })} added to your wallet via JazzCash!`);
+        setTopUpAmount('');
+        setJazzCashMobile('');
+        setShowTopUp(false);
+        await loadData();
+      } else if (payment?.status === 'failed') {
+        setError(payment.response_message || 'JazzCash payment failed. Please try again.');
+      } else {
+        setSuccess('Your JazzCash payment is still processing. Your wallet will be credited automatically once JazzCash confirms it.');
+        setShowTopUp(false);
+        await loadData();
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setJazzCashWaiting(false);
+      setSubmitting(false);
+    }
+  }
+
   async function handleWithdraw(e) {
     e.preventDefault();
     setError('');
@@ -221,6 +270,8 @@ export default function WalletPage() {
   }
 
   const amountOverLimit = Number(topUpAmount) > MAX_TOP_UP_AMOUNT;
+  const jazzCashEnabled = Boolean(walletData?.jazzcash_enabled);
+  const activeTopUpMethod = jazzCashEnabled ? topUpMethod : 'manual';
   const withdrawBelowMin = withdrawAmount !== '' && Number(withdrawAmount) < MIN_WITHDRAW_AMOUNT;
   const currentBalance = walletData ? Number(walletData.balance) : 0;
   const heldBalance = walletData ? Number(walletData.held_balance || 0) : 0;
@@ -278,7 +329,84 @@ export default function WalletPage() {
       {/* Top-Up Form */}
       {showTopUp && (
         <div className="wallet-topup-card">
-          <h2 className="card-title">Request Top-Up</h2>
+          <h2 className="card-title">Add Funds</h2>
+
+          {/* Method selector */}
+          {jazzCashEnabled && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button
+                type="button"
+                className={activeTopUpMethod === 'jazzcash' ? 'btn btn-primary' : 'btn btn-outline'}
+                onClick={() => { setTopUpMethod('jazzcash'); setError(''); setSuccess(''); }}
+                disabled={submitting}
+              >
+                ⚡ JazzCash — Instant
+              </button>
+              <button
+                type="button"
+                className={activeTopUpMethod === 'manual' ? 'btn btn-primary' : 'btn btn-outline'}
+                onClick={() => { setTopUpMethod('manual'); setError(''); setSuccess(''); }}
+                disabled={submitting}
+              >
+                🏦 Bank Transfer — Manual
+              </button>
+            </div>
+          )}
+
+          {/* JazzCash instant top-up */}
+          {activeTopUpMethod === 'jazzcash' && (
+            <>
+              <p className="card-text">
+                Enter your JazzCash mobile number and approve the payment request
+                in your JazzCash app. Your wallet is credited instantly.
+              </p>
+              <form onSubmit={handleJazzCashTopUp} className="topup-form">
+                <div className="form-group">
+                  <label className="form-label">Amount (PKR) *</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={topUpAmount}
+                    onChange={handleTopUpAmountChange}
+                    placeholder="e.g. 1000"
+                    min="1"
+                    step="0.01"
+                    required
+                  />
+                  {amountOverLimit && (
+                    <span className="form-hint form-error-text">{MAX_TOP_UP_MESSAGE}</span>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">JazzCash Mobile Number *</label>
+                  <input
+                    type="tel"
+                    className="form-input"
+                    value={jazzCashMobile}
+                    onChange={(e) => setJazzCashMobile(e.target.value)}
+                    placeholder="03001234567"
+                    maxLength={11}
+                    required
+                  />
+                  <span className="form-hint">The JazzCash account that will be charged.</span>
+                </div>
+                {jazzCashWaiting && (
+                  <div className="alert alert-success" style={{ marginBottom: '12px' }}>
+                    ⏳ Payment request sent! Approve it in your JazzCash app — this
+                    page will update automatically.
+                  </div>
+                )}
+                <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit}>
+                  {submitting
+                    ? (jazzCashWaiting ? 'Waiting for confirmation...' : 'Sending request...')
+                    : 'Pay with JazzCash'}
+                </button>
+              </form>
+            </>
+          )}
+
+          {activeTopUpMethod === 'manual' && (
+          <>
           <p className="card-text">
             Send payment via Bank Transfer, then submit your details below.
             Admin will verify and credit your wallet.
@@ -377,6 +505,8 @@ export default function WalletPage() {
               {submitting ? 'Submitting...' : 'Submit Top-Up Request'}
             </button>
           </form>
+          </>
+          )}
         </div>
       )}
 

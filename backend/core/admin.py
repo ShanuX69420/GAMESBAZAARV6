@@ -12,8 +12,10 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
+    JazzCashPayment,
     Notification, Report, SupportTicket,
 )
+from .payments import run_status_inquiry
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
@@ -384,6 +386,48 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                 self._create_topup_notification(topup)
                 count += 1
         self.message_user(request, f'{count} top-up(s) rejected.')
+
+
+@admin.register(JazzCashPayment)
+class JazzCashPaymentAdmin(admin.ModelAdmin):
+    """Read-only ledger of JazzCash gateway payments.
+
+    Money movement is fully automated (IPN + status inquiry); the only admin
+    action is forcing a status inquiry for stuck transactions.
+    """
+    list_display = ['txn_ref_no', 'user', 'purpose', 'amount', 'status',
+                    'response_code', 'order', 'created_at', 'completed_at']
+    list_filter = ['status', 'purpose']
+    search_fields = ['txn_ref_no', 'user__username', 'mobile_number',
+                     'retrieval_reference_no']
+    readonly_fields = [
+        'user', 'purpose', 'amount', 'mobile_number', 'txn_ref_no',
+        'bill_reference', 'status', 'response_code', 'response_message',
+        'retrieval_reference_no', 'note', 'listing', 'listing_quantity',
+        'order', 'wallet_credited', 'last_status_inquiry_at', 'completed_at',
+        'created_at', 'updated_at',
+    ]
+    actions = ['run_status_inquiries']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description='🔄 Run JazzCash status inquiry')
+    def run_status_inquiries(self, request, queryset):
+        checked = 0
+        completed = 0
+        for payment in queryset.exclude(status='completed')[:25]:
+            payment = run_status_inquiry(payment)
+            checked += 1
+            if payment.status == 'completed':
+                completed += 1
+        self.message_user(
+            request,
+            f'Status inquiry run for {checked} payment(s); {completed} completed.',
+        )
 
 
 @admin.register(WithdrawRequest)

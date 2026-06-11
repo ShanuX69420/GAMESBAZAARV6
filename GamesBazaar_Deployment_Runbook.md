@@ -332,6 +332,36 @@ Check release held funds timer:
 systemctl status gamesbazaar-release-holds.timer
 ```
 
+Check JazzCash reconcile timer (settles pending gateway payments via the
+mandatory Status Inquiry API; run every 10–15 minutes):
+
+```bash
+systemctl status gamesbazaar-jazzcash-reconcile.timer
+```
+
+The underlying command, if you need to run it by hand:
+
+```bash
+python manage.py reconcile_jazzcash_payments
+```
+
+---
+
+## JazzCash Gateway
+
+Required env vars (backend `.env`): `JAZZCASH_MERCHANT_ID`, `JAZZCASH_PASSWORD`,
+`JAZZCASH_INTEGRITY_SALT`, `JAZZCASH_RETURN_URL`. JazzCash payment options stay
+hidden in the app until all four are set. `JAZZCASH_MERCHANT_MPIN` is optional
+(Refund API only).
+
+In the JazzCash merchant portal (Integration > Credentials) register:
+
+- Return URL — must match `JAZZCASH_RETURN_URL` exactly (sent on every request).
+- IPN URL — `https://<api-host>/api/payments/jazzcash/ipn/`
+
+Payments admin: Django admin → JazzCash payments (read-only, with a
+"Run JazzCash status inquiry" action for stuck transactions).
+
 ---
 
 ## SSL And Nginx
