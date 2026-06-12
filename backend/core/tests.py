@@ -5900,6 +5900,98 @@ class InboxWebSocketIntegrationTests(TransactionTestCase):
 
         async_to_sync(run_order_event_flow)()
 
+    def test_actor_chat_socket_does_not_mark_system_notice_read(self):
+        """Regression: the buyer confirming from the order page (chat open)
+        must not auto-read the notice and eat the seller's unread badge."""
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket, post_order_chat_message
+
+        order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing_title='Badge order',
+            quantity=1,
+            unit_price=Decimal('10.00'),
+            total_amount=Decimal('10.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=Decimal('10.00'),
+            status='delivered',
+            conversation=self.conversation,
+        )
+
+        def post_confirmation_notice():
+            return post_order_chat_message(
+                order,
+                content=f'{self.buyer.username} has confirmed order #{order.order_number}.',
+                event='order_confirmed',
+                sender=self.buyer,
+            )
+
+        async def run_actor_flow():
+            chat_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            buyer_chat = self.make_websocket_communicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={chat_ticket}',
+            )
+            connected, _ = await buyer_chat.connect()
+            self.assertTrue(connected)
+
+            message = await sync_to_async(post_confirmation_notice, thread_sensitive=True)()
+
+            event = await buyer_chat.receive_json_from()
+            self.assertEqual(event['type'], 'new_message')
+            self.assertEqual(event['message']['id'], message.pk)
+            # Branded as the platform even though the actor is recorded
+            self.assertIsNone(event['message']['sender_name'])
+            self.assertTrue(event['message']['is_mine'])
+
+            await buyer_chat.disconnect()
+
+            is_read = await sync_to_async(
+                lambda: Message.objects.get(pk=message.pk).is_read,
+                thread_sensitive=True,
+            )()
+            self.assertFalse(is_read)
+
+        async_to_sync(run_actor_flow)()
+
+    def test_notification_create_pushes_to_inbox_socket(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_inbox_ws_ticket, create_notification
+
+        def make_notification():
+            return create_notification(
+                recipient=self.seller,
+                notification_type='new_order',
+                title='New order from buyer',
+                message='buyer purchased "Badge order".',
+            )
+
+        async def run_notification_flow():
+            seller_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.seller)}',
+            )
+            connected, _ = await seller_inbox.connect()
+            self.assertTrue(connected)
+
+            notification = await sync_to_async(make_notification, thread_sensitive=True)()
+
+            event = await seller_inbox.receive_json_from()
+            self.assertEqual(event['type'], 'notification')
+            self.assertEqual(event['notification']['id'], notification.pk)
+            self.assertEqual(event['notification']['notification_type'], 'new_order')
+            self.assertEqual(event['notification']['title'], 'New order from buyer')
+            self.assertFalse(event['notification']['is_read'])
+            await seller_inbox.disconnect()
+
+        async_to_sync(run_notification_flow)()
+
     def test_heartbeat_pushes_presence_to_inbox_socket(self):
         from asgiref.sync import async_to_sync, sync_to_async
         from gamesbazaar.asgi import application
@@ -9111,7 +9203,9 @@ class OrderChatMessageTests(TestCase):
 
         self.assertEqual(paid.message_type, 'system')
         self.assertEqual(paid.system_event, 'order_paid')
-        self.assertIsNone(paid.sender)
+        # The actor is recorded as sender for read-tracking (still rendered
+        # as the platform), so the buyer's own activity can't eat the badge.
+        self.assertEqual(paid.sender, self.buyer)
         self.assertEqual(paid.order, order)
         self.assertFalse(paid.is_read)
         self.assertIn(f'#{order.order_number}', paid.content)
@@ -9151,9 +9245,11 @@ class OrderChatMessageTests(TestCase):
         api_paid = next(
             m for m in response.data['messages'] if m['id'] == paid.pk
         )
+        # System notices stay branded as the platform even though the actor
+        # is recorded in sender_id for read-tracking.
         self.assertIsNone(api_paid['sender_name'])
-        self.assertIsNone(api_paid['sender_id'])
-        self.assertFalse(api_paid['is_mine'])
+        self.assertEqual(api_paid['sender_id'], self.buyer.id)
+        self.assertTrue(api_paid['is_mine'])
 
     def test_manual_delivery_posts_notice_and_delivery_note(self):
         listing = self._create_listing()
@@ -9168,7 +9264,7 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         notice = order.conversation.messages.get(system_event='order_delivered')
-        self.assertIsNone(notice.sender)
+        self.assertEqual(notice.sender, self.seller)
         self.assertIn(f'#{order.order_number}', notice.content)
 
         delivery = order.conversation.messages.get(message_type='delivery')
@@ -9186,7 +9282,7 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         notice = order.conversation.messages.get(system_event='order_confirmed')
-        self.assertIsNone(notice.sender)
+        self.assertEqual(notice.sender, self.buyer)
         self.assertIn(f'#{order.order_number}', notice.content)
         self.assertIn('confirmed', notice.content)
 
@@ -9203,6 +9299,8 @@ class OrderChatMessageTests(TestCase):
         self.assertIn(order.pk, result['order_ids'])
 
         notice = order.conversation.messages.get(system_event='order_confirmed')
+        # No participant actor — the auto-confirm notice badges both parties
+        self.assertIsNone(notice.sender)
         self.assertIn('automatically', notice.content)
         self.assertIn(f'#{order.order_number}', notice.content)
 
@@ -9215,7 +9313,7 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         notice = order.conversation.messages.get(system_event='order_refunded')
-        self.assertIsNone(notice.sender)
+        self.assertEqual(notice.sender, self.seller)
         self.assertIn(f'#{order.order_number}', notice.content)
         self.assertIn('refund', notice.content.lower())
 
@@ -9231,7 +9329,7 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         notice = order.conversation.messages.get(system_event='order_disputed')
-        self.assertIsNone(notice.sender)
+        self.assertEqual(notice.sender, self.buyer)
         self.assertIn(f'#{order.order_number}', notice.content)
 
     def test_review_posts_feedback_notice(self):
@@ -9248,7 +9346,7 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 201)
 
         notice = order.conversation.messages.get(system_event='review_posted')
-        self.assertIsNone(notice.sender)
+        self.assertEqual(notice.sender, self.buyer)
         self.assertIn('5-star', notice.content)
         self.assertIn(f'#{order.order_number}', notice.content)
 
@@ -9262,18 +9360,36 @@ class OrderChatMessageTests(TestCase):
         updated_notice = order.conversation.messages.get(system_event='review_updated')
         self.assertIn('3/5', updated_notice.content)
 
-    def test_system_messages_count_unread_for_both_participants(self):
+    def test_system_notice_badges_other_party_but_not_actor(self):
         listing = self._create_listing()
         order = self._buy(listing)
 
+        # The buyer triggered the purchase, so they get no badge...
         response = self.client.get('/api/chat/unread/')
-        self.assertEqual(response.data['unread_count'], 1)
+        self.assertEqual(response.data['unread_count'], 0)
 
+        # ...while the seller does, including on the conversation list
         self.client.force_authenticate(user=self.seller)
         response = self.client.get('/api/chat/unread/')
         self.assertEqual(response.data['unread_count'], 1)
+        response = self.client.get('/api/chat/')
+        convo = next(
+            c for c in response.data['conversations']
+            if c['id'] == order.conversation_id
+        )
+        self.assertEqual(convo['unread_count'], 1)
+        # The preview still shows the notice as the platform, not the actor
+        self.assertEqual(convo['last_message']['sender_name'], '')
 
-        # Opening the conversation clears the system notice for everyone
+        # The actor opening the conversation must NOT eat the seller's badge
+        self.client.force_authenticate(user=self.buyer)
+        self.client.get(f'/api/chat/{order.conversation_id}/')
+        self.assertTrue(
+            order.conversation.messages.filter(is_read=False).exists()
+        )
+
+        # The seller opening the conversation clears it
+        self.client.force_authenticate(user=self.seller)
         self.client.get(f'/api/chat/{order.conversation_id}/')
         self.assertFalse(order.conversation.messages.filter(is_read=False).exists())
 
@@ -9317,6 +9433,8 @@ class OrderChatMessageTests(TestCase):
         notice = refunded_order.conversation.messages.filter(
             system_event='order_refunded'
         ).latest('pk')
+        # Admin decisions have no participant actor — badge both parties
+        self.assertIsNone(notice.sender)
         self.assertIn('dispute', notice.content.lower())
         self.assertIn('chatbuyer', notice.content)
 

@@ -5,8 +5,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount } from '@/lib/api';
+import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount, getInboxWebSocketTicket } from '@/lib/api';
 import { notificationOrderPath } from '@/lib/orderNumbers';
+import { WS_BASE } from '@/lib/config';
+import { buildTicketSubprotocols } from '@/lib/inbox';
 
 const UNREAD_POLL_INTERVAL_MS = 15000;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -221,6 +223,81 @@ export default function Navbar() {
     }, NOTIF_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [user, setupPending, fetchNotifCount]);
+
+  // ── Real-time badges: per-user inbox socket ────────────────────────────
+  // Pushes new notifications (bell) and conversation activity (messages
+  // icon) instantly; the polls above stay as a fallback when the socket
+  // is down. Survives client-side navigation since the navbar persists.
+  useEffect(() => {
+    if (!user || setupPending) return;
+    let disposed = false;
+    let ws = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+
+    function scheduleReconnect() {
+      if (disposed) return;
+      clearTimeout(reconnectTimer);
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts += 1;
+      reconnectTimer = setTimeout(() => {
+        if (!disposed) connectWs();
+      }, delay);
+    }
+
+    async function connectWs() {
+      let ticket;
+      try {
+        ({ ticket } = await getInboxWebSocketTicket());
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      if (!ticket || disposed) return;
+
+      ws = new WebSocket(`${WS_BASE}/ws/inbox/`, buildTicketSubprotocols(ticket));
+
+      ws.onopen = () => {
+        if (disposed) return;
+        clearTimeout(reconnectTimer);
+        // Catch up on anything missed while disconnected
+        if (reconnectAttempts > 0) {
+          fetchUnread();
+          fetchNotifCount();
+        }
+        reconnectAttempts = 0;
+      };
+
+      ws.onmessage = (e) => {
+        if (disposed) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'notification') {
+            setNotifUnread(prev => prev + 1);
+            // Keep the dropdown list fresh if it has been loaded already
+            setNotifications(prev => (prev.length ? [data.notification, ...prev].slice(0, 15) : prev));
+          } else if (data.type === 'conversation_updated') {
+            fetchUnread();
+          }
+          // presence events feed the inbox page; nothing to do here
+        } catch { }
+      };
+
+      ws.onclose = () => scheduleReconnect();
+      ws.onerror = () => {};
+    }
+
+    connectWs();
+
+    return () => {
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, [user, setupPending, fetchUnread, fetchNotifCount]);
 
   const loadNotifications = useCallback(async () => {
     if (!user || setupPending) return;

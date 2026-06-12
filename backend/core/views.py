@@ -60,6 +60,8 @@ from .services import (
     CHAT_WS_TICKET_MAX_AGE_SECONDS,
     INBOX_WS_TICKET_MAX_AGE_SECONDS,
     broadcast_chat_message_after_commit,
+    chat_unread_cache_key,
+    notification_unread_cache_key,
     create_chat_ws_ticket,
     create_inbox_ws_ticket,
     create_notification as create_user_notification,
@@ -2221,9 +2223,11 @@ class ConversationDetailView(APIView):
         )
 
         # Mark unread messages from the other user as read
-        conversation.messages.filter(is_read=False).exclude(
+        updated = conversation.messages.filter(is_read=False).exclude(
             sender=request.user
         ).update(is_read=True)
+        if updated:
+            cache.delete(chat_unread_cache_key(request.user.pk))
 
         limit, offset = get_pagination_params(
             request,
@@ -2412,7 +2416,7 @@ class UnreadCountView(APIView):
     permission_classes = [HasCompletedProfile]
 
     def get(self, request):
-        cache_key = f'chat-unread:v1:{request.user.pk}'
+        cache_key = chat_unread_cache_key(request.user.pk)
         cached = cache.get(cache_key)
         if cached is not None:
             return Response({'unread_count': cached})
@@ -3096,7 +3100,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
                 f'the order. {buyer.username}, press the «Confirm order» button on the '
                 f'order page once you receive everything.'
             )
-        post_order_chat_message(order, event='order_paid', content=paid_content)
+        post_order_chat_message(order, event='order_paid', content=paid_content, sender=buyer)
 
         # Hand over auto-delivery data and the seller's standing instructions
         if is_auto:
@@ -3370,6 +3374,7 @@ class DeliverOrderView(APIView):
             post_order_chat_message(
                 order,
                 event='order_delivered',
+                sender=request.user,
                 content=(
                     f'{request.user.username} has marked order #{order.order_number} as '
                     f'delivered. {order.buyer.username}, please make sure everything works '
@@ -3428,6 +3433,7 @@ class ConfirmOrderView(APIView):
             post_order_chat_message(
                 order,
                 event='order_confirmed',
+                sender=request.user,
                 content=(
                     f'{request.user.username} has confirmed that order '
                     f'#{order.order_number} was fulfilled. The order is now complete. '
@@ -3474,6 +3480,7 @@ class DisputeOrderView(APIView):
             post_order_chat_message(
                 order,
                 event='order_disputed',
+                sender=request.user,
                 content=(
                     f'{request.user.username} has opened a dispute on order '
                     f'#{order.order_number}. A GamesBazaar moderator will review it '
@@ -3674,6 +3681,7 @@ class RefundOrderView(APIView):
             post_order_chat_message(
                 order,
                 event='order_refunded',
+                sender=request.user,
                 content=(
                     f'{order.seller.username} has issued a refund to '
                     f'{order.buyer.username} on order #{order.order_number}. The full '
@@ -3730,6 +3738,7 @@ class CreateReviewView(APIView):
                 post_order_chat_message(
                     order,
                     event='review_posted',
+                    sender=request.user,
                     content=(
                         f'{request.user.username} has left a {data["rating"]}-star '
                         f'review on order #{order.order_number}.'
@@ -3774,6 +3783,7 @@ class UpdateReviewView(APIView):
         post_order_chat_message(
             review.order,
             event='review_updated',
+            sender=request.user,
             content=(
                 f'{request.user.username} has updated their review on order '
                 f'#{review.order.order_number} — now rated {data["rating"]}/5.'
@@ -4057,6 +4067,8 @@ class NotificationMarkReadView(APIView):
                 recipient=request.user,
                 is_read=False,
             ).update(is_read=True)
+            if updated:
+                cache.delete(notification_unread_cache_key(request.user.pk))
             return Response({'marked_read': updated})
         elif notification_id:
             try:
@@ -4070,6 +4082,7 @@ class NotificationMarkReadView(APIView):
             if not notification.is_read:
                 notification.is_read = True
                 notification.save(update_fields=['is_read'])
+                cache.delete(notification_unread_cache_key(request.user.pk))
             return Response({'marked_read': 1})
         else:
             return Response({'error': 'notification_id is required.'}, status=400)
@@ -4080,7 +4093,7 @@ class NotificationUnreadCountView(APIView):
     permission_classes = [HasCompletedProfile]
 
     def get(self, request):
-        cache_key = f'notif-unread:v1:{request.user.pk}'
+        cache_key = notification_unread_cache_key(request.user.pk)
         cached = cache.get(cache_key)
         if cached is not None:
             return Response({'unread_count': cached})

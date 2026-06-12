@@ -863,7 +863,11 @@ class MessageSerializer(serializers.ModelSerializer):
         return obj.sender_id
 
     def get_sender_name(self, obj):
-        # System messages have no sender; clients label them as the platform.
+        # System notices are always presented as the platform; their sender
+        # only records which participant's action triggered the event so
+        # unread tracking can badge the other side.
+        if obj.message_type == 'system':
+            return None
         return obj.sender.username if obj.sender_id else None
 
     def get_content(self, obj):
@@ -956,11 +960,16 @@ class ConversationListSerializer(serializers.ModelSerializer):
         latest_created_at = getattr(obj, 'latest_message_created_at', None)
         if latest_created_at is not None:
             content = (getattr(obj, 'latest_message_content', '') or '')[:80]
-            if getattr(obj, 'latest_message_type', '') == 'delivery':
+            message_type = getattr(obj, 'latest_message_type', '')
+            if message_type == 'delivery':
                 content = 'Delivery details'
+            sender_name = getattr(obj, 'latest_message_sender_name', '') or ''
+            if message_type == 'system':
+                # Presented as the platform; sender only tracks the actor.
+                sender_name = ''
             return {
                 'content': content,
-                'sender_name': getattr(obj, 'latest_message_sender_name', '') or '',
+                'sender_name': sender_name,
                 'created_at': latest_created_at,
             }
 
@@ -973,9 +982,12 @@ class ConversationListSerializer(serializers.ModelSerializer):
             content = msg.content[:80]
             if msg.message_type == 'delivery':
                 content = 'Delivery details'
+            sender_name = msg.sender.username if msg.sender_id else ''
+            if msg.message_type == 'system':
+                sender_name = ''
             return {
                 'content': content,
-                'sender_name': msg.sender.username if msg.sender_id else '',
+                'sender_name': sender_name,
                 'created_at': msg.created_at,
             }
         return None

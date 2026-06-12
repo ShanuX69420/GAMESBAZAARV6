@@ -5,12 +5,14 @@ WebSocket consumer for real-time chat.
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser, User
+from django.core.cache import cache
 from .models import Conversation, Message
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_MESSAGE_NOT_TEXT_ERROR,
     CHAT_MESSAGE_TOO_LONG_ERROR,
     broadcast_chat_message_after_commit,
+    chat_unread_cache_key,
     consume_chat_ws_message_quota,
     validate_chat_listing_reference,
     validate_chat_message_content,
@@ -181,18 +183,22 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def mark_messages_read(self):
-        Message.objects.filter(
+        updated = Message.objects.filter(
             conversation_id=self.conversation_id,
             is_read=False,
         ).exclude(sender=self.user).update(is_read=True)
+        if updated:
+            cache.delete(chat_unread_cache_key(self.user.id))
 
     @database_sync_to_async
     def mark_message_read(self, message_id):
-        Message.objects.filter(
+        updated = Message.objects.filter(
             id=message_id,
             conversation_id=self.conversation_id,
             is_read=False,
         ).exclude(sender=self.user).update(is_read=True)
+        if updated:
+            cache.delete(chat_unread_cache_key(self.user.id))
 
 
 class InboxConsumer(AsyncJsonWebsocketConsumer):
@@ -240,6 +246,13 @@ class InboxConsumer(AsyncJsonWebsocketConsumer):
             'type': 'conversation_updated',
             'conversation_id': event['conversation_id'],
             'other_user_id': event['other_user_id'],
+        })
+
+    async def notification_created(self, event):
+        """Relay a fresh in-app notification so the navbar bell is instant."""
+        await self.send_json({
+            'type': 'notification',
+            'notification': event['notification'],
         })
 
     async def presence_update(self, event):

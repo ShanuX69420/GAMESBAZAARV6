@@ -70,6 +70,14 @@ BUYER_PROTECTION_HOLD = timedelta(days=14)
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
+def chat_unread_cache_key(user_id):
+    return f'chat-unread:v1:{user_id}'
+
+
+def notification_unread_cache_key(user_id):
+    return f'notif-unread:v1:{user_id}'
+
+
 def _money(amount):
     return f'PKR {amount}'
 
@@ -279,8 +287,29 @@ def create_notification(*, recipient, notification_type, title, message='', orde
         order=order,
         review=review,
     )
+    broadcast_notification_after_commit(notification)
     send_notification_email(notification)
     return notification
+
+
+def broadcast_notification_after_commit(notification):
+    """Push a fresh notification to the recipient's inbox socket so the
+    navbar bell updates instantly instead of waiting for its next poll."""
+    def _send():
+        cache.delete(notification_unread_cache_key(notification.recipient_id))
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        from .serializers import NotificationSerializer
+        async_to_sync(channel_layer.group_send)(
+            f'user_inbox_{notification.recipient_id}',
+            {
+                'type': 'notification.created',
+                'notification': dict(NotificationSerializer(notification).data),
+            },
+        )
+
+    transaction.on_commit(_send)
 
 
 def send_topup_request_received_email(topup):
@@ -1021,6 +1050,12 @@ def broadcast_chat_message_after_commit(message, message_data=None):
     learn about activity in conversations they don't have open.
     """
     def _send():
+        participant_ids = list(
+            message.conversation.participants.values_list('id', flat=True)
+        )
+        for user_id in participant_ids:
+            if user_id != message.sender_id:
+                cache.delete(chat_unread_cache_key(user_id))
         channel_layer = get_channel_layer()
         if channel_layer is None:
             return
@@ -1034,9 +1069,6 @@ def broadcast_chat_message_after_commit(message, message_data=None):
                 'type': 'chat.message',
                 'message': data,
             },
-        )
-        participant_ids = list(
-            message.conversation.participants.values_list('id', flat=True)
         )
         for user_id in participant_ids:
             other_ids = [pid for pid in participant_ids if pid != user_id]
@@ -1073,7 +1105,12 @@ def broadcast_presence_update(user_id, last_active):
 def post_order_chat_message(order, *, content, event='', message_type='system', sender=None):
     """Drop an order-event notice (or delivery hand-over) into the buyer↔seller chat.
 
-    ``system`` messages carry no sender and announce lifecycle events;
+    ``system`` messages announce lifecycle events and are always rendered as
+    the platform; their ``sender`` records the participant whose action
+    triggered the event so unread tracking can badge the *other* side (the
+    actor's own open chat must not mark the notice read). Pass ``sender=None``
+    only for events without a participant actor (admin decisions,
+    auto-confirm), which badge both parties.
     ``delivery``/``instructions`` messages are posted on the seller's behalf.
     Delivery content must already be encrypted by the caller.
     """
