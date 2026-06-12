@@ -2320,6 +2320,77 @@ class PurchaseFlowTests(TestCase):
             self.assertEqual(decrypt_sensitive_text(legacy_encrypted), 'legacy-code')
 
 
+class CopyCategoryFiltersCommandTests(TestCase):
+    def setUp(self):
+        self.keys_category = Category.objects.create(name='Keys', slug='keys')
+        self.steam = Game.objects.create(name='Steam', slug='steam')
+        self.source_gc = GameCategory.objects.create(
+            game=self.steam, category=self.keys_category)
+
+        self.method = Filter.objects.create(name='Method', filter_type='dropdown')
+        self.digital_key = FilterOption.objects.create(
+            filter=self.method, label='Digital Key', value='digital-key')
+        self.key_region = Filter.objects.create(
+            name='Region', admin_label='Key regions', filter_type='dropdown')
+        FilterOption.objects.create(filter=self.key_region, label='Global', value='global')
+
+        GameCategoryFilter.objects.create(
+            game_category=self.source_gc, filter=self.method,
+            order=0, require_selection=True)
+        key_gcf = GameCategoryFilter.objects.create(
+            game_category=self.source_gc, filter=self.key_region,
+            order=1, require_selection=True)
+        key_gcf.visible_when_options.add(self.digital_key)
+
+        game_a = Game.objects.create(name='Game A', slug='game-a')
+        self.gc_a = GameCategory.objects.create(game=game_a, category=self.keys_category)
+        game_b = Game.objects.create(name='Game B', slug='game-b')
+        self.gc_b = GameCategory.objects.create(game=game_b, category=self.keys_category)
+        # B already has Method assigned but with drifted settings
+        GameCategoryFilter.objects.create(
+            game_category=self.gc_b, filter=self.method,
+            order=5, require_selection=False)
+        # A different category on the same game must stay untouched
+        accounts = Category.objects.create(name='Accounts', slug='accounts')
+        self.gc_other = GameCategory.objects.create(game=game_a, category=accounts)
+
+    def run_command(self, **kwargs):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('copy_category_filters', game='steam', category='keys',
+                     stdout=out, **kwargs)
+        return out.getvalue()
+
+    def test_copies_assignments_to_all_games_with_category(self):
+        output = self.run_command()
+
+        a_filters = {gcf.filter_id: gcf for gcf in self.gc_a.assigned_filters.all()}
+        self.assertEqual(set(a_filters), {self.method.id, self.key_region.id})
+        self.assertTrue(a_filters[self.method.id].require_selection)
+        self.assertEqual(
+            [opt.pk for opt in a_filters[self.key_region.id].visible_when_options.all()],
+            [self.digital_key.pk],
+        )
+
+        # B's drifted Method assignment is updated to match the source
+        b_method = self.gc_b.assigned_filters.get(filter=self.method)
+        self.assertEqual(b_method.order, 0)
+        self.assertTrue(b_method.require_selection)
+
+        self.assertEqual(self.gc_other.assigned_filters.count(), 0)
+        self.assertIn('3 assignments created', output)
+        self.assertIn('1 updated to match', output)
+
+    def test_dry_run_changes_nothing(self):
+        output = self.run_command(dry_run=True)
+
+        self.assertEqual(self.gc_a.assigned_filters.count(), 0)
+        self.assertEqual(self.gc_b.assigned_filters.count(), 1)
+        self.assertIn('DRY RUN', output)
+        self.assertIn('3 assignments created', output)
+
+
 class TopUpProofUploadTests(TestCase):
     def setUp(self):
         self.client = APIClient()
