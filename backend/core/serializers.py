@@ -216,6 +216,7 @@ class GameCategoryDetailSerializer(serializers.Serializer):
     filters = serializers.SerializerMethodField()
     allow_auto_delivery = serializers.BooleanField(read_only=True)
     listing_mode = serializers.CharField(read_only=True)
+    unit_name = serializers.CharField(read_only=True)
 
     def get_game(self, obj):
         return {
@@ -496,6 +497,8 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_review_count = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.effective_name', read_only=True)
+    listing_mode = serializers.CharField(source='game_category.listing_mode', read_only=True)
+    unit_name = serializers.CharField(source='game_category.unit_name', read_only=True)
     buyer_protection_enabled = serializers.BooleanField(
         source='game_category.category.buyer_protection_enabled', read_only=True,
     )
@@ -507,10 +510,11 @@ class ListingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = [
-            'id', 'title', 'description', 'price', 'quantity', 'status',
+            'id', 'title', 'description', 'price', 'quantity', 'min_quantity', 'status',
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
-            'game_name', 'category_name', 'buyer_protection_enabled',
+            'game_name', 'category_name', 'listing_mode', 'unit_name',
+            'buyer_protection_enabled',
             'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'created_at',
@@ -520,9 +524,10 @@ class ListingSerializer(serializers.ModelSerializer):
         return obj.option.name if obj.option_id else None
 
     def get_delivery_instructions(self, obj):
-        """Offer listings show instructions to buyers before purchase; standard
-        listings only reveal them after ordering (via the order snapshot)."""
-        if obj.option_id:
+        """Offer and currency listings show instructions to buyers before
+        purchase; standard listings only reveal them after ordering (via the
+        order snapshot)."""
+        if obj.option_id or obj.game_category.listing_mode == 'currency':
             return obj.delivery_instructions
         request = self.context.get('request')
         if request and request.user.is_authenticated and request.user.id == obj.seller_id:
@@ -590,6 +595,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
     option_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, default=None)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=1)
+    min_quantity = serializers.IntegerField(required=False, default=1, min_value=1)
     is_auto_delivery = serializers.BooleanField(required=False, default=False)
     auto_delivery_data = serializers.CharField(
         required=False,
@@ -608,7 +614,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listing
         fields = ['game_slug', 'category_slug', 'option_id', 'title', 'description', 'price',
-                  'quantity', 'delivery_time', 'filter_values', 'is_auto_delivery',
+                  'quantity', 'min_quantity', 'delivery_time', 'filter_values', 'is_auto_delivery',
                   'auto_delivery_data', 'delivery_instructions']
 
     def validate(self, attrs):
@@ -645,6 +651,40 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 })
             attrs['option'] = option
             attrs['title'] = option.name
+        elif gc.listing_mode == 'currency':
+            if option_id:
+                raise serializers.ValidationError({
+                    'option_id': 'Options are not available for this category.',
+                })
+            seller = self.context['request'].user
+            if Listing.objects.filter(
+                seller=seller, game_category=gc, status='active',
+            ).exists():
+                raise serializers.ValidationError(
+                    'You already have an active offer in this category. '
+                    'Edit your existing offer from My Listings instead.'
+                )
+            if attrs.get('is_auto_delivery'):
+                raise serializers.ValidationError({
+                    'is_auto_delivery': 'Automated delivery is not available for currency listings.',
+                })
+            if not (attrs.get('delivery_instructions') or '').strip():
+                raise serializers.ValidationError({
+                    'delivery_instructions': 'Delivery instructions are required for this '
+                                             'category (e.g., what you need from the buyer '
+                                             'and how delivery works).',
+                })
+            unit = gc.unit_name or 'units'
+            if not attrs.get('quantity'):
+                raise serializers.ValidationError({
+                    'quantity': f'Enter how much stock you have (in {unit}).',
+                })
+            if attrs.get('min_quantity', 1) > attrs['quantity']:
+                raise serializers.ValidationError({
+                    'min_quantity': 'Minimum purchase cannot exceed your stock.',
+                })
+            # Sellers compete on price/stock, not titles — keep them uniform.
+            attrs['title'] = f'{gc.game.name} {gc.effective_name}'
         else:
             if option_id:
                 raise serializers.ValidationError({
@@ -652,6 +692,9 @@ class CreateListingSerializer(serializers.ModelSerializer):
                 })
             if not (attrs.get('title') or '').strip():
                 raise serializers.ValidationError({'title': 'Title is required.'})
+
+        if gc.listing_mode != 'currency':
+            attrs['min_quantity'] = 1
 
         # Validate auto-delivery
         is_auto = attrs.get('is_auto_delivery', False)
@@ -788,6 +831,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
 class UpdateListingSerializer(serializers.ModelSerializer):
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
     quantity = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    min_quantity = serializers.IntegerField(required=False, min_value=1)
     delivery_instructions = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -796,14 +840,44 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Listing
-        fields = ['title', 'description', 'price', 'quantity', 'delivery_time',
-                  'delivery_instructions', 'status']
+        fields = ['title', 'description', 'price', 'quantity', 'min_quantity',
+                  'delivery_time', 'delivery_instructions', 'status']
 
     def validate(self, attrs):
         listing = self.instance
         next_status = attrs.get('status', listing.status)
         next_quantity = attrs.get('quantity', listing.quantity)
         next_delivery_time = attrs.get('delivery_time', listing.delivery_time)
+
+        if listing.game_category.listing_mode == 'currency':
+            # Currency offers keep their auto-generated title.
+            attrs.pop('title', None)
+            if 'delivery_instructions' in attrs and not attrs['delivery_instructions'].strip():
+                raise serializers.ValidationError({
+                    'delivery_instructions': 'Delivery instructions are required for this category.',
+                })
+            if next_quantity is None:
+                raise serializers.ValidationError({
+                    'quantity': 'Currency listings need a stock amount.',
+                })
+            next_min_quantity = attrs.get('min_quantity', listing.min_quantity)
+            if next_min_quantity > next_quantity:
+                raise serializers.ValidationError({
+                    'min_quantity': 'Minimum purchase cannot exceed your stock.',
+                })
+            if next_status == 'active' and listing.status != 'active':
+                duplicate = Listing.objects.filter(
+                    seller=listing.seller,
+                    game_category=listing.game_category,
+                    status='active',
+                ).exclude(pk=listing.pk).exists()
+                if duplicate:
+                    raise serializers.ValidationError({
+                        'status': 'You already have an active offer in this category. '
+                                  'Deactivate it first or edit it instead.',
+                    })
+        else:
+            attrs.pop('min_quantity', None)
 
         if listing.option_id:
             # Offer listings keep their title in sync with the option name.
@@ -1129,8 +1203,13 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
 
 MIN_TOPUP_AMOUNT = Decimal('500.00')
 MIN_TOPUP_ERROR = 'Minimum top-up is PKR 500.'
-MAX_PURCHASE_QUANTITY = 1000
+MAX_PURCHASE_QUANTITY = 1000  # per-order cap for standard/offer listings
 MAX_PURCHASE_QUANTITY_ERROR = 'Quantity cannot exceed 1000 per order.'
+# Currency listings (coins sold per Million etc.) are bought in much larger
+# unit counts — the serializer only sanity-bounds them; real limits are the
+# listing's stock and the order-total cap enforced at purchase time.
+MAX_CURRENCY_PURCHASE_QUANTITY = 100_000_000
+MAX_CURRENCY_PURCHASE_QUANTITY_ERROR = 'Quantity is too large.'
 
 
 class CreateTopUpRequestSerializer(serializers.Serializer):
@@ -1191,9 +1270,9 @@ class JazzCashBuyInitiateSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
     quantity = serializers.IntegerField(
         min_value=1,
-        max_value=MAX_PURCHASE_QUANTITY,
+        max_value=MAX_CURRENCY_PURCHASE_QUANTITY,
         default=1,
-        error_messages={'max_value': MAX_PURCHASE_QUANTITY_ERROR},
+        error_messages={'max_value': MAX_CURRENCY_PURCHASE_QUANTITY_ERROR},
     )
     mobile_number = serializers.RegexField(
         PAKISTAN_MOBILE_REGEX,
@@ -1408,9 +1487,9 @@ class BuyListingSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
     quantity = serializers.IntegerField(
         min_value=1,
-        max_value=MAX_PURCHASE_QUANTITY,
+        max_value=MAX_CURRENCY_PURCHASE_QUANTITY,
         default=1,
-        error_messages={'max_value': MAX_PURCHASE_QUANTITY_ERROR},
+        error_messages={'max_value': MAX_CURRENCY_PURCHASE_QUANTITY_ERROR},
     )
 
 

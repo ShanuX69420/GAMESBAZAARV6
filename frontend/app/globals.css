@@ -11147,3 +11147,316 @@ img {
   font-weight: 600;
   font-size: 0.88rem;
 }
+
+/* ── Currency mode (per-unit listings, e.g., coins per Million) ──────────── */
+
+.currency-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
+  scroll-margin-top: 84px;
+}
+
+.currency-hero-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.currency-hero-seller {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.currency-hero-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 1.2rem;
+}
+
+.currency-hero-seller-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.currency-hero-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.currency-hero-reviews {
+  font-size: 0.84rem;
+  color: var(--green-600);
+  text-decoration: underline;
+}
+
+.currency-hero-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.currency-hero-desc-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.currency-hero-desc {
+  white-space: pre-line;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.currency-hero-desc-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Price panel */
+
+.currency-panel {
+  position: sticky;
+  top: 84px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.currency-panel-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.currency-unit-price {
+  color: var(--text-primary);
+  font-weight: 800;
+  font-size: 1.25rem;
+}
+
+.currency-unit-suffix {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.currency-qty-box {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+
+.currency-qty-btn {
+  width: 44px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.currency-qty-btn:hover:not(:disabled) {
+  border-color: var(--green-400);
+  color: var(--green-600);
+}
+
+.currency-qty-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.currency-qty-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.currency-qty-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 10px 40px 10px 12px;
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.currency-qty-input::-webkit-outer-spin-button,
+.currency-qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.currency-qty-unit {
+  position: absolute;
+  right: 12px;
+  color: var(--text-tertiary);
+  font-weight: 700;
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
+.currency-qty-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+.currency-qty-error {
+  color: var(--red-600, #DC2626);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+/* Competing sellers table */
+
+.currency-sellers {
+  margin-top: 28px;
+}
+
+.currency-sort-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.currency-seller-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.currency-seller-row {
+  position: relative;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.currency-seller-row:hover {
+  border-color: var(--green-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.currency-seller-row-current {
+  border-color: var(--green-500);
+  box-shadow: var(--shadow-sm);
+  cursor: default;
+}
+
+.currency-current-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  background: var(--green-600);
+  color: var(--text-inverse);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 0 var(--radius-lg) 0 var(--radius-md);
+}
+
+.currency-seller-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.9fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.currency-seller-row-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.currency-seller-row-value {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.currency-seller-row-price {
+  font-weight: 700;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  justify-self: end;
+}
+
+@media (max-width: 1024px) {
+  .currency-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .currency-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .currency-seller-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 10px;
+  }
+
+  .currency-seller-row-price {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .currency-seller-row-stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+}

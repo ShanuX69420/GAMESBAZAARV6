@@ -19,6 +19,9 @@ const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 const MIN_JAZZCASH_TOPUP = 500;
 
 const formatPKR = (n) => Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2 });
+// Per-unit prices can be tiny (e.g., PKR 1.4 / M) — keep up to 2 decimals.
+const formatUnitPrice = (n) => Number(n).toLocaleString('en-PK', { maximumFractionDigits: 2 });
+const formatAmount = (n) => Number(n).toLocaleString('en-PK');
 
 export default function ListingDetailClient({ initialListing = null }) {
   const params = useParams();
@@ -32,6 +35,7 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [walletFetched, setWalletFetched] = useState(false);
   const autoBuyRef = useRef(false);
   const [quantity, setQuantity] = useState(1);
+  const [qtyInput, setQtyInput] = useState('1');
   const [buying, setBuying] = useState(false);
   const [buyError, setBuyError] = useState('');
   const [buySuccess, setBuySuccess] = useState('');
@@ -70,6 +74,21 @@ export default function ListingDetailClient({ initialListing = null }) {
   // Ads funnel: one view_item / ViewContent per listing viewed.
   useEffect(() => {
     if (listing) trackViewListing(listing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listing?.id]);
+
+  // Currency listings: start at the seller's minimum (or the amount picked on
+  // the browse page via ?qty=), clamped to the available stock.
+  useEffect(() => {
+    if (!listing || listing.listing_mode !== 'currency') return;
+    const minQ = listing.min_quantity || 1;
+    const stock = listing.quantity ?? null;
+    const fromUrl = parseInt(searchParams.get('qty') || '', 10);
+    let q = Number.isFinite(fromUrl) ? fromUrl : minQ;
+    q = Math.max(minQ, q);
+    if (stock !== null) q = Math.min(q, stock);
+    setQuantity(q);
+    setQtyInput(String(q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing?.id]);
 
@@ -256,6 +275,33 @@ export default function ListingDetailClient({ initialListing = null }) {
   }
 
   const isOwnListing = user && user.id === listing.seller_id;
+  const isCurrency = listing.listing_mode === 'currency';
+  const unitName = listing.unit_name || '';
+  const minQty = listing.min_quantity || 1;
+  const stock = listing.quantity ?? null;
+  const parsedQtyInput = parseInt(qtyInput, 10);
+  const currencyQtyValid = !isCurrency || (
+    Number.isFinite(parsedQtyInput)
+    && parsedQtyInput >= minQty
+    && (stock === null || parsedQtyInput <= stock)
+  );
+
+  function handleCurrencyQtyChange(value) {
+    setQtyInput(value);
+    const parsed = parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed >= minQty && (stock === null || parsed <= stock)) {
+      setQuantity(parsed);
+    }
+  }
+
+  function stepCurrencyQty(delta) {
+    let next = quantity + delta;
+    next = Math.max(minQty, next);
+    if (stock !== null) next = Math.min(stock, next);
+    setQuantity(next);
+    setQtyInput(String(next));
+  }
+
   const totalPrice = (listing.price * quantity).toFixed(2);
   const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
   const hasBalance = wallet && walletBalance >= parseFloat(totalPrice);
@@ -304,9 +350,9 @@ export default function ListingDetailClient({ initialListing = null }) {
             </div>
           )}
 
-          {/* Shown pre-purchase for offer listings only (UC, gift cards, etc.);
+          {/* Shown pre-purchase for offer/currency listings (UC, coins, etc.);
               standard listings reveal instructions after ordering. */}
-          {listing.option_id && listing.delivery_instructions && (
+          {(listing.option_id || isCurrency) && listing.delivery_instructions && (
             <div className="listing-detail-desc">
               <h2>Delivery Instructions</h2>
               <p style={{ whiteSpace: 'pre-line' }}>{listing.delivery_instructions}</p>
@@ -333,7 +379,10 @@ export default function ListingDetailClient({ initialListing = null }) {
             )}
 
             <div className="listing-detail-price-card">
-              <div className="listing-detail-price">PKR {listing.price}</div>
+              <div className="listing-detail-price">
+                PKR {isCurrency ? formatUnitPrice(listing.price) : listing.price}
+                {isCurrency && unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
+              </div>
               <div className="listing-detail-seller">
                 Sold by <Link href={`/seller/${listing.seller_name}`} style={{ color: 'var(--green-600)', fontWeight: 600 }}>{listing.seller_name}</Link>
               </div>
@@ -362,7 +411,12 @@ export default function ListingDetailClient({ initialListing = null }) {
               {/* Stock */}
               {listing.quantity !== null && listing.quantity > 0 && (
                 <div className="listing-stock">
-                  📦 {listing.quantity} in stock
+                  📦 {isCurrency ? `${formatAmount(listing.quantity)} ${unitName}`.trim() : listing.quantity} in stock
+                </div>
+              )}
+              {isCurrency && (
+                <div className="listing-stock">
+                  🛒 Min. purchase: {formatAmount(minQty)} {unitName}
                 </div>
               )}
               {listing.quantity === null && listing.status === 'active' && (
@@ -379,8 +433,49 @@ export default function ListingDetailClient({ initialListing = null }) {
                 <div className="buy-section">
                   {user ? (
                     <>
-                      {/* Quantity selector — only show for finite stock > 1 */}
-                      {listing.quantity !== null && listing.quantity > 1 && (
+                      {/* Quantity selector — currency mode gets a free-amount
+                          input; other listings step within finite stock */}
+                      {isCurrency ? (
+                        <div className="form-group" style={{ marginBottom: '12px' }}>
+                          <label className="form-label">Amount{unitName ? ` (${unitName})` : ''}</label>
+                          <div className="currency-qty-box">
+                            <button
+                              type="button"
+                              className="currency-qty-btn"
+                              aria-label="Decrease amount"
+                              onClick={() => stepCurrencyQty(-1)}
+                              disabled={quantity <= minQty}
+                            >−</button>
+                            <div className="currency-qty-input-wrap">
+                              <input
+                                type="number"
+                                className="currency-qty-input"
+                                inputMode="numeric"
+                                min={minQty}
+                                max={stock ?? undefined}
+                                value={qtyInput}
+                                onChange={(e) => handleCurrencyQtyChange(e.target.value)}
+                                aria-label={`Amount${unitName ? ` in ${unitName}` : ''}`}
+                              />
+                              {unitName && <span className="currency-qty-unit">{unitName}</span>}
+                            </div>
+                            <button
+                              type="button"
+                              className="currency-qty-btn"
+                              aria-label="Increase amount"
+                              onClick={() => stepCurrencyQty(1)}
+                              disabled={stock !== null && quantity >= stock}
+                            >+</button>
+                          </div>
+                          {!currencyQtyValid && qtyInput !== '' && (
+                            <span className="currency-qty-error" style={{ marginTop: '6px', display: 'block' }}>
+                              {!Number.isFinite(parsedQtyInput) || parsedQtyInput < minQty
+                                ? `Minimum purchase is ${formatAmount(minQty)} ${unitName}.`
+                                : `Only ${formatAmount(stock)} ${unitName} in stock.`}
+                            </span>
+                          )}
+                        </div>
+                      ) : listing.quantity !== null && listing.quantity > 1 && (
                         <div className="form-group" style={{ marginBottom: '12px' }}>
                           <label className="form-label">Quantity</label>
                           <div className="qty-selector">
@@ -399,9 +494,9 @@ export default function ListingDetailClient({ initialListing = null }) {
                         </div>
                       )}
 
-                      {quantity > 1 && (
+                      {(quantity > 1 || isCurrency) && (
                         <div className="buy-total">
-                          Total: <strong>PKR {totalPrice}</strong>
+                          Total: <strong>PKR {formatPKR(totalPrice)}</strong>
                         </div>
                       )}
 
@@ -421,9 +516,9 @@ export default function ListingDetailClient({ initialListing = null }) {
                       <button
                         className="btn btn-primary btn-full buy-now-btn"
                         onClick={openConfirmModal}
-                        disabled={buying || !canBuy}
+                        disabled={buying || !canBuy || !currencyQtyValid}
                       >
-                        {buying ? 'Purchasing...' : `🛒 Buy Now — PKR ${totalPrice}`}
+                        {buying ? 'Purchasing...' : `🛒 Buy Now — PKR ${formatPKR(totalPrice)}`}
                       </button>
                       {payWithJazzCash && (
                         <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
@@ -612,12 +707,18 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
                 <div className="confirm-order-row">
                   <span className="confirm-order-label">Unit Price</span>
-                  <span className="confirm-order-value">PKR {Number(listing.price).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                  <span className="confirm-order-value">
+                    {isCurrency
+                      ? `PKR ${formatUnitPrice(listing.price)}${unitName ? ` / ${unitName}` : ''}`
+                      : `PKR ${Number(listing.price).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`}
+                  </span>
                 </div>
-                {quantity > 1 && (
+                {(quantity > 1 || isCurrency) && (
                   <div className="confirm-order-row">
-                    <span className="confirm-order-label">Quantity</span>
-                    <span className="confirm-order-value">×{quantity}</span>
+                    <span className="confirm-order-label">{isCurrency ? 'Amount' : 'Quantity'}</span>
+                    <span className="confirm-order-value">
+                      {isCurrency ? `${formatAmount(quantity)} ${unitName}`.trim() : `×${quantity}`}
+                    </span>
                   </div>
                 )}
                 <div className="confirm-order-row confirm-order-row-total">

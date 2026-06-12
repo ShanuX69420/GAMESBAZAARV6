@@ -120,9 +120,12 @@ export default function MyListingsPage() {
       description: listing.description || '',
       price: listing.price,
       quantity: listing.quantity ?? '',
+      minQuantity: listing.min_quantity ?? '',
       status: listing.status,
       deliveryInstructions: listing.delivery_instructions || '',
       isOffer: Boolean(listing.option_id),
+      isCurrency: listing.listing_mode === 'currency',
+      unitName: listing.unit_name || '',
     });
     setEditModal(listing.id);
   }
@@ -140,6 +143,9 @@ export default function MyListingsPage() {
         status: editForm.status,
         delivery_instructions: editForm.deliveryInstructions,
       };
+      if (editForm.isCurrency && editForm.minQuantity !== '') {
+        data.min_quantity = parseInt(editForm.minQuantity);
+      }
       await updateListing(editModal, data);
       setSuccess('Listing updated successfully!');
       setEditModal(null);
@@ -521,7 +527,10 @@ export default function MyListingsPage() {
                       {listing.status}
                     </span>
                   </div>
-                  <div className="ml-card-price">PKR {listing.price}</div>
+                  <div className="ml-card-price">
+                    PKR {listing.price}
+                    {listing.listing_mode === 'currency' && listing.unit_name ? ` / ${listing.unit_name}` : ''}
+                  </div>
                 </div>
 
                 <div className="ml-card-meta">
@@ -536,7 +545,14 @@ export default function MyListingsPage() {
                   <span className="ml-card-meta-item">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73L13 2.27a2 2 0 00-2 0L4 6.27A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                     Stock: {listing.quantity === null ? '∞' : listing.quantity}
+                    {listing.listing_mode === 'currency' && listing.unit_name ? ` ${listing.unit_name}` : ''}
                   </span>
+                  {listing.listing_mode === 'currency' && (
+                    <span className="ml-card-meta-item">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                      Min: {listing.min_quantity || 1}{listing.unit_name ? ` ${listing.unit_name}` : ''}
+                    </span>
+                  )}
                 </div>
 
                 <div className="ml-card-actions">
@@ -635,11 +651,14 @@ export default function MyListingsPage() {
                   className="form-input"
                   value={editForm.title}
                   onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                  disabled={editForm.isOffer}
+                  disabled={editForm.isOffer || editForm.isCurrency}
                   required
                 />
                 {editForm.isOffer && (
                   <span className="form-hint">Offer titles are set automatically from the option name.</span>
+                )}
+                {editForm.isCurrency && (
+                  <span className="form-hint">Currency offer titles are set automatically.</span>
                 )}
               </div>
               {!editForm.isOffer && (
@@ -654,32 +673,59 @@ export default function MyListingsPage() {
               </div>
               )}
               <div className="form-group">
-                <label className="form-label">Price (PKR)</label>
+                <label className="form-label">
+                  {editForm.isCurrency && editForm.unitName
+                    ? `Price per ${editForm.unitName} (PKR)`
+                    : 'Price (PKR)'}
+                </label>
                 <input
                   type="number"
                   className="form-input"
                   value={editForm.price}
                   onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
-                  min="1"
-                  step="1"
+                  min={editForm.isCurrency ? '0.01' : '1'}
+                  step={editForm.isCurrency ? '0.01' : '1'}
                   required
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Stock</label>
+                <label className="form-label">
+                  Stock{editForm.isCurrency && editForm.unitName ? ` (${editForm.unitName})` : ''}
+                </label>
                 <input
                   type="number"
                   className="form-input"
                   value={editForm.quantity}
                   onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
                   min="1"
-                  placeholder="Leave empty for unlimited"
+                  placeholder={editForm.isCurrency ? 'Total amount you can deliver' : 'Leave empty for unlimited'}
+                  required={editForm.isCurrency}
                 />
-                <span className="form-hint">Leave empty for evergreen (unlimited) listing</span>
+                <span className="form-hint">
+                  {editForm.isCurrency
+                    ? 'Required — the total amount you can deliver.'
+                    : 'Leave empty for evergreen (unlimited) listing'}
+                </span>
               </div>
+              {editForm.isCurrency && (
               <div className="form-group">
                 <label className="form-label">
-                  Delivery Instructions {editForm.isOffer ? '' : '(Optional)'}
+                  Minimum Purchase{editForm.unitName ? ` (${editForm.unitName})` : ''}
+                </label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={editForm.minQuantity}
+                  onChange={(e) => setEditForm({ ...editForm, minQuantity: e.target.value })}
+                  min="1"
+                  placeholder="e.g., 1000"
+                />
+                <span className="form-hint">The smallest amount a buyer can order from you.</span>
+              </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">
+                  Delivery Instructions {(editForm.isOffer || editForm.isCurrency) ? '' : '(Optional)'}
                 </label>
                 <textarea
                   className="form-textarea"
@@ -688,7 +734,7 @@ export default function MyListingsPage() {
                   rows={3}
                   placeholder="Shown to buyers before and after purchase"
                 />
-                {editForm.isOffer && (
+                {(editForm.isOffer || editForm.isCurrency) && (
                   <span className="form-hint">Required — buyers see this next to your offer.</span>
                 )}
               </div>

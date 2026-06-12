@@ -100,7 +100,7 @@ class GameCategoryInline(admin.TabularInline):
     extra = 1
     autocomplete_fields = ['category']
     fields = ['category', 'display_name', 'order', 'allow_auto_delivery', 'listing_mode',
-              'manage_filters_link', 'manage_options_link']
+              'unit_name', 'manage_filters_link', 'manage_options_link']
     readonly_fields = ['manage_filters_link', 'manage_options_link']
 
     @admin.display(description='Filters')
@@ -847,9 +847,10 @@ class HiddenModelAdmin(admin.ModelAdmin):
 @admin.register(GameCategory)
 class GameCategoryAdmin(HiddenModelAdmin):
     list_display = ['__str__', 'display_name', 'order', 'featured', 'allow_auto_delivery',
-                    'listing_mode', 'filter_count', 'option_count']
+                    'listing_mode', 'unit_name', 'filter_count', 'option_count']
     list_filter = ['category', 'game', 'featured', 'allow_auto_delivery', 'listing_mode']
-    list_editable = ['display_name', 'order', 'featured', 'allow_auto_delivery', 'listing_mode']
+    list_editable = ['display_name', 'order', 'featured', 'allow_auto_delivery', 'listing_mode',
+                     'unit_name']
     search_fields = ['game__name', 'category__name', 'display_name']
     autocomplete_fields = ['game', 'category']
     inlines = [GameCategoryFilterInline, CategoryOptionInline]

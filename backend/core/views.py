@@ -60,6 +60,7 @@ from .serializers import (
     build_listing_filter_display_map, get_auto_delivery_inventory_lines,
     ListingSerializer, CreateListingSerializer,
     AutoDeliveryRestockSerializer, MAX_AUTO_DELIVERY_LINES, MAX_AUTO_DELIVERY_LINE_LENGTH,
+    MAX_PURCHASE_QUANTITY, MAX_PURCHASE_QUANTITY_ERROR,
     ConversationListSerializer, ConversationDetailSerializer, MessageSerializer,
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
@@ -654,7 +655,7 @@ class GameCategoryDetailView(APIView):
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
             )
-            browse_cache_key = 'browse:v3:' + hashlib.sha256(
+            browse_cache_key = 'browse:v4:' + hashlib.sha256(
                 f'{request_origin_cache_scope(request)}:{game_slug}:'
                 f'{category_slug}:{param_signature}'.encode('utf-8')
             ).hexdigest()
@@ -807,6 +808,8 @@ class GameCategoryDetailView(APIView):
             'newest': (F('created_at').desc(),),
             'rating': (F('seller_avg_rating').desc(nulls_last=True), F('created_at').desc()),
             'delivery': (F('delivery_speed_rank').asc(), F('price').asc()),
+            # Currency mode: buyers with small budgets sort by entry price
+            'min_qty': (F('min_quantity').asc(), F('price').asc(), F('created_at').desc()),
         }
         ordering_param = request.query_params.get('ordering', '').strip()
         if ordering_param in ALLOWED_ORDERINGS:
@@ -2930,12 +2933,28 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
             return Response({'error': 'This listing is no longer available.'}, status=400)
         if listing.seller == request.user:
             return Response({'error': 'You cannot buy your own listing.'}, status=400)
+        is_currency = listing.game_category.listing_mode == 'currency'
+        unit = listing.game_category.unit_name.strip() if is_currency else ''
+        unit_suffix = f' {unit}' if unit else ''
+        if is_currency:
+            if qty < listing.min_quantity:
+                return Response(
+                    {'error': f'Minimum purchase is {listing.min_quantity}{unit_suffix}.'},
+                    status=400,
+                )
+        elif qty > MAX_PURCHASE_QUANTITY:
+            return Response({'error': MAX_PURCHASE_QUANTITY_ERROR}, status=400)
         if listing.quantity is not None and qty > listing.quantity:
-            return Response({'error': f'Only {listing.quantity} available.'}, status=400)
+            return Response({'error': f'Only {listing.quantity}{unit_suffix} available.'}, status=400)
 
         total = listing.price * qty
         if total <= 0:
             return Response({'error': 'Invalid listing price.'}, status=400)
+        if total > Decimal('99999999.99'):
+            return Response(
+                {'error': 'Order total is too large — please buy a smaller amount.'},
+                status=400,
+            )
 
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
         if wallet.balance >= total:
@@ -3099,12 +3118,26 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
         if listing.seller == buyer:
             return None, 'You cannot buy your own listing.'
 
+        # Currency listings are bought in units (e.g., Millions of coins) and
+        # honour the seller's minimum; other modes keep the per-order cap.
+        is_currency = listing.game_category.listing_mode == 'currency'
+        unit = listing.game_category.unit_name.strip() if is_currency else ''
+        unit_suffix = f' {unit}' if unit else ''
+        if is_currency:
+            if qty < listing.min_quantity:
+                return None, f'Minimum purchase is {listing.min_quantity}{unit_suffix}.'
+        elif qty > MAX_PURCHASE_QUANTITY:
+            return None, MAX_PURCHASE_QUANTITY_ERROR
+
         if listing.quantity is not None and qty > listing.quantity:
-            return None, f'Only {listing.quantity} available.'
+            return None, f'Only {listing.quantity}{unit_suffix} available.'
 
         total = listing.price * qty
         if total <= 0:
             return None, 'Invalid listing price.'
+        # Order money fields hold 10 digits (max 99,999,999.99 PKR).
+        if total > Decimal('99999999.99'):
+            return None, 'Order total is too large — please buy a smaller amount.'
 
         is_auto = listing.is_auto_delivery
         if is_auto:
@@ -3184,7 +3217,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
             transaction_type='purchase',
             amount=total,
             balance_after=wallet.balance,
-            description=f'Purchase: {listing.title} (x{qty})',
+            description=f'Purchase: {listing.title} (x{qty}{unit_suffix})',
             reference_id=f'order_{order.pk}',
         )
 
@@ -3194,7 +3227,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
         order.save(update_fields=['conversation'])
 
         # Announce the purchase in the buyer↔seller chat
-        qty_part = f' (x{qty})' if qty > 1 else ''
+        qty_part = f' (x{qty}{unit_suffix})' if qty > 1 or is_currency else ''
         if is_auto:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
@@ -3232,7 +3265,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
             recipient=listing.seller,
             notification_type='new_order',
             title=f'New order from {buyer.username}',
-            message=f'{buyer.username} purchased "{listing.title}" (x{qty}) for PKR {total}.',
+            message=f'{buyer.username} purchased "{listing.title}" (x{qty}{unit_suffix}) for PKR {total}.',
             order=order,
         )
 

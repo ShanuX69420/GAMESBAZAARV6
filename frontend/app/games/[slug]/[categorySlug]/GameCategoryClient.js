@@ -33,6 +33,18 @@ const OFFER_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest First' },
 ];
 
+const CURRENCY_SORT_OPTIONS = [
+  { value: '', label: 'Recommended' },
+  { value: 'price_asc', label: 'Cheapest first' },
+  { value: 'min_qty', label: 'Lowest min. quantity' },
+];
+
+// Per-unit prices can be tiny (e.g., PKR 1.4 / M) — keep up to 2 decimals.
+const formatUnitPrice = (n) =>
+  Number(n).toLocaleString('en-PK', { maximumFractionDigits: 2 });
+const formatAmount = (n) => Number(n).toLocaleString('en-PK');
+const CURRENCY_DESC_CLAMP_LENGTH = 220;
+
 function DeliveryTimeBadge({ listing }) {
   return listing.is_auto_delivery ? (
     <span className="offer-delivery offer-delivery-instant">
@@ -115,6 +127,10 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const [selectedOption, setSelectedOption] = useState(initialData?.selected_option_id ?? null);
   const [buyboxInstructionsOpen, setBuyboxInstructionsOpen] = useState(false);
   const [expandedInstructions, setExpandedInstructions] = useState(() => new Set());
+  const [selectedCurrencyId, setSelectedCurrencyId] = useState(null);
+  const [currencyQty, setCurrencyQty] = useState('');
+  const [heroDescOpen, setHeroDescOpen] = useState(false);
+  const currencyHeroRef = useRef(null);
   const hasListingData = Boolean(data);
   const loadedListingCount = data?.listings?.length || 0;
 
@@ -236,6 +252,8 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   seller_last_active: fresh.seller_last_active,
                   seller_is_online: fresh.seller_is_online,
                   price: fresh.price,
+                  quantity: fresh.quantity,
+                  min_quantity: fresh.min_quantity,
                   seller_avg_rating: fresh.seller_avg_rating,
                   seller_review_count: fresh.seller_review_count,
                   seller_avatar_url: fresh.seller_avatar_url,
@@ -272,6 +290,21 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     const timer = setTimeout(() => setSearchQuery(searchInput), 400);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  // Currency mode: keep a valid "current offer" selected. When fresh data no
+  // longer contains the selection (filter/sort change), fall back to the top
+  // offer and reset the amount to its minimum.
+  useEffect(() => {
+    if (!data || data.listing_mode !== 'currency') return;
+    const list = data.listings || [];
+    const offer = list.find((l) => l.id === selectedCurrencyId) || list[0];
+    if (!offer) return;
+    if (offer.id !== selectedCurrencyId) {
+      setSelectedCurrencyId(offer.id);
+      setCurrencyQty(String(offer.min_quantity || 1));
+      setHeroDescOpen(false);
+    }
+  }, [data, selectedCurrencyId]);
 
   function handleFilterChange(filterId, value) {
     // Pruning drops selections on dependent filters that the change just hid.
@@ -318,6 +351,13 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     });
   }
 
+  function handleCurrencySelect(listing) {
+    setSelectedCurrencyId(listing.id);
+    setCurrencyQty(String(listing.min_quantity || 1));
+    setHeroDescOpen(false);
+    currencyHeroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function handleOptionSelect(optionId) {
     if (optionId === selectedOption) return;
     setSelectedOption(optionId);
@@ -345,6 +385,23 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const listingCount = pagination?.count ?? listings?.length ?? 0;
   const allowAutoDelivery = data.allow_auto_delivery;
   const isOfferMode = data.listing_mode === 'offer';
+  const isCurrencyMode = data.listing_mode === 'currency';
+  const unitName = data.unit_name || '';
+  const currencyListings = isCurrencyMode ? (listings || []) : [];
+  const currentOffer = isCurrencyMode
+    ? currencyListings.find((l) => l.id === selectedCurrencyId) || currencyListings[0] || null
+    : null;
+  const offerMinQty = currentOffer?.min_quantity || 1;
+  const offerStock = currentOffer?.quantity ?? null;
+  const parsedQty = parseInt(currencyQty, 10);
+  const qtyValid = Number.isFinite(parsedQty)
+    && parsedQty >= offerMinQty
+    && (offerStock === null || parsedQty <= offerStock);
+  const currencyTotal = currentOffer && qtyValid ? Number(currentOffer.price) * parsedQty : null;
+  const currencyHeroText = currentOffer
+    ? [currentOffer.delivery_instructions, currentOffer.description].filter(Boolean).join('\n\n')
+    : '';
+  const heroTextClamped = currencyHeroText.length > CURRENCY_DESC_CLAMP_LENGTH;
   const options = data.options || [];
   const selectedOptionData = options.find((opt) => opt.id === selectedOption) || null;
   const bestOffer = isOfferMode && listings?.length > 0 ? listings[0] : null;
@@ -512,8 +569,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               </div>
             )}
 
-            {/* Search Bar (last) — searching titles is meaningless in offer mode */}
-            {!isOfferMode && (
+            {/* Search Bar (last) — searching titles is meaningless when sellers
+                compete on identical items (offer/currency modes) */}
+            {!isOfferMode && !isCurrencyMode && (
             <div className="filter-group filter-group-search">
               <label className="filter-label">Search</label>
               <div className="filter-search-wrap">
@@ -843,8 +901,258 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       </section>
       )}
 
+      {/* Currency mode: current offer hero + competing sellers (Eldorado-style) */}
+      {isCurrencyMode && (
+      <section className="section" style={{ paddingTop: 0 }}>
+        {currencyListings.length === 0 ? (
+          <>
+            <div className="empty-state">
+              <div className="empty-state-icon">🪙</div>
+              <p>No sellers are offering {game.name} {category.name} right now{hasActiveFilters ? ' with these filters' : ''}.</p>
+            </div>
+            {!hasActiveFilters && !sellerFilter && (
+              <ItemRequestForm
+                gameSlug={slug}
+                categorySlug={categorySlug}
+                gameName={game.name}
+                categoryName={category.name}
+              />
+            )}
+          </>
+        ) : currentOffer && (
+          <>
+            <div className="currency-layout" ref={currencyHeroRef}>
+              {/* Current offer: seller card */}
+              <div className="currency-hero-card">
+                <div className="currency-hero-seller">
+                  <div className="listing-card-avatar-wrap">
+                    <div className="listing-card-avatar currency-hero-avatar">
+                      {currentOffer.seller_avatar_url ? (
+                        <img src={currentOffer.seller_avatar_url} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      ) : (
+                        currentOffer.seller_name?.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className={`listing-card-status-dot ${isOnlineFromLastActive(currentOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                  </div>
+                  <div className="currency-hero-seller-info">
+                    <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="offer-seller-name">
+                      {currentOffer.seller_name}
+                    </Link>
+                    <span className="currency-hero-rating">
+                      <StarRating rating={currentOffer.seller_avg_rating} count={0} />
+                      {currentOffer.seller_review_count > 0 && (
+                        <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="currency-hero-reviews">
+                          {formatAmount(currentOffer.seller_review_count)} review{currentOffer.seller_review_count !== 1 ? 's' : ''}
+                        </Link>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="currency-hero-row">
+                  <span className="offer-buybox-label">Delivery time</span>
+                  <DeliveryTimeBadge listing={currentOffer} />
+                </div>
+
+                {currencyHeroText && (
+                  <div className="currency-hero-desc-wrap">
+                    <p className={`currency-hero-desc ${heroTextClamped && !heroDescOpen ? 'currency-hero-desc-clamped' : ''}`}>
+                      {currencyHeroText}
+                    </p>
+                    {heroTextClamped && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline"
+                        onClick={() => setHeroDescOpen((prev) => !prev)}
+                      >
+                        {heroDescOpen ? 'Read less' : 'Read more'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Current offer: price panel */}
+              <aside className="currency-panel">
+                <div className="currency-panel-price-row">
+                  <span className="offer-buybox-label">Price</span>
+                  <span className="currency-unit-price">
+                    PKR {formatUnitPrice(currentOffer.price)}
+                    {unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
+                  </span>
+                </div>
+
+                <div className="currency-qty-box">
+                  <button
+                    type="button"
+                    className="currency-qty-btn"
+                    aria-label="Decrease amount"
+                    onClick={() => setCurrencyQty(String(Math.max(offerMinQty, (Number.isFinite(parsedQty) ? parsedQty : offerMinQty + 1) - 1)))}
+                    disabled={Number.isFinite(parsedQty) && parsedQty <= offerMinQty}
+                  >−</button>
+                  <div className="currency-qty-input-wrap">
+                    <input
+                      type="number"
+                      className="currency-qty-input"
+                      inputMode="numeric"
+                      min={offerMinQty}
+                      max={offerStock ?? undefined}
+                      value={currencyQty}
+                      onChange={(e) => setCurrencyQty(e.target.value)}
+                      aria-label={`Amount${unitName ? ` in ${unitName}` : ''}`}
+                    />
+                    {unitName && <span className="currency-qty-unit">{unitName}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    className="currency-qty-btn"
+                    aria-label="Increase amount"
+                    onClick={() => setCurrencyQty(String(Math.min(offerStock ?? Infinity, (Number.isFinite(parsedQty) ? parsedQty : offerMinQty - 1) + 1)))}
+                    disabled={Number.isFinite(parsedQty) && offerStock !== null && parsedQty >= offerStock}
+                  >+</button>
+                </div>
+
+                <div className="currency-qty-meta">
+                  <span>Min. qty.: {formatAmount(offerMinQty)} {unitName}</span>
+                  {offerStock !== null && <span>In stock: {formatAmount(offerStock)} {unitName}</span>}
+                </div>
+
+                {currencyQty !== '' && !qtyValid && (
+                  <div className="currency-qty-error">
+                    {!Number.isFinite(parsedQty) || parsedQty < offerMinQty
+                      ? `Minimum purchase is ${formatAmount(offerMinQty)} ${unitName}.`
+                      : `Only ${formatAmount(offerStock)} ${unitName} in stock.`}
+                  </div>
+                )}
+
+                {qtyValid ? (
+                  <Link
+                    href={`/listing/${currentOffer.id}?buy=1&qty=${parsedQty}`}
+                    className="btn btn-primary btn-full buy-now-btn"
+                  >
+                    PKR {formatUnitPrice(currencyTotal)} | Buy now
+                  </Link>
+                ) : (
+                  <button type="button" className="btn btn-primary btn-full buy-now-btn" disabled>
+                    Buy now
+                  </button>
+                )}
+
+                {category.buyer_protection_enabled && (
+                  <div className="offer-buybox-protection">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      <polyline points="9 12 11 14 15 10"/>
+                    </svg>
+                    <span>Buyer Protection included</span>
+                  </div>
+                )}
+              </aside>
+            </div>
+
+            {/* All competing sellers */}
+            <div className="currency-sellers">
+              <div className="section-header">
+                <h2 className="section-title">Other sellers ({Math.max(listingCount - 1, 0)})</h2>
+              </div>
+
+              <div className="currency-sort-chips">
+                {CURRENCY_SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`filter-chip ${sortBy === opt.value ? 'active' : ''}`}
+                    onClick={() => setSortBy(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="currency-seller-list">
+                {currencyListings.map((listing) => {
+                  const isCurrent = listing.id === currentOffer.id;
+                  return (
+                    <div
+                      key={listing.id}
+                      className={`currency-seller-row ${isCurrent ? 'currency-seller-row-current' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => { if (!isCurrent) handleCurrencySelect(listing); }}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && !isCurrent) {
+                          e.preventDefault();
+                          handleCurrencySelect(listing);
+                        }
+                      }}
+                    >
+                      {isCurrent && <span className="currency-current-badge">Current offer</span>}
+                      <div className="currency-seller-row-main">
+                        <div className="offer-seller-row-seller">
+                          <div className="listing-card-avatar-wrap">
+                            <div className="listing-card-avatar">
+                              {listing.seller_avatar_url ? (
+                                <img src={listing.seller_avatar_url} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                              ) : (
+                                listing.seller_name?.charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                          </div>
+                          <div className="offer-seller-row-info">
+                            <Link
+                              href={buildSellerProfilePath(listing.seller_name)}
+                              className="offer-seller-name"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {listing.seller_name}
+                            </Link>
+                            <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
+                          </div>
+                        </div>
+                        <div className="currency-seller-row-stat">
+                          <span className="offer-seller-row-label">In stock</span>
+                          <span className="currency-seller-row-value">
+                            {listing.quantity === null ? '∞' : formatAmount(listing.quantity)} {unitName}
+                          </span>
+                        </div>
+                        <div className="currency-seller-row-stat">
+                          <span className="offer-seller-row-label">Min. qty.</span>
+                          <span className="currency-seller-row-value">
+                            {formatAmount(listing.min_quantity || 1)} {unitName}
+                          </span>
+                        </div>
+                        <div className="currency-seller-row-stat">
+                          <span className="offer-seller-row-label">Delivery time</span>
+                          <DeliveryTimeBadge listing={listing} />
+                        </div>
+                        <div className="currency-seller-row-price">
+                          PKR {formatUnitPrice(listing.price)}
+                          {unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
+                  <button
+                    className="btn btn-outline btn-full"
+                    onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy)}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Loading...' : 'Load More'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+      )}
+
       {/* Listings */}
-      {!isOfferMode && (
+      {!isOfferMode && !isCurrencyMode && (
       <section className="section" style={{ paddingTop: (filters.length > 0 || allowAutoDelivery) ? 0 : undefined }}>
         <div className="section-header">
           <h2 className="section-title">

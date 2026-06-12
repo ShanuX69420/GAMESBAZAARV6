@@ -111,6 +111,7 @@ class GameCategory(models.Model):
     LISTING_MODE_CHOICES = [
         ('standard', 'Standard (sellers list their own items)'),
         ('offer', 'Offers (admin-defined options, sellers compete on price)'),
+        ('currency', 'Currency (per-unit pricing, buyers choose an amount)'),
     ]
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='game_categories')
@@ -135,7 +136,14 @@ class GameCategory(models.Model):
     listing_mode = models.CharField(
         max_length=20, choices=LISTING_MODE_CHOICES, default='standard',
         help_text='Offers mode shows admin-defined options (e.g., 60 UC, 325 UC) '
-                  'with competing seller offers — best for top-ups and subscriptions.',
+                  'with competing seller offers — best for top-ups and subscriptions. '
+                  'Currency mode sells stackable in-game currency by the unit '
+                  '(e.g., 8 Ball Pool coins per Million) — set "Unit name" below.',
+    )
+    unit_name = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='Currency mode only: the unit buyers purchase in (e.g., "M" for '
+                  'million coins, "K" for thousand). Seller prices are PKR per 1 unit.',
     )
 
     class Meta:
@@ -421,6 +429,11 @@ class Listing(models.Model):
     quantity = models.PositiveIntegerField(
         null=True, blank=True, default=None,
         help_text='Available stock. Leave empty for unlimited (evergreen). Auto-deactivates when finite stock reaches 0.',
+    )
+    min_quantity = models.PositiveIntegerField(
+        default=1,
+        help_text='Currency mode: the smallest amount (in units) a buyer can '
+                  'purchase per order. Always 1 for other modes.',
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     # Stores filter values as JSON: {"filter_id": "option_value", ...}

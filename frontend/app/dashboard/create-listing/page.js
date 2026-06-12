@@ -16,6 +16,7 @@ export default function CreateListingPage() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [allowAutoDelivery, setAllowAutoDelivery] = useState(false);
   const [listingMode, setListingMode] = useState('standard');
+  const [unitName, setUnitName] = useState('');
   const [options, setOptions] = useState([]);
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const [filters, setFilters] = useState([]);
@@ -24,6 +25,7 @@ export default function CreateListingPage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [minQuantity, setMinQuantity] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('1-2 Hours');
   const [isAutoDelivery, setIsAutoDelivery] = useState(false);
   const [autoDeliveryData, setAutoDeliveryData] = useState('');
@@ -53,6 +55,7 @@ export default function CreateListingPage() {
           setSelectedCategory(null);
           setAllowAutoDelivery(false);
           setListingMode('standard');
+          setUnitName('');
           setOptions([]);
           setSelectedOptionId('');
           setFilters([]);
@@ -74,6 +77,7 @@ export default function CreateListingPage() {
           setFilterValues({});
           setAllowAutoDelivery(data.allow_auto_delivery || false);
           setListingMode(data.listing_mode || 'standard');
+          setUnitName(data.unit_name || '');
           setOptions(data.options || []);
           setSelectedOptionId('');
           // Reset auto delivery if not allowed
@@ -115,12 +119,22 @@ export default function CreateListingPage() {
     }
 
     const isOfferMode = listingMode === 'offer';
+    const isCurrencyMode = listingMode === 'currency';
     if (isOfferMode && !selectedOptionId) {
       setError('Please choose an option to make an offer for.');
       return;
     }
-    if (isOfferMode && !deliveryInstructions.trim()) {
+    if ((isOfferMode || isCurrencyMode) && !deliveryInstructions.trim()) {
       setError('Please add delivery instructions so buyers know what you need from them.');
+      return;
+    }
+    if (isCurrencyMode && quantity === '') {
+      setError(`Please enter your available stock${unitName ? ` in ${unitName}` : ''}.`);
+      return;
+    }
+    if (isCurrencyMode && minQuantity !== '' && quantity !== ''
+        && parseInt(minQuantity) > parseInt(quantity)) {
+      setError('Minimum purchase cannot exceed your stock.');
       return;
     }
 
@@ -137,7 +151,7 @@ export default function CreateListingPage() {
       const listingData = {
         game_slug: selectedGame.slug,
         category_slug: selectedCategory.slug,
-        title: isOfferMode ? '' : title,
+        title: (isOfferMode || isCurrencyMode) ? '' : title,
         description: isOfferMode ? '' : description,
         price: parseFloat(price),
         delivery_time: isAutoDelivery ? 'Instant' : deliveryTime,
@@ -148,6 +162,9 @@ export default function CreateListingPage() {
       };
       if (isOfferMode) {
         listingData.option_id = parseInt(selectedOptionId);
+      }
+      if (isCurrencyMode && minQuantity !== '') {
+        listingData.min_quantity = parseInt(minQuantity);
       }
       // Only include quantity if the seller set it
       if (quantity !== '') {
@@ -303,17 +320,19 @@ export default function CreateListingPage() {
                 </div>
               ) : (
                 <>
-                  <div className="form-group">
-                    <label className="form-label">Title</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g., Valorant Account — Diamond Rank, 50+ Skins"
-                      required
-                    />
-                  </div>
+                  {listingMode !== 'currency' && (
+                    <div className="form-group">
+                      <label className="form-label">Title</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="e.g., Valorant Account — Diamond Rank, 50+ Skins"
+                        required
+                      />
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label className="form-label">Description</label>
@@ -321,29 +340,79 @@ export default function CreateListingPage() {
                       className="form-textarea"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Describe what you're selling..."
+                      placeholder={listingMode === 'currency'
+                        ? 'Tell buyers what you offer, e.g., delivery speed for larger amounts, safety guarantees...'
+                        : "Describe what you're selling..."}
                       rows={4}
                     />
+                    {listingMode === 'currency' && (
+                      <span className="form-hint">
+                        Your offer competes with other sellers on price{unitName ? ` per ${unitName}` : ''},
+                        stock and minimum quantity. The listing title is set automatically.
+                      </span>
+                    )}
                   </div>
                 </>
               )}
 
               <div className="form-group">
-                <label className="form-label">Price (PKR)</label>
+                <label className="form-label">
+                  {listingMode === 'currency' && unitName ? `Price per ${unitName} (PKR)` : 'Price (PKR)'}
+                </label>
                 <input
                   type="number"
                   className="form-input"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  placeholder="e.g., 5000"
-                  min="1"
-                  step="1"
+                  placeholder={listingMode === 'currency' ? 'e.g., 1.50' : 'e.g., 5000'}
+                  min={listingMode === 'currency' ? '0.01' : '1'}
+                  step={listingMode === 'currency' ? '0.01' : '1'}
                   required
                 />
+                {listingMode === 'currency' && unitName && (
+                  <span className="form-hint">
+                    What 1 {unitName} costs. Buyers choose how many {unitName} they want.
+                  </span>
+                )}
               </div>
 
-              {/* Stock Quantity — hidden for auto delivery */}
-              {!isAutoDelivery && (
+              {/* Stock Quantity — hidden for auto delivery, required for currency */}
+              {listingMode === 'currency' ? (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Stock{unitName ? ` (${unitName})` : ''}</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      placeholder={unitName ? `e.g., 50000 ${unitName}` : 'e.g., 50000'}
+                      min="1"
+                      step="1"
+                      required
+                    />
+                    <span className="form-hint">
+                      The total amount you can deliver. Stock decreases with every sale.
+                    </span>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Minimum Purchase{unitName ? ` (${unitName})` : ''}</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={minQuantity}
+                      onChange={(e) => setMinQuantity(e.target.value)}
+                      placeholder="e.g., 1000"
+                      min="1"
+                      step="1"
+                    />
+                    <span className="form-hint">
+                      The smallest amount a buyer can order from you. Leave empty for no minimum.
+                    </span>
+                  </div>
+                </>
+              ) : !isAutoDelivery && (
                 <div className="form-group">
                   <label className="form-label">Stock Quantity (Optional)</label>
                   <input
@@ -363,7 +432,7 @@ export default function CreateListingPage() {
               )}
 
               {/* Auto Delivery Toggle */}
-              {allowAutoDelivery && (
+              {allowAutoDelivery && listingMode !== 'currency' && (
                 <div className="form-group">
                   <div className="auto-delivery-toggle-wrap">
                     <label className="auto-delivery-toggle" htmlFor="auto-delivery-toggle">
@@ -435,10 +504,10 @@ export default function CreateListingPage() {
                 </div>
               )}
 
-              {/* Delivery Instructions (required for offer-mode categories) */}
+              {/* Delivery Instructions (required for offer/currency categories) */}
               <div className="form-group">
                 <label className="form-label">
-                  Delivery Instructions {listingMode === 'offer' ? '' : '(Optional)'}
+                  Delivery Instructions {(listingMode === 'offer' || listingMode === 'currency') ? '' : '(Optional)'}
                 </label>
                 <textarea
                   className="form-textarea"
@@ -446,19 +515,21 @@ export default function CreateListingPage() {
                   onChange={(e) => setDeliveryInstructions(e.target.value)}
                   placeholder={listingMode === 'offer'
                     ? "Tell buyers what you need and how delivery works, e.g., 'Only your Player ID / UID is required. No password needed. Double-check your UID before ordering.'"
+                    : listingMode === 'currency'
+                    ? "Tell buyers what you need and how delivery works, e.g., 'We need your account login (2FA off) + recovery codes. Delivery within 1 hour for small amounts.'"
                     : "Optional note shown to buyers, e.g., 'Please change the password immediately after receiving the account'"}
                   rows={3}
-                  required={listingMode === 'offer'}
+                  required={listingMode === 'offer' || listingMode === 'currency'}
                 />
                 <span className="form-hint">
-                  {listingMode === 'offer'
+                  {(listingMode === 'offer' || listingMode === 'currency')
                     ? 'Required — buyers see this next to your offer before purchasing.'
                     : 'This note will be visible to every buyer when they purchase.'}
                 </span>
               </div>
 
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (listingMode === 'offer' && options.length === 0)}>
-                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : listingMode === 'offer' ? 'Create Offer' : 'Create Listing'}
+                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : (listingMode === 'offer' || listingMode === 'currency') ? 'Create Offer' : 'Create Listing'}
               </button>
             </>
           )}
