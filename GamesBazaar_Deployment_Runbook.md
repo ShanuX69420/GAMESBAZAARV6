@@ -337,7 +337,9 @@ systemctl status gamesbazaar-release-holds.timer
 ```
 
 Check JazzCash reconcile timer (settles pending gateway payments via the
-mandatory Status Inquiry API; run every 10–15 minutes):
+mandatory Status Inquiry API; run every 2–3 minutes — JazzCash requires
+pending code-157 transactions to be inquired 5–7 minutes after initiation,
+and the command itself skips payments younger than 5 minutes):
 
 ```bash
 systemctl status gamesbazaar-jazzcash-reconcile.timer
