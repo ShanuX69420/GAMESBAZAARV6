@@ -138,6 +138,18 @@ class GameCategorySerializer(serializers.ModelSerializer):
         model = GameCategory
         fields = ['id', 'category', 'order']
 
+    def to_representation(self, instance):
+        # Buyers (and sellers picking a category) see the per-game display
+        # override, not the internal category name.
+        data = super().to_representation(instance)
+        if instance.display_name:
+            data['category'] = dict(
+                data['category'],
+                name=instance.effective_name,
+                slug=instance.effective_slug,
+            )
+        return data
+
 
 class GameListSerializer(serializers.ModelSerializer):
     category_count = serializers.SerializerMethodField()
@@ -191,7 +203,7 @@ class GameDetailSerializer(serializers.ModelSerializer):
 
 class GameCategoryDetailSerializer(serializers.Serializer):
     game = serializers.SerializerMethodField()
-    category = CategorySerializer()
+    category = serializers.SerializerMethodField()
     filters = serializers.SerializerMethodField()
     allow_auto_delivery = serializers.BooleanField(read_only=True)
     listing_mode = serializers.CharField(read_only=True)
@@ -202,6 +214,13 @@ class GameCategoryDetailSerializer(serializers.Serializer):
             'name': obj.game.name,
             'slug': obj.game.slug,
         }
+
+    def get_category(self, obj):
+        data = CategorySerializer(obj.category).data
+        if obj.display_name:
+            data['name'] = obj.effective_name
+            data['slug'] = obj.effective_slug
+        return data
 
     def get_filters(self, obj):
         # Use .all() to leverage the prefetched cache from the view
@@ -467,7 +486,7 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_avg_rating = serializers.SerializerMethodField()
     seller_review_count = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
-    category_name = serializers.CharField(source='game_category.category.name', read_only=True)
+    category_name = serializers.CharField(source='game_category.effective_name', read_only=True)
     buyer_protection_enabled = serializers.BooleanField(
         source='game_category.category.buyer_protection_enabled', read_only=True,
     )
@@ -586,11 +605,8 @@ class CreateListingSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         game_slug = attrs.pop('game_slug')
         category_slug = attrs.pop('category_slug')
-        try:
-            gc = GameCategory.objects.get(
-                game__slug=game_slug, category__slug=category_slug, game__is_active=True
-            )
-        except GameCategory.DoesNotExist:
+        gc = GameCategory.resolve_for_slug(game_slug, category_slug)
+        if gc is None:
             raise serializers.ValidationError('Invalid game/category combination.')
         attrs['game_category'] = gc
 

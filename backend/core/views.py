@@ -562,15 +562,16 @@ class GameCategoryDetailView(APIView):
                 response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
                 return response
 
-        game_category = get_object_or_404(
-            GameCategory.objects.select_related('game', 'category').prefetch_related(
+        game_category = GameCategory.resolve_for_slug(
+            game_slug,
+            category_slug,
+            queryset=GameCategory.objects.select_related('game', 'category').prefetch_related(
                 'assigned_filters__filter__options',
                 'assigned_filters__visible_when_options',
             ),
-            game__slug=game_slug,
-            category__slug=category_slug,
-            game__is_active=True,
         )
+        if game_category is None:
+            raise Http404('No game category matches the given query.')
 
         # Build category detail (filters)
         from .serializers import GameCategoryDetailSerializer
@@ -751,8 +752,8 @@ class GameCategoryDetailView(APIView):
         )
         cat_data['all_categories'] = [
             {
-                'slug': gc.category.slug,
-                'name': gc.category.name,
+                'slug': gc.effective_slug,
+                'name': gc.effective_name,
                 'icon': gc.category.icon,
                 'listing_count': gc.listing_count,
                 'allow_auto_delivery': gc.allow_auto_delivery,
@@ -1692,6 +1693,8 @@ class MyListingsView(generics.ListAPIView):
                     'game_category__category__slug',
                     'game_category__category__name',
                     'game_category__category__icon',
+                    'game_category__display_name',
+                    'game_category__display_slug',
                 )
                 .annotate(listing_count=Count('id'))
                 .order_by('game_category__game__name', 'game_category__category__name')
@@ -1709,8 +1712,8 @@ class MyListingsView(generics.ListAPIView):
                     }
                 games_map[g_slug]['listing_count'] += row['listing_count']
                 games_map[g_slug]['categories'].append({
-                    'slug': row['game_category__category__slug'],
-                    'name': row['game_category__category__name'],
+                    'slug': row['game_category__display_slug'] or row['game_category__category__slug'],
+                    'name': row['game_category__display_name'] or row['game_category__category__name'],
                     'icon': row['game_category__category__icon'],
                     'listing_count': row['listing_count'],
                 })
@@ -1733,7 +1736,11 @@ class MyListingsView(generics.ListAPIView):
 
         category_filter = request.query_params.get('category', '').strip()
         if category_filter:
-            listings_qs = listings_qs.filter(game_category__category__slug=category_filter)
+            listings_qs = listings_qs.filter(
+                Q(game_category__display_slug=category_filter) |
+                Q(game_category__category__slug=category_filter,
+                  game_category__display_slug='')
+            )
 
         limit, offset = get_pagination_params(request)
         filtered_count = listings_qs.count()
@@ -3914,6 +3921,8 @@ class SellerProfileView(APIView):
                 'game_category__category__slug',
                 'game_category__category__name',
                 'game_category__category__icon',
+                'game_category__display_name',
+                'game_category__display_slug',
             )
             .annotate(listing_count=Count('id'))
             .order_by('game_category__game__name', '-listing_count')
@@ -3935,8 +3944,8 @@ class SellerProfileView(APIView):
                 }
             games_map[g_slug]['total_offers'] += row['listing_count']
             games_map[g_slug]['categories'].append({
-                'slug': row['game_category__category__slug'],
-                'name': row['game_category__category__name'],
+                'slug': row['game_category__display_slug'] or row['game_category__category__slug'],
+                'name': row['game_category__display_name'] or row['game_category__category__name'],
                 'icon': row['game_category__category__icon'],
                 'count': row['listing_count'],
             })
@@ -4002,7 +4011,10 @@ class SearchView(APIView):
         ).filter(
             Q(game__name__icontains=query) |
             Q(game__search_keywords__icontains=query) |
-            Q(category__name__icontains=query)
+            # Renamed categories only match their buyer-facing display name,
+            # not the internal category name they borrow.
+            Q(category__name__icontains=query, display_name='') |
+            Q(display_name__icontains=query)
         ).select_related('game', 'category').order_by(
             'game__order', 'game__name', 'order', 'category__name'
         )[:SEARCH_RESULT_LIMIT]
@@ -4019,12 +4031,12 @@ class SearchView(APIView):
                 )
             results.append({
                 'id': gc.id,
-                'display_name': f'{gc.game.name} {gc.category.name}',
+                'display_name': f'{gc.game.name} {gc.effective_name}',
                 'game_name': gc.game.name,
                 'game_slug': gc.game.slug,
                 'game_icon_url': icon_url,
-                'category_name': gc.category.name,
-                'category_slug': gc.category.slug,
+                'category_name': gc.effective_name,
+                'category_slug': gc.effective_slug,
             })
 
         cache.set(cache_key, results, SEARCH_CACHE_SECONDS)
@@ -4219,6 +4231,7 @@ class SellerDashboardView(APIView):
             all_orders.filter(status='completed').values(
                 'listing__game_category__game__name',
                 'listing__game_category__category__name',
+                'listing__game_category__display_name',
             ).annotate(
                 sales_count=Count('id'),
                 revenue=Sum('seller_amount'),
@@ -4227,7 +4240,9 @@ class SellerDashboardView(APIView):
         top_categories_data = [
             {
                 'game': entry['listing__game_category__game__name'] or 'Unknown',
-                'category': entry['listing__game_category__category__name'] or 'Unknown',
+                'category': entry['listing__game_category__display_name']
+                            or entry['listing__game_category__category__name']
+                            or 'Unknown',
                 'sales_count': entry['sales_count'],
                 'revenue': str(entry['revenue']),
             }

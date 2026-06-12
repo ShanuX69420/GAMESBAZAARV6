@@ -4,6 +4,7 @@ from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
 from django.db.models.functions import Lower, Trim, Upper
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
 
@@ -114,6 +115,13 @@ class GameCategory(models.Model):
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='game_categories')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='game_categories')
+    display_name = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text='Optional. What buyers see instead of the category name for this game '
+                  '(e.g., "Subscriptions" instead of "Top Ups"). Leave blank to show the '
+                  'category name as-is.',
+    )
+    display_slug = models.SlugField(max_length=200, blank=True, default='', editable=False)
     order = models.PositiveIntegerField(default=0, help_text='Display order within the game')
     allow_auto_delivery = models.BooleanField(
         default=False,
@@ -131,8 +139,66 @@ class GameCategory(models.Model):
         verbose_name = 'Game Category'
         verbose_name_plural = 'Game Categories'
 
+    @property
+    def effective_name(self):
+        """Buyer-facing category name (display override or the category's own name)."""
+        return self.display_name or self.category.name
+
+    @property
+    def effective_slug(self):
+        """Buyer-facing URL slug (display override or the category's own slug)."""
+        return self.display_slug or self.category.slug
+
+    @classmethod
+    def resolve_for_slug(cls, game_slug, category_slug, queryset=None):
+        """Find the game-category a buyer-facing slug points to.
+
+        Matches either the custom display slug or the category's own slug, so
+        old links keep working after a rename. When both match different rows
+        within a game, the display slug wins (a rename frees up the original
+        slug for another category).
+        """
+        qs = (queryset if queryset is not None else cls.objects).filter(
+            game__slug=game_slug, game__is_active=True,
+        ).filter(
+            models.Q(display_slug=category_slug) | models.Q(category__slug=category_slug)
+        )
+        matches = sorted(qs, key=lambda gc: 0 if gc.display_slug == category_slug else 1)
+        return matches[0] if matches else None
+
+    def clean(self):
+        super().clean()
+        if not self.game_id or not self.category_id:
+            return
+        if self.display_name:
+            slug = slugify(self.display_name)
+            if not slug:
+                raise ValidationError(
+                    {'display_name': 'Display name must contain letters or numbers.'})
+        else:
+            slug = self.category.slug
+        siblings = (
+            GameCategory.objects.filter(game_id=self.game_id)
+            .exclude(pk=self.pk)
+            .select_related('category')
+        )
+        for sibling in siblings:
+            if slug in (sibling.display_slug, sibling.category.slug):
+                field = 'display_name' if self.display_name else 'category'
+                raise ValidationError({
+                    field: f'The URL name "{slug}" is already used by the '
+                           f'"{sibling.effective_name}" category in this game.',
+                })
+
+    def save(self, *args, **kwargs):
+        self.display_slug = slugify(self.display_name) if self.display_name else ''
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"{self.game.name} → {self.category.name}"
+        label = f"{self.game.name} → {self.category.name}"
+        if self.display_name:
+            label += f' (shown as "{self.display_name}")'
+        return label
 
 
 class CategoryOption(models.Model):

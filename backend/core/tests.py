@@ -4132,6 +4132,130 @@ class GameCatalogCacheHeaderTests(TestCase):
         self.assertEqual(response['Cache-Control'], 'public, max-age=120')
 
 
+class CategoryDisplayNameTests(TestCase):
+    """Per-game category renames: one shared admin category, custom buyer-facing name."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.game = Game.objects.create(name='ChatGPT', slug='chatgpt')
+        self.category = Category.objects.create(name='Top Ups', slug='top-ups')
+        self.game_category = GameCategory.objects.create(
+            game=self.game, category=self.category, display_name='Subscriptions',
+        )
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='ChatGPT Plus — 1 Month',
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_display_slug_follows_display_name(self):
+        self.assertEqual(self.game_category.display_slug, 'subscriptions')
+
+        self.game_category.display_name = ''
+        self.game_category.save()
+        self.assertEqual(self.game_category.display_slug, '')
+        self.assertEqual(self.game_category.effective_name, 'Top Ups')
+        self.assertEqual(self.game_category.effective_slug, 'top-ups')
+
+    def test_display_name_clash_with_sibling_category_rejected(self):
+        other_category = Category.objects.create(name='Subscriptions', slug='subscriptions')
+        clashing = GameCategory(game=self.game, category=other_category)
+        with self.assertRaises(ValidationError):
+            clashing.full_clean()
+
+    def test_browse_resolves_display_slug_and_shows_display_name(self):
+        response = self.client.get('/api/games/chatgpt/subscriptions/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['category']['name'], 'Subscriptions')
+        self.assertEqual(response.data['category']['slug'], 'subscriptions')
+        self.assertEqual(response.data['all_categories'][0]['name'], 'Subscriptions')
+        self.assertEqual(response.data['all_categories'][0]['slug'], 'subscriptions')
+        self.assertEqual(response.data['listings'][0]['category_name'], 'Subscriptions')
+
+    def test_browse_still_resolves_original_category_slug(self):
+        response = self.client.get('/api/games/chatgpt/top-ups/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['category']['name'], 'Subscriptions')
+
+    def test_display_slug_wins_over_sibling_original_slug(self):
+        # A sibling category whose own slug equals the renamed category's
+        # display slug: the display slug must take priority.
+        other_category = Category.objects.create(name='Subscriptions', slug='subscriptions')
+        GameCategory.objects.create(game=self.game, category=other_category, order=1)
+
+        response = self.client.get('/api/games/chatgpt/subscriptions/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['category']['name'], 'Subscriptions')
+        self.assertEqual(response.data['listings'][0]['title'], 'ChatGPT Plus — 1 Month')
+
+    def test_game_detail_uses_display_name_and_slug(self):
+        response = self.client.get('/api/games/chatgpt/')
+
+        self.assertEqual(response.status_code, 200)
+        category_data = response.data['categories'][0]['category']
+        self.assertEqual(category_data['name'], 'Subscriptions')
+        self.assertEqual(category_data['slug'], 'subscriptions')
+
+    def test_create_listing_accepts_display_slug(self):
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post('/api/listings/', {
+            'game_slug': 'chatgpt',
+            'category_slug': 'subscriptions',
+            'title': 'ChatGPT Plus — 12 Months',
+            'price': '95.00',
+            'quantity': 1,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        listing = Listing.objects.get(title='ChatGPT Plus — 12 Months')
+        self.assertEqual(listing.game_category, self.game_category)
+
+    def test_search_matches_display_name_not_internal_name(self):
+        matched = self.client.get('/api/search/', {'q': 'subscription'})
+        self.assertEqual(matched.status_code, 200)
+        self.assertEqual(len(matched.data['results']), 1)
+        result = matched.data['results'][0]
+        self.assertEqual(result['display_name'], 'ChatGPT Subscriptions')
+        self.assertEqual(result['category_name'], 'Subscriptions')
+        self.assertEqual(result['category_slug'], 'subscriptions')
+
+        unmatched = self.client.get('/api/search/', {'q': 'top ups'})
+        self.assertEqual(unmatched.status_code, 200)
+        self.assertEqual(unmatched.data['results'], [])
+
+    def test_seller_profile_uses_display_name(self):
+        response = self.client.get(f'/api/seller/profile/{self.seller.username}/')
+
+        self.assertEqual(response.status_code, 200)
+        category_data = response.data['games'][0]['categories'][0]
+        self.assertEqual(category_data['name'], 'Subscriptions')
+        self.assertEqual(category_data['slug'], 'subscriptions')
+
+    def test_my_listings_breakdown_and_filter_use_display_slug(self):
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/listings/mine/', {'category': 'subscriptions'})
+
+        self.assertEqual(response.status_code, 200)
+        category_data = response.data['seller_games'][0]['categories'][0]
+        self.assertEqual(category_data['name'], 'Subscriptions')
+        self.assertEqual(category_data['slug'], 'subscriptions')
+        self.assertEqual(len(response.data['listings']), 1)
+
+
 class GameCategoryListingPaginationTests(TestCase):
     def setUp(self):
         cache.clear()
