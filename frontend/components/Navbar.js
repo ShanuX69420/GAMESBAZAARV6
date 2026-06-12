@@ -10,9 +10,11 @@ import { notificationOrderPath } from '@/lib/orderNumbers';
 import { WS_BASE } from '@/lib/config';
 import { buildTicketSubprotocols } from '@/lib/inbox';
 
-const UNREAD_POLL_INTERVAL_MS = 15000;
+// Badges arrive over the inbox socket; these polls are only a fallback for
+// clients whose WebSocket can't connect, so they can afford to be slow.
+const UNREAD_POLL_INTERVAL_MS = 60000;
 const SEARCH_DEBOUNCE_MS = 300;
-const NOTIF_POLL_INTERVAL_MS = 30000;
+const NOTIF_POLL_INTERVAL_MS = 120000;
 const HEARTBEAT_INTERVAL_MS = 65000;
 const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
 const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
@@ -221,7 +223,14 @@ export default function Navbar() {
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchNotifCount();
     }, NOTIF_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchNotifCount();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user, setupPending, fetchNotifCount]);
 
   // ── Real-time badges: per-user inbox socket ────────────────────────────
