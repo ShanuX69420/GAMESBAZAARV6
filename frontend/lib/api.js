@@ -309,6 +309,17 @@ export async function getChatWebSocketTicket(conversationId) {
   return data;
 }
 
+export async function getInboxWebSocketTicket() {
+  const res = await authFetch(`${API_BASE}/api/chat/inbox/ws-ticket/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to get inbox connection ticket');
+  return data;
+}
+
 export async function sendMessage(conversationId, content, listingId = null) {
   const body = { content };
   if (listingId) body.listing_id = listingId;

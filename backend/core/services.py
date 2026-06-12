@@ -55,6 +55,9 @@ CHAT_WS_RATE_LIMIT_CACHE_PREFIX = 'chat-ws-rate'
 CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
 CHAT_WS_TICKET_CACHE_PREFIX = 'chat-ws-ticket'
 CHAT_WS_TICKET_SALT = 'core.chat.websocket'
+INBOX_WS_TICKET_MAX_AGE_SECONDS = 60
+INBOX_WS_TICKET_CACHE_PREFIX = 'inbox-ws-ticket'
+INBOX_WS_TICKET_SALT = 'core.inbox.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
 PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
 ENCRYPTED_TEXT_V1_PREFIX = 'enc:v1:'
@@ -1010,21 +1013,41 @@ def get_or_create_private_conversation(user, other_user):
         return conversation, True
 
 
-def broadcast_chat_message_after_commit(message):
-    """Push a message to open chat sockets once the surrounding transaction lands."""
+def broadcast_chat_message_after_commit(message, message_data=None):
+    """Push a message to open chat sockets once the surrounding transaction lands.
+
+    Every code path that creates a chat message must come through here: it also
+    notifies each participant's inbox socket (``user_inbox_<id>``) so sidebars
+    learn about activity in conversations they don't have open.
+    """
     def _send():
         channel_layer = get_channel_layer()
         if channel_layer is None:
             return
-        from .serializers import MessageSerializer
-        message_data = dict(MessageSerializer(message, context={}).data)
+        data = message_data
+        if data is None:
+            from .serializers import MessageSerializer
+            data = dict(MessageSerializer(message, context={}).data)
         async_to_sync(channel_layer.group_send)(
             f'chat_{message.conversation_id}',
             {
                 'type': 'chat.message',
-                'message': message_data,
+                'message': data,
             },
         )
+        participant_ids = list(
+            message.conversation.participants.values_list('id', flat=True)
+        )
+        for user_id in participant_ids:
+            other_ids = [pid for pid in participant_ids if pid != user_id]
+            async_to_sync(channel_layer.group_send)(
+                f'user_inbox_{user_id}',
+                {
+                    'type': 'inbox.conversation_updated',
+                    'conversation_id': message.conversation_id,
+                    'other_user_id': other_ids[0] if other_ids else None,
+                },
+            )
 
     transaction.on_commit(_send)
 
@@ -1123,6 +1146,44 @@ def consume_chat_ws_ticket(ticket):
         raise signing.BadSignature('Missing ticket nonce.')
 
     cache_key = f'{CHAT_WS_TICKET_CACHE_PREFIX}:{nonce}'
+    if not cache.get(cache_key):
+        raise signing.BadSignature('Ticket has already been used.')
+    cache.delete(cache_key)
+    return payload
+
+
+def create_inbox_ws_ticket(user):
+    """Create a short-lived ticket for opening the per-user inbox WebSocket."""
+    nonce = secrets.token_urlsafe(24)
+    cache.set(
+        f'{INBOX_WS_TICKET_CACHE_PREFIX}:{nonce}',
+        True,
+        timeout=INBOX_WS_TICKET_MAX_AGE_SECONDS,
+    )
+    return signing.dumps(
+        {
+            'user_id': user.pk,
+            'nonce': nonce,
+        },
+        salt=INBOX_WS_TICKET_SALT,
+    )
+
+
+def decode_inbox_ws_ticket(ticket, max_age=INBOX_WS_TICKET_MAX_AGE_SECONDS):
+    payload = signing.loads(ticket, salt=INBOX_WS_TICKET_SALT, max_age=max_age)
+    return {
+        'user_id': int(payload['user_id']),
+        'nonce': str(payload.get('nonce', '')),
+    }
+
+
+def consume_inbox_ws_ticket(ticket):
+    payload = decode_inbox_ws_ticket(ticket)
+    nonce = payload.get('nonce')
+    if not nonce:
+        raise signing.BadSignature('Missing ticket nonce.')
+
+    cache_key = f'{INBOX_WS_TICKET_CACHE_PREFIX}:{nonce}'
     if not cache.get(cache_key):
         raise signing.BadSignature('Ticket has already been used.')
     cache.delete(cache_key)

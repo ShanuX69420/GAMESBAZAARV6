@@ -2,8 +2,6 @@ from datetime import timedelta
 from decimal import Decimal
 import hashlib
 import logging
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -60,7 +58,10 @@ from .serializers import (
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_WS_TICKET_MAX_AGE_SECONDS,
+    INBOX_WS_TICKET_MAX_AGE_SECONDS,
+    broadcast_chat_message_after_commit,
     create_chat_ws_ticket,
+    create_inbox_ws_ticket,
     create_notification as create_user_notification,
     decode_private_media_ticket,
     apply_wallet_delta_once,
@@ -483,16 +484,10 @@ def apply_recommended_listing_ordering(listings_qs):
 
 def broadcast_chat_message(message, request):
     """Broadcast a REST-created message to any open WebSocket clients."""
-    channel_layer = get_channel_layer()
+    # Serialize with the request so image URLs stay absolute, then hand off to
+    # the central broadcaster (chat room + participants' inbox sockets).
     message_data = dict(MessageSerializer(message, context={'request': request}).data)
-    if channel_layer is not None:
-        async_to_sync(channel_layer.group_send)(
-            f'chat_{message.conversation_id}',
-            {
-                'type': 'chat.message',
-                'message': message_data,
-            },
-        )
+    broadcast_chat_message_after_commit(message, message_data=message_data)
     return message_data
 
 
@@ -2296,6 +2291,19 @@ class ChatWebSocketTicketView(APIView):
         return Response({
             'ticket': create_chat_ws_ticket(request.user, conversation.pk),
             'expires_in': CHAT_WS_TICKET_MAX_AGE_SECONDS,
+        })
+
+
+class InboxWebSocketTicketView(APIView):
+    """POST /api/chat/inbox/ws-ticket/ — Issue a short-lived inbox WebSocket ticket."""
+    permission_classes = [HasCompletedProfile]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'chat_ws_ticket'
+
+    def post(self, request):
+        return Response({
+            'ticket': create_inbox_ws_ticket(request.user),
+            'expires_in': INBOX_WS_TICKET_MAX_AGE_SECONDS,
         })
 
 

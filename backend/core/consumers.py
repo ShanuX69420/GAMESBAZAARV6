@@ -4,12 +4,13 @@ WebSocket consumer for real-time chat.
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, User
 from .models import Conversation, Message
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
     CHAT_MESSAGE_NOT_TEXT_ERROR,
     CHAT_MESSAGE_TOO_LONG_ERROR,
+    broadcast_chat_message_after_commit,
     consume_chat_ws_message_quota,
     validate_chat_listing_reference,
     validate_chat_message_content,
@@ -89,20 +90,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_chat_error(self.error_code_for(validation_error), validation_error)
                 return
 
-            # Save to database after resolving any server-trusted listing reference.
-            msg_data, listing_error = await self.save_message(text, content.get('listing_id'))
+            # Save to database after resolving any server-trusted listing
+            # reference. Broadcasting (this room + participants' inbox
+            # sockets) happens centrally inside save_message.
+            listing_error = await self.save_message(text, content.get('listing_id'))
             if listing_error:
                 await self.send_chat_error('invalid_listing_reference', listing_error)
                 return
-
-            # Broadcast to all participants in the room
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'chat.message',
-                    'message': msg_data,
-                }
-            )
 
         elif message_type == 'mark_read':
             await self.mark_messages_read()
@@ -172,7 +166,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             conversation_id=conversation.id,
         )
         if listing_error:
-            return None, listing_error
+            return listing_error
         msg = Message.objects.create(
             conversation=conversation,
             sender=self.user,
@@ -182,26 +176,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             referenced_listing_price=referenced_listing.price if referenced_listing else None,
         )
         conversation.save()  # Update updated_at
-        return {
-            'id': msg.id,
-            'sender_id': msg.sender.id,
-            'sender_name': msg.sender.username,
-            'content': msg.content,
-            'image_url': msg.image.url if msg.image else None,
-            'listing_reference': (
-                {
-                    'id': referenced_listing.id,
-                    'title': msg.referenced_listing_title,
-                    'price': str(msg.referenced_listing_price),
-                }
-                if referenced_listing else None
-            ),
-            'message_type': msg.message_type,
-            'system_event': msg.system_event,
-            'order_info': None,
-            'is_read': msg.is_read,
-            'created_at': msg.created_at.isoformat(),
-        }, None
+        broadcast_chat_message_after_commit(msg)
+        return None
 
     @database_sync_to_async
     def mark_messages_read(self):
@@ -217,3 +193,73 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             conversation_id=self.conversation_id,
             is_read=False,
         ).exclude(sender=self.user).update(is_read=True)
+
+
+class InboxConsumer(AsyncJsonWebsocketConsumer):
+    """Per-user socket feeding the inbox sidebar: activity in any of the
+    user's conversations plus presence of recent chat partners."""
+
+    # Presence groups are joined per partner, so bound them to the partners
+    # the sidebar realistically shows; older dots age out client-side.
+    PRESENCE_WATCH_LIMIT = 100
+
+    async def connect(self):
+        self.user = self.scope['user']
+
+        # Reject unauthenticated users (only inbox-scoped tickets pass)
+        if isinstance(self.user, AnonymousUser):
+            await self.close()
+            return
+
+        self.group_name = f'user_inbox_{self.user.id}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+        # Watch recent chat partners' presence so the sidebar dots stay live
+        self.presence_group_names = [
+            f'presence_{user_id}'
+            for user_id in await self.get_recent_partner_ids()
+        ]
+        for group_name in self.presence_group_names:
+            await self.channel_layer.group_add(group_name, self.channel_name)
+
+        accept_subprotocol = self.scope.get('chat_accept_subprotocol')
+        if accept_subprotocol:
+            await self.accept(subprotocol=accept_subprotocol)
+        else:
+            await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        for group_name in getattr(self, 'presence_group_names', []):
+            await self.channel_layer.group_discard(group_name, self.channel_name)
+
+    async def inbox_conversation_updated(self, event):
+        """Relay a compact "this conversation changed" notice to the client."""
+        await self.send_json({
+            'type': 'conversation_updated',
+            'conversation_id': event['conversation_id'],
+            'other_user_id': event['other_user_id'],
+        })
+
+    async def presence_update(self, event):
+        """Relay a watched partner's fresh last_active to the client."""
+        await self.send_json({
+            'type': 'presence',
+            'user_id': event['user_id'],
+            'last_active': event['last_active'],
+        })
+
+    @database_sync_to_async
+    def get_recent_partner_ids(self):
+        recent_conversation_ids = list(
+            Conversation.objects.filter(participants=self.user)
+            .order_by('-updated_at')
+            .values_list('id', flat=True)[:self.PRESENCE_WATCH_LIMIT]
+        )
+        return list(
+            User.objects.filter(conversations__id__in=recent_conversation_ids)
+            .exclude(id=self.user.id)
+            .distinct()
+            .values_list('id', flat=True)
+        )

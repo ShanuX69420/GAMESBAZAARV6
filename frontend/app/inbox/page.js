@@ -3,7 +3,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getConversations, formatLastActive, isOnlineFromLastActive } from '@/lib/api';
+import {
+  getConversations,
+  getInboxWebSocketTicket,
+  formatLastActive,
+  isOnlineFromLastActive,
+} from '@/lib/api';
+import { WS_BASE } from '@/lib/config';
+import {
+  buildTicketSubprotocols,
+  sortConversationsByActivity,
+  upsertConversation,
+  applyPresenceToConversations,
+} from '@/lib/inbox';
 import ChatBox from '@/components/ChatBox';
 
 const CONVERSATION_PAGE_SIZE = 30;
@@ -20,6 +32,8 @@ export default function InboxPage() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const loadedLimitRef = useRef(CONVERSATION_PAGE_SIZE);
+  const activeChatIdRef = useRef(null);
+  activeChatIdRef.current = activeChatId;
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -75,16 +89,102 @@ export default function InboxPage() {
     }
   }
 
+  // Initial load + full refetch when the tab becomes visible again
+  // (fallback for anything missed while hidden).
   useEffect(() => {
     if (!user) return;
     fetchConvos();
-    // Poll every 10s for presence updates + fallback for messages
-    const interval = setInterval(fetchConvos, 10000);
-    const handleChatUpdate = () => fetchConvos();
-    window.addEventListener('chatUpdate', handleChatUpdate);
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') fetchConvos();
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [user, fetchConvos]);
+
+  // Per-user inbox socket: the server pushes "conversation updated" and
+  // presence events, replacing the old 10s full-list polling.
+  useEffect(() => {
+    if (!user) return;
+    let disposed = false;
+    let ws = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+
+    function scheduleReconnect() {
+      if (disposed) return;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+      reconnectAttempts += 1;
+      reconnectTimer = setTimeout(() => {
+        if (!disposed) connectWs();
+      }, delay);
+    }
+
+    async function applyConversationUpdate(conversationId, otherUserId) {
+      if (!otherUserId) {
+        fetchConvos();
+        return;
+      }
+      try {
+        const data = await getConversations({ otherUserId, limit: 1 });
+        const updated = (data.conversations || []).find(convo => convo.id === conversationId);
+        if (disposed) return;
+        if (!updated) {
+          fetchConvos();
+          return;
+        }
+        // ChatBox auto-marks the open conversation read; don't flash a badge
+        if (updated.id === activeChatIdRef.current) updated.unread_count = 0;
+        setConversations(prev => upsertConversation(prev, updated));
+      } catch { }
+    }
+
+    async function connectWs() {
+      let ticket;
+      try {
+        ({ ticket } = await getInboxWebSocketTicket());
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      if (!ticket || disposed) return;
+
+      ws = new WebSocket(`${WS_BASE}/ws/inbox/`, buildTicketSubprotocols(ticket));
+
+      ws.onopen = () => {
+        if (disposed) return;
+        // Catch up on anything missed while disconnected
+        if (reconnectAttempts > 0) fetchConvos();
+        reconnectAttempts = 0;
+      };
+
+      ws.onmessage = (e) => {
+        if (disposed) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'conversation_updated') {
+            applyConversationUpdate(data.conversation_id, data.other_user_id);
+          } else if (data.type === 'presence') {
+            setConversations(prev =>
+              applyPresenceToConversations(prev, data.user_id, data.last_active)
+            );
+            setPresenceNow(Date.now());
+          }
+        } catch { }
+      };
+
+      ws.onclose = () => scheduleReconnect();
+      ws.onerror = () => {};
+    }
+
+    connectWs();
+
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('chatUpdate', handleChatUpdate);
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
     };
   }, [user, fetchConvos]);
 
@@ -94,6 +194,13 @@ export default function InboxPage() {
   function selectConversation(convo) {
     setActiveChatId(convo.id);
     setMobileChatOpen(true);
+    // ChatBox marks the conversation read once it connects; mirror that here
+    // instead of waiting for the next server push.
+    if (convo.unread_count > 0) {
+      setConversations(prev =>
+        prev.map(c => (c.id === convo.id ? { ...c, unread_count: 0 } : c))
+      );
+    }
   }
 
   function handleBackToList() {
@@ -234,12 +341,4 @@ function formatTime(dateStr) {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
   return date.toLocaleDateString();
-}
-
-function sortConversationsByActivity(conversations) {
-  return [...conversations].sort((a, b) => {
-    const aDate = new Date(a.last_message?.created_at || a.updated_at).getTime();
-    const bDate = new Date(b.last_message?.created_at || b.updated_at).getTime();
-    return bDate - aDate;
-  });
 }

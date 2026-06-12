@@ -5654,6 +5654,285 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
         self.assertFalse(Message.objects.filter(content='too fast after reconnect').exists())
 
 
+class InboxWebSocketIntegrationTests(TransactionTestCase):
+    reset_sequences = True
+    websocket_test_origin = b'http://localhost:3000'
+
+    def setUp(self):
+        cache.clear()
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+        self.conversation = Conversation.objects.create()
+        self.conversation.participants.add(self.buyer, self.seller)
+
+    def tearDown(self):
+        cache.clear()
+
+    def make_websocket_communicator(self, application, path):
+        from channels.testing import WebsocketCommunicator
+        return WebsocketCommunicator(
+            application,
+            path,
+            headers=[(b'origin', self.websocket_test_origin)],
+        )
+
+    def test_inbox_ws_ticket_endpoint_requires_authentication(self):
+        anonymous_response = APIClient().post('/api/chat/inbox/ws-ticket/', {}, format='json')
+        self.assertIn(anonymous_response.status_code, (401, 403))
+
+        client = APIClient()
+        client.force_authenticate(user=self.buyer)
+        response = client.post('/api/chat/inbox/ws-ticket/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['ticket'])
+        self.assertGreater(response.data['expires_in'], 0)
+
+    def test_inbox_socket_accepts_inbox_ticket_only_and_rejects_replay(self):
+        from asgiref.sync import async_to_sync
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket, create_inbox_ws_ticket
+
+        async def run_ticket_flow():
+            ticket = create_inbox_ws_ticket(self.buyer)
+            communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.disconnect()
+
+            replay_communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={ticket}',
+            )
+            replay_connected, _ = await replay_communicator.connect()
+            self.assertFalse(replay_connected)
+
+            # A conversation-scoped chat ticket must not open the inbox socket
+            chat_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            chat_ticket_communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={chat_ticket}',
+            )
+            chat_ticket_connected, _ = await chat_ticket_communicator.connect()
+            self.assertFalse(chat_ticket_connected)
+
+            # ...and an inbox ticket must not open a chat socket
+            inbox_ticket = create_inbox_ws_ticket(self.buyer)
+            chat_communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={inbox_ticket}',
+            )
+            cross_connected, _ = await chat_communicator.connect()
+            self.assertFalse(cross_connected)
+
+        async_to_sync(run_ticket_flow)()
+
+    def test_chat_socket_message_pushes_inbox_update_to_both_participants(self):
+        from asgiref.sync import async_to_sync
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket, create_inbox_ws_ticket
+
+        async def run_inbox_update_flow():
+            seller_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.seller)}',
+            )
+            connected, _ = await seller_inbox.connect()
+            self.assertTrue(connected)
+
+            buyer_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.buyer)}',
+            )
+            connected, _ = await buyer_inbox.connect()
+            self.assertTrue(connected)
+
+            chat_ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            chat = self.make_websocket_communicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={chat_ticket}',
+            )
+            connected, _ = await chat.connect()
+            self.assertTrue(connected)
+
+            await chat.send_json_to({
+                'type': 'chat_message',
+                'content': 'hello inbox',
+            })
+
+            # The chat room still receives the message itself
+            chat_event = await chat.receive_json_from()
+            self.assertEqual(chat_event['type'], 'new_message')
+            self.assertEqual(chat_event['message']['content'], 'hello inbox')
+            self.assertTrue(chat_event['message']['is_mine'])
+
+            # Both participants' inbox sockets learn the conversation changed
+            seller_event = await seller_inbox.receive_json_from()
+            self.assertEqual(seller_event['type'], 'conversation_updated')
+            self.assertEqual(seller_event['conversation_id'], self.conversation.id)
+            self.assertEqual(seller_event['other_user_id'], self.buyer.id)
+
+            buyer_event = await buyer_inbox.receive_json_from()
+            self.assertEqual(buyer_event['type'], 'conversation_updated')
+            self.assertEqual(buyer_event['conversation_id'], self.conversation.id)
+            self.assertEqual(buyer_event['other_user_id'], self.seller.id)
+
+            await chat.disconnect()
+            await seller_inbox.disconnect()
+            await buyer_inbox.disconnect()
+
+        async_to_sync(run_inbox_update_flow)()
+
+    def test_rest_message_send_pushes_inbox_update(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_inbox_ws_ticket
+
+        def post_message():
+            client = APIClient()
+            client.force_authenticate(user=self.buyer)
+            return client.post(
+                f'/api/chat/{self.conversation.id}/send/',
+                {'content': 'rest inbox ping'},
+                format='json',
+            )
+
+        async def run_rest_inbox_flow():
+            seller_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.seller)}',
+            )
+            connected, _ = await seller_inbox.connect()
+            self.assertTrue(connected)
+
+            response = await sync_to_async(post_message, thread_sensitive=True)()
+            self.assertEqual(response.status_code, 201)
+
+            event = await seller_inbox.receive_json_from()
+            self.assertEqual(event['type'], 'conversation_updated')
+            self.assertEqual(event['conversation_id'], self.conversation.id)
+            self.assertEqual(event['other_user_id'], self.buyer.id)
+            await seller_inbox.disconnect()
+
+        async_to_sync(run_rest_inbox_flow)()
+
+    def test_rest_image_send_pushes_inbox_update(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_inbox_ws_ticket
+
+        def post_image():
+            client = APIClient()
+            client.force_authenticate(user=self.buyer)
+            return client.post(
+                f'/api/chat/{self.conversation.id}/send-image/',
+                {'image': make_image_file(name='inbox-chat.png')},
+                format='multipart',
+            )
+
+        async def run_image_inbox_flow():
+            seller_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.seller)}',
+            )
+            connected, _ = await seller_inbox.connect()
+            self.assertTrue(connected)
+
+            response = await sync_to_async(post_image, thread_sensitive=True)()
+            self.assertEqual(response.status_code, 201)
+
+            event = await seller_inbox.receive_json_from()
+            self.assertEqual(event['type'], 'conversation_updated')
+            self.assertEqual(event['conversation_id'], self.conversation.id)
+            self.assertEqual(event['other_user_id'], self.buyer.id)
+            await seller_inbox.disconnect()
+
+        async_to_sync(run_image_inbox_flow)()
+
+    def test_order_event_message_pushes_inbox_update(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_inbox_ws_ticket, post_order_chat_message
+
+        order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing_title='Inbox order',
+            quantity=1,
+            unit_price=Decimal('10.00'),
+            total_amount=Decimal('10.00'),
+            commission_rate=Decimal('0.00'),
+            commission_amount=Decimal('0.00'),
+            seller_amount=Decimal('10.00'),
+            status='paid',
+            conversation=self.conversation,
+        )
+
+        def post_order_event():
+            return post_order_chat_message(
+                order,
+                content=f'Order #{order.order_number} has been paid.',
+                event='order_paid',
+            )
+
+        async def run_order_event_flow():
+            seller_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.seller)}',
+            )
+            connected, _ = await seller_inbox.connect()
+            self.assertTrue(connected)
+
+            await sync_to_async(post_order_event, thread_sensitive=True)()
+
+            event = await seller_inbox.receive_json_from()
+            self.assertEqual(event['type'], 'conversation_updated')
+            self.assertEqual(event['conversation_id'], self.conversation.id)
+            self.assertEqual(event['other_user_id'], self.buyer.id)
+            await seller_inbox.disconnect()
+
+        async_to_sync(run_order_event_flow)()
+
+    def test_heartbeat_pushes_presence_to_inbox_socket(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_inbox_ws_ticket
+
+        def send_seller_heartbeat():
+            client = APIClient()
+            client.force_authenticate(user=self.seller)
+            response = client.post('/api/heartbeat/')
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.data['updated'])
+            return UserProfile.objects.get(user=self.seller).last_active
+
+        async def run_presence_flow():
+            buyer_inbox = self.make_websocket_communicator(
+                application,
+                f'/ws/inbox/?ticket={create_inbox_ws_ticket(self.buyer)}',
+            )
+            connected, _ = await buyer_inbox.connect()
+            self.assertTrue(connected)
+
+            last_active = await sync_to_async(send_seller_heartbeat, thread_sensitive=True)()
+
+            event = await buyer_inbox.receive_json_from()
+            self.assertEqual(event['type'], 'presence')
+            self.assertEqual(event['user_id'], self.seller.id)
+            self.assertEqual(event['last_active'], last_active.isoformat())
+            await buyer_inbox.disconnect()
+
+        async_to_sync(run_presence_flow)()
+
+
 class DisputeResolutionApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()

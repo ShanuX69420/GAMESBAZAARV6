@@ -10,11 +10,12 @@ from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth.models import User
-from .services import consume_chat_ws_ticket
+from .services import consume_chat_ws_ticket, consume_inbox_ws_ticket
 
 
 CHAT_SUBPROTOCOL = 'gb.chat'
 TICKET_SUBPROTOCOL_PREFIX = 'gb.ticket.'
+INBOX_WS_PATH = '/ws/inbox/'
 
 
 def ticket_from_subprotocols(subprotocols):
@@ -42,8 +43,23 @@ def get_user_from_ticket(ticket_str):
         return AnonymousUser(), None
 
 
+@database_sync_to_async
+def get_user_from_inbox_ticket(ticket_str):
+    """Validate a short-lived inbox ticket and return the user."""
+    try:
+        payload = consume_inbox_ws_ticket(ticket_str)
+        return User.objects.get(id=payload['user_id'])
+    except Exception:
+        return AnonymousUser()
+
+
 class ChatTicketAuthMiddleware(BaseMiddleware):
-    """Middleware that authenticates WebSocket connections via scoped chat tickets."""
+    """Middleware that authenticates WebSocket connections via scoped tickets.
+
+    Chat sockets use conversation-scoped tickets; the inbox socket uses
+    user-scoped tickets. The salts differ, so neither ticket kind can open
+    the other socket.
+    """
 
     async def __call__(self, scope, receive, send):
         subprotocols = scope.get('subprotocols') or []
@@ -54,13 +70,15 @@ class ChatTicketAuthMiddleware(BaseMiddleware):
             ticket_list = params.get('ticket', [])
             ticket = ticket_list[0] if ticket_list else None
 
+        scope['user'] = AnonymousUser()
+        scope['chat_ticket_conversation_id'] = None
         if ticket:
-            user, conversation_id = await get_user_from_ticket(ticket)
-            scope['user'] = user
-            scope['chat_ticket_conversation_id'] = conversation_id
-        else:
-            scope['user'] = AnonymousUser()
-            scope['chat_ticket_conversation_id'] = None
+            if scope.get('path') == INBOX_WS_PATH:
+                scope['user'] = await get_user_from_inbox_ticket(ticket)
+            else:
+                user, conversation_id = await get_user_from_ticket(ticket)
+                scope['user'] = user
+                scope['chat_ticket_conversation_id'] = conversation_id
         scope['chat_accept_subprotocol'] = (
             CHAT_SUBPROTOCOL if CHAT_SUBPROTOCOL in subprotocols else None
         )

@@ -42,6 +42,7 @@ urlpatterns = [
     path('chat/', views.ConversationListView.as_view(), name='conversation-list'),
     path('chat/start/', views.StartConversationView.as_view(), name='start-conversation'),
     path('chat/unread/', views.UnreadCountView.as_view(), name='unread-count'),
+    path('chat/inbox/ws-ticket/', views.InboxWebSocketTicketView.as_view(), name='inbox-ws-ticket'),
     path('chat/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
     path('chat/<int:pk>/ws-ticket/', views.ChatWebSocketTicketView.as_view(), name='chat-ws-ticket'),
     path('chat/<int:pk>/send/', views.SendMessageView.as_view(), name='send-message'),
