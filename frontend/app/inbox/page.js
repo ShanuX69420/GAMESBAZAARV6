@@ -112,6 +112,8 @@ export default function InboxPage() {
 
     function scheduleReconnect() {
       if (disposed) return;
+      // Replace any pending retry so reconnect loops can't multiply
+      clearTimeout(reconnectTimer);
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
       reconnectAttempts += 1;
       reconnectTimer = setTimeout(() => {
@@ -152,6 +154,7 @@ export default function InboxPage() {
 
       ws.onopen = () => {
         if (disposed) return;
+        clearTimeout(reconnectTimer);
         // Catch up on anything missed while disconnected
         if (reconnectAttempts > 0) fetchConvos();
         reconnectAttempts = 0;

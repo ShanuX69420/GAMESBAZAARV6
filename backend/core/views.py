@@ -2298,7 +2298,9 @@ class InboxWebSocketTicketView(APIView):
     """POST /api/chat/inbox/ws-ticket/ — Issue a short-lived inbox WebSocket ticket."""
     permission_classes = [HasCompletedProfile]
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'chat_ws_ticket'
+    # Own bucket: the chat and inbox sockets reconnect independently and must
+    # not drain each other's ticket budget.
+    throttle_scope = 'inbox_ws_ticket'
 
     def post(self, request):
         return Response({

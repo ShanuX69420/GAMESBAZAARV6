@@ -225,10 +225,11 @@ export default function ChatBox({
     }
   }, [conversationId]);
 
-  // Load messages via REST
-  const loadMessages = useCallback(async () => {
+  // Load messages via REST. `silent` refreshes in place (no skeleton, no
+  // forced scroll) — used to catch up after a reconnect.
+  const loadMessages = useCallback(async ({ silent = false } = {}) => {
     if (!activeConvoId) return;
-    setLoadingMessages(true);
+    if (!silent) setLoadingMessages(true);
     try {
       const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE });
       if (!mountedRef.current) return;
@@ -236,9 +237,9 @@ export default function ChatBox({
       setConvo(data);
       setMessages(nextMessages);
       setMessagePagination(data.message_pagination || null);
-      armInitialImageAutoScroll(nextMessages);
+      if (!silent) armInitialImageAutoScroll(nextMessages);
     } catch { } finally {
-      if (mountedRef.current) setLoadingMessages(false);
+      if (mountedRef.current && !silent) setLoadingMessages(false);
     }
   }, [activeConvoId]);
 
@@ -283,17 +284,20 @@ export default function ChatBox({
   useEffect(() => {
     mountedRef.current = true;
     if (!activeConvoId || !user) return;
+    // Per-run liveness flag: unlike mountedRef (which the next effect run
+    // sets back to true), this stays false once this run is torn down, so
+    // stale async connects and orphaned retry timers can't resurrect.
+    let disposed = false;
 
     function scheduleReconnect() {
-      if (!mountedRef.current) return;
+      if (disposed) return;
       setConnected(false);
+      // Replace any pending retry so reconnect loops can't multiply
+      clearTimeout(reconnectTimer.current);
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
       reconnectAttempts.current += 1;
       reconnectTimer.current = setTimeout(() => {
-        if (mountedRef.current) {
-          loadMessages();
-          connectWs();
-        }
+        if (!disposed) connectWs();
       }, delay);
     }
 
@@ -306,7 +310,7 @@ export default function ChatBox({
         scheduleReconnect();
         return;
       }
-      if (!ticket || !mountedRef.current) return;
+      if (!ticket || disposed) return;
 
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -321,18 +325,21 @@ export default function ChatBox({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (!mountedRef.current) return;
+        if (disposed) return;
+        clearTimeout(reconnectTimer.current);
         setConnected(true);
-        // After a reconnect, order events may have been missed while offline
-        if (reconnectAttempts.current > 0 && onOrderEventRef.current) {
-          onOrderEventRef.current(null);
+        if (reconnectAttempts.current > 0) {
+          // Catch up quietly on messages and order events missed while
+          // offline — no skeleton, no scroll jump.
+          loadMessages({ silent: true });
+          if (onOrderEventRef.current) onOrderEventRef.current(null);
         }
         reconnectAttempts.current = 0;
         setTimeout(() => window.dispatchEvent(new Event('chatUpdate')), 300);
       };
 
       ws.onmessage = (e) => {
-        if (!mountedRef.current) return;
+        if (disposed) return;
         try {
           const data = JSON.parse(e.data);
           if (data.type === 'new_message') {
@@ -379,6 +386,7 @@ export default function ChatBox({
     connectWs();
 
     return () => {
+      disposed = true;
       mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
       clearTimeout(errorTimerRef.current);

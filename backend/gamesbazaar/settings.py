@@ -286,6 +286,7 @@ REST_FRAMEWORK = {
         'email_change_confirm': '10/hour',
         'chat_start': '20/min',
         'chat_ws_ticket': '30/min',
+        'inbox_ws_ticket': '30/min',
         'chat_message': '60/min',
         'chat_upload': '20/min',
         'topup_request': '10/hour',
