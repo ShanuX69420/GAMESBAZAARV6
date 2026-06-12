@@ -166,6 +166,9 @@ export default function InboxPage() {
           const data = JSON.parse(e.data);
           if (data.type === 'conversation_updated') {
             applyConversationUpdate(data.conversation_id, data.other_user_id);
+            // Nudge the navbar so its total-unread badge moves in step with
+            // the row badge instead of waiting for its 15s poll.
+            window.dispatchEvent(new Event('chatUpdate'));
           } else if (data.type === 'presence') {
             setConversations(prev =>
               applyPresenceToConversations(prev, data.user_id, data.last_active)
