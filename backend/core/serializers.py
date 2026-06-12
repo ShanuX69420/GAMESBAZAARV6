@@ -210,12 +210,11 @@ class GameCategoryDetailSerializer(serializers.Serializer):
         for gcf in obj.assigned_filters.all():
             data = FilterSerializer(gcf.filter).data
             data['require_selection'] = gcf.require_selection
-            data['visible_when'] = None
-            if gcf.visible_when_option_id:
-                data['visible_when'] = {
-                    'filter_id': gcf.visible_when_option.filter_id,
-                    'option_value': gcf.visible_when_option.value,
-                }
+            # List of trigger conditions — the filter shows when ANY matches.
+            data['visible_when'] = [
+                {'filter_id': opt.filter_id, 'option_value': opt.value}
+                for opt in gcf.visible_when_options.all()
+            ] or None
             payload.append(data)
         return payload
 
@@ -662,7 +661,8 @@ class CreateListingSerializer(serializers.ModelSerializer):
 
         assigned_filters = list(
             GameCategoryFilter.objects.filter(game_category=gc)
-            .select_related('filter', 'visible_when_option')
+            .select_related('filter')
+            .prefetch_related('visible_when_options')
             .order_by('order', 'filter__name')
         )
         assigned_filter_ids = {gcf.filter_id for gcf in assigned_filters}
@@ -716,12 +716,18 @@ class CreateListingSerializer(serializers.ModelSerializer):
         assigned_by_id = {gcf.filter_id: gcf for gcf in assigned_filters}
 
         def filter_applies(gcf):
-            option = gcf.visible_when_option
-            if option is None or option.filter_id not in assigned_by_id:
-                # No condition, or the parent filter is not assigned to this
-                # category (misconfiguration) — treat as always applicable.
+            conditions = [
+                opt for opt in gcf.visible_when_options.all()
+                # Ignore conditions on filters not assigned to this category
+                # (misconfiguration) — they can never be satisfied.
+                if opt.filter_id in assigned_by_id
+            ]
+            if not conditions:
                 return True
-            return cleaned_filter_values.get(str(option.filter_id)) == option.value
+            return any(
+                cleaned_filter_values.get(str(opt.filter_id)) == opt.value
+                for opt in conditions
+            )
 
         while True:
             stripped = [

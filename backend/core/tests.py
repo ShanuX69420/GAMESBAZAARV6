@@ -1704,44 +1704,34 @@ class PurchaseFlowTests(TestCase):
         self.assertFalse(Listing.objects.filter(title='Bad option listing').exists())
 
     def _setup_dependent_filters(self):
-        """Method (Digital Key / Account Login) with Region shown only for Digital Key."""
+        """Method with three options; one Region per key, one shared by gift/account."""
         method_filter = Filter.objects.create(name='Method', filter_type='button')
         digital_key = FilterOption.objects.create(
             filter=method_filter, label='Digital Key', value='digital-key')
-        FilterOption.objects.create(
+        account_login = FilterOption.objects.create(
             filter=method_filter, label='By logging into account', value='account-login')
-        region_filter = Filter.objects.create(name='Region', filter_type='dropdown')
-        FilterOption.objects.create(filter=region_filter, label='Global', value='global')
+        as_a_gift = FilterOption.objects.create(
+            filter=method_filter, label='As a Gift', value='as-a-gift')
+
+        key_region = Filter.objects.create(
+            name='Region', admin_label='Key regions', filter_type='dropdown')
+        FilterOption.objects.create(filter=key_region, label='Global', value='global')
+
+        gift_region = Filter.objects.create(
+            name='Region', admin_label='Gift/account regions', filter_type='dropdown')
+        FilterOption.objects.create(filter=gift_region, label='Pakistan', value='pakistan')
+
         GameCategoryFilter.objects.create(game_category=self.game_category, filter=method_filter)
-        GameCategoryFilter.objects.create(
-            game_category=self.game_category, filter=region_filter,
-            visible_when_option=digital_key,
-        )
-        return method_filter, region_filter
-
-    def test_dependent_filter_not_required_when_parent_option_differs(self):
-        method_filter, region_filter = self._setup_dependent_filters()
-        self.client.force_authenticate(user=self.seller)
-
-        response = self.client.post(
-            '/api/listings/',
-            {
-                'game_slug': 'test-game',
-                'category_slug': 'accounts',
-                'title': 'Account login listing',
-                'price': '10.00',
-                'quantity': 1,
-                'filter_values': {str(method_filter.id): 'account-login'},
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 201)
-        listing = Listing.objects.get(title='Account login listing')
-        self.assertEqual(listing.filter_values, {str(method_filter.id): 'account-login'})
+        key_gcf = GameCategoryFilter.objects.create(
+            game_category=self.game_category, filter=key_region)
+        key_gcf.visible_when_options.add(digital_key)
+        gift_gcf = GameCategoryFilter.objects.create(
+            game_category=self.game_category, filter=gift_region)
+        gift_gcf.visible_when_options.add(account_login, as_a_gift)
+        return method_filter, key_region, gift_region
 
     def test_dependent_filter_required_when_parent_option_matches(self):
-        method_filter, region_filter = self._setup_dependent_filters()
+        method_filter, key_region, gift_region = self._setup_dependent_filters()
         self.client.force_authenticate(user=self.seller)
 
         payload = {
@@ -1757,18 +1747,48 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('Region', str(response.data['filter_values']))
 
-        payload['filter_values'][str(region_filter.id)] = 'global'
+        payload['filter_values'][str(key_region.id)] = 'global'
         response = self.client.post('/api/listings/', payload, format='json')
 
         self.assertEqual(response.status_code, 201)
         listing = Listing.objects.get(title='Digital key listing')
         self.assertEqual(listing.filter_values, {
             str(method_filter.id): 'digital-key',
-            str(region_filter.id): 'global',
+            str(key_region.id): 'global',
         })
 
+    def test_shared_dependent_filter_triggers_on_either_option(self):
+        method_filter, key_region, gift_region = self._setup_dependent_filters()
+        self.client.force_authenticate(user=self.seller)
+
+        for index, method_value in enumerate(['account-login', 'as-a-gift']):
+            title = f'Shared region listing {index}'
+            payload = {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': title,
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {str(method_filter.id): method_value},
+            }
+            response = self.client.post('/api/listings/', payload, format='json')
+
+            # Gift/account region is required for BOTH trigger options
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('Region', str(response.data['filter_values']))
+
+            payload['filter_values'][str(gift_region.id)] = 'pakistan'
+            response = self.client.post('/api/listings/', payload, format='json')
+
+            self.assertEqual(response.status_code, 201)
+            listing = Listing.objects.get(title=title)
+            self.assertEqual(listing.filter_values, {
+                str(method_filter.id): method_value,
+                str(gift_region.id): 'pakistan',
+            })
+
     def test_dependent_filter_value_stripped_when_parent_option_differs(self):
-        method_filter, region_filter = self._setup_dependent_filters()
+        method_filter, key_region, gift_region = self._setup_dependent_filters()
         self.client.force_authenticate(user=self.seller)
 
         response = self.client.post(
@@ -1780,8 +1800,10 @@ class PurchaseFlowTests(TestCase):
                 'price': '10.00',
                 'quantity': 1,
                 'filter_values': {
-                    str(method_filter.id): 'account-login',
-                    str(region_filter.id): 'global',
+                    str(method_filter.id): 'digital-key',
+                    str(key_region.id): 'global',
+                    # Stale leftover from a previously selected method
+                    str(gift_region.id): 'pakistan',
                 },
             },
             format='json',
@@ -1789,10 +1811,13 @@ class PurchaseFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         listing = Listing.objects.get(title='Stale region listing')
-        self.assertEqual(listing.filter_values, {str(method_filter.id): 'account-login'})
+        self.assertEqual(listing.filter_values, {
+            str(method_filter.id): 'digital-key',
+            str(key_region.id): 'global',
+        })
 
     def test_category_detail_exposes_filter_dependency(self):
-        method_filter, region_filter = self._setup_dependent_filters()
+        method_filter, key_region, gift_region = self._setup_dependent_filters()
 
         response = self.client.get('/api/games/test-game/accounts/')
 
@@ -1800,8 +1825,18 @@ class PurchaseFlowTests(TestCase):
         filters_payload = {f['id']: f for f in response.data['filters']}
         self.assertIsNone(filters_payload[method_filter.id]['visible_when'])
         self.assertEqual(
-            filters_payload[region_filter.id]['visible_when'],
-            {'filter_id': method_filter.id, 'option_value': 'digital-key'},
+            filters_payload[key_region.id]['visible_when'],
+            [{'filter_id': method_filter.id, 'option_value': 'digital-key'}],
+        )
+        self.assertEqual(
+            sorted(
+                filters_payload[gift_region.id]['visible_when'],
+                key=lambda c: c['option_value'],
+            ),
+            [
+                {'filter_id': method_filter.id, 'option_value': 'account-login'},
+                {'filter_id': method_filter.id, 'option_value': 'as-a-gift'},
+            ],
         )
 
     def test_create_listing_rejects_malformed_filter_values(self):

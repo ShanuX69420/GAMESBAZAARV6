@@ -570,7 +570,7 @@ class GameCategoryDetailView(APIView):
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
             )
-            browse_cache_key = 'browse:v2:' + hashlib.sha256(
+            browse_cache_key = 'browse:v3:' + hashlib.sha256(
                 f'{request_origin_cache_scope(request)}:{game_slug}:'
                 f'{category_slug}:{param_signature}'.encode('utf-8')
             ).hexdigest()
@@ -583,7 +583,7 @@ class GameCategoryDetailView(APIView):
         game_category = get_object_or_404(
             GameCategory.objects.select_related('game', 'category').prefetch_related(
                 'assigned_filters__filter__options',
-                'assigned_filters__visible_when_option',
+                'assigned_filters__visible_when_options',
             ),
             game__slug=game_slug,
             category__slug=category_slug,

@@ -157,11 +157,30 @@ class FilterOptionInline(admin.TabularInline):
     fields = ['label', 'value', 'order']
 
 
+class GameCategoryFilterForm(forms.ModelForm):
+    class Meta:
+        model = GameCategoryFilter
+        fields = '__all__'
+
+    def clean(self):
+        cleaned = super().clean()
+        filter_obj = cleaned.get('filter')
+        options = cleaned.get('visible_when_options')
+        if filter_obj and options:
+            if any(opt.filter_id == filter_obj.pk for opt in options):
+                self.add_error(
+                    'visible_when_options',
+                    'A filter cannot depend on one of its own options.',
+                )
+        return cleaned
+
+
 class GameCategoryFilterInline(admin.TabularInline):
     """Inline to assign filters directly from the GameCategory admin page."""
     model = GameCategoryFilter
+    form = GameCategoryFilterForm
     extra = 1
-    autocomplete_fields = ['filter', 'visible_when_option']
+    autocomplete_fields = ['filter', 'visible_when_options']
 
 
 
@@ -869,10 +888,16 @@ class FilterOptionAdmin(HiddenModelAdmin):
 
 @admin.register(GameCategoryFilter)
 class GameCategoryFilterAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'order', 'require_selection', 'visible_when_option']
+    form = GameCategoryFilterForm
+    list_display = ['__str__', 'order', 'require_selection', 'visible_when']
     list_filter = ['game_category__game']
     list_editable = ['order', 'require_selection']
-    autocomplete_fields = ['game_category', 'filter', 'visible_when_option']
+    autocomplete_fields = ['game_category', 'filter', 'visible_when_options']
+
+    @admin.display(description='Visible When')
+    def visible_when(self, obj):
+        labels = [str(opt) for opt in obj.visible_when_options.all()]
+        return ' OR '.join(labels) if labels else '—'
 
 
 # ── Chat Admin (hidden from sidebar) ─────────────────────────────────────────
