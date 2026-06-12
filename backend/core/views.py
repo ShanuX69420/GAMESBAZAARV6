@@ -41,7 +41,7 @@ HOME_POPULAR_SECTIONS = [
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
-     'category_slugs': ('top-up', 'subscription')},
+     'category_slugs': ('top-up', 'top-ups', 'subscription')},
     {'slug': 'offline-activation', 'title': 'Popular Offline Activation',
      'category_slugs': ('offline-activation',)},
     {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
