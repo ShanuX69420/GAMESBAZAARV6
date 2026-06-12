@@ -109,6 +109,11 @@ ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@64.227.182.238
 
 Then run:
 
+Order matters: build the frontend BEFORE running migrations. The old backend
+keeps serving requests until the restart, so the gap between `migrate` and
+`systemctl restart` must stay as short as possible — otherwise old code can
+query columns a migration just renamed/removed and visitors see errors.
+
 ```bash
 cd /opt/gamesbazaar/app
 
@@ -116,15 +121,15 @@ sudo -u gamesbazaar git fetch origin main
 sudo -u gamesbazaar git status
 sudo -u gamesbazaar git pull --ff-only origin main
 
-cd /opt/gamesbazaar/app/backend
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/pip install -r requirements.txt
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --noinput
-sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
-
 cd /opt/gamesbazaar/app/frontend
 sudo -u gamesbazaar npm ci
 sudo -u gamesbazaar npm run build
+
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/pip install -r requirements.txt
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --noinput
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
 
 systemctl restart gamesbazaar-backend gamesbazaar-frontend
 
