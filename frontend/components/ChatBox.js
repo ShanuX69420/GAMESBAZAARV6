@@ -19,6 +19,38 @@ const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const CHAT_SUBPROTOCOL = 'gb.chat';
 const PRESENCE_TICK_MS = 30000;
 
+const SYSTEM_EVENT_ICONS = {
+  order_paid: '💳',
+  order_delivered: '📦',
+  order_confirmed: '✅',
+  order_disputed: '⚠️',
+  order_refunded: '↩️',
+  review_posted: '⭐',
+  review_updated: '⭐',
+};
+
+// Turn the order number and participant usernames inside a system notice
+// into links (order page / seller profiles).
+function renderSystemText(content, orderInfo) {
+  if (!content || !orderInfo) return content;
+  const links = {};
+  if (orderInfo.order_number) {
+    links[`#${orderInfo.order_number}`] = `/order/${encodeURIComponent(orderInfo.order_number)}`;
+  }
+  for (const username of [orderInfo.buyer_username, orderInfo.seller_username]) {
+    if (username) links[username] = `/seller/${encodeURIComponent(username)}`;
+  }
+  const tokens = Object.keys(links).sort((a, b) => b.length - a.length);
+  if (!tokens.length) return content;
+  const escaped = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const splitter = new RegExp(`(${escaped.join('|')})`, 'g');
+  return content.split(splitter).map((part, i) =>
+    links[part]
+      ? <a key={i} href={links[part]} className="chat-event-link">{part}</a>
+      : part
+  );
+}
+
 function encodeWebSocketTicket(ticket) {
   return btoa(ticket).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -34,6 +66,7 @@ export default function ChatBox({
   listingId,
   listingTitle,
   listingPrice,
+  onOrderEvent,
 }) {
   const { user } = useAuth();
   const [convo, setConvo] = useState(null);
@@ -48,7 +81,9 @@ export default function ChatBox({
   const [pendingImage, setPendingImage] = useState(null); // { file, preview }
   const [imageUploading, setImageUploading] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  const copiedTimerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -63,6 +98,8 @@ export default function ChatBox({
   const pendingInitialImageLoadsRef = useRef(0);
   const initialImageScrollTimerRef = useRef(null);
   const [listingContextSent, setListingContextSent] = useState(false);
+  const onOrderEventRef = useRef(onOrderEvent);
+  onOrderEventRef.current = onOrderEvent;
 
 
   function handleScroll() {
@@ -86,42 +123,6 @@ export default function ChatBox({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (!activeConvoId) return;
-    let inFlight = false;
-    let cancelled = false;
-    let controller = null;
-
-    const pollPresence = async () => {
-      if (document.visibilityState !== 'visible') return;
-      if (inFlight) return;
-      inFlight = true;
-      controller = new AbortController();
-      try {
-        const data = await getConversation(activeConvoId, { limit: 1, signal: controller.signal });
-        if (!cancelled && data && data.other_user && mountedRef.current) {
-          setConvo(prev => prev ? { ...prev, other_user: data.other_user } : data);
-        }
-      } catch (err) {
-        if (err?.name !== 'AbortError') {
-          // Silently ignore background polling errors
-        }
-      } finally {
-        inFlight = false;
-        controller = null;
-      }
-    };
-
-    const pollInterval = setInterval(pollPresence, PRESENCE_TICK_MS);
-
-    return () => {
-      cancelled = true;
-      if (controller) controller.abort();
-      clearInterval(pollInterval);
-    };
-  }, [activeConvoId]);
-
 
   function scrollToBottom(instant = false) {
     const el = messagesContainerRef.current;
@@ -322,6 +323,10 @@ export default function ChatBox({
       ws.onopen = () => {
         if (!mountedRef.current) return;
         setConnected(true);
+        // After a reconnect, order events may have been missed while offline
+        if (reconnectAttempts.current > 0 && onOrderEventRef.current) {
+          onOrderEventRef.current(null);
+        }
         reconnectAttempts.current = 0;
         setTimeout(() => window.dispatchEvent(new Event('chatUpdate')), 300);
       };
@@ -344,6 +349,20 @@ export default function ChatBox({
             setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
             setChatError('');
             window.dispatchEvent(new Event('chatUpdate'));
+            if (
+              onOrderEventRef.current &&
+              (data.message.message_type === 'system' || data.message.message_type === 'delivery')
+            ) {
+              onOrderEventRef.current(data.message);
+            }
+          } else if (data.type === 'presence') {
+            // Server pushes the other participant's fresh last_active —
+            // replaces the old 30s polling.
+            setConvo(prev => {
+              if (!prev?.other_user || prev.other_user.id !== data.user_id) return prev;
+              return { ...prev, other_user: { ...prev.other_user, last_active: data.last_active } };
+            });
+            setPresenceNow(Date.now());
           } else if (data.type === 'error') {
             showChatError(data.error || 'Message could not be sent.');
           }
@@ -363,6 +382,7 @@ export default function ChatBox({
       mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
       clearTimeout(errorTimerRef.current);
+      clearTimeout(copiedTimerRef.current);
       clearTimeout(initialImageScrollTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -477,6 +497,93 @@ export default function ChatBox({
     }
   }
 
+  async function copyDeliveryData(msg) {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopiedMessageId(msg.id);
+      clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setCopiedMessageId(null);
+      }, 2000);
+    } catch { }
+  }
+
+  function renderSpecialMessage(msg, msgDate) {
+    const time = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (msg.message_type === 'system') {
+      return (
+        <div key={msg.id} className="chat-msg-row with-header chat-event-row">
+          <div className="chat-msg-header">
+            <span className="chat-msg-sender chat-event-brand">
+              GamesBazaar <span className="chat-badge chat-badge-system">order update</span>
+            </span>
+            <span className="chat-msg-time">{time}</span>
+          </div>
+          <div className={`chat-event-card chat-event-${msg.system_event || 'generic'}`}>
+            <span className="chat-event-icon" aria-hidden="true">
+              {SYSTEM_EVENT_ICONS[msg.system_event] || 'ℹ️'}
+            </span>
+            <div className="chat-event-text">{renderSystemText(msg.content, msg.order_info)}</div>
+          </div>
+        </div>
+      );
+    }
+
+    const senderLabel = msg.is_mine ? 'You' : (msg.sender_name || 'GamesBazaar');
+
+    if (msg.message_type === 'delivery') {
+      return (
+        <div key={msg.id} className="chat-msg-row with-header chat-event-row">
+          <div className="chat-msg-header">
+            <span className="chat-msg-sender">
+              {senderLabel} <span className="chat-badge chat-badge-delivery">delivery</span>
+            </span>
+            <span className="chat-msg-time">{time}</span>
+          </div>
+          <div className="chat-delivery-card">
+            <div className="chat-delivery-head">
+              <span>
+                🔑 Delivery details
+                {msg.order_info?.order_number && (
+                  <>
+                    {' for '}
+                    <a href={`/order/${encodeURIComponent(msg.order_info.order_number)}`} className="chat-event-link">
+                      #{msg.order_info.order_number}
+                    </a>
+                  </>
+                )}
+              </span>
+              <button
+                type="button"
+                className="chat-copy-btn"
+                onClick={() => copyDeliveryData(msg)}
+              >
+                {copiedMessageId === msg.id ? 'Copied ✓' : 'Copy'}
+              </button>
+            </div>
+            <pre className="chat-delivery-data">{msg.content}</pre>
+          </div>
+        </div>
+      );
+    }
+
+    // message_type === 'instructions'
+    return (
+      <div key={msg.id} className="chat-msg-row with-header chat-event-row">
+        <div className="chat-msg-header">
+          <span className="chat-msg-sender">
+            {senderLabel} <span className="chat-badge chat-badge-instructions">instructions</span>
+          </span>
+          <span className="chat-msg-time">{time}</span>
+        </div>
+        <div className="chat-instructions-card">
+          <div className="chat-msg-content">{msg.content}</div>
+        </div>
+      </div>
+    );
+  }
+
   // Build grouped messages with date separators
   function renderMessages() {
     const elements = [];
@@ -498,6 +605,14 @@ export default function ChatBox({
         lastDate = dateKey;
         lastSender = null;
         lastTime = null;
+      }
+
+      if (msg.message_type && msg.message_type !== 'text') {
+        elements.push(renderSpecialMessage(msg, msgDate));
+        // Force the next regular message to re-render its own header
+        lastSender = null;
+        lastTime = msgDate;
+        continue;
       }
 
       const timeDiff = lastTime ? (msgDate - lastTime) / 60000 : Infinity;

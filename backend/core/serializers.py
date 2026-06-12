@@ -843,18 +843,44 @@ class AutoDeliveryRestockSerializer(serializers.Serializer):
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    sender_name = serializers.CharField(source='sender.username', read_only=True)
-    sender_id = serializers.IntegerField(source='sender.id', read_only=True)
+    sender_name = serializers.SerializerMethodField()
+    sender_id = serializers.SerializerMethodField()
+    content = serializers.SerializerMethodField()
     is_mine = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     listing_reference = serializers.SerializerMethodField()
+    order_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             'id', 'sender_id', 'sender_name', 'content', 'image_url',
-            'listing_reference', 'is_read', 'is_mine', 'created_at',
+            'listing_reference', 'message_type', 'system_event', 'order_info',
+            'is_read', 'is_mine', 'created_at',
         ]
+
+    def get_sender_id(self, obj):
+        return obj.sender_id
+
+    def get_sender_name(self, obj):
+        # System messages have no sender; clients label them as the platform.
+        return obj.sender.username if obj.sender_id else None
+
+    def get_content(self, obj):
+        if obj.message_type == 'delivery':
+            return decrypt_sensitive_text(obj.content)
+        return obj.content
+
+    def get_order_info(self, obj):
+        order = obj.order
+        if not order:
+            return None
+        return {
+            'order_number': order.order_number,
+            'buyer_username': order.buyer.username,
+            'seller_username': order.seller.username,
+            'listing_title': order.listing_title,
+        }
 
     def get_is_mine(self, obj):
         request = self.context.get('request')
@@ -929,8 +955,11 @@ class ConversationListSerializer(serializers.ModelSerializer):
     def get_last_message(self, obj):
         latest_created_at = getattr(obj, 'latest_message_created_at', None)
         if latest_created_at is not None:
+            content = (getattr(obj, 'latest_message_content', '') or '')[:80]
+            if getattr(obj, 'latest_message_type', '') == 'delivery':
+                content = 'Delivery details'
             return {
-                'content': (getattr(obj, 'latest_message_content', '') or '')[:80],
+                'content': content,
                 'sender_name': getattr(obj, 'latest_message_sender_name', '') or '',
                 'created_at': latest_created_at,
             }
@@ -941,9 +970,12 @@ class ConversationListSerializer(serializers.ModelSerializer):
         else:
             msg = obj.messages.order_by('-created_at').first()
         if msg:
+            content = msg.content[:80]
+            if msg.message_type == 'delivery':
+                content = 'Delivery details'
             return {
-                'content': msg.content[:80],
-                'sender_name': msg.sender.username,
+                'content': content,
+                'sender_name': msg.sender.username if msg.sender_id else '',
                 'created_at': msg.created_at,
             }
         return None

@@ -5498,6 +5498,39 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async_to_sync(run_image_broadcast_flow)()
 
+    def test_heartbeat_pushes_presence_to_open_chat_sockets(self):
+        from asgiref.sync import async_to_sync, sync_to_async
+        from gamesbazaar.asgi import application
+
+        from .services import create_chat_ws_ticket
+
+        def send_seller_heartbeat():
+            client = APIClient()
+            client.force_authenticate(user=self.seller)
+            response = client.post('/api/heartbeat/')
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.data['updated'])
+            return UserProfile.objects.get(user=self.seller).last_active
+
+        async def run_presence_flow():
+            ticket = create_chat_ws_ticket(self.buyer, self.conversation.id)
+            communicator = self.make_websocket_communicator(
+                application,
+                f'/ws/chat/{self.conversation.id}/?ticket={ticket}',
+            )
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            last_active = await sync_to_async(send_seller_heartbeat, thread_sensitive=True)()
+
+            event = await communicator.receive_json_from()
+            self.assertEqual(event['type'], 'presence')
+            self.assertEqual(event['user_id'], self.seller.id)
+            self.assertEqual(event['last_active'], last_active.isoformat())
+            await communicator.disconnect()
+
+        async_to_sync(run_presence_flow)()
+
     def test_websocket_rejects_overlong_message(self):
         from asgiref.sync import async_to_sync
         from channels.testing import WebsocketCommunicator
@@ -8744,4 +8777,287 @@ class AccountSecurityFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'No image provided.')
+
+
+
+class OrderChatMessageTests(TestCase):
+    """Order lifecycle events should drop notices into the buyer-seller chat."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='chatbuyer', password='password123')
+        self.seller = User.objects.create_user(username='chatseller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        wallet = Wallet.objects.get(user=self.buyer)
+        wallet.balance = Decimal('500.00')
+        wallet.save(update_fields=['balance'])
+
+        game = Game.objects.create(name='Chat Game', slug='chat-game')
+        self.category = Category.objects.create(name='Chat Keys', slug='chat-keys')
+        self.game_category = GameCategory.objects.create(game=game, category=self.category)
+
+        self.client.force_authenticate(user=self.buyer)
+
+    def _create_listing(self, **overrides):
+        defaults = dict(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Chat flow item',
+            price=Decimal('40.00'),
+            quantity=5,
+            status='active',
+        )
+        defaults.update(overrides)
+        return Listing.objects.create(**defaults)
+
+    def _buy(self, listing, quantity=1):
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': quantity},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        return Order.objects.select_related('conversation').get(pk=response.data['id'])
+
+    def test_purchase_posts_paid_notice_and_seller_instructions(self):
+        listing = self._create_listing(delivery_instructions='Redeem within 24 hours.')
+        order = self._buy(listing)
+
+        messages = list(order.conversation.messages.order_by('pk'))
+        self.assertEqual(len(messages), 2)
+        paid, instructions = messages
+
+        self.assertEqual(paid.message_type, 'system')
+        self.assertEqual(paid.system_event, 'order_paid')
+        self.assertIsNone(paid.sender)
+        self.assertEqual(paid.order, order)
+        self.assertFalse(paid.is_read)
+        self.assertIn(f'#{order.order_number}', paid.content)
+        self.assertIn('chatbuyer', paid.content)
+        self.assertIn('chatseller', paid.content)
+
+        self.assertEqual(instructions.message_type, 'instructions')
+        self.assertEqual(instructions.sender, self.seller)
+        self.assertEqual(instructions.content, 'Redeem within 24 hours.')
+
+    def test_auto_delivery_purchase_posts_encrypted_delivery_message(self):
+        listing = self._create_listing(
+            is_auto_delivery=True,
+            auto_delivery_data='KEY-AAA\nKEY-BBB',
+            quantity=2,
+        )
+        order = self._buy(listing)
+
+        delivery = order.conversation.messages.get(message_type='delivery')
+        self.assertEqual(delivery.sender, self.seller)
+        self.assertTrue(delivery.content.startswith('enc:'))
+        self.assertEqual(decrypt_sensitive_text(delivery.content), 'KEY-AAA')
+
+        paid = order.conversation.messages.get(system_event='order_paid')
+        self.assertIn('delivered automatically', paid.content)
+
+        # The API must hand the buyer decrypted delivery data
+        response = self.client.get(f'/api/chat/{order.conversation_id}/')
+        self.assertEqual(response.status_code, 200)
+        api_delivery = next(
+            m for m in response.data['messages'] if m['id'] == delivery.pk
+        )
+        self.assertEqual(api_delivery['content'], 'KEY-AAA')
+        self.assertEqual(api_delivery['message_type'], 'delivery')
+        self.assertEqual(api_delivery['sender_name'], 'chatseller')
+        self.assertEqual(api_delivery['order_info']['order_number'], order.order_number)
+        api_paid = next(
+            m for m in response.data['messages'] if m['id'] == paid.pk
+        )
+        self.assertIsNone(api_paid['sender_name'])
+        self.assertIsNone(api_paid['sender_id'])
+        self.assertFalse(api_paid['is_mine'])
+
+    def test_manual_delivery_posts_notice_and_delivery_note(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(
+            f'/api/orders/{order.pk}/deliver/',
+            {'delivery_note': 'Account: foo / Pass: bar'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        notice = order.conversation.messages.get(system_event='order_delivered')
+        self.assertIsNone(notice.sender)
+        self.assertIn(f'#{order.order_number}', notice.content)
+
+        delivery = order.conversation.messages.get(message_type='delivery')
+        self.assertEqual(delivery.sender, self.seller)
+        self.assertEqual(decrypt_sensitive_text(delivery.content), 'Account: foo / Pass: bar')
+
+    def test_confirm_posts_completion_notice(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+        order.status = 'delivered'
+        order.delivered_at = timezone.now()
+        order.save(update_fields=['status', 'delivered_at'])
+
+        response = self.client.post(f'/api/orders/{order.pk}/confirm/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+
+        notice = order.conversation.messages.get(system_event='order_confirmed')
+        self.assertIsNone(notice.sender)
+        self.assertIn(f'#{order.order_number}', notice.content)
+        self.assertIn('confirmed', notice.content)
+
+    def test_auto_confirm_posts_completion_notice(self):
+        from .services import auto_confirm_due_orders
+
+        listing = self._create_listing()
+        order = self._buy(listing)
+        order.status = 'delivered'
+        order.delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(hours=1)
+        order.save(update_fields=['status', 'delivered_at'])
+
+        result = auto_confirm_due_orders()
+        self.assertIn(order.pk, result['order_ids'])
+
+        notice = order.conversation.messages.get(system_event='order_confirmed')
+        self.assertIn('automatically', notice.content)
+        self.assertIn(f'#{order.order_number}', notice.content)
+
+    def test_seller_refund_posts_refund_notice(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(f'/api/orders/{order.pk}/refund/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+
+        notice = order.conversation.messages.get(system_event='order_refunded')
+        self.assertIsNone(notice.sender)
+        self.assertIn(f'#{order.order_number}', notice.content)
+        self.assertIn('refund', notice.content.lower())
+
+    def test_dispute_posts_dispute_notice(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+
+        response = self.client.post(
+            f'/api/orders/{order.pk}/dispute/',
+            {'reason': 'Item was never delivered to me.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        notice = order.conversation.messages.get(system_event='order_disputed')
+        self.assertIsNone(notice.sender)
+        self.assertIn(f'#{order.order_number}', notice.content)
+
+    def test_review_posts_feedback_notice(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+        order.status = 'completed'
+        order.save(update_fields=['status'])
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': order.pk, 'rating': 5, 'comment': 'Great seller!'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+        notice = order.conversation.messages.get(system_event='review_posted')
+        self.assertIsNone(notice.sender)
+        self.assertIn('5-star', notice.content)
+        self.assertIn(f'#{order.order_number}', notice.content)
+
+        review_id = response.data['id']
+        update_response = self.client.put(
+            f'/api/reviews/{review_id}/',
+            {'rating': 3, 'comment': 'Changed my mind.'},
+            format='json',
+        )
+        self.assertEqual(update_response.status_code, 200)
+        updated_notice = order.conversation.messages.get(system_event='review_updated')
+        self.assertIn('3/5', updated_notice.content)
+
+    def test_system_messages_count_unread_for_both_participants(self):
+        listing = self._create_listing()
+        order = self._buy(listing)
+
+        response = self.client.get('/api/chat/unread/')
+        self.assertEqual(response.data['unread_count'], 1)
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.get('/api/chat/unread/')
+        self.assertEqual(response.data['unread_count'], 1)
+
+        # Opening the conversation clears the system notice for everyone
+        self.client.get(f'/api/chat/{order.conversation_id}/')
+        self.assertFalse(order.conversation.messages.filter(is_read=False).exists())
+
+    def test_conversation_list_hides_delivery_payload_in_preview(self):
+        listing = self._create_listing(
+            is_auto_delivery=True,
+            auto_delivery_data='SECRET-KEY-123',
+            quantity=1,
+        )
+        order = self._buy(listing)
+        self.assertEqual(
+            order.conversation.messages.order_by('-pk').first().message_type,
+            'delivery',
+        )
+
+        response = self.client.get('/api/chat/')
+        self.assertEqual(response.status_code, 200)
+        conversations = response.data['conversations']
+        convo = next(c for c in conversations if c['id'] == order.conversation_id)
+        self.assertEqual(convo['last_message']['content'], 'Delivery details')
+        self.assertEqual(convo['last_message']['sender_name'], 'chatseller')
+        self.assertNotIn('SECRET-KEY-123', str(response.data))
+
+    def test_dispute_resolution_posts_outcome_notice(self):
+        admin = User.objects.create_superuser(username='chatadmin', password='password123')
+        listing = self._create_listing(quantity=2)
+
+        refunded_order = self._buy(listing)
+        self.client.post(
+            f'/api/orders/{refunded_order.pk}/dispute/',
+            {'reason': 'Item was never delivered to me.'},
+            format='json',
+        )
+        self.client.force_authenticate(user=admin)
+        response = self.client.post(
+            f'/api/admin/orders/{refunded_order.pk}/resolve-dispute/',
+            {'resolution_action': 'refund_buyer'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        notice = refunded_order.conversation.messages.filter(
+            system_event='order_refunded'
+        ).latest('pk')
+        self.assertIn('dispute', notice.content.lower())
+        self.assertIn('chatbuyer', notice.content)
+
+        self.client.force_authenticate(user=self.buyer)
+        completed_order = self._buy(listing)
+        self.client.post(
+            f'/api/orders/{completed_order.pk}/dispute/',
+            {'reason': 'Second thoughts about this one.'},
+            format='json',
+        )
+        self.client.force_authenticate(user=admin)
+        response = self.client.post(
+            f'/api/admin/orders/{completed_order.pk}/resolve-dispute/',
+            {'resolution_action': 'pay_seller'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        notice = completed_order.conversation.messages.filter(
+            system_event='order_confirmed'
+        ).latest('pk')
+        self.assertIn('dispute', notice.content.lower())
+        self.assertIn('chatseller', notice.content)
 

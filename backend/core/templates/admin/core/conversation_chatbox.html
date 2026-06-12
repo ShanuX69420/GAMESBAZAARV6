@@ -396,24 +396,33 @@
         <div class="msg-row {% if msg.sender.is_staff and msg.sender.is_superuser %}is-admin{% endif %}">
           {% if not msg.sender.is_staff or not msg.sender.is_superuser %}
             <div class="msg-avatar {% if order and msg.sender == order.buyer %}buyer{% elif order and msg.sender == order.seller %}seller{% else %}buyer{% endif %}">
-              {{ msg.sender.username|make_list|first }}
+              {% if msg.sender %}{{ msg.sender.username|make_list|first }}{% else %}⚙{% endif %}
             </div>
           {% endif %}
 
           <div class="msg-bubble">
             <div class="msg-sender">
-              {{ msg.sender.username }}
+              {% if msg.sender %}{{ msg.sender.username }}{% else %}GamesBazaar{% endif %}
               {% if order and msg.sender == order.buyer %}
                 (Buyer)
               {% elif order and msg.sender == order.seller %}
                 (Seller)
+              {% endif %}
+              {% if not msg.sender %}
+                <span class="admin-badge">System</span>
+              {% elif msg.message_type == 'delivery' %}
+                <span class="admin-badge">Delivery</span>
+              {% elif msg.message_type == 'instructions' %}
+                <span class="admin-badge">Instructions</span>
               {% endif %}
               {% if msg.sender.is_staff and msg.sender.is_superuser %}
                 <span class="admin-badge">Admin</span>
               {% endif %}
             </div>
 
-            {% if msg.content %}
+            {% if msg.message_type == 'delivery' %}
+              <p class="msg-content"><em>🔒 Delivery data (encrypted — visible to the buyer and seller only)</em></p>
+            {% elif msg.content %}
               <p class="msg-content">{{ msg.content }}</p>
             {% endif %}
 

@@ -32,6 +32,8 @@ export default function OrderDetailPage() {
   const [replyingToReview, setReplyingToReview] = useState(false);
   const [replyLoading, setReplyLoading] = useState(false);
   const actionRef = useRef(false);
+  const orderLoadedRef = useRef(false);
+  const refreshTimerRef = useRef(null);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -41,16 +43,39 @@ export default function OrderDetailPage() {
     if (user) loadOrder();
   }, [user, id]);
 
+  // Refresh when returning to the tab — WebSocket events can be throttled
+  // or dropped while the tab is in the background.
+  useEffect(() => {
+    if (!user) return;
+    function handleVisible() {
+      if (document.visibilityState === 'visible') loadOrder();
+    }
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [user, id]);
+
   async function loadOrder() {
     try {
       const data = await getOrderDetail(id);
+      orderLoadedRef.current = true;
       setOrder(data);
     } catch (err) {
-      setError('Order not found or access denied.');
+      if (!orderLoadedRef.current) setError('Order not found or access denied.');
     } finally {
       setLoadingOrder(false);
     }
   }
+
+  // Order events often arrive in bursts (status notice + delivery details),
+  // so coalesce them into one refetch.
+  function scheduleOrderRefresh() {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(loadOrder, 300);
+  }
+
+  useEffect(() => {
+    return () => clearTimeout(refreshTimerRef.current);
+  }, []);
 
   async function doAction(action) {
     if (actionRef.current) return;
@@ -578,7 +603,11 @@ export default function OrderDetailPage() {
         {/* Right: Chat */}
         <div className="order-detail-chat">
           {order.conversation_id ? (
-            <ChatBox conversationId={order.conversation_id} otherUserName={otherUser} />
+            <ChatBox
+              conversationId={order.conversation_id}
+              otherUserName={otherUser}
+              onOrderEvent={scheduleOrderRefresh}
+            />
           ) : (
             <div className="order-chat-placeholder">
               <div className="empty-state-icon">💬</div>

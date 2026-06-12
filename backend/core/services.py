@@ -21,7 +21,19 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
-from .models import Listing, Notification, Order, PlatformLedgerEntry, Wallet, WalletTransaction
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+from .models import (
+    Conversation,
+    Listing,
+    Message,
+    Notification,
+    Order,
+    PlatformLedgerEntry,
+    Wallet,
+    WalletTransaction,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -718,6 +730,15 @@ def auto_confirm_due_orders(*, now=None, batch_size=100, dry_run=False):
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
             )
 
+            post_order_chat_message(
+                order,
+                event='order_confirmed',
+                content=(
+                    f'Order #{order.order_number} was confirmed automatically after '
+                    f'72 hours without a dispute. The order is now complete.'
+                ),
+            )
+
             title = 'Order confirmed'
             message = (
                 f'Order "{order.listing_title}" was automatically confirmed after '
@@ -966,6 +987,90 @@ def validate_chat_listing_reference(listing_id, *, seller_id=None, conversation_
     if listing is None:
         return None, CHAT_LISTING_REFERENCE_INVALID_ERROR
     return listing, None
+
+
+def get_or_create_private_conversation(user, other_user):
+    """Create a two-person conversation while serializing concurrent creators."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    user_ids = sorted([user.pk, other_user.pk])
+    with transaction.atomic():
+        list(User.objects.select_for_update().filter(pk__in=user_ids).order_by('pk'))
+        conversation = Conversation.objects.filter(
+            participants=user
+        ).filter(
+            participants=other_user
+        ).first()
+        if conversation:
+            return conversation, False
+
+        conversation = Conversation.objects.create()
+        conversation.participants.add(user, other_user)
+        return conversation, True
+
+
+def broadcast_chat_message_after_commit(message):
+    """Push a message to open chat sockets once the surrounding transaction lands."""
+    def _send():
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        from .serializers import MessageSerializer
+        message_data = dict(MessageSerializer(message, context={}).data)
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{message.conversation_id}',
+            {
+                'type': 'chat.message',
+                'message': message_data,
+            },
+        )
+
+    transaction.on_commit(_send)
+
+
+def broadcast_presence_update(user_id, last_active):
+    """Push a user's fresh last_active to chat sockets watching them."""
+    def _send():
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(
+            f'presence_{user_id}',
+            {
+                'type': 'presence.update',
+                'user_id': user_id,
+                'last_active': last_active.isoformat(),
+            },
+        )
+
+    transaction.on_commit(_send)
+
+
+def post_order_chat_message(order, *, content, event='', message_type='system', sender=None):
+    """Drop an order-event notice (or delivery hand-over) into the buyer↔seller chat.
+
+    ``system`` messages carry no sender and announce lifecycle events;
+    ``delivery``/``instructions`` messages are posted on the seller's behalf.
+    Delivery content must already be encrypted by the caller.
+    """
+    conversation = order.conversation
+    if conversation is None:
+        conversation, _ = get_or_create_private_conversation(order.buyer, order.seller)
+        order.conversation = conversation
+        order.save(update_fields=['conversation'])
+
+    message = Message.objects.create(
+        conversation=conversation,
+        sender=sender,
+        content=content,
+        message_type=message_type,
+        system_event=event,
+        order=order,
+    )
+    conversation.save()  # bump updated_at so the chat surfaces in inboxes
+    broadcast_chat_message_after_commit(message)
+    return message
 
 
 def consume_chat_ws_message_quota(user_id, conversation_id):

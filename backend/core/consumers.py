@@ -41,6 +41,15 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         # Join the conversation's channel group
         self.room_group_name = f'chat_{self.conversation_id}'
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+
+        # Watch the other participant's presence so the client doesn't poll
+        self.presence_group_names = [
+            f'presence_{user_id}'
+            for user_id in await self.get_other_participant_ids()
+        ]
+        for group_name in self.presence_group_names:
+            await self.channel_layer.group_add(group_name, self.channel_name)
+
         accept_subprotocol = self.scope.get('chat_accept_subprotocol')
         if accept_subprotocol:
             await self.accept(subprotocol=accept_subprotocol)
@@ -53,6 +62,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        for group_name in getattr(self, 'presence_group_names', []):
+            await self.channel_layer.group_discard(group_name, self.channel_name)
 
     async def receive_json(self, content):
         """Handle incoming message from WebSocket client."""
@@ -111,6 +122,14 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             'message': msg,
         })
 
+    async def presence_update(self, event):
+        """Relay a watched participant's fresh last_active to the client."""
+        await self.send_json({
+            'type': 'presence',
+            'user_id': event['user_id'],
+            'last_active': event['last_active'],
+        })
+
     # ── Database helpers ─────────────────────────────────────────────────────
 
     @database_sync_to_async
@@ -136,6 +155,14 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         return Conversation.objects.filter(
             id=self.conversation_id, participants=self.user
         ).exists()
+
+    @database_sync_to_async
+    def get_other_participant_ids(self):
+        return list(
+            Conversation.objects.get(id=self.conversation_id)
+            .participants.exclude(id=self.user.id)
+            .values_list('id', flat=True)
+        )
 
     @database_sync_to_async
     def save_message(self, content, listing_id=None):
@@ -169,6 +196,9 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 }
                 if referenced_listing else None
             ),
+            'message_type': msg.message_type,
+            'system_event': msg.system_event,
+            'order_info': None,
             'is_read': msg.is_read,
             'created_at': msg.created_at.isoformat(),
         }, None

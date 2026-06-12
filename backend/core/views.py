@@ -74,6 +74,9 @@ from .services import (
     ALLOWED_IMAGE_CONTENT_TYPES,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
+    broadcast_presence_update,
+    get_or_create_private_conversation,
+    post_order_chat_message,
     validate_chat_listing_reference,
     validate_chat_message_content,
     validate_uploaded_image,
@@ -491,24 +494,6 @@ def broadcast_chat_message(message, request):
             },
         )
     return message_data
-
-
-def get_or_create_private_conversation(user, other_user):
-    """Create a two-person conversation while serializing concurrent creators."""
-    user_ids = sorted([user.pk, other_user.pk])
-    with db_transaction.atomic():
-        list(User.objects.select_for_update().filter(pk__in=user_ids).order_by('pk'))
-        conversation = Conversation.objects.filter(
-            participants=user
-        ).filter(
-            participants=other_user
-        ).first()
-        if conversation:
-            return conversation, False
-
-        conversation = Conversation.objects.create()
-        conversation.participants.add(user, other_user)
-        return conversation, True
 
 
 class GameListView(generics.ListAPIView):
@@ -2138,6 +2123,7 @@ class ConversationListView(APIView):
             ),
             latest_message_content=Subquery(latest_message.values('content')[:1]),
             latest_message_sender_name=Subquery(latest_message.values('sender__username')[:1]),
+            latest_message_type=Subquery(latest_message.values('message_type')[:1]),
             latest_message_created_at=Subquery(latest_message.values('created_at')[:1]),
         ).prefetch_related(
             Prefetch('participants', queryset=User.objects.select_related('profile')),
@@ -2250,7 +2236,7 @@ class ConversationDetailView(APIView):
             max_limit=MAX_MESSAGE_PAGE_SIZE,
         )
         messages_qs = conversation.messages.select_related(
-            'sender', 'referenced_listing'
+            'sender', 'referenced_listing', 'order__buyer', 'order__seller'
         ).order_by('-pk')
         total_count = messages_qs.count()
         before_id = None
@@ -2445,6 +2431,7 @@ class HeartbeatView(ScopedPostThrottleMixin, APIView):
         if should_update:
             profile.last_active = now
             profile.save(update_fields=['last_active'])
+            broadcast_presence_update(request.user.id, now)
         return Response({'status': 'ok', 'updated': should_update})
 
 
@@ -3083,6 +3070,40 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
         order.conversation = conversation
         order.save(update_fields=['conversation'])
 
+        # Announce the purchase in the buyer↔seller chat
+        qty_part = f' (x{qty})' if qty > 1 else ''
+        if is_auto:
+            paid_content = (
+                f'{buyer.username} has paid for order #{order.order_number} — '
+                f'{listing.title}{qty_part}. The order was delivered automatically. '
+                f'{buyer.username}, please check the delivery details and press the '
+                f'«Confirm order» button on the order page once everything works.'
+            )
+        else:
+            paid_content = (
+                f'{buyer.username} has paid for order #{order.order_number} — '
+                f'{listing.title}{qty_part}. {listing.seller.username}, please deliver '
+                f'the order. {buyer.username}, press the «Confirm order» button on the '
+                f'order page once you receive everything.'
+            )
+        post_order_chat_message(order, event='order_paid', content=paid_content)
+
+        # Hand over auto-delivery data and the seller's standing instructions
+        if is_auto:
+            post_order_chat_message(
+                order,
+                message_type='delivery',
+                sender=listing.seller,
+                content=delivery_note,  # already encrypted above
+            )
+        if order.delivery_instructions_snapshot:
+            post_order_chat_message(
+                order,
+                message_type='instructions',
+                sender=listing.seller,
+                content=order.delivery_instructions_snapshot,
+            )
+
         # Notify seller about new order
         create_notification(
             recipient=listing.seller,
@@ -3336,6 +3357,23 @@ class DeliverOrderView(APIView):
             order.delivered_at = timezone.now()
             order.save(update_fields=['status', 'delivery_note', 'delivered_at', 'updated_at'])
 
+            post_order_chat_message(
+                order,
+                event='order_delivered',
+                content=(
+                    f'{request.user.username} has marked order #{order.order_number} as '
+                    f'delivered. {order.buyer.username}, please make sure everything works '
+                    f'and press the «Confirm order» button on the order page.'
+                ),
+            )
+            if delivery_note:
+                post_order_chat_message(
+                    order,
+                    message_type='delivery',
+                    sender=request.user,
+                    content=order.delivery_note,  # encrypted above
+                )
+
             # Notify buyer that seller delivered
             create_notification(
                 recipient=order.buyer,
@@ -3366,11 +3404,25 @@ class ConfirmOrderView(APIView):
             if order.status != 'delivered':
                 return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
 
-            complete_order_with_seller_payout(
+            payout = complete_order_with_seller_payout(
                 order,
                 sale_description=f'Sale completed: {order.listing_title} (x{order.quantity})',
                 commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                 ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
+            )
+
+            if payout['held']:
+                payment_part = f"{order.seller.username}'s payment is on its way."
+            else:
+                payment_part = f'The payment has been credited to {order.seller.username}.'
+            post_order_chat_message(
+                order,
+                event='order_confirmed',
+                content=(
+                    f'{request.user.username} has confirmed that order '
+                    f'#{order.order_number} was fulfilled. The order is now complete. '
+                    f'{payment_part}'
+                ),
             )
 
             # Notify seller that buyer confirmed
@@ -3408,6 +3460,16 @@ class DisputeOrderView(APIView):
             order.status = 'disputed'
             order.dispute_reason = reason
             order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
+
+            post_order_chat_message(
+                order,
+                event='order_disputed',
+                content=(
+                    f'{request.user.username} has opened a dispute on order '
+                    f'#{order.order_number}. A GamesBazaar moderator will review it '
+                    f'and may contact both of you here.'
+                ),
+            )
 
             # Notify seller about dispute
             create_notification(
@@ -3461,6 +3523,16 @@ class ResolveDisputeView(APIView):
 
                 order.status = 'cancelled'
 
+                post_order_chat_message(
+                    order,
+                    event='order_refunded',
+                    content=(
+                        f'The dispute on order #{order.order_number} has been resolved '
+                        f'in favour of {order.buyer.username}. The order was refunded and '
+                        f'the full amount is back in their wallet.'
+                    ),
+                )
+
                 # Notify both parties
                 create_notification(
                     recipient=order.buyer,
@@ -3483,6 +3555,15 @@ class ResolveDisputeView(APIView):
                     commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
                     ledger_description=f'Commission collected: {order.listing_title}',
                 )
+                post_order_chat_message(
+                    order,
+                    event='order_confirmed',
+                    content=(
+                        f'The dispute on order #{order.order_number} has been resolved '
+                        f'in favour of {order.seller.username}. The order is now complete.'
+                    ),
+                )
+
                 seller_title = 'Dispute resolved - order completed'
                 seller_message = (
                     f'The dispute for "{order.listing_title}" has been resolved in your favour. '
@@ -3580,6 +3661,16 @@ class RefundOrderView(APIView):
             order.status = 'cancelled'
             order.save(update_fields=['status', 'updated_at'])
 
+            post_order_chat_message(
+                order,
+                event='order_refunded',
+                content=(
+                    f'{order.seller.username} has issued a refund to '
+                    f'{order.buyer.username} on order #{order.order_number}. The full '
+                    f'amount is back in {order.buyer.username}\'s wallet.'
+                ),
+            )
+
             # Notify buyer about the refund
             create_notification(
                 recipient=order.buyer,
@@ -3626,6 +3717,15 @@ class CreateReviewView(APIView):
                     comment=data.get('comment', ''),
                 )
 
+                post_order_chat_message(
+                    order,
+                    event='review_posted',
+                    content=(
+                        f'{request.user.username} has left a {data["rating"]}-star '
+                        f'review on order #{order.order_number}.'
+                    ),
+                )
+
                 # Notify seller about new review
                 create_notification(
                     recipient=order.seller,
@@ -3660,6 +3760,15 @@ class UpdateReviewView(APIView):
         review.comment = data.get('comment', '')
         review.updated_at = timezone.now()
         review.save(update_fields=['rating', 'comment', 'updated_at'])
+
+        post_order_chat_message(
+            review.order,
+            event='review_updated',
+            content=(
+                f'{request.user.username} has updated their review on order '
+                f'#{review.order.order_number} — now rated {data["rating"]}/5.'
+            ),
+        )
 
         # Invalidate seller profile cache
         cache.delete(f'seller-profile:v1:{review.seller_id}')

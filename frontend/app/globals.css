@@ -3630,6 +3630,153 @@ img {
   margin-left: 2px;
 }
 
+/* ── Chat Order Event Messages (system / delivery / instructions) ──────────── */
+
+.chat-event-row {
+  margin-top: 12px;
+}
+
+.chat-event-brand {
+  color: var(--green-600);
+}
+
+.chat-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-left: 4px;
+  border-radius: var(--radius-full);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.chat-badge-system {
+  background: var(--green-100);
+  color: var(--green-700);
+}
+
+.chat-badge-delivery {
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
+
+.chat-badge-instructions {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.chat-event-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--green-500);
+  border-radius: var(--radius-md);
+}
+
+.chat-event-card.chat-event-order_disputed {
+  border-left-color: #D97706;
+  background: #FFFBEB;
+}
+
+.chat-event-card.chat-event-order_refunded {
+  border-left-color: var(--red-500);
+  background: #FEF2F2;
+}
+
+.chat-event-card.chat-event-review_posted,
+.chat-event-card.chat-event-review_updated {
+  border-left-color: #EAB308;
+}
+
+.chat-event-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.chat-event-text {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.chat-event-link {
+  color: var(--green-600);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-event-link:hover {
+  text-decoration: underline;
+}
+
+.chat-delivery-card {
+  margin-top: 4px;
+  border: 1px solid #BFDBFE;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.chat-delivery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  background: #EFF6FF;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1E40AF;
+}
+
+.chat-copy-btn {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  background: #fff;
+  border: 1px solid #BFDBFE;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #1D4ED8;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.chat-copy-btn:hover {
+  background: #DBEAFE;
+}
+
+.chat-delivery-data {
+  margin: 0;
+  padding: 10px 12px;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.chat-instructions-card {
+  margin-top: 4px;
+  padding: 10px 14px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--radius-md);
+}
+
+.chat-instructions-card .chat-msg-content {
+  white-space: pre-wrap;
+}
+
 /* ── Chat Input (FunPay-style) ──────────────────────────────────────────────── */
 
 

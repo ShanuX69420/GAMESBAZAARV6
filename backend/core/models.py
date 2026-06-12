@@ -426,11 +426,38 @@ class Conversation(models.Model):
 
 
 class Message(models.Model):
-    """A message within a conversation."""
+    """A message within a conversation.
+
+    Besides regular user messages, a message can be posted by the platform
+    itself (``sender`` is NULL) to announce order events, or by the system on
+    the seller's behalf to hand over delivery data / instructions.
+    """
+    MESSAGE_TYPE_CHOICES = [
+        ('text', 'Text'),
+        ('system', 'System Notice'),
+        ('delivery', 'Delivery Data'),
+        ('instructions', 'Delivery Instructions'),
+    ]
+    SYSTEM_EVENT_CHOICES = [
+        ('order_paid', 'Order Paid'),
+        ('order_delivered', 'Order Delivered'),
+        ('order_confirmed', 'Order Confirmed'),
+        ('order_disputed', 'Order Disputed'),
+        ('order_refunded', 'Order Refunded'),
+        ('review_posted', 'Review Posted'),
+        ('review_updated', 'Review Updated'),
+    ]
+
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE,
                                       related_name='messages')
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-                                related_name='sent_messages')
+                                related_name='sent_messages', null=True, blank=True)
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES,
+                                    default='text')
+    system_event = models.CharField(max_length=30, choices=SYSTEM_EVENT_CHOICES,
+                                    blank=True, default='')
+    order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True,
+                              blank=True, related_name='order_messages')
     referenced_listing = models.ForeignKey(
         Listing,
         on_delete=models.SET_NULL,
@@ -464,7 +491,8 @@ class Message(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.sender.username}: {self.content[:40] or '[image]'}"
+        sender_name = self.sender.username if self.sender_id else 'GamesBazaar'
+        return f"{sender_name}: {self.content[:40] or '[image]'}"
 
 
 # ── Commission Overrides ─────────────────────────────────────────────────────

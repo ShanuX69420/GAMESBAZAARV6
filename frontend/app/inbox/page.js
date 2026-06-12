@@ -149,7 +149,11 @@ export default function InboxPage() {
                     {convo.last_message ? (
                       <>
                         <span className="inbox-sender">
-                          {convo.last_message.sender_name === user.username ? 'You' : convo.last_message.sender_name}:
+                          {!convo.last_message.sender_name
+                            ? 'GamesBazaar'
+                            : convo.last_message.sender_name === user.username
+                              ? 'You'
+                              : convo.last_message.sender_name}:
                         </span>{' '}
                         {convo.last_message.content}
                       </>
