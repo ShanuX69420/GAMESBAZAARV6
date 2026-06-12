@@ -1703,6 +1703,107 @@ class PurchaseFlowTests(TestCase):
         self.assertIn('filter_values', response.data)
         self.assertFalse(Listing.objects.filter(title='Bad option listing').exists())
 
+    def _setup_dependent_filters(self):
+        """Method (Digital Key / Account Login) with Region shown only for Digital Key."""
+        method_filter = Filter.objects.create(name='Method', filter_type='button')
+        digital_key = FilterOption.objects.create(
+            filter=method_filter, label='Digital Key', value='digital-key')
+        FilterOption.objects.create(
+            filter=method_filter, label='By logging into account', value='account-login')
+        region_filter = Filter.objects.create(name='Region', filter_type='dropdown')
+        FilterOption.objects.create(filter=region_filter, label='Global', value='global')
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=method_filter)
+        GameCategoryFilter.objects.create(
+            game_category=self.game_category, filter=region_filter,
+            visible_when_option=digital_key,
+        )
+        return method_filter, region_filter
+
+    def test_dependent_filter_not_required_when_parent_option_differs(self):
+        method_filter, region_filter = self._setup_dependent_filters()
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Account login listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {str(method_filter.id): 'account-login'},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        listing = Listing.objects.get(title='Account login listing')
+        self.assertEqual(listing.filter_values, {str(method_filter.id): 'account-login'})
+
+    def test_dependent_filter_required_when_parent_option_matches(self):
+        method_filter, region_filter = self._setup_dependent_filters()
+        self.client.force_authenticate(user=self.seller)
+
+        payload = {
+            'game_slug': 'test-game',
+            'category_slug': 'accounts',
+            'title': 'Digital key listing',
+            'price': '10.00',
+            'quantity': 1,
+            'filter_values': {str(method_filter.id): 'digital-key'},
+        }
+        response = self.client.post('/api/listings/', payload, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Region', str(response.data['filter_values']))
+
+        payload['filter_values'][str(region_filter.id)] = 'global'
+        response = self.client.post('/api/listings/', payload, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        listing = Listing.objects.get(title='Digital key listing')
+        self.assertEqual(listing.filter_values, {
+            str(method_filter.id): 'digital-key',
+            str(region_filter.id): 'global',
+        })
+
+    def test_dependent_filter_value_stripped_when_parent_option_differs(self):
+        method_filter, region_filter = self._setup_dependent_filters()
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.post(
+            '/api/listings/',
+            {
+                'game_slug': 'test-game',
+                'category_slug': 'accounts',
+                'title': 'Stale region listing',
+                'price': '10.00',
+                'quantity': 1,
+                'filter_values': {
+                    str(method_filter.id): 'account-login',
+                    str(region_filter.id): 'global',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        listing = Listing.objects.get(title='Stale region listing')
+        self.assertEqual(listing.filter_values, {str(method_filter.id): 'account-login'})
+
+    def test_category_detail_exposes_filter_dependency(self):
+        method_filter, region_filter = self._setup_dependent_filters()
+
+        response = self.client.get('/api/games/test-game/accounts/')
+
+        self.assertEqual(response.status_code, 200)
+        filters_payload = {f['id']: f for f in response.data['filters']}
+        self.assertIsNone(filters_payload[method_filter.id]['visible_when'])
+        self.assertEqual(
+            filters_payload[region_filter.id]['visible_when'],
+            {'filter_id': method_filter.id, 'option_value': 'digital-key'},
+        )
+
     def test_create_listing_rejects_malformed_filter_values(self):
         self.client.force_authenticate(user=self.seller)
 

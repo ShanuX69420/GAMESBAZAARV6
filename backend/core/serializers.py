@@ -210,6 +210,12 @@ class GameCategoryDetailSerializer(serializers.Serializer):
         for gcf in obj.assigned_filters.all():
             data = FilterSerializer(gcf.filter).data
             data['require_selection'] = gcf.require_selection
+            data['visible_when'] = None
+            if gcf.visible_when_option_id:
+                data['visible_when'] = {
+                    'filter_id': gcf.visible_when_option.filter_id,
+                    'option_value': gcf.visible_when_option.value,
+                }
             payload.append(data)
         return payload
 
@@ -656,7 +662,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
 
         assigned_filters = list(
             GameCategoryFilter.objects.filter(game_category=gc)
-            .select_related('filter')
+            .select_related('filter', 'visible_when_option')
             .order_by('order', 'filter__name')
         )
         assigned_filter_ids = {gcf.filter_id for gcf in assigned_filters}
@@ -703,10 +709,34 @@ class CreateListingSerializer(serializers.ModelSerializer):
                     'filter_values': 'Invalid option for this filter.',
                 })
 
+        # Dependent filters only apply when their parent filter holds the
+        # triggering option. Strip values for filters whose condition is not
+        # met (e.g., stale client state) and only require the rest. Loop until
+        # stable so chained dependencies collapse correctly.
+        assigned_by_id = {gcf.filter_id: gcf for gcf in assigned_filters}
+
+        def filter_applies(gcf):
+            option = gcf.visible_when_option
+            if option is None or option.filter_id not in assigned_by_id:
+                # No condition, or the parent filter is not assigned to this
+                # category (misconfiguration) — treat as always applicable.
+                return True
+            return cleaned_filter_values.get(str(option.filter_id)) == option.value
+
+        while True:
+            stripped = [
+                filter_id for filter_id in cleaned_filter_values
+                if not filter_applies(assigned_by_id[int(filter_id)])
+            ]
+            if not stripped:
+                break
+            for filter_id in stripped:
+                del cleaned_filter_values[filter_id]
+
         missing_filter_names = [
             gcf.filter.name
             for gcf in assigned_filters
-            if str(gcf.filter_id) not in cleaned_filter_values
+            if filter_applies(gcf) and str(gcf.filter_id) not in cleaned_filter_values
         ]
         if missing_filter_names:
             raise serializers.ValidationError({

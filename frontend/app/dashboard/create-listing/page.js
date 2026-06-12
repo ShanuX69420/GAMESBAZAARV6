@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { createListing } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
+import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
 
 export default function CreateListingPage() {
   const { user, loading } = useAuth();
@@ -99,6 +100,11 @@ export default function CreateListingPage() {
     return typeof value === 'string' ? value.trim() !== '' : value !== undefined && value !== null;
   }
 
+  // Changing a parent filter can hide dependent filters — drop their values too.
+  function updateFilterValue(filterId, value) {
+    setFilterValues(prev => pruneHiddenFilterValues(filters, { ...prev, [filterId]: value }));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
@@ -118,7 +124,9 @@ export default function CreateListingPage() {
       return;
     }
 
-    const missingFilters = filters.filter(filter => !hasFilterValue(filter));
+    const missingFilters = filters.filter(
+      filter => isFilterVisible(filter, filterValues) && !hasFilterValue(filter)
+    );
     if (missingFilters.length > 0) {
       setError(`Please select all required filters: ${missingFilters.map(filter => filter.name).join(', ')}.`);
       return;
@@ -219,11 +227,11 @@ export default function CreateListingPage() {
             </div>
           )}
 
-          {/* Step 3: Dynamic Filters */}
+          {/* Step 3: Dynamic Filters (dependent filters appear once their parent is picked) */}
           {filters.length > 0 && (
             <div className="form-section">
               <h3 className="form-section-title">Filter Values</h3>
-              {filters.map(filter => (
+              {filters.filter(filter => isFilterVisible(filter, filterValues)).map(filter => (
                 <div key={filter.id} className="form-group">
                   <label className="form-label">{filter.name}</label>
                   {filter.filter_type === 'button' ? (
@@ -233,10 +241,10 @@ export default function CreateListingPage() {
                           type="button"
                           key={opt.id}
                           className={`filter-chip ${filterValues[filter.id] === opt.value ? 'active' : ''}`}
-                          onClick={() => setFilterValues({
-                            ...filterValues,
-                            [filter.id]: filterValues[filter.id] === opt.value ? undefined : opt.value,
-                          })}
+                          onClick={() => updateFilterValue(
+                            filter.id,
+                            filterValues[filter.id] === opt.value ? undefined : opt.value,
+                          )}
                         >
                           {opt.label}
                         </button>
@@ -246,10 +254,7 @@ export default function CreateListingPage() {
                     <select
                       className="form-input"
                       value={filterValues[filter.id] || ''}
-                      onChange={(e) => setFilterValues({
-                        ...filterValues,
-                        [filter.id]: e.target.value || undefined,
-                      })}
+                      onChange={(e) => updateFilterValue(filter.id, e.target.value || undefined)}
                       required
                     >
                       <option value="">Select {filter.name}</option>

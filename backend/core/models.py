@@ -4,6 +4,7 @@ from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
 from django.db.models.functions import Lower, Trim, Upper
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
 
@@ -219,12 +220,25 @@ class GameCategoryFilter(models.Model):
         help_text='Buyers must pick a value for this filter before offers are shown '
                   '(e.g., Region for region-locked gift cards). Used by offers-mode categories.',
     )
+    visible_when_option = models.ForeignKey(
+        FilterOption, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='dependent_filter_assignments',
+        help_text='Only show this filter after the buyer/seller picks this option on '
+                  'another filter in the same category (e.g., show "Region — Keys" only '
+                  'when Method = Digital Key). Leave empty to always show this filter.',
+    )
 
     class Meta:
         ordering = ['order']
         unique_together = ['game_category', 'filter']
         verbose_name = 'Game Category Filter'
         verbose_name_plural = 'Game Category Filters'
+
+    def clean(self):
+        if self.visible_when_option_id and self.visible_when_option.filter_id == self.filter_id:
+            raise ValidationError({
+                'visible_when_option': 'A filter cannot depend on one of its own options.',
+            })
 
     def __str__(self):
         return f"{self.game_category} — {self.filter.name}"

@@ -10,6 +10,7 @@ import {
   buildSellerListingsPath,
   buildSellerProfilePath,
 } from '@/lib/marketplaceUrls';
+import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
 
 const LISTING_PAGE_SIZE = 48;
 const PRESENCE_TICK_MS = 30000;
@@ -272,14 +273,15 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   }, [searchInput]);
 
   function handleFilterChange(filterId, value) {
-    setActiveFilters(prev => ({
+    // Pruning drops selections on dependent filters that the change just hid.
+    setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
       ...prev,
       [filterId]: prev[filterId] === value ? undefined : value,
     }));
   }
 
   function handleDropdownChange(filterId, value) {
-    setActiveFilters(prev => ({
+    setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
       ...prev,
       [filterId]: value || undefined,
     }));
@@ -347,13 +349,16 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const bestOffer = isOfferMode && listings?.length > 0 ? listings[0] : null;
   const otherOffers = isOfferMode ? (listings || []).slice(1) : [];
   const otherSellerCount = Math.max(listingCount - 1, 0);
+  // Dependent filters stay hidden until their parent filter holds the
+  // triggering option (e.g., Region — Keys only shows when Method = Digital Key).
+  const visibleFilters = filters.filter((f) => isFilterVisible(f, activeFilters));
   // Gate filters (e.g., Region for region-locked gift cards) must be chosen
   // before offers are shown. Admin marks them via "require selection".
-  const gateFilters = isOfferMode ? filters.filter((f) => f.require_selection) : [];
+  const gateFilters = isOfferMode ? visibleFilters.filter((f) => f.require_selection) : [];
   const missingGateFilters = gateFilters.filter((f) => !activeFilters[f.id]);
   const gateSatisfied = missingGateFilters.length === 0;
   const hasGateSteps = gateFilters.length > 0;
-  const panelFilters = isOfferMode ? filters.filter((f) => !f.require_selection) : filters;
+  const panelFilters = isOfferMode ? visibleFilters.filter((f) => !f.require_selection) : visibleFilters;
 
   return (
     <div className="container">

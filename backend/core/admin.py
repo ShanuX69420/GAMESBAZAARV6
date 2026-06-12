@@ -161,7 +161,7 @@ class GameCategoryFilterInline(admin.TabularInline):
     """Inline to assign filters directly from the GameCategory admin page."""
     model = GameCategoryFilter
     extra = 1
-    autocomplete_fields = ['filter']
+    autocomplete_fields = ['filter', 'visible_when_option']
 
 
 
@@ -864,15 +864,15 @@ class CategoryOptionAdmin(HiddenModelAdmin):
 class FilterOptionAdmin(HiddenModelAdmin):
     list_display = ['label', 'value', 'filter', 'order']
     list_filter = ['filter']
-    search_fields = ['label', 'value']
+    search_fields = ['label', 'value', 'filter__name', 'filter__admin_label']
 
 
 @admin.register(GameCategoryFilter)
 class GameCategoryFilterAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'order', 'require_selection']
+    list_display = ['__str__', 'order', 'require_selection', 'visible_when_option']
     list_filter = ['game_category__game']
     list_editable = ['order', 'require_selection']
-    autocomplete_fields = ['game_category', 'filter']
+    autocomplete_fields = ['game_category', 'filter', 'visible_when_option']
 
 
 # ── Chat Admin (hidden from sidebar) ─────────────────────────────────────────
