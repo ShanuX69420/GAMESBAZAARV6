@@ -33,6 +33,23 @@ from .models import (
 
 GAME_LIST_CACHE_KEY = 'game-list:v2'
 GAME_LIST_CACHE_SECONDS = 60
+# Home page "Popular" panels: which categories get one and in what order.
+# A section is omitted from the response while its categories have no games.
+# category_slugs lists every slug the section accepts — the Top Ups category
+# kept its original "subscription" slug in production after a rename.
+HOME_POPULAR_SECTIONS = [
+    {'slug': 'accounts', 'title': 'Popular Accounts',
+     'category_slugs': ('accounts',)},
+    {'slug': 'top-ups', 'title': 'Popular Top Ups',
+     'category_slugs': ('top-up', 'subscription')},
+    {'slug': 'offline-activation', 'title': 'Popular Offline Activation',
+     'category_slugs': ('offline-activation',)},
+    {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
+     'category_slugs': ('gift-cards',)},
+]
+HOME_POPULAR_GAMES_PER_SECTION = 8
+HOME_POPULAR_CACHE_KEY = 'home-popular:v1'
+HOME_POPULAR_CACHE_SECONDS = 60
 BROWSE_CACHE_SECONDS = 30
 SELLER_PROFILE_CACHE_SECONDS = 30
 UNREAD_COUNT_CACHE_SECONDS = 5
@@ -523,6 +540,82 @@ class GameListView(generics.ListAPIView):
             cache.set(cache_key, response.data, GAME_LIST_CACHE_SECONDS)
         response['Cache-Control'] = 'public, max-age=60'
         return response
+
+
+class HomePopularView(APIView):
+    """GET /api/home/popular/ — Curated "Popular" panels for the home page.
+
+    One section per HOME_POPULAR_SECTIONS category, each listing the top games
+    in that category: featured (admin-pinned) first, then by active listing
+    count, then the game's manual order. Categories without games are omitted
+    so the home page never shows an empty panel.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        cache_key = f'{HOME_POPULAR_CACHE_KEY}:{request_origin_cache_scope(request)}'
+        data = cache.get(cache_key)
+        if data is None:
+            data = self.build_sections(request)
+            cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
+        response = Response(data)
+        response['Cache-Control'] = f'public, max-age={HOME_POPULAR_CACHE_SECONDS}'
+        return response
+
+    def build_sections(self, request):
+        section_by_category_slug = {
+            category_slug: section['slug']
+            for section in HOME_POPULAR_SECTIONS
+            for category_slug in section['category_slugs']
+        }
+        rows = (
+            GameCategory.objects
+            .filter(
+                category__slug__in=section_by_category_slug,
+                game__is_active=True,
+            )
+            .select_related('game', 'category')
+            .annotate(
+                active_listing_count=Count(
+                    'listings', filter=Q(listings__status='active'),
+                )
+            )
+            .order_by('-featured', '-active_listing_count', 'game__order', 'game__name')
+        )
+
+        games_by_section = {}
+        for row in rows:
+            bucket = games_by_section.setdefault(
+                section_by_category_slug[row.category.slug], [])
+            if len(bucket) >= HOME_POPULAR_GAMES_PER_SECTION:
+                continue
+            icon_url = None
+            if row.game.icon:
+                icon_url = cached_media_url(
+                    row.game.icon,
+                    request=request,
+                    cache_seconds=GAME_ICON_CACHE_SECONDS,
+                    cache_scope='public',
+                )
+            bucket.append({
+                'game_name': row.game.name,
+                'game_slug': row.game.slug,
+                'category_slug': row.effective_slug,
+                'icon_url': icon_url,
+                'listing_count': row.active_listing_count,
+            })
+
+        return {
+            'sections': [
+                {
+                    'slug': section['slug'],
+                    'title': section['title'],
+                    'items': games_by_section[section['slug']],
+                }
+                for section in HOME_POPULAR_SECTIONS
+                if games_by_section.get(section['slug'])
+            ],
+        }
 
 
 class GameDetailView(generics.RetrieveAPIView):

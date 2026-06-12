@@ -4316,6 +4316,126 @@ class GameCatalogCacheHeaderTests(TestCase):
         self.assertEqual(response['Cache-Control'], 'public, max-age=120')
 
 
+class HomePopularViewTests(TestCase):
+    """Home page "Popular" panels: curated top games per configured category."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='panel-seller', password='password123')
+        self.accounts = Category.objects.create(name='Accounts', slug='accounts')
+        # Production parity: the Top Ups category kept its original
+        # "subscription" slug after a rename.
+        self.topups = Category.objects.create(name='Top Ups', slug='subscription')
+
+    def tearDown(self):
+        cache.clear()
+
+    def add_game(self, name, slug, category, **game_category_kwargs):
+        game = Game.objects.create(name=name, slug=slug)
+        game_category = GameCategory.objects.create(
+            game=game, category=category, **game_category_kwargs)
+        return game_category
+
+    def add_listing(self, game_category, status='active'):
+        return Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category,
+            title=f'{game_category.game.name} offer',
+            price=Decimal('10.00'),
+            quantity=1,
+            status=status,
+        )
+
+    def test_empty_categories_are_omitted_and_sections_follow_config_order(self):
+        self.add_game('Valorant', 'valorant', self.accounts)
+        # Top Ups category exists but has no games — no section for it.
+
+        response = self.client.get('/api/home/popular/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'public, max-age=60')
+        sections = response.data['sections']
+        self.assertEqual([s['slug'] for s in sections], ['accounts'])
+        self.assertEqual(sections[0]['title'], 'Popular Accounts')
+        self.assertEqual(sections[0]['items'], [{
+            'game_name': 'Valorant',
+            'game_slug': 'valorant',
+            'category_slug': 'accounts',
+            'icon_url': None,
+            'listing_count': 0,
+        }])
+
+    def test_featured_then_stocked_games_rank_first(self):
+        self.add_game('Alpha', 'alpha', self.accounts)
+        stocked = self.add_game('Stocked', 'stocked', self.accounts)
+        self.add_listing(stocked)
+        self.add_listing(stocked, status='sold')  # inactive stock must not count
+        self.add_game('Pinned', 'pinned', self.accounts, featured=True)
+
+        response = self.client.get('/api/home/popular/')
+
+        items = response.data['sections'][0]['items']
+        self.assertEqual(
+            [item['game_slug'] for item in items],
+            ['pinned', 'stocked', 'alpha'],
+        )
+        self.assertEqual(items[1]['listing_count'], 1)
+
+    def test_category_slug_uses_per_game_display_override(self):
+        self.add_game('ChatGPT', 'chatgpt', self.topups, display_name='Subscriptions')
+
+        response = self.client.get('/api/home/popular/')
+
+        sections = response.data['sections']
+        self.assertEqual([s['slug'] for s in sections], ['top-ups'])
+        self.assertEqual(sections[0]['title'], 'Popular Top Ups')
+        self.assertEqual(sections[0]['items'][0]['category_slug'], 'subscriptions')
+
+    def test_top_ups_section_accepts_both_category_slug_spellings(self):
+        # Local dev uses the "top-up" slug, production kept "subscription" —
+        # games from either category land in the same panel.
+        local_topup = Category.objects.create(name='Top-Up', slug='top-up')
+        self.add_game('PUBG Mobile', 'pubg-mobile', local_topup)
+        self.add_game('ChatGPT', 'chatgpt', self.topups)
+
+        response = self.client.get('/api/home/popular/')
+
+        sections = response.data['sections']
+        self.assertEqual([s['slug'] for s in sections], ['top-ups'])
+        self.assertEqual(
+            sorted(item['game_slug'] for item in sections[0]['items']),
+            ['chatgpt', 'pubg-mobile'],
+        )
+
+    def test_sections_are_capped_per_category(self):
+        from .views import HOME_POPULAR_GAMES_PER_SECTION
+
+        for i in range(HOME_POPULAR_GAMES_PER_SECTION + 1):
+            self.add_game(f'Game {i:02d}', f'game-{i:02d}', self.accounts)
+
+        response = self.client.get('/api/home/popular/')
+
+        items = response.data['sections'][0]['items']
+        self.assertEqual(len(items), HOME_POPULAR_GAMES_PER_SECTION)
+
+    def test_serves_cached_payload(self):
+        from .views import HOME_POPULAR_CACHE_KEY, HOME_POPULAR_CACHE_SECONDS
+
+        self.add_game('Valorant', 'valorant', self.accounts)
+        response = self.client.get('/api/home/popular/')
+        cache_key = (
+            f'{HOME_POPULAR_CACHE_KEY}:'
+            f'{response.wsgi_request.scheme}://{response.wsgi_request.get_host()}'
+        )
+        self.assertIsNotNone(cache.get(cache_key))
+
+        cache.set(cache_key, {'sections': []}, HOME_POPULAR_CACHE_SECONDS)
+        cached_response = self.client.get('/api/home/popular/')
+
+        self.assertEqual(cached_response.data, {'sections': []})
+
+
 class CategoryDisplayNameTests(TestCase):
     """Per-game category renames: one shared admin category, custom buyer-facing name."""
 

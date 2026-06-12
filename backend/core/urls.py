@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     # Public — games & categories
+    path('home/popular/', views.HomePopularView.as_view(), name='home-popular'),
     path('games/', views.GameListView.as_view(), name='game-list'),
     path('games/<slug:slug>/', views.GameDetailView.as_view(), name='game-detail'),
     path('games/<slug:game_slug>/<slug:category_slug>/',

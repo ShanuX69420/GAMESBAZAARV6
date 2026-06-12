@@ -123,6 +123,11 @@ class GameCategory(models.Model):
     )
     display_slug = models.SlugField(max_length=200, blank=True, default='', editable=False)
     order = models.PositiveIntegerField(default=0, help_text='Display order within the game')
+    featured = models.BooleanField(
+        default=False,
+        help_text='Pin this game to the top of its category\'s "Popular" panel '
+                  'on the home page.',
+    )
     allow_auto_delivery = models.BooleanField(
         default=False,
         help_text='Allow sellers to create automated delivery listings in this game+category.',

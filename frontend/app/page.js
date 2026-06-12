@@ -1,5 +1,6 @@
-import { fetchGames } from '@/lib/api';
+import { fetchGames, fetchHomePopular } from '@/lib/api';
 import GameItem from '@/components/GameItem';
+import PopularPanel from '@/components/PopularPanel';
 import HomeCTA from '@/components/HomeCTA';
 import Link from 'next/link';
 
@@ -7,16 +8,27 @@ const HOMEPAGE_GAME_LIMIT = 18;
 
 export default async function HomePage() {
   let games = [];
-  try {
-    games = await fetchGames();
-  } catch (error) {
-    console.error('Failed to fetch games:', error);
+  let popularSections = [];
+  const [gamesResult, popularResult] = await Promise.allSettled([
+    fetchGames(),
+    fetchHomePopular(),
+  ]);
+  if (gamesResult.status === 'fulfilled') {
+    games = gamesResult.value;
+  } else {
+    console.error('Failed to fetch games:', gamesResult.reason);
+  }
+  if (popularResult.status === 'fulfilled') {
+    popularSections = popularResult.value.sections || [];
+  } else {
+    console.error('Failed to fetch popular sections:', popularResult.reason);
   }
 
-  // Only showcase games that actually have stock — a small grid of real
-  // offers looks alive, a big grid of empty games looks dead. Until any
-  // game has stock, fall back to the full catalog so the section never
-  // renders empty. Everything stays reachable via /games and search.
+  // Fallback when the popular panels are unavailable: only showcase games
+  // that actually have stock — a small grid of real offers looks alive, a
+  // big grid of empty games looks dead. Until any game has stock, fall back
+  // to the full catalog so the section never renders empty. Everything
+  // stays reachable via /games and search.
   const stockedGames = games.filter((game) => (game.listing_count || 0) > 0);
   const popularGames = (stockedGames.length > 0 ? stockedGames : games)
     .slice(0, HOMEPAGE_GAME_LIMIT);
@@ -73,16 +85,22 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Games Section */}
+      {/* Popular Section */}
       <section className="section">
         <div className="section-header">
-          <h2 className="section-title">Popular Games</h2>
-          {games.length > popularGames.length && (
+          <h2 className="section-title">Popular Right Now</h2>
+          {games.length > 0 && (
             <Link href="/games" className="section-link">View All Games →</Link>
           )}
         </div>
 
-        {popularGames.length > 0 ? (
+        {popularSections.length > 0 ? (
+          <div className="popular-grid">
+            {popularSections.map((section) => (
+              <PopularPanel key={section.slug} section={section} />
+            ))}
+          </div>
+        ) : popularGames.length > 0 ? (
           <div className="games-grid">
             {popularGames.map((game) => (
               <GameItem key={game.id} game={game} />

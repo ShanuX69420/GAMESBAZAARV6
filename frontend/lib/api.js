@@ -46,6 +46,15 @@ export async function fetchGames() {
   return res.json();
 }
 
+export async function fetchHomePopular() {
+  const res = await fetch(`${API_BASE}/api/home/popular/`, {
+    next: { revalidate: GAME_LIST_REVALIDATE_SECONDS },
+  });
+  updateServerTimeOffset(res);
+  if (!res.ok) throw new Error('Failed to fetch popular sections');
+  return res.json();
+}
+
 export async function fetchGame(slug) {
   const res = await fetch(`${API_BASE}/api/games/${pathSegment(slug)}/`, {
     next: { revalidate: PUBLIC_CATALOG_REVALIDATE_SECONDS },

@@ -846,10 +846,10 @@ class HiddenModelAdmin(admin.ModelAdmin):
 
 @admin.register(GameCategory)
 class GameCategoryAdmin(HiddenModelAdmin):
-    list_display = ['__str__', 'display_name', 'order', 'allow_auto_delivery', 'listing_mode',
-                    'filter_count', 'option_count']
-    list_filter = ['game', 'allow_auto_delivery', 'listing_mode']
-    list_editable = ['display_name', 'order', 'allow_auto_delivery', 'listing_mode']
+    list_display = ['__str__', 'display_name', 'order', 'featured', 'allow_auto_delivery',
+                    'listing_mode', 'filter_count', 'option_count']
+    list_filter = ['category', 'game', 'featured', 'allow_auto_delivery', 'listing_mode']
+    list_editable = ['display_name', 'order', 'featured', 'allow_auto_delivery', 'listing_mode']
     search_fields = ['game__name', 'category__name', 'display_name']
     autocomplete_fields = ['game', 'category']
     inlines = [GameCategoryFilterInline, CategoryOptionInline]
