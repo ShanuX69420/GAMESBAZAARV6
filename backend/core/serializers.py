@@ -19,7 +19,7 @@ from .models import (
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment,
     SellerCommissionOverride, Review, Notification,
-    Report, SupportTicket,
+    Report, SupportTicket, ItemRequest,
 )
 from .services import (
     get_order_auto_confirm_at,
@@ -132,11 +132,15 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class GameCategorySerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
-
+    listing_count = serializers.SerializerMethodField()
 
     class Meta:
         model = GameCategory
-        fields = ['id', 'category', 'order']
+        fields = ['id', 'category', 'order', 'listing_count']
+
+    def get_listing_count(self, obj):
+        # Annotated by GameDetailView's prefetch; 0 when used without it.
+        return getattr(obj, 'active_listing_count', 0)
 
     def to_representation(self, instance):
         # Buyers (and sellers picking a category) see the per-game display
@@ -153,16 +157,21 @@ class GameCategorySerializer(serializers.ModelSerializer):
 
 class GameListSerializer(serializers.ModelSerializer):
     category_count = serializers.SerializerMethodField()
+    listing_count = serializers.SerializerMethodField()
     icon_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
-        fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count']
+        fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count', 'listing_count']
 
     def get_category_count(self, obj):
         # Use len() to leverage the prefetched cache instead of .count()
         # which always fires a separate COUNT query.
         return len(obj.game_categories.all())
+
+    def get_listing_count(self, obj):
+        # Annotated by GameListView's queryset; 0 when used without it.
+        return getattr(obj, 'active_listing_count', 0)
 
     def get_icon_url(self, obj):
         if obj.icon:
@@ -1524,6 +1533,23 @@ class ReportSerializer(serializers.ModelSerializer):
 
 
 # ── Support Ticket Serializers ───────────────────────────────────────────────
+
+class CreateItemRequestSerializer(serializers.Serializer):
+    """Capture buyer demand from an empty category. Works for guests too."""
+    game_slug = serializers.SlugField()
+    category_slug = serializers.SlugField()
+    message = serializers.CharField(max_length=2000)
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        is_authed = request and request.user.is_authenticated
+        if not is_authed and not attrs.get('email'):
+            raise serializers.ValidationError({
+                'email': 'Email is required when not logged in.',
+            })
+        return attrs
+
 
 class CreateSupportTicketSerializer(serializers.Serializer):
     """Create a support ticket. Works for both logged-in and guest users."""

@@ -103,4 +103,7 @@ urlpatterns = [
     # Support Tickets
     path('support/', views.CreateSupportTicketView.as_view(), name='create-support-ticket'),
     path('support/mine/', views.MySupportTicketsView.as_view(), name='my-support-tickets'),
+
+    # Item Requests (buyer demand for empty categories)
+    path('item-requests/', views.CreateItemRequestView.as_view(), name='create-item-request'),
 ]

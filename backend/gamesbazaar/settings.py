@@ -301,6 +301,7 @@ REST_FRAMEWORK = {
         'listing_restock': '60/hour',
         'create_report': '10/hour',
         'create_support_ticket': '5/hour',
+        'create_item_request': '5/hour',
     },
 }
 
@@ -376,6 +377,8 @@ SMTP_EMAIL_BACKENDS = {
     DKIM_EMAIL_BACKEND,
 }
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gamesbazaar.pk')
+# Public site origin used for links inside transactional emails.
+PUBLIC_SITE_URL = os.environ.get('PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk').rstrip('/')
 TRANSACTIONAL_EMAILS_ENABLED = env_bool('TRANSACTIONAL_EMAILS_ENABLED', True)
 TRANSACTIONAL_EMAIL_FAIL_SILENTLY = env_bool('TRANSACTIONAL_EMAIL_FAIL_SILENTLY', True)
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost' if DEBUG else '').strip()

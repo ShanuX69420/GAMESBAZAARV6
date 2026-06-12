@@ -11,6 +11,7 @@ import {
   buildSellerProfilePath,
 } from '@/lib/marketplaceUrls';
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
+import ItemRequestForm from '@/components/ItemRequestForm';
 
 const LISTING_PAGE_SIZE = 48;
 const PRESENCE_TICK_MS = 30000;
@@ -359,6 +360,8 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const gateSatisfied = missingGateFilters.length === 0;
   const hasGateSteps = gateFilters.length > 0;
   const panelFilters = isOfferMode ? visibleFilters.filter((f) => !f.require_selection) : visibleFilters;
+  const hasActiveFilters = Object.values(activeFilters).some(v => v)
+    || instantDeliveryFilter || onlineSellerFilter || Boolean(searchInput);
 
   return (
     <div className="container">
@@ -395,7 +398,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               onClick={() => handleCategorySwitch(cat.slug)}
             >
               <span className="category-tab-name">{cat.name}</span>
-              <span className="category-tab-count">{cat.listing_count}</span>
+              {cat.listing_count > 0 && (
+                <span className="category-tab-count">{cat.listing_count}</span>
+              )}
             </button>
           ))}
         </div>
@@ -423,7 +428,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </button>
-          {(Object.values(activeFilters).some(v => v) || instantDeliveryFilter || onlineSellerFilter || searchInput) && (
+          {hasActiveFilters && (
             <button
               className="btn btn-sm btn-outline"
               onClick={() => { setActiveFilters({}); setInstantDeliveryFilter(false); setOnlineSellerFilter(false); setSearchInput(''); }}
@@ -537,10 +542,18 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       {isOfferMode && (
       <section className="section" style={{ paddingTop: 0 }}>
         {options.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">🧩</div>
-            <p>No options are available in this category yet. Check back soon.</p>
-          </div>
+          <>
+            <div className="empty-state">
+              <div className="empty-state-icon">🧩</div>
+              <p>No options are available in this category yet.</p>
+            </div>
+            <ItemRequestForm
+              gameSlug={slug}
+              categorySlug={categorySlug}
+              gameName={game.name}
+              categoryName={category.name}
+            />
+          </>
         ) : (
           <div className={`offer-layout ${hasGateSteps ? 'offer-layout-gated' : ''}`}>
             {/* Gate filters: must be selected before offers are shown */}
@@ -937,10 +950,20 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
             )}
           </div>
         ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon">🛒</div>
-            <p>No listings found{Object.values(activeFilters).some(v => v) || instantDeliveryFilter || onlineSellerFilter || searchInput ? ' with these filters' : ''}.</p>
-          </div>
+          <>
+            <div className="empty-state">
+              <div className="empty-state-icon">🛒</div>
+              <p>No listings found{hasActiveFilters || sellerFilter ? ' with these filters' : ' here yet'}.</p>
+            </div>
+            {!hasActiveFilters && !sellerFilter && (
+              <ItemRequestForm
+                gameSlug={slug}
+                categorySlug={categorySlug}
+                gameName={game.name}
+                categoryName={category.name}
+              />
+            )}
+          </>
         )}
       </section>
       )}

@@ -150,10 +150,12 @@ def _queue_html_email(recipient_email, *, subject, template_name, context):
     )
 
 
-def send_transactional_email(user, *, subject, message_body, detail_rows=None,
-                             status_text=None, status_class='info',
-                             admin_note=None, extra_message=None):
-    """Send a branded HTML transactional email to a user.
+def send_transactional_email_to_address(recipient_email, *, subject, message_body,
+                                        username='', detail_rows=None,
+                                        status_text=None, status_class='info',
+                                        admin_note=None, extra_message=None,
+                                        cta_url=None, cta_label=None):
+    """Send a branded HTML transactional email to a raw address (guests too).
 
     The SMTP send is deferred until the surrounding database transaction
     commits, so a slow mail server never extends wallet/listing/order row-lock
@@ -165,11 +167,10 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
     if not getattr(settings, 'TRANSACTIONAL_EMAILS_ENABLED', True):
         return False
 
-    recipient = (getattr(user, 'email', '') or '').strip()
+    recipient = (recipient_email or '').strip()
     if not recipient:
         return False
 
-    username = getattr(user, 'username', '') or ''
     context = {
         'username': username,
         'message_body': message_body,
@@ -178,6 +179,8 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
         'status_class': status_class,
         'admin_note': admin_note,
         'extra_message': extra_message,
+        'cta_url': cta_url,
+        'cta_label': cta_label,
     }
 
     transaction.on_commit(lambda: _queue_html_email(
@@ -187,6 +190,26 @@ def send_transactional_email(user, *, subject, message_body, detail_rows=None,
         context=context,
     ))
     return True
+
+
+def send_transactional_email(user, *, subject, message_body, detail_rows=None,
+                             status_text=None, status_class='info',
+                             admin_note=None, extra_message=None,
+                             cta_url=None, cta_label=None):
+    """Send a branded HTML transactional email to a user."""
+    return send_transactional_email_to_address(
+        getattr(user, 'email', ''),
+        subject=subject,
+        message_body=message_body,
+        username=getattr(user, 'username', '') or '',
+        detail_rows=detail_rows,
+        status_text=status_text,
+        status_class=status_class,
+        admin_note=admin_note,
+        extra_message=extra_message,
+        cta_url=cta_url,
+        cta_label=cta_label,
+    )
 
 
 def _basic_order_rows(order):
@@ -310,6 +333,71 @@ def broadcast_notification_after_commit(notification):
         )
 
     transaction.on_commit(_send)
+
+
+def notify_staff_about_item_request(item_request):
+    """Alert staff (in-app + email) that a buyer asked for an unstocked item."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    gc = item_request.game_category
+    label = f'{gc.game.name} — {gc.effective_name}'
+    requester = (
+        item_request.user.username if item_request.user
+        else (item_request.guest_email or 'Guest')
+    )
+    for staff_user in User.objects.filter(is_staff=True, is_active=True):
+        create_notification(
+            recipient=staff_user,
+            notification_type='item_request',
+            title=f'Item request: {label}',
+            message=f'{requester} is looking for: {item_request.message}',
+        )
+        send_transactional_email(
+            staff_user,
+            subject='GamesBazaar — New Item Request',
+            message_body=f'{requester} asked for an item in {label}.',
+            detail_rows=[
+                ('Game / Category', label),
+                ('From', requester),
+                ('Request', item_request.message),
+            ],
+            status_text='Open',
+            status_class='warning',
+        )
+
+
+def notify_requester_item_fulfilled(item_request):
+    """Tell the buyer the item they requested is now available (in-app + email)."""
+    gc = item_request.game_category
+    label = f'{gc.game.name} — {gc.effective_name}'
+    category_url = f'{settings.PUBLIC_SITE_URL}/games/{gc.game.slug}/{gc.effective_slug}'
+
+    if item_request.user_id:
+        create_notification(
+            recipient=item_request.user,
+            notification_type='item_request',
+            title=f'Your requested item is available: {label}',
+            message='The item you asked for is now in stock — come take a look!',
+        )
+
+    recipient_email = (
+        item_request.user.email if item_request.user_id else item_request.guest_email
+    )
+    send_transactional_email_to_address(
+        recipient_email,
+        subject='GamesBazaar — Your Requested Item Is Available',
+        username=item_request.user.username if item_request.user_id else '',
+        message_body=f'Good news! The item you requested in {label} is now available.',
+        detail_rows=[
+            ('Game / Category', label),
+            ('Your request', item_request.message),
+        ],
+        status_text='Available',
+        status_class='success',
+        cta_url=category_url,
+        cta_label='View Listings',
+    )
 
 
 def send_topup_request_received_email(topup):

@@ -65,8 +65,9 @@ describe('SEO route metadata', () => {
         {
           slug: 'valorant',
           categories: [
-            { category: { slug: 'accounts' } },
-            { category: { slug: 'boosting' } },
+            { category: { slug: 'accounts' }, listing_count: 5 },
+            { category: { slug: 'boosting' }, listing_count: 1 },
+            { category: { slug: 'gift-cards' }, listing_count: 0 },
           ],
         },
       ]),
@@ -84,6 +85,10 @@ describe('SEO route metadata', () => {
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games', priority: 0.9 }),
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/accounts', priority: 0.7 }),
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/boosting', priority: 0.7 }),
+    ]));
+    // Empty categories are noindexed, so they stay out of the sitemap too.
+    expect(entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant/gift-cards' }),
     ]));
     expect(entries).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant' }),
@@ -124,7 +129,7 @@ describe('SEO route metadata', () => {
         json: vi.fn().mockResolvedValue({
           slug: 'valorant',
           categories: [
-            { category: { slug: 'accounts' } },
+            { category: { slug: 'accounts' }, listing_count: 2 },
           ],
         }),
       }));
@@ -250,15 +255,24 @@ describe('SEO route metadata', () => {
     });
   });
 
-  it('generates game category metadata from route params without an extra API request', async () => {
-    vi.stubGlobal('fetch', vi.fn());
+  it('generates game category metadata and keeps stocked categories indexable', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ listing_pagination: { count: 12 } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
     const metadata = await generateMetadata({
       params: Promise.resolve({ slug: 'pubg mobile', categorySlug: 'accounts & boosts' }),
     });
 
-    expect(fetch).not.toHaveBeenCalled();
+    // Reuses the page's own data request (same URL + revalidate).
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/games/pubg%20mobile/accounts%20%26%20boosts/?limit=48&offset=0',
+      { next: { revalidate: 120 } }
+    );
     expect(metadata).toMatchObject({
       title: 'Pubg Mobile Accounts & Boosts Listings',
       description: 'Browse Pubg Mobile Accounts & Boosts listings on GamesBazaar. Compare prices from verified sellers with buyer protection.',
@@ -268,5 +282,33 @@ describe('SEO route metadata', () => {
         siteName: 'GamesBazaar',
       },
     });
+    expect(metadata.robots).toBeUndefined();
+  });
+
+  it('noindexes game category pages until they have active listings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ listing_pagination: { count: 0 }, listings: [] }),
+    }));
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'pubg-mobile', categorySlug: 'gift-cards' }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps category pages indexable when the listing count lookup fails', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'pubg-mobile', categorySlug: 'accounts' }),
+    });
+
+    expect(metadata.robots).toBeUndefined();
   });
 });

@@ -37,10 +37,14 @@ export default async function GameDetailPage({ params }) {
 
   const categories = game.categories || [];
 
-  // Redirect to the first category if available
+  // Land buyers on the fullest shelf: the category with the most active
+  // listings. Falls back to admin order when counts tie (e.g., all empty).
   if (categories.length > 0) {
-    const firstCategorySlug = categories[0].category.slug;
-    redirect(`/games/${slug}/${firstCategorySlug}`);
+    const busiest = categories.reduce(
+      (best, cat) => ((cat.listing_count || 0) > (best.listing_count || 0) ? cat : best),
+      categories[0],
+    );
+    redirect(`/games/${slug}/${busiest.category.slug}`);
   }
 
   // Fallback: show message if no categories

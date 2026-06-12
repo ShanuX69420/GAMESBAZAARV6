@@ -708,6 +708,29 @@ export async function searchMarketplace(query) {
   return res.json();
 }
 
+// -- Item Requests (buyer demand for empty categories) --
+
+export async function submitItemRequest(gameSlug, categorySlug, message, email = '') {
+  const res = await authFetch(`${API_BASE}/api/item-requests/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      game_slug: gameSlug,
+      category_slug: categorySlug,
+      message,
+      email,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fieldError = Array.isArray(data.email) ? data.email[0]
+      : Array.isArray(data.message) ? data.message[0]
+      : null;
+    throw new Error(data.error || data.detail || fieldError || 'Failed to send your request');
+  }
+  return data;
+}
+
 // -- Notifications API --
 
 export async function getNotifications(opts = {}) {

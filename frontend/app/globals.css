@@ -2057,6 +2057,54 @@ img {
   font-size: 0.95rem;
 }
 
+/* ── Item Request (empty-category demand capture) ─────────────────────────── */
+
+.item-request-card {
+  max-width: 520px;
+  margin: 0 auto 32px;
+  padding: 24px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.item-request-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.item-request-sub {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.item-request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.item-request-form .btn {
+  align-self: center;
+  min-width: 180px;
+}
+
+.item-request-error {
+  font-size: 0.85rem;
+  color: var(--red-500);
+  text-align: center;
+}
+
+.item-request-card-sent .item-request-sent-icon {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 
 .btn {

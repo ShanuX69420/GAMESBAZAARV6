@@ -13,6 +13,14 @@ export default async function HomePage() {
     console.error('Failed to fetch games:', error);
   }
 
+  // Only showcase games that actually have stock — a small grid of real
+  // offers looks alive, a big grid of empty games looks dead. Until any
+  // game has stock, fall back to the full catalog so the section never
+  // renders empty. Everything stays reachable via /games and search.
+  const stockedGames = games.filter((game) => (game.listing_count || 0) > 0);
+  const popularGames = (stockedGames.length > 0 ? stockedGames : games)
+    .slice(0, HOMEPAGE_GAME_LIMIT);
+
   return (
     <div className="container">
       {/* Hero Section */}
@@ -69,14 +77,14 @@ export default async function HomePage() {
       <section className="section">
         <div className="section-header">
           <h2 className="section-title">Popular Games</h2>
-          {games.length > HOMEPAGE_GAME_LIMIT && (
+          {games.length > popularGames.length && (
             <Link href="/games" className="section-link">View All Games →</Link>
           )}
         </div>
 
-        {games.length > 0 ? (
+        {popularGames.length > 0 ? (
           <div className="games-grid">
-            {games.slice(0, HOMEPAGE_GAME_LIMIT).map((game) => (
+            {popularGames.map((game) => (
               <GameItem key={game.id} game={game} />
             ))}
           </div>

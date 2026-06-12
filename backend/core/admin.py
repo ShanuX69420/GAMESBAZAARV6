@@ -13,7 +13,7 @@ from .models import (
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
     JazzCashPayment,
-    Notification, Report, SupportTicket,
+    Notification, Report, SupportTicket, ItemRequest,
 )
 from .payments import run_status_inquiry
 from .services import (
@@ -22,6 +22,7 @@ from .services import (
     complete_order_with_seller_payout,
     create_notification,
     decrypt_sensitive_text,
+    notify_requester_item_fulfilled,
     record_withdrawal_approval_once,
     send_topup_status_email,
     send_withdraw_status_email,
@@ -1007,6 +1008,61 @@ class ReportAdmin(admin.ModelAdmin):
             reviewed_at=timezone.now(),
         )
         self.message_user(request, f'{updated} report(s) dismissed.')
+
+
+@admin.register(ItemRequest)
+class ItemRequestAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'requester_display', 'game_category', 'message_preview',
+        'status', 'created_at',
+    ]
+    list_filter = ['status']
+    search_fields = [
+        'user__username', 'guest_email', 'message',
+        'game_category__game__name', 'game_category__category__name',
+    ]
+    readonly_fields = ['user', 'guest_email', 'game_category', 'message',
+                       'created_at', 'updated_at']
+    fields = ['user', 'guest_email', 'game_category', 'message',
+              'status', 'admin_note', 'created_at', 'updated_at']
+    actions = ['mark_fulfilled', 'close_requests']
+
+    @admin.display(description='Requester')
+    def requester_display(self, obj):
+        if obj.user:
+            return obj.user.username
+        return obj.guest_email or 'Guest'
+
+    @admin.display(description='Request')
+    def message_preview(self, obj):
+        return obj.message[:50] + ('...' if len(obj.message) > 50 else '')
+
+    def save_model(self, request, obj, form, change):
+        # Status flipped to fulfilled via the edit form: tell the requester.
+        notify = False
+        if change and 'status' in form.changed_data and obj.status == 'fulfilled':
+            notify = True
+        super().save_model(request, obj, form, change)
+        if notify:
+            notify_requester_item_fulfilled(obj)
+
+    @admin.action(description='✅ Mark as Fulfilled (notifies the requester)')
+    def mark_fulfilled(self, request, queryset):
+        open_requests = list(queryset.filter(status='open').select_related(
+            'user', 'game_category__game', 'game_category__category',
+        ))
+        updated = queryset.filter(status='open').update(status='fulfilled')
+        for item_request in open_requests:
+            notify_requester_item_fulfilled(item_request)
+        self.message_user(
+            request,
+            f'{updated} request(s) marked as fulfilled and requester(s) notified.',
+        )
+
+    @admin.action(description='🔒 Close selected requests')
+    def close_requests(self, request, queryset):
+        updated = queryset.exclude(status='closed').update(status='closed')
+        self.message_user(request, f'{updated} request(s) closed.')
 
 
 @admin.register(SupportTicket)

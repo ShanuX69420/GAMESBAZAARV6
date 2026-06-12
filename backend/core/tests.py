@@ -33,6 +33,7 @@ from .admin import (
     GameAdmin,
     GameAdminForm,
     GamesBazaarUserAdmin,
+    ItemRequestAdmin,
     OrderAdmin,
     TopUpRequestAdmin,
     UserProfileAdmin,
@@ -41,7 +42,7 @@ from .admin import (
 from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    Listing, Message, Notification, Order, Report, Review, SupportTicket,
+    ItemRequest, Listing, Message, Notification, Order, Report, Review, SupportTicket,
     PlatformLedgerEntry, SellerCommissionOverride, SocialAccount, TopUpRequest, UserProfile, Wallet,
     WalletTransaction, WithdrawRequest,
 )
@@ -3156,6 +3157,188 @@ class SupportTicketFlowTests(TestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class ItemRequestFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='request_user',
+            email='request-user@example.com',
+            password='password123',
+        )
+        self.staff = User.objects.create_user(
+            username='request_admin',
+            email='request-admin@example.com',
+            password='password123',
+            is_staff=True,
+        )
+        self.game = Game.objects.create(name='PUBG Mobile', slug='pubg-mobile')
+        self.category = Category.objects.create(name='Accounts', slug='accounts')
+        self.game_category = GameCategory.objects.create(
+            game=self.game, category=self.category,
+        )
+
+    def test_guest_can_create_item_request_with_email(self):
+        response = self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'accounts',
+                'email': 'guest@example.com',
+                'message': 'Looking for a Conqueror account with rare skins.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item_request = ItemRequest.objects.get()
+        self.assertIsNone(item_request.user)
+        self.assertEqual(item_request.guest_email, 'guest@example.com')
+        self.assertEqual(item_request.game_category, self.game_category)
+        self.assertEqual(item_request.status, 'open')
+
+    def test_guest_item_request_requires_email(self):
+        response = self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'accounts',
+                'message': 'Looking for an account.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
+        self.assertFalse(ItemRequest.objects.exists())
+
+    def test_authenticated_item_request_uses_user_and_ignores_email(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'accounts',
+                'email': 'ignored@example.com',
+                'message': 'Need a mid-tier account.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        item_request = ItemRequest.objects.get()
+        self.assertEqual(item_request.user, self.user)
+        self.assertEqual(item_request.guest_email, '')
+
+    def test_item_request_notifies_staff(self):
+        self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'accounts',
+                'email': 'guest@example.com',
+                'message': 'Looking for a Conqueror account.',
+            },
+            format='json',
+        )
+
+        notification = Notification.objects.get(recipient=self.staff)
+        self.assertEqual(notification.notification_type, 'item_request')
+        self.assertIn('PUBG Mobile', notification.title)
+        self.assertIn('guest@example.com', notification.message)
+        # Non-staff users must not be notified.
+        self.assertFalse(Notification.objects.filter(recipient=self.user).exists())
+
+    def test_item_request_unknown_category_returns_404(self):
+        response = self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'does-not-exist',
+                'email': 'guest@example.com',
+                'message': 'Hello?',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(ItemRequest.objects.exists())
+
+    def test_item_request_resolves_display_slug(self):
+        self.game_category.display_name = 'Rare Accounts'
+        self.game_category.save()
+
+        response = self.client.post(
+            '/api/item-requests/',
+            {
+                'game_slug': 'pubg-mobile',
+                'category_slug': 'rare-accounts',
+                'email': 'guest@example.com',
+                'message': 'Looking for a rare account.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(ItemRequest.objects.get().game_category, self.game_category)
+
+    def _run_mark_fulfilled(self, queryset):
+        admin_obj = ItemRequestAdmin(ItemRequest, AdminSite())
+        request = RequestFactory().post('/admin/core/itemrequest/')
+        request.user = self.staff
+        with patch.object(admin_obj, 'message_user'), \
+                self.captureOnCommitCallbacks(execute=True):
+            admin_obj.mark_fulfilled(request, queryset)
+
+    def test_fulfilling_guest_request_emails_guest_with_category_link(self):
+        mail.outbox = []
+        item_request = ItemRequest.objects.create(
+            guest_email='guest@example.com',
+            game_category=self.game_category,
+            message='Looking for a Conqueror account.',
+        )
+
+        self._run_mark_fulfilled(ItemRequest.objects.filter(pk=item_request.pk))
+
+        item_request.refresh_from_db()
+        self.assertEqual(item_request.status, 'fulfilled')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['guest@example.com'])
+        self.assertIn('Available', mail.outbox[0].subject)
+        html_body = mail.outbox[0].alternatives[0][0] if mail.outbox[0].alternatives else mail.outbox[0].body
+        self.assertIn('/games/pubg-mobile/accounts', html_body)
+
+    def test_fulfilling_user_request_notifies_and_emails_user(self):
+        mail.outbox = []
+        item_request = ItemRequest.objects.create(
+            user=self.user,
+            game_category=self.game_category,
+            message='Need a mid-tier account.',
+        )
+
+        self._run_mark_fulfilled(ItemRequest.objects.filter(pk=item_request.pk))
+
+        notification = Notification.objects.get(
+            recipient=self.user, notification_type='item_request',
+        )
+        self.assertIn('available', notification.title.lower())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+
+    def test_already_fulfilled_request_is_not_renotified(self):
+        mail.outbox = []
+        item_request = ItemRequest.objects.create(
+            guest_email='guest@example.com',
+            game_category=self.game_category,
+            message='Looking for an account.',
+            status='fulfilled',
+        )
+
+        self._run_mark_fulfilled(ItemRequest.objects.filter(pk=item_request.pk))
+
+        self.assertEqual(len(mail.outbox), 0)
+
+
 @override_settings(
     GOOGLE_OAUTH_CLIENT_ID='test-google-client',
     CORS_ALLOWED_ORIGINS=['http://localhost:3000'],
@@ -3426,6 +3609,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/listings/1/stock/': 'listing_restock',
             '/api/reports/': 'create_report',
             '/api/support/': 'create_support_ticket',
+            '/api/item-requests/': 'create_item_request',
         }
 
         for path, scope in cases.items():
@@ -4254,6 +4438,60 @@ class CategoryDisplayNameTests(TestCase):
         self.assertEqual(category_data['name'], 'Subscriptions')
         self.assertEqual(category_data['slug'], 'subscriptions')
         self.assertEqual(len(response.data['listings']), 1)
+
+
+class GameCatalogListingCountTests(TestCase):
+    """Game list/detail expose active listing counts so the frontend can
+    hide empty games on the homepage and pick the busiest category."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='count_seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.stocked_game = Game.objects.create(name='Stocked Game', slug='stocked-game')
+        self.empty_game = Game.objects.create(name='Empty Game', slug='empty-game')
+        self.accounts = Category.objects.create(name='Accounts', slug='accounts')
+        self.items = Category.objects.create(name='Items', slug='items')
+        self.stocked_gc = GameCategory.objects.create(
+            game=self.stocked_game, category=self.accounts, order=1,
+        )
+        self.empty_gc = GameCategory.objects.create(
+            game=self.stocked_game, category=self.items, order=0,
+        )
+        GameCategory.objects.create(game=self.empty_game, category=self.accounts)
+        Listing.objects.create(
+            seller=self.seller, game_category=self.stocked_gc,
+            title='Active listing', price=Decimal('10.00'), quantity=1, status='active',
+        )
+        Listing.objects.create(
+            seller=self.seller, game_category=self.stocked_gc,
+            title='Paused listing', price=Decimal('10.00'), quantity=1, status='paused',
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_game_list_includes_active_listing_count(self):
+        response = self.client.get('/api/games/')
+
+        self.assertEqual(response.status_code, 200)
+        by_slug = {game['slug']: game for game in response.data}
+        self.assertEqual(by_slug['stocked-game']['listing_count'], 1)
+        self.assertEqual(by_slug['empty-game']['listing_count'], 0)
+
+    def test_game_detail_includes_per_category_listing_count(self):
+        response = self.client.get('/api/games/stocked-game/')
+
+        self.assertEqual(response.status_code, 200)
+        counts = {
+            cat['category']['slug']: cat['listing_count']
+            for cat in response.data['categories']
+        }
+        self.assertEqual(counts['accounts'], 1)
+        self.assertEqual(counts['items'], 0)
 
 
 class GameCategoryListingPaginationTests(TestCase):

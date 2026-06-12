@@ -21,7 +21,9 @@ export default function GameItem({ game }) {
       <div className="game-info">
         <div className="game-name">{game.name}</div>
         <div className="game-meta">
-          {game.category_count} {game.category_count === 1 ? 'category' : 'categories'}
+          {game.listing_count > 0
+            ? `${game.listing_count} ${game.listing_count === 1 ? 'offer' : 'offers'}`
+            : `${game.category_count} ${game.category_count === 1 ? 'category' : 'categories'}`}
         </div>
       </div>
       <div className="game-arrow">›</div>

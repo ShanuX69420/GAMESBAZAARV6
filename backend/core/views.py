@@ -28,10 +28,10 @@ from .models import (
     Game, GameCategory, CategoryOption, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment, SellerCommissionOverride,
-    Review, Notification, Report, SupportTicket, SocialAccount,
+    Review, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
 )
 
-GAME_LIST_CACHE_KEY = 'game-list:v1'
+GAME_LIST_CACHE_KEY = 'game-list:v2'
 GAME_LIST_CACHE_SECONDS = 60
 BROWSE_CACHE_SECONDS = 30
 SELLER_PROFILE_CACHE_SECONDS = 30
@@ -54,6 +54,7 @@ from .serializers import (
     NotificationSerializer,
     CreateReportSerializer, ReportSerializer,
     CreateSupportTicketSerializer, SupportTicketSerializer,
+    CreateItemRequestSerializer,
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
@@ -102,6 +103,7 @@ from .services import (
     verify_email_verification_token,
     consume_email_verification_token,
     send_email_verification_code,
+    notify_staff_about_item_request,
 )
 from . import jazzcash
 from .payments import (
@@ -529,7 +531,14 @@ class GameDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
     lookup_field = 'slug'
     queryset = Game.objects.filter(is_active=True).prefetch_related(
-        'game_categories__category'
+        Prefetch(
+            'game_categories',
+            queryset=GameCategory.objects.select_related('category').annotate(
+                active_listing_count=Count(
+                    'listings', filter=Q(listings__status='active'),
+                )
+            ),
+        )
     )
 
     def retrieve(self, request, *args, **kwargs):
@@ -4404,6 +4413,43 @@ class CreateSupportTicketView(ScopedPostThrottleMixin, APIView):
                 'message': 'Your support ticket has been submitted. We will get back to you soon!',
                 'ticket': SupportTicketSerializer(ticket).data,
             },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CreateItemRequestView(ScopedPostThrottleMixin, APIView):
+    """POST /api/item-requests/ — Buyer asks for an item in a category with no
+    listings yet. Works for guests and logged-in users."""
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'create_item_request'
+
+    def post(self, request):
+        serializer = CreateItemRequestSerializer(
+            data=request.data, context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        game_category = GameCategory.resolve_for_slug(
+            data['game_slug'], data['category_slug'],
+            queryset=GameCategory.objects.select_related('game', 'category'),
+        )
+        if game_category is None:
+            return Response(
+                {'error': 'Game or category not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        item_request = ItemRequest.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            guest_email=data.get('email', '') if not request.user.is_authenticated else '',
+            game_category=game_category,
+            message=data['message'],
+        )
+        notify_staff_about_item_request(item_request)
+
+        return Response(
+            {'message': "Request received! We'll get this stocked and let you know."},
             status=status.HTTP_201_CREATED,
         )
 

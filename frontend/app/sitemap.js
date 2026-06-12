@@ -48,23 +48,18 @@ export default async function sitemap() {
         const categories = (game.categories || []).length
           ? game.categories
           : await fetchGameCategories(game.slug);
+        // Empty categories are noindexed until they have stock — keep them
+        // out of the sitemap too so crawl budget goes to real pages.
         const categorySlugs = [...new Set(categories
+          .filter((gameCategory) => (gameCategory?.listing_count || 0) > 0)
           .map(categorySlugFromGameCategory)
           .filter(Boolean))];
 
-        if (categorySlugs.length > 0) {
-          for (const categorySlug of categorySlugs) {
-            gamePages.push({
-              url: pageUrl(siteUrl, `/games/${game.slug}/${categorySlug}`),
-              changeFrequency: 'daily',
-              priority: 0.7,
-            });
-          }
-        } else {
+        for (const categorySlug of categorySlugs) {
           gamePages.push({
-            url: pageUrl(siteUrl, `/games/${game.slug}`),
-            changeFrequency: 'weekly',
-            priority: 0.8,
+            url: pageUrl(siteUrl, `/games/${game.slug}/${categorySlug}`),
+            changeFrequency: 'daily',
+            priority: 0.7,
           });
         }
       }

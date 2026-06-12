@@ -1060,6 +1060,7 @@ class Notification(models.Model):
         ('withdraw_approved', 'Withdraw Approved'),    # User: admin approved withdrawal
         ('withdraw_rejected', 'Withdraw Rejected'),    # User: admin rejected withdrawal
         ('admin_message', 'Admin Message'),            # User: admin sent a direct message
+        ('item_request', 'Item Request'),              # Staff: buyer asked for an item with no listings
     ]
 
     recipient = models.ForeignKey(
@@ -1263,3 +1264,44 @@ class SupportTicket(models.Model):
     def __str__(self):
         user_label = self.user.username if self.user else (self.guest_email or 'Guest')
         return f"Ticket #{self.pk} — {user_label} — {self.subject[:40]}"
+
+
+class ItemRequest(models.Model):
+    """Buyer demand captured from a category with no listings ("Request this item")."""
+    STATUS_CHOICES = [
+        ('open', 'Open'),
+        ('fulfilled', 'Fulfilled'),
+        ('closed', 'Closed'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='item_requests',
+        help_text='Null for guest (non-logged-in) submissions',
+    )
+    guest_email = models.EmailField(
+        blank=True, default='',
+        help_text='Email for non-logged-in users',
+    )
+    game_category = models.ForeignKey(
+        GameCategory, on_delete=models.CASCADE, related_name='item_requests',
+    )
+    message = models.TextField(help_text='What the buyer is looking for')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
+    admin_note = models.TextField(blank=True, default='',
+                                  help_text='Internal admin notes (not visible to user)')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['status', '-created_at'],
+                name='item_request_status_idx',
+            ),
+        ]
+
+    def __str__(self):
+        user_label = self.user.username if self.user else (self.guest_email or 'Guest')
+        return f"Request #{self.pk} — {user_label} — {self.game_category}"

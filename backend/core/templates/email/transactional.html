@@ -24,6 +24,12 @@
 </div>
 {% endif %}
 
+{% if cta_url %}
+<div class="cta-wrapper">
+  <a href="{{ cta_url }}" class="cta-button">{{ cta_label|default:"Open GamesBazaar" }}</a>
+</div>
+{% endif %}
+
 {% if admin_note %}
 <div class="admin-note">
   <p class="note-label">Admin Note</p>

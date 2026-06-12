@@ -27,6 +27,7 @@ const NOTIF_ICONS = {
   order_disputed: '⚠️',
   order_cancelled: '❌',
   new_review: '⭐',
+  item_request: '📨',
 };
 
 export default function Navbar() {
