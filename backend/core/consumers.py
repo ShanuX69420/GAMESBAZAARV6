@@ -105,7 +105,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     async def chat_message(self, event):
         """Send message to WebSocket client."""
-        msg = event['message']
+        # Copy before mutating: with the Redis channel layer, consumers in the
+        # same process receive the *same* dict object, so writing is_mine in
+        # place races with the other participant's handler across the await
+        # below (receiver would echo the sender's is_mine=True as "You").
+        msg = dict(event['message'])
         is_mine = (msg['sender_id'] == self.user.id)
         msg['is_mine'] = is_mine
 

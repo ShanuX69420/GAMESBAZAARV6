@@ -5832,6 +5832,47 @@ class ChatWebSocketTicketIntegrationTests(TransactionTestCase):
 
         async_to_sync(run_jwt_rejection)()
 
+    def test_chat_message_handler_immune_to_shared_event_dict(self):
+        """channels_redis hands the *same* event dict to every consumer in the
+        process, so the handler must not leak one connection's is_mine into
+        another's payload (live bug: receiver saw incoming messages as "You")."""
+        from asgiref.sync import async_to_sync
+
+        from .consumers import ChatConsumer
+
+        sender_consumer = ChatConsumer()
+        sender_consumer.user = self.buyer
+        receiver_consumer = ChatConsumer()
+        receiver_consumer.user = self.seller
+
+        payloads = {}
+
+        def make_send_json(key):
+            async def _send_json(content):
+                payloads[key] = content
+            return _send_json
+
+        sender_consumer.send_json = make_send_json('sender')
+        receiver_consumer.send_json = make_send_json('receiver')
+
+        # is_mine=True mimics the REST send path, where the broadcast payload
+        # was serialized with the sender's request.
+        shared_event = {
+            'message': {'id': 123, 'sender_id': self.buyer.id, 'is_mine': True},
+        }
+
+        async def sender_runs_during_receiver_await(message_id):
+            # Simulates the event loop scheduling the sender's handler while
+            # the receiver is parked on its mark-as-read database call.
+            await sender_consumer.chat_message(shared_event)
+
+        receiver_consumer.mark_message_read = sender_runs_during_receiver_await
+
+        async_to_sync(receiver_consumer.chat_message)(shared_event)
+
+        self.assertTrue(payloads['sender']['message']['is_mine'])
+        self.assertFalse(payloads['receiver']['message']['is_mine'])
+
     def test_websocket_message_returns_server_validated_listing_reference(self):
         from asgiref.sync import async_to_sync
         from gamesbazaar.asgi import application
