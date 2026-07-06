@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 import hashlib
+import json
 import logging
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
@@ -3033,6 +3034,11 @@ class JazzCashIPNView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Gateway audits ask for the complete IPN exchange, so keep the full
+        # notification and our acknowledgement in the logs.
+        logger.info('JazzCash IPN request: %s',
+                    json.dumps(data, sort_keys=True, default=str))
+
         if not jazzcash.verify_secure_hash(data):
             logger.warning('JazzCash IPN rejected: secure hash verification failed')
             return Response(
@@ -3058,7 +3064,9 @@ class JazzCashIPNView(APIView):
                 gateway_amount=data.get('pp_Amount'),
             )
 
-        return Response(self._ack('000', 'IPN received successfully'))
+        ack = self._ack('000', 'IPN received successfully')
+        logger.info('JazzCash IPN response: %s', json.dumps(ack, sort_keys=True))
+        return Response(ack)
 
 
 # ── Order views ───────────────────────────────────────────────────────────────
