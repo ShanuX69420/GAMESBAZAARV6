@@ -361,6 +361,11 @@ class TopUpRequestAdmin(admin.ModelAdmin):
               'payment_proof', 'status', 'admin_note', 'reviewed_at', 'created_at']
     actions = ['approve_topups', 'reject_topups']
 
+    def has_delete_permission(self, request, obj=None):
+        # Deleting an approved row frees its transaction_id for a second
+        # credit — uniq_active_topup_method_txid_ci only spans live rows.
+        return False
+
     def _create_topup_notification(self, topup):
         """Create in-app notification for top-up status change."""
         if topup.status == 'approved':
@@ -503,6 +508,11 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
               'account_details_display', 'bank_name',
               'status', 'admin_note', 'payment_receipt', 'reviewed_at', 'created_at']
     actions = ['approve_withdrawals', 'reject_withdrawals']
+
+    def has_delete_permission(self, request, obj=None):
+        # The amount is deducted from the wallet at request time; deleting
+        # the row would strand it with no approve/reject path left.
+        return False
 
     @admin.display(description='Account title')
     def account_title_display(self, obj):
@@ -651,6 +661,10 @@ class OrderAdmin(admin.ModelAdmin):
                        'created_at', 'updated_at', 'chat_link']
     exclude = ['delivery_note', 'conversation']
     actions = ['refund_and_cancel', 'release_to_seller']
+
+    def has_delete_permission(self, request, obj=None):
+        # Escrowed funds hang off this row; every refund path needs it.
+        return False
 
     @admin.display(description='Commission')
     def commission_display(self, obj):
@@ -809,6 +823,13 @@ class WalletAdmin(admin.ModelAdmin):
     search_fields = ['user__username']
     readonly_fields = ['user', 'balance', 'updated_at', 'created_at']
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Deleting a wallet cascades its entire transaction history.
+        return False
+
 
 # ── Hidden from Sidebar (still accessible via links) ────────────────────────
 
@@ -823,6 +844,9 @@ class PlatformLedgerEntryAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -935,6 +959,16 @@ class WalletTransactionAdmin(HiddenModelAdmin):
     list_display = ['wallet', 'transaction_type', 'amount', 'balance_after', 'created_at']
     list_filter = ['transaction_type']
     search_fields = ['wallet__user__username', 'description']
+
+    # The ledger is append-only: balances are audited against it.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Review)
