@@ -705,6 +705,11 @@ class GameCategoryDetailView(APIView):
                     offer_count=Count('listings', filter=offer_stats_q),
                 )
             )
+            # Once the buyer applies a filter (e.g. gift-card Region), options
+            # with no offers under it are just noise — show only what's buyable.
+            if any(k.startswith('filter_') and v
+                   for k, v in request.query_params.items()):
+                options = [opt for opt in options if opt.offer_count]
 
             requested_option = request.query_params.get('option', '').strip()
             option_ids = {opt.id for opt in options}
