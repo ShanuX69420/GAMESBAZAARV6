@@ -95,7 +95,7 @@ export default function CreateListingPage() {
     if (isAutoDelivery) {
       setDeliveryTime('Instant');
     } else {
-      setDeliveryTime('1-2 Hours');
+      setDeliveryTime('10-15 Minutes');
     }
   }, [isAutoDelivery]);
 
