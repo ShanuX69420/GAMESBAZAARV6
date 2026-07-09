@@ -599,7 +599,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       {/* Offer mode: option grid + buy box + competing seller offers */}
       {isOfferMode && (
       <section className="section" style={{ paddingTop: 0 }}>
-        {options.length === 0 ? (
+        {options.length === 0 && !Object.values(activeFilters).some(Boolean) ? (
           <>
             <div className="empty-state">
               <div className="empty-state-icon">🧩</div>
@@ -661,6 +661,11 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                 {hasGateSteps && <span className="offer-step-badge">{gateFilters.length + 1}</span>}
                 Options
               </h2>
+              {options.length === 0 && (
+                <div className="empty-state" style={{ padding: '24px 0' }}>
+                  <p>Nothing is available for this selection right now — try a different choice above.</p>
+                </div>
+              )}
               <div className={`offer-options-grid ${!gateSatisfied ? 'offer-options-grid-disabled' : ''}`}>
                 {options.map((opt) => (
                   <button
