@@ -1079,6 +1079,8 @@ class Notification(models.Model):
         ('withdraw_rejected', 'Withdraw Rejected'),    # User: admin rejected withdrawal
         ('admin_message', 'Admin Message'),            # User: admin sent a direct message
         ('item_request', 'Item Request'),              # Staff: buyer asked for an item with no listings
+        ('seller_approved', 'Seller Application Approved'),  # User: admin approved seller application
+        ('seller_rejected', 'Seller Application Rejected'),  # User: admin rejected seller application
     ]
 
     recipient = models.ForeignKey(

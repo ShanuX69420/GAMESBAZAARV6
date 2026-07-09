@@ -16,5 +16,13 @@ export function notificationDestinationPath(notification) {
     return '/inbox';
   }
 
+  if (notification?.notification_type === 'seller_approved') {
+    return '/dashboard';
+  }
+
+  if (notification?.notification_type === 'seller_rejected') {
+    return '/seller/apply';
+  }
+
   return notificationOrderPath(notification);
 }

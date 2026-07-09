@@ -28,6 +28,8 @@ const NOTIF_ICONS = {
   order_cancelled: '❌',
   new_review: '⭐',
   item_request: '📨',
+  seller_approved: '🏪',
+  seller_rejected: '🚫',
 };
 
 export default function Navbar() {

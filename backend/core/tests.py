@@ -7127,6 +7127,93 @@ class AdminDashboardStatsTests(TestCase):
         self.assertEqual(payload['recent_orders'][0]['listing_title'], listing.title)
 
 
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class SellerReviewNotificationTests(TestCase):
+    """Approving/rejecting seller applications notifies and emails the applicant."""
+
+    def setUp(self):
+        mail.outbox = []
+        self.applicant = User.objects.create_user(
+            username='seller_applicant',
+            email='applicant@example.com',
+            password='password123',
+        )
+        profile = self.applicant.profile
+        profile.seller_status = 'pending'
+        profile.seller_application_note = 'I want to sell game keys.'
+        profile.save(update_fields=['seller_status', 'seller_application_note'])
+
+        self.site = AdminSite()
+        self.request = RequestFactory().post('/admin/')
+        self.request.user = User.objects.create_superuser(
+            username='seller_review_admin',
+            email='seller-admin@example.com',
+            password='password123',
+        )
+        self.admin_obj = UserProfileAdmin(UserProfile, self.site)
+
+    def test_approve_action_notifies_and_emails_applicant(self):
+        with patch.object(self.admin_obj, 'message_user'), \
+                self.captureOnCommitCallbacks(execute=True):
+            self.admin_obj.approve_sellers(
+                self.request, UserProfile.objects.filter(user=self.applicant),
+            )
+
+        profile = UserProfile.objects.get(user=self.applicant)
+        self.assertEqual(profile.seller_status, 'approved')
+        self.assertIsNotNone(profile.seller_reviewed_at)
+
+        notification = Notification.objects.get(
+            recipient=self.applicant, notification_type='seller_approved',
+        )
+        self.assertIn('approved', notification.title.lower())
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['applicant@example.com'])
+        self.assertIn('Seller Application Approved', mail.outbox[0].subject)
+        self.assertIn('start selling', mail.outbox[0].body)
+
+    def test_reject_action_notifies_and_emails_applicant(self):
+        with patch.object(self.admin_obj, 'message_user'), \
+                self.captureOnCommitCallbacks(execute=True):
+            self.admin_obj.reject_sellers(
+                self.request, UserProfile.objects.filter(user=self.applicant),
+            )
+
+        profile = UserProfile.objects.get(user=self.applicant)
+        self.assertEqual(profile.seller_status, 'rejected')
+        self.assertIsNotNone(profile.seller_reviewed_at)
+
+        notification = Notification.objects.get(
+            recipient=self.applicant, notification_type='seller_rejected',
+        )
+        self.assertIn('not approved', notification.title.lower())
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['applicant@example.com'])
+        self.assertIn('Seller Application Update', mail.outbox[0].subject)
+        self.assertIn('apply again', mail.outbox[0].body)
+
+    def test_actions_skip_non_pending_profiles(self):
+        profile = UserProfile.objects.get(user=self.applicant)
+        profile.seller_status = 'approved'
+        profile.save(update_fields=['seller_status'])
+
+        with patch.object(self.admin_obj, 'message_user') as message_user, \
+                self.captureOnCommitCallbacks(execute=True):
+            self.admin_obj.reject_sellers(
+                self.request, UserProfile.objects.filter(user=self.applicant),
+            )
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.seller_status, 'approved')
+        self.assertFalse(Notification.objects.filter(recipient=self.applicant).exists())
+        self.assertEqual(mail.outbox, [])
+        message_user.assert_called_once_with(
+            self.request, '0 seller(s) rejected and notified.',
+        )
+
+
 class AdminChatProtectionTests(TestCase):
     def setUp(self):
         self.site = GamesBazaarAdminSite(name='test_admin')
@@ -7224,6 +7311,31 @@ class AdminChatProtectionTests(TestCase):
                 message='Please share a screenshot.',
             ).exists()
         )
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_admin_chatbox_message_emails_participants(self):
+        User.objects.filter(pk=self.buyer.pk).update(email='chat-buyer@example.com')
+        User.objects.filter(pk=self.seller.pk).update(email='chat-seller@example.com')
+        mail.outbox = []
+
+        request = self.factory.post(
+            f'/admin/core/conversation/{self.conversation.pk}/chatbox/',
+            {'message': 'Please share your WhatsApp number for verification.'},
+        )
+        request.user = self.sender_admin
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.site.conversation_chatbox_view(request, self.conversation.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 2)
+        recipients = sorted(address for message in mail.outbox for address in message.to)
+        self.assertEqual(recipients, ['chat-buyer@example.com', 'chat-seller@example.com'])
+        for message in mail.outbox:
+            self.assertIn('New Message From Our Team', message.subject)
+            self.assertIn(
+                'Please share your WhatsApp number for verification.', message.body,
+            )
 
     def test_admin_message_image_view_requires_conversation_view_permission(self):
         message = Message.objects.create(

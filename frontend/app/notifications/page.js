@@ -19,6 +19,8 @@ const NOTIF_ICONS = {
   withdraw_rejected: '🚫',
   admin_message: '💬',
   item_request: '📨',
+  seller_approved: '🏪',
+  seller_rejected: '🚫',
 };
 
 const NOTIF_LABELS = {
@@ -34,6 +36,8 @@ const NOTIF_LABELS = {
   withdraw_rejected: 'Withdrawal Rejected',
   admin_message: 'Admin Message',
   item_request: 'Item Request',
+  seller_approved: 'Seller Application Approved',
+  seller_rejected: 'Seller Application Rejected',
 };
 
 export default function NotificationsPage() {

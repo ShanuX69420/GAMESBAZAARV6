@@ -17,6 +17,13 @@ describe('notification routing helpers', () => {
       .toBe('/inbox');
   });
 
+  it('routes seller application results to the right pages', () => {
+    expect(notificationDestinationPath({ notification_type: 'seller_approved' }))
+      .toBe('/dashboard');
+    expect(notificationDestinationPath({ notification_type: 'seller_rejected' }))
+      .toBe('/seller/apply');
+  });
+
   it('falls back to order destinations for order notifications', () => {
     expect(notificationDestinationPath({
       notification_type: 'new_order',

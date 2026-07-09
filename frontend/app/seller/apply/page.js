@@ -61,6 +61,7 @@ export default function SellerApplyPage() {
               <div className="seller-apply-success-icon">⏳</div>
               <h1>Application Submitted!</h1>
               <p>Your seller application is under review. We&apos;ll notify you once it&apos;s been processed.</p>
+              <p>Our team may message you here on GamesBazaar if we need more details (for example, a contact number for verification) — keep an eye on your inbox and email.</p>
               <Link href="/" className="btn btn-primary">Back to Home</Link>
             </div>
           ) : sellerData?.seller_status === 'rejected' ? (

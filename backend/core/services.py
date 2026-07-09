@@ -280,24 +280,76 @@ def _build_order_notification_email(notification):
     return None
 
 
+def _build_account_notification_email(notification):
+    """Email kwargs for account-level notifications with no linked order."""
+    notification_type = notification.notification_type
+
+    if notification_type == 'admin_message':
+        return dict(
+            subject='GamesBazaar — New Message From Our Team',
+            message_body=(
+                'The GamesBazaar team sent you a message. '
+                'You can reply from your inbox on the site.'
+            ),
+            admin_note=notification.message,
+            status_text='New Message',
+            status_class='info',
+            cta_url=f'{settings.PUBLIC_SITE_URL}/inbox',
+            cta_label='Open Inbox & Reply',
+        )
+
+    if notification_type == 'seller_approved':
+        return dict(
+            subject='GamesBazaar — Seller Application Approved',
+            message_body=(
+                'Congratulations! Your seller application has been approved. '
+                'You can now create listings and start selling on GamesBazaar.'
+            ),
+            status_text='Approved',
+            status_class='success',
+            cta_url=f'{settings.PUBLIC_SITE_URL}/dashboard',
+            cta_label='Open Seller Dashboard',
+        )
+
+    if notification_type == 'seller_rejected':
+        return dict(
+            subject='GamesBazaar — Seller Application Update',
+            message_body=(
+                'Unfortunately your seller application was not approved this time. '
+                'You are welcome to apply again with more details about what you '
+                'plan to sell. If our team messaged you on the site, replying '
+                'there is the fastest way to sort things out.'
+            ),
+            status_text='Not Approved',
+            status_class='danger',
+            cta_url=f'{settings.PUBLIC_SITE_URL}/seller/apply',
+            cta_label='Re-apply as Seller',
+        )
+
+    return None
+
+
 def send_notification_email(notification):
-    """Send email only for marketplace events that should reach the inbox."""
-    if not notification.order_id:
-        return False
+    """Send email only for events that should reach the recipient's mailbox."""
+    if notification.order_id:
+        email_payload = _build_order_notification_email(notification)
+        if email_payload is None:
+            return False
 
-    email_payload = _build_order_notification_email(notification)
-    if email_payload is None:
-        return False
+        subject_label, message_body, detail_rows, (status_text, status_class) = email_payload
+        return send_transactional_email(
+            notification.recipient,
+            subject=f'GamesBazaar — {subject_label}',
+            message_body=message_body,
+            detail_rows=detail_rows,
+            status_text=status_text,
+            status_class=status_class,
+        )
 
-    subject_label, message_body, detail_rows, (status_text, status_class) = email_payload
-    return send_transactional_email(
-        notification.recipient,
-        subject=f'GamesBazaar — {subject_label}',
-        message_body=message_body,
-        detail_rows=detail_rows,
-        status_text=status_text,
-        status_class=status_class,
-    )
+    email_kwargs = _build_account_notification_email(notification)
+    if email_kwargs is None:
+        return False
+    return send_transactional_email(notification.recipient, **email_kwargs)
 
 
 def create_notification(*, recipient, notification_type, title, message='', order=None, review=None):
