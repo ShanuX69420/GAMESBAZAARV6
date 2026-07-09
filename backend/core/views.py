@@ -699,11 +699,14 @@ class GameCategoryDetailView(APIView):
                     filter_id = key.replace('filter_', '')
                     offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
 
+            # annotate() drops CategoryOption.Meta.ordering (Django strips
+            # default ordering on aggregation) — re-apply it explicitly so
+            # denominations render low -> high.
             options = list(
                 game_category.options.annotate(
                     min_price=Min('listings__price', filter=offer_stats_q),
                     offer_count=Count('listings', filter=offer_stats_q),
-                )
+                ).order_by('order', 'name')
             )
             # Once the buyer applies a filter (e.g. gift-card Region), options
             # with no offers under it are just noise — show only what's buyable.

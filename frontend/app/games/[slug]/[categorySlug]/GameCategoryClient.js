@@ -688,7 +688,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     )}
                     <span className="offer-option-name">{opt.name}</span>
                     {opt.min_price !== null && opt.min_price !== undefined ? (
-                      <span className="offer-option-price">PKR {Number(opt.min_price).toLocaleString()}</span>
+                      <span className="offer-option-price">From Rs {Number(opt.min_price).toLocaleString()}</span>
                     ) : (
                       <span className="offer-option-price offer-option-price-empty">No offers yet</span>
                     )}
