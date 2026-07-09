@@ -711,7 +711,7 @@ class CreateListingSerializer(serializers.ModelSerializer):
             attrs['quantity'] = len(lines)
         else:
             # Manual listings cannot select Instant delivery
-            delivery_time = attrs.get('delivery_time', '1-2 Hours')
+            delivery_time = attrs.get('delivery_time', '10-15 Minutes')
             if delivery_time == 'Instant':
                 raise serializers.ValidationError({
                     'delivery_time': 'Instant delivery is only available for automated delivery listings.',

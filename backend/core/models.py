@@ -439,8 +439,8 @@ class Listing(models.Model):
     # Stores filter values as JSON: {"filter_id": "option_value", ...}
     filter_values = models.JSONField(default=dict, blank=True)
     delivery_time = models.CharField(
-        max_length=50, default='1-2 Hours', blank=True,
-        help_text='Estimated delivery time (e.g., Instant, 1-2 Hours, 24 Hours)',
+        max_length=50, default='10-15 Minutes', blank=True,
+        help_text='Estimated delivery time (e.g., Instant, 10-15 Minutes, 1-2 Hours)',
     )
     is_auto_delivery = models.BooleanField(
         default=False,

@@ -59,7 +59,7 @@ function DeliveryTimeBadge({ listing }) {
         <circle cx="12" cy="12" r="10"/>
         <polyline points="12 6 12 12 16 14"/>
       </svg>
-      {listing.delivery_time || '1-2 Hours'}
+      {listing.delivery_time || '10-15 Minutes'}
     </span>
   );
 }
@@ -1243,7 +1243,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                           <circle cx="12" cy="12" r="10"/>
                           <polyline points="12 6 12 12 16 14"/>
                         </svg>
-                        {listing.delivery_time || '1-2 Hours'}
+                        {listing.delivery_time || '10-15 Minutes'}
                       </>
                     )}
                   </div>

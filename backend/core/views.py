@@ -437,6 +437,10 @@ def apply_recommended_listing_ordering(listings_qs):
     )
     fulfillment_score = Case(
         When(is_auto_delivery=True, then=Value(12)),
+        When(delivery_time__in=[
+            '2-3 Minutes', '5 Minutes', '10-15 Minutes',
+            '15-30 Minutes', '30-60 Minutes',
+        ], then=Value(8)),
         When(delivery_time__in=['1-2 Hours', '1-2 hours'], then=Value(5)),
         default=Value(0),
         output_field=IntegerField(),
@@ -803,12 +807,17 @@ class GameCategoryDetailView(APIView):
         # Sorting / Ordering
         delivery_speed_rank = Case(
             When(delivery_time='Instant', then=Value(0)),
-            When(delivery_time='1-2 Hours', then=Value(1)),
-            When(delivery_time='2-6 Hours', then=Value(2)),
-            When(delivery_time='6-12 Hours', then=Value(3)),
-            When(delivery_time='12-24 Hours', then=Value(4)),
-            When(delivery_time='1-3 Days', then=Value(5)),
-            default=Value(6),
+            When(delivery_time='2-3 Minutes', then=Value(1)),
+            When(delivery_time='5 Minutes', then=Value(2)),
+            When(delivery_time='10-15 Minutes', then=Value(3)),
+            When(delivery_time='15-30 Minutes', then=Value(4)),
+            When(delivery_time='30-60 Minutes', then=Value(5)),
+            When(delivery_time='1-2 Hours', then=Value(6)),
+            When(delivery_time='2-6 Hours', then=Value(7)),
+            When(delivery_time='6-12 Hours', then=Value(8)),
+            When(delivery_time='12-24 Hours', then=Value(9)),
+            When(delivery_time='1-3 Days', then=Value(10)),
+            default=Value(11),
             output_field=IntegerField(),
         )
         ALLOWED_ORDERINGS = {

@@ -11,7 +11,9 @@ from core.serializers import CreateListingSerializer
 # Mirrors the create-listing form dropdown; the serializer itself only
 # rejects 'Instant' for manual listings, so enforce the rest here to keep
 # bulk-imported data consistent with UI-created listings.
-MANUAL_DELIVERY_TIMES = ['1-2 Hours', '2-6 Hours', '6-12 Hours', '12-24 Hours', '1-3 Days']
+MANUAL_DELIVERY_TIMES = ['2-3 Minutes', '5 Minutes', '10-15 Minutes', '15-30 Minutes',
+                         '30-60 Minutes', '1-2 Hours', '2-6 Hours', '6-12 Hours',
+                         '12-24 Hours', '1-3 Days']
 
 TRUTHY = {'yes', 'y', 'true', '1', 'instant', 'auto'}
 FALSY = {'', 'no', 'n', 'false', '0', 'manual', 'none'}
@@ -164,7 +166,7 @@ class Command(BaseCommand):
         if is_auto:
             delivery_time = 'Instant'
         else:
-            delivery_time = delivery_time or '1-2 Hours'
+            delivery_time = delivery_time or '10-15 Minutes'
             if delivery_time not in MANUAL_DELIVERY_TIMES:
                 raise RowError(f'delivery_time must be one of {MANUAL_DELIVERY_TIMES}, '
                                f'got "{delivery_time}".')

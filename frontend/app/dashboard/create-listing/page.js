@@ -26,7 +26,7 @@ export default function CreateListingPage() {
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
   const [minQuantity, setMinQuantity] = useState('');
-  const [deliveryTime, setDeliveryTime] = useState('1-2 Hours');
+  const [deliveryTime, setDeliveryTime] = useState('10-15 Minutes');
   const [isAutoDelivery, setIsAutoDelivery] = useState(false);
   const [autoDeliveryData, setAutoDeliveryData] = useState('');
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
@@ -495,6 +495,11 @@ export default function CreateListingPage() {
                     value={deliveryTime}
                     onChange={(e) => setDeliveryTime(e.target.value)}
                   >
+                    <option value="2-3 Minutes">2-3 Minutes</option>
+                    <option value="5 Minutes">5 Minutes</option>
+                    <option value="10-15 Minutes">10-15 Minutes</option>
+                    <option value="15-30 Minutes">15-30 Minutes</option>
+                    <option value="30-60 Minutes">30-60 Minutes</option>
                     <option value="1-2 Hours">1-2 Hours</option>
                     <option value="2-6 Hours">2-6 Hours</option>
                     <option value="6-12 Hours">6-12 Hours</option>
