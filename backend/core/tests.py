@@ -10093,3 +10093,68 @@ class OrderChatMessageTests(TestCase):
         self.assertIn('dispute', notice.content.lower())
         self.assertIn('chatseller', notice.content)
 
+
+class AdminDirectTopUpCreditTests(TestCase):
+    """Admin-created top-ups (WhatsApp flow) credit the wallet immediately."""
+
+    def setUp(self):
+        mail.outbox = []
+        self.user = User.objects.create_user(
+            username='wa_buyer',
+            email='wa-buyer@example.com',
+            password='password123',
+        )
+        self.admin_user = User.objects.create_superuser(
+            username='wa_admin',
+            email='wa-admin@example.com',
+            password='password123',
+        )
+        self.client.force_login(self.admin_user)
+
+    def test_add_form_credits_wallet_and_notifies(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/admin/core/topuprequest/add/',
+                {
+                    'user': self.user.pk,
+                    'amount': '1500.00',
+                    'payment_method': 'WhatsApp',
+                    'admin_note': 'Easypaisa payment received',
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        topup = TopUpRequest.objects.get(user=self.user)
+        self.assertEqual(topup.status, 'approved')
+        self.assertEqual(topup.payment_method, 'WhatsApp')
+        self.assertIsNotNone(topup.reviewed_at)
+
+        wallet = Wallet.objects.get(user=self.user)
+        self.assertEqual(wallet.balance, Decimal('1500.00'))
+        txn = WalletTransaction.objects.get(
+            wallet=wallet, reference_id=f'topup_{topup.pk}',
+        )
+        self.assertEqual(txn.transaction_type, 'topup_approved')
+
+        notification = Notification.objects.get(
+            recipient=self.user, notification_type='topup_approved',
+        )
+        self.assertIn('1500', notification.title)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Top-up Approved', mail.outbox[0].subject)
+
+    def test_add_form_rejects_amount_below_one(self):
+        response = self.client.post(
+            '/admin/core/topuprequest/add/',
+            {
+                'user': self.user.pk,
+                'amount': '0.50',
+                'payment_method': 'WhatsApp',
+                'admin_note': '',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(TopUpRequest.objects.exists())
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, Decimal('0.00'))
+

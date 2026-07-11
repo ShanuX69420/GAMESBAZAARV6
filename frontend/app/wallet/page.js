@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
-  getWallet, requestTopUp, getTopUpRequests, requestWithdraw, getWithdrawRequests,
+  getWallet, getTopUpRequests, requestWithdraw, getWithdrawRequests,
   initiateJazzCashTopUp, pollJazzCashPayment,
 } from '@/lib/api';
 
@@ -19,6 +19,8 @@ const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to 
 const MIN_WITHDRAW_AMOUNT = 500;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 const JAZZCASH_MOBILE_MESSAGE = 'Enter a valid JazzCash mobile number (e.g., 03001234567).';
+const WHATSAPP_NUMBER = '923712101998';
+const WHATSAPP_NUMBER_DISPLAY = '0371 2101998';
 
 export default function WalletPage() {
   const { user, loading } = useAuth();
@@ -32,12 +34,9 @@ export default function WalletPage() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
   const [topUpMethod, setTopUpMethod] = useState('jazzcash');
   const [jazzCashMobile, setJazzCashMobile] = useState('');
   const [jazzCashWaiting, setJazzCashWaiting] = useState(false);
-  const [txnId, setTxnId] = useState('');
-  const [proofFile, setProofFile] = useState(null);
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('JazzCash');
   const [withdrawAccountTitle, setWithdrawAccountTitle] = useState('');
@@ -152,43 +151,6 @@ export default function WalletPage() {
     }
   }
 
-  async function handleTopUp(e) {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-    if (Number(topUpAmount) < MIN_TOP_UP_AMOUNT) {
-      setError(MIN_TOP_UP_MESSAGE);
-      return;
-    }
-    if (Number(topUpAmount) > MAX_TOP_UP_AMOUNT) {
-      setError(MAX_TOP_UP_MESSAGE);
-      return;
-    }
-    if (!txnId.trim()) {
-      setError('Transaction ID / reference is required.');
-      return;
-    }
-    if (!proofFile) {
-      setError('Payment proof screenshot is required.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await requestTopUp(topUpAmount, paymentMethod, txnId.trim(), proofFile);
-      setSuccess('Top-up request submitted! Admin will review it shortly.');
-      setTopUpAmount('');
-      setPaymentMethod('Bank Transfer');
-      setTxnId('');
-      setProofFile(null);
-      setShowTopUp(false);
-      await loadData();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function handleJazzCashTopUp(e) {
     e.preventDefault();
     setError('');
@@ -287,6 +249,8 @@ export default function WalletPage() {
   const currentBalance = walletData ? Number(walletData.balance) : 0;
   const heldBalance = walletData ? Number(walletData.held_balance || 0) : 0;
   const withdrawExceedsBalance = withdrawAmount !== '' && Number(withdrawAmount) > currentBalance;
+  const whatsappMessage = `Hi! I want to top up my GamesBazaar wallet.\nUsername: ${user?.username || ''}${topUpAmount ? `\nAmount: Rs ${topUpAmount}` : ''}`;
+  const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
 
   if (loading || !user) {
     return (
@@ -359,7 +323,7 @@ export default function WalletPage() {
                 onClick={() => { setTopUpMethod('manual'); setError(''); setSuccess(''); }}
                 disabled={submitting}
               >
-                🏦 Bank Transfer — Manual
+                💬 WhatsApp
               </button>
             </div>
           )}
@@ -422,106 +386,57 @@ export default function WalletPage() {
           {activeTopUpMethod === 'manual' && (
           <>
           <p className="card-text">
-            Send payment via Bank Transfer, then submit your details below.
-            Admin will verify and credit your wallet.
+            Message us on WhatsApp with the amount you want to add. We&apos;ll
+            confirm the payment with you and credit your wallet within minutes.
           </p>
 
-          {/* Payment Details Card */}
+          {/* WhatsApp Details Card */}
           <div className="topup-payment-details">
             <div className="topup-payment-details-header">
-              <span className="topup-payment-details-icon">🏦</span>
-              <strong>Send Payment To</strong>
+              <span className="topup-payment-details-icon">💬</span>
+              <strong>Top Up via WhatsApp</strong>
             </div>
             <div className="topup-payment-details-body">
               <div className="topup-detail-row">
-                <span className="topup-detail-label">Bank</span>
-                <span className="topup-detail-value">UBL (United Bank Limited)</span>
+                <span className="topup-detail-label">WhatsApp</span>
+                <span className="topup-detail-value">{WHATSAPP_NUMBER_DISPLAY}</span>
               </div>
               <div className="topup-detail-row">
-                <span className="topup-detail-label">Account Title</span>
-                <span className="topup-detail-value">GAMES BAZAAR</span>
-              </div>
-              <div className="topup-detail-row topup-detail-row-iban">
-                <span className="topup-detail-label">IBAN</span>
-                <span className="topup-detail-value topup-iban-value">
-                  <code>PK54UNIL0109000333668953</code>
-                  <button
-                    type="button"
-                    className="topup-copy-btn"
-                    onClick={() => {
-                      navigator.clipboard.writeText('PK54UNIL0109000333668953');
-                      setSuccess('IBAN copied to clipboard!');
-                      setTimeout(() => setSuccess(''), 2000);
-                    }}
-                    title="Copy IBAN"
-                  >
-                    📋
-                  </button>
-                </span>
+                <span className="topup-detail-label">Name</span>
+                <span className="topup-detail-value">Games Bazaar</span>
               </div>
             </div>
             <div className="topup-payment-details-footer">
-              <span>⚠️</span>
-              <span>Send the exact amount you want to top up. After sending, fill out the form below with your transaction details. Need help? <a href="https://wa.me/923133625780" target="_blank" rel="noopener noreferrer" className="topup-wa-link">Message us on WhatsApp</a></span>
+              <span>⚡</span>
+              <span>Tap the button below — your username is included in the message automatically, so we know exactly which account to credit.</span>
             </div>
           </div>
 
-          <form onSubmit={handleTopUp} className="topup-form">
+          <div className="topup-form">
             <div className="form-group">
-              <label className="form-label">Amount (PKR) *</label>
+              <label className="form-label">Amount (PKR)</label>
               <input
                 type="number"
                 className="form-input"
                 value={topUpAmount}
-                onChange={handleTopUpAmountChange}
+                onChange={(e) => setTopUpAmount(e.target.value)}
                 placeholder={`Min. ${MIN_TOP_UP_AMOUNT}`}
                 min={MIN_TOP_UP_AMOUNT}
                 step="0.01"
-                required
               />
               {topUpBelowMin && (
                 <span className="form-hint form-error-text">{MIN_TOP_UP_MESSAGE}</span>
               )}
-              {amountOverLimit && (
-                <span className="form-hint form-error-text">{MAX_TOP_UP_MESSAGE}</span>
-              )}
             </div>
-            <div className="form-group">
-              <label className="form-label">Payment Method</label>
-              <select
-                className="form-input"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                required
-              >
-                <option value="Bank Transfer">Bank Transfer (UBL)</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Transaction ID / Reference *</label>
-              <input
-                type="text"
-                className="form-input"
-                value={txnId}
-                onChange={(e) => setTxnId(e.target.value)}
-                placeholder="Your payment reference number"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Payment Proof (Screenshot) *</label>
-              <input
-                type="file"
-                className="form-input"
-                accept="image/*"
-                onChange={(e) => setProofFile(e.target.files[0] || null)}
-                required
-              />
-            </div>
-            <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit || topUpBelowMin}>
-              {submitting ? 'Submitting...' : 'Submit Top-Up Request'}
-            </button>
-          </form>
+            <a
+              className="btn btn-whatsapp"
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              💬 Message us on WhatsApp
+            </a>
+          </div>
           </>
           )}
         </div>

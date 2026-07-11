@@ -48,7 +48,7 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I add funds to my wallet?',
-        a: 'Go to your Wallet page and click "Add Funds". Transfer the amount to our UBL bank account (IBAN and details are shown on the page), then submit your transaction reference and a payment proof screenshot. Our team will verify and credit your wallet shortly.',
+        a: 'Go to your Wallet page, click "Add Funds", and message us on WhatsApp (0371 2101998) with the amount you want to add. We\'ll confirm the payment with you and credit your wallet within minutes.',
       },
       {
         q: 'How do I withdraw my earnings?',

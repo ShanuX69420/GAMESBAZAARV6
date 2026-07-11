@@ -393,12 +393,30 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                        'payment_proof', 'created_at']
     fields = ['user', 'amount', 'payment_method', 'transaction_id',
               'payment_proof', 'status', 'admin_note', 'reviewed_at', 'created_at']
+    autocomplete_fields = ['user']
     actions = ['approve_topups', 'reject_topups']
 
     def has_delete_permission(self, request, obj=None):
         # Deleting an approved row frees its transaction_id for a second
         # credit — uniq_active_topup_method_txid_ci only spans live rows.
         return False
+
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            # Direct credit (WhatsApp flow): admin picks user + amount, wallet
+            # is credited on save.
+            return ['user', 'amount', 'payment_method', 'admin_note']
+        return self.fields
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return []
+        return self.readonly_fields
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault('payment_method', 'WhatsApp')
+        return initial
 
     def _create_topup_notification(self, topup):
         """Create in-app notification for top-up status change."""
@@ -429,6 +447,19 @@ class TopUpRequestAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         """Handle status changes via edit form."""
+        if not change:
+            # Admin-created top-ups (WhatsApp flow) credit the wallet
+            # immediately: approve_topup_request is idempotent per row and
+            # also sends the status email.
+            with transaction.atomic():
+                super().save_model(request, obj, form, change)
+                approve_topup_request(obj)
+                self._create_topup_notification(obj)
+            self.message_user(
+                request,
+                f'Wallet credited: PKR {obj.amount} added for {obj.user.username}.',
+            )
+            return
         if change and 'status' in form.changed_data:
             with transaction.atomic():
                 locked = TopUpRequest.objects.select_for_update().select_related('user').get(pk=obj.pk)

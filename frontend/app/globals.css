@@ -4454,6 +4454,30 @@ img {
   box-shadow: none;
 }
 
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 24px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #25D366, #1DA851);
+  color: white;
+  text-decoration: none;
+  transition: all var(--transition);
+}
+
+.btn-whatsapp:hover {
+  background: linear-gradient(135deg, #1DA851, #128C7E);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+  color: white;
+}
+
 /* ── Wallet Request Cards ──────────────────────────────────────────────────── */
 
 .wallet-requests-list {
