@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar Fazer auto-fulfillment driver
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py process_fazer_fulfillments --batch-size 20

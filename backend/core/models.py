@@ -882,6 +882,11 @@ class JazzCashPayment(models.Model):
     listing = models.ForeignKey('Listing', on_delete=models.SET_NULL, null=True, blank=True,
                                 related_name='jazzcash_payments')
     listing_quantity = models.PositiveIntegerField(default=1)
+    checkout_payload = models.TextField(
+        blank=True, default='',
+        help_text='Encrypted JSON of buyer info collected at initiation '
+                  '(e.g. game player ID) — forwarded to the purchase on finalize.',
+    )
     order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True,
                               related_name='jazzcash_payments')
 
@@ -957,6 +962,11 @@ class Order(models.Model):
         blank=True,
         default='',
         help_text='Seller instructions captured at purchase time.',
+    )
+    checkout_payload = models.TextField(
+        blank=True, default='',
+        help_text='Encrypted JSON of buyer info collected at checkout '
+                  '(e.g. game player ID for auto-fulfilled top-ups).',
     )
     delivered_at = models.DateTimeField(
         null=True,
@@ -1081,6 +1091,7 @@ class Notification(models.Model):
         ('item_request', 'Item Request'),              # Staff: buyer asked for an item with no listings
         ('seller_approved', 'Seller Application Approved'),  # User: admin approved seller application
         ('seller_rejected', 'Seller Application Rejected'),  # User: admin rejected seller application
+        ('fulfillment_alert', 'Fulfillment Alert'),    # Seller: auto-fulfillment needs attention
     ]
 
     recipient = models.ForeignKey(
@@ -1325,3 +1336,131 @@ class ItemRequest(models.Model):
     def __str__(self):
         user_label = self.user.username if self.user else (self.guest_email or 'Guest')
         return f"Request #{self.pk} — {user_label} — {self.game_category}"
+
+
+# ── Fazer auto-fulfillment ───────────────────────────────────────────────────
+
+class PlatformSetting(models.Model):
+    """A runtime-editable platform setting (key/value).
+
+    Used for toggles that must flip without a deploy/restart (e.g. the Fazer
+    auto-fulfillment switch). Read through services.get_platform_setting which
+    caches values briefly.
+    """
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.key} = {self.value[:50]}"
+
+
+class FazerProductLink(models.Model):
+    """Maps one of our listings to the Fazer supplier product it is sourced from.
+
+    Rows are pushed from the PC-side sync (tools/fazer_push_links.py →
+    manage.py apply_fazer_links); the fulfillment engine uses them to place
+    supplier orders automatically. offer_name is matched by name against the
+    live catalog at order time — sku ids can rotate, names are the stable key
+    (same matching the daily price sync uses).
+    """
+    KIND_CHOICES = [
+        ('gamekey', 'Game Key'),
+        ('giftcard', 'Gift Card'),
+        ('topup', 'Top-Up'),
+    ]
+
+    listing = models.OneToOneField(Listing, on_delete=models.CASCADE,
+                                   related_name='fazer_link')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES)
+    fazer_category_id = models.CharField(
+        max_length=100,
+        help_text='Fazer game_id (gamekey) or category_id (giftcard/topup).',
+    )
+    offer_name = models.CharField(max_length=200)
+    last_sku_id = models.CharField(max_length=100, blank=True, default='')
+    last_cost_usd = models.DecimalField(
+        max_digits=10, decimal_places=4, null=True, blank=True,
+        help_text='Supplier cost at last sync — price-sanity baseline.',
+    )
+    checkout_fields = models.JSONField(
+        default=list, blank=True,
+        help_text='Buyer info required at checkout, e.g. '
+                  '[{"key": "player_id", "label": "Player ID"}]. Top-ups only.',
+    )
+    enabled = models.BooleanField(default=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['enabled'], name='fazer_link_enabled_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.listing_id} → {self.kind}:{self.fazer_category_id}/{self.offer_name}"
+
+
+class FazerFulfillmentTask(models.Model):
+    """State machine for one order's automatic fulfillment via Fazer.
+
+    Created at purchase time (order stays 'pending'); driven by an on-commit
+    thread for low latency and re-driven by the process_fazer_fulfillments
+    timer for crash safety. The idempotency key is minted once per purchase
+    intent and NEVER rotated, so replays of the create-order call can never
+    double-charge. Terminal failure states leave the order pending — the
+    manual flow — and alert the seller.
+    """
+    STATUS_CHOICES = [
+        ('queued', 'Queued'),            # created, supplier order not yet placed
+        ('placing', 'Placing'),          # claimed, create-order call in flight
+        ('processing', 'Processing'),    # supplier order placed, awaiting completion
+        ('delivered', 'Delivered'),      # codes delivered / top-up confirmed
+        ('manual', 'Manual'),            # never placed or definitively failed → fulfill by hand
+        ('attention', 'Needs Attention'),  # money possibly spent — human must look
+    ]
+
+    order = models.OneToOneField(Order, on_delete=models.CASCADE,
+                                 related_name='fazer_task')
+    link = models.ForeignKey(FazerProductLink, on_delete=models.SET_NULL,
+                             null=True, blank=True, related_name='tasks')
+    # Snapshots so the task stays actionable if the link changes/disappears
+    kind = models.CharField(max_length=10, choices=FazerProductLink.KIND_CHOICES)
+    fazer_category_id = models.CharField(max_length=100)
+    offer_name = models.CharField(max_length=200)
+    quantity = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='queued')
+    idempotency_key = models.CharField(max_length=64, unique=True)
+    fazer_order_id = models.CharField(max_length=64, blank=True, default='')
+    sub_orders = models.JSONField(
+        default=list, blank=True,
+        help_text='Top-up quantity>1: one Fazer order per unit '
+                  '[{"i": 1, "idempotency_key": ..., "fazer_order_id": ..., "status": ...}]',
+    )
+    charged_usd = models.DecimalField(max_digits=10, decimal_places=4,
+                                      null=True, blank=True)
+    raw_response = models.TextField(
+        blank=True, default='',
+        help_text='Encrypted last supplier order JSON (contains codes).',
+    )
+    fail_reason = models.CharField(max_length=300, blank=True, default='')
+    attempts = models.PositiveIntegerField(default=0)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    next_poll_at = models.DateTimeField(null=True, blank=True)
+    deadline_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'next_poll_at'],
+                         name='fazer_task_status_poll_idx'),
+            models.Index(fields=['status', 'created_at'],
+                         name='fazer_task_status_created_idx'),
+        ]
+
+    def __str__(self):
+        return f"Task for order #{self.order_id} — {self.kind} — {self.get_status_display()}"

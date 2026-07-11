@@ -31,6 +31,7 @@ from .models import (
     Notification,
     Order,
     PlatformLedgerEntry,
+    PlatformSetting,
     Wallet,
     WalletTransaction,
 )
@@ -68,6 +69,31 @@ AUTO_CONFIRM_ORDER_AFTER = timedelta(hours=72)
 BUYER_PROTECTION_HOLD = timedelta(days=14)
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+
+PLATFORM_SETTING_CACHE_SECONDS = 30
+
+
+def _platform_setting_cache_key(key):
+    return f'platform-setting:v1:{key}'
+
+
+def get_platform_setting(key, default=''):
+    """Read a runtime platform setting (briefly cached — see PlatformSetting)."""
+    cache_key = _platform_setting_cache_key(key)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    row = PlatformSetting.objects.filter(key=key).values_list('value', flat=True).first()
+    value = row if row is not None else default
+    cache.set(cache_key, value, PLATFORM_SETTING_CACHE_SECONDS)
+    return value
+
+
+def set_platform_setting(key, value):
+    """Write a runtime platform setting and drop its cache entry."""
+    PlatformSetting.objects.update_or_create(key=key, defaults={'value': str(value)})
+    cache.delete(_platform_setting_cache_key(key))
 
 
 def chat_unread_cache_key(user_id):

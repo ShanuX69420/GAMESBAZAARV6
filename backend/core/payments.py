@@ -16,6 +16,7 @@ management command (Status Inquiry is a mandatory integration) and
 opportunistically when the user polls the payment status endpoint.
 """
 
+import json
 import logging
 from datetime import timedelta
 from decimal import InvalidOperation
@@ -25,7 +26,11 @@ from django.utils import timezone
 
 from . import jazzcash
 from .models import JazzCashPayment, Listing
-from .services import apply_wallet_delta_once, create_notification
+from .services import (
+    apply_wallet_delta_once,
+    create_notification,
+    decrypt_sensitive_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +48,13 @@ TXN_REF_ALLOCATION_ATTEMPTS = 5
 
 
 def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
-                           listing=None, listing_quantity=1):
+                           listing=None, listing_quantity=1, checkout_payload=''):
     """Create a payment row and send the MWallet initiation request.
 
     Returns the payment in its post-initiation state. Network failures leave
     the payment pending so IPN / Status Inquiry can settle it later — the
-    same pp_TxnRefNo is never re-sent.
+    same pp_TxnRefNo is never re-sent. ``checkout_payload`` (already
+    encrypted) carries buyer checkout info for auto-fulfilled purchases.
     """
     payment = None
     for _ in range(TXN_REF_ALLOCATION_ATTEMPTS):
@@ -61,6 +67,7 @@ def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
                 txn_ref_no=jazzcash.generate_txn_ref_no(),
                 listing=listing,
                 listing_quantity=listing_quantity,
+                checkout_payload=checkout_payload,
             )
             break
         except IntegrityError:
@@ -237,10 +244,20 @@ def finalize_jazzcash_payment(payment_id, *, response_code='', response_message=
             from .views import execute_listing_purchase
 
             if payment.listing_id:
+                checkout_info = None
+                raw_checkout = decrypt_sensitive_text(payment.checkout_payload)
+                if raw_checkout:
+                    try:
+                        parsed = json.loads(raw_checkout)
+                        if isinstance(parsed, dict):
+                            checkout_info = parsed
+                    except ValueError:
+                        checkout_info = None
                 order, purchase_error = execute_listing_purchase(
                     buyer=payment.user,
                     listing_id=payment.listing_id,
                     quantity=payment.listing_quantity,
+                    checkout_info=checkout_info,
                 )
             else:
                 purchase_error = 'This listing is no longer available.'

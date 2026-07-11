@@ -14,6 +14,7 @@ from .models import (
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
     JazzCashPayment,
     Notification, Report, SupportTicket, ItemRequest,
+    PlatformSetting, FazerProductLink, FazerFulfillmentTask,
 )
 from .payments import run_status_inquiry
 from .services import (
@@ -1180,3 +1181,60 @@ class SupportTicketAdmin(admin.ModelAdmin):
     def close_tickets(self, request, queryset):
         updated = queryset.exclude(status='closed').update(status='closed')
         self.message_user(request, f'{updated} ticket(s) closed.')
+
+
+@admin.register(PlatformSetting)
+class PlatformSettingAdmin(admin.ModelAdmin):
+    list_display = ['key', 'value', 'updated_at']
+    search_fields = ['key']
+    readonly_fields = ['updated_at']
+
+
+@admin.register(FazerProductLink)
+class FazerProductLinkAdmin(admin.ModelAdmin):
+    list_display = ['id', 'listing', 'kind', 'fazer_category_id', 'offer_name',
+                    'last_cost_usd', 'enabled', 'last_synced_at']
+    list_filter = ['kind', 'enabled']
+    search_fields = ['listing__title', 'fazer_category_id', 'offer_name']
+    raw_id_fields = ['listing']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(FazerFulfillmentTask)
+class FazerFulfillmentTaskAdmin(admin.ModelAdmin):
+    list_display = ['id', 'order', 'kind', 'offer_name', 'quantity', 'status',
+                    'fazer_order_id', 'charged_usd', 'fail_reason', 'created_at']
+    list_filter = ['status', 'kind']
+    search_fields = ['order__order_number', 'offer_name', 'fazer_order_id']
+    raw_id_fields = ['order', 'link']
+    readonly_fields = ['idempotency_key', 'raw_response', 'decoded_response',
+                       'created_at', 'updated_at']
+    actions = ['requeue_tasks', 'mark_manual']
+
+    @admin.display(description='Decrypted supplier response')
+    def decoded_response(self, obj):
+        if not obj.raw_response:
+            return ''
+        try:
+            return decrypt_sensitive_text(obj.raw_response)
+        except Exception:
+            return '(could not decrypt)'
+
+    @admin.action(description='🔁 Requeue for automatic fulfillment')
+    def requeue_tasks(self, request, queryset):
+        # Same idempotency key is reused, so a replayed create-order call
+        # returns the original Fazer order instead of charging again.
+        updated = queryset.filter(
+            status__in=('manual', 'attention'),
+            order__status='pending',
+        ).update(status='queued', claimed_at=None, next_poll_at=None,
+                 fail_reason='', updated_at=timezone.now())
+        self.message_user(request, f'{updated} task(s) requeued — the fulfillment '
+                                   'timer will pick them up within a minute.')
+
+    @admin.action(description='✋ Move to manual fulfillment')
+    def mark_manual(self, request, queryset):
+        updated = queryset.filter(
+            status__in=('queued', 'processing', 'attention'),
+        ).update(status='manual', updated_at=timezone.now())
+        self.message_user(request, f'{updated} task(s) moved to manual.')

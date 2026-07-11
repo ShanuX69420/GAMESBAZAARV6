@@ -17,7 +17,7 @@ from .models import (
     GameCategoryFilter, UserProfile, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
-    JazzCashPayment,
+    JazzCashPayment, FazerProductLink,
     SellerCommissionOverride, Review, Notification,
     Report, SupportTicket, ItemRequest,
 )
@@ -506,6 +506,8 @@ class ListingSerializer(serializers.ModelSerializer):
     option_id = serializers.IntegerField(read_only=True)
     option_name = serializers.SerializerMethodField()
     delivery_instructions = serializers.SerializerMethodField()
+    instant_delivery = serializers.SerializerMethodField()
+    required_checkout_fields = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -517,11 +519,32 @@ class ListingSerializer(serializers.ModelSerializer):
             'buyer_protection_enabled',
             'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
-            'delivery_instructions', 'is_auto_delivery', 'created_at',
+            'delivery_instructions', 'is_auto_delivery', 'instant_delivery',
+            'required_checkout_fields', 'created_at',
         ]
 
     def get_option_name(self, obj):
         return obj.option.name if obj.option_id else None
+
+    def get_instant_delivery(self, obj):
+        """Effective instant flag: pre-stocked auto-delivery OR a listing the
+        platform fulfills automatically (delivery_time flipped to 'Instant'
+        while Fazer auto-fulfillment is on)."""
+        return obj.is_auto_delivery or obj.delivery_time == 'Instant'
+
+    def get_required_checkout_fields(self, obj):
+        """Checkout inputs the buyer must fill (auto-fulfilled top-ups only).
+        Computed only where the view opts in — the listing detail page — to
+        avoid an N+1 on category listings."""
+        if not self.context.get('include_checkout_fields'):
+            return []
+        from .fulfillment import autofulfill_enabled, get_active_link
+        if not autofulfill_enabled():
+            return []
+        link = get_active_link(obj)
+        if link is None or link.kind != 'topup':
+            return []
+        return link.checkout_fields or [{'key': 'player_id', 'label': 'Player ID'}]
 
     def get_delivery_instructions(self, obj):
         """Offer and currency listings show instructions to buyers before
@@ -916,9 +939,16 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
             attrs['delivery_time'] = 'Instant'
         elif next_delivery_time == 'Instant':
-            raise serializers.ValidationError({
-                'delivery_time': 'Instant delivery is only available for automated delivery listings.',
-            })
+            # Platform-fulfilled listings (Fazer link) legitimately carry
+            # 'Instant' while auto-fulfillment is on; everyone else may not
+            # select it manually.
+            has_fazer_link = FazerProductLink.objects.filter(
+                listing_id=listing.pk, enabled=True,
+            ).exists()
+            if not has_fazer_link:
+                raise serializers.ValidationError({
+                    'delivery_time': 'Instant delivery is only available for automated delivery listings.',
+                })
         elif next_status == 'active' and next_quantity is not None and next_quantity <= 0:
             raise serializers.ValidationError({
                 'status': 'Set stock above 0 or choose unlimited stock before activating this listing.',
@@ -1278,6 +1308,12 @@ class JazzCashBuyInitiateSerializer(serializers.Serializer):
         PAKISTAN_MOBILE_REGEX,
         error_messages={'invalid': PAKISTAN_MOBILE_ERROR},
     )
+    # Buyer checkout info for auto-fulfilled top-ups (e.g. {"player_id": ...}).
+    checkout_fields = serializers.DictField(
+        child=serializers.CharField(max_length=100, allow_blank=True),
+        required=False,
+        default=dict,
+    )
 
 
 class JazzCashPaymentSerializer(serializers.ModelSerializer):
@@ -1490,6 +1526,12 @@ class BuyListingSerializer(serializers.Serializer):
         max_value=MAX_CURRENCY_PURCHASE_QUANTITY,
         default=1,
         error_messages={'max_value': MAX_CURRENCY_PURCHASE_QUANTITY_ERROR},
+    )
+    # Buyer checkout info for auto-fulfilled top-ups (e.g. {"player_id": ...}).
+    checkout_fields = serializers.DictField(
+        child=serializers.CharField(max_length=100, allow_blank=True),
+        required=False,
+        default=dict,
     )
 
 

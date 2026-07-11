@@ -124,7 +124,7 @@ from .services import (
     send_email_verification_code,
     notify_staff_about_item_request,
 )
-from . import jazzcash
+from . import fazer, fulfillment, jazzcash
 from .payments import (
     apply_gateway_result,
     maybe_refresh_payment_status,
@@ -437,6 +437,7 @@ def apply_recommended_listing_ordering(listings_qs):
     )
     fulfillment_score = Case(
         When(is_auto_delivery=True, then=Value(12)),
+        When(delivery_time='Instant', then=Value(12)),  # platform auto-fulfilled
         When(delivery_time__in=[
             '2-3 Minutes', '5 Minutes', '10-15 Minutes',
             '15-30 Minutes', '30-60 Minutes',
@@ -785,9 +786,12 @@ class GameCategoryDetailView(APIView):
                     filter_values__contains={filter_id: value}
                 )
 
-        # Instant delivery filter: only show auto-delivery listings
+        # Instant delivery filter: pre-stocked auto-delivery listings plus
+        # platform auto-fulfilled ones (delivery_time flipped to 'Instant').
         if request.query_params.get('instant_delivery') == 'true':
-            listings_qs = listings_qs.filter(is_auto_delivery=True)
+            listings_qs = listings_qs.filter(
+                Q(is_auto_delivery=True) | Q(delivery_time='Instant')
+            )
 
         # Online seller filter: only show listings from sellers who are currently online
         if request.query_params.get('online_only') == 'true':
@@ -1924,6 +1928,9 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
             context={
                 'request': request,
                 'filter_option_display_map': build_listing_filter_display_map([listing]),
+                # Detail page only: expose required checkout inputs for
+                # auto-fulfilled top-ups (avoids N+1 on category pages).
+                'include_checkout_fields': True,
             },
         ).data)
 
@@ -2988,6 +2995,15 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                 status=400,
             )
 
+        # Auto-fulfilled top-ups need the buyer's player/user ID up front —
+        # the purchase executes later (IPN/reconcile), when we can no longer
+        # ask the buyer for anything.
+        checkout_info, checkout_error = prepare_fazer_checkout(
+            listing, data.get('checkout_fields'),
+        )
+        if checkout_error:
+            return Response({'error': checkout_error}, status=400)
+
         try:
             payment = start_jazzcash_payment(
                 user=request.user,
@@ -2997,6 +3013,10 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                 description='GamesBazaar order payment',
                 listing=listing,
                 listing_quantity=qty,
+                checkout_payload=(
+                    encrypt_sensitive_text(json.dumps(checkout_info, ensure_ascii=False))
+                    if checkout_info else ''
+                ),
             )
         except jazzcash.JazzCashError:
             return _jazzcash_disabled_response()
@@ -3115,13 +3135,17 @@ def get_order_by_reference_or_404(queryset, order_ref, **filters):
     return get_object_or_404(queryset.filter(order_reference_filter(order_ref), **filters))
 
 
-def execute_listing_purchase(*, buyer, listing_id, quantity):
+def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None):
     """Run the full purchase flow for a listing, paying from the buyer's wallet.
 
     Shared by BuyListingView and the JazzCash direct-buy flow (which credits
     the wallet first, then purchases). Returns ``(order, None)`` on success or
     ``(None, error_message)`` when the purchase cannot proceed; error paths
     never mutate state.
+
+    ``checkout_info`` carries buyer-supplied checkout data (e.g. the player
+    ID for auto-fulfilled top-ups) — stored encrypted on the order and used
+    by the Fazer fulfillment engine after commit.
     """
     qty = quantity
 
@@ -3181,6 +3205,14 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
             initial_status = 'pending'
             delivered_at = None
             delivery_note = ''
+
+        # Fazer auto-fulfillment: linked listing + global toggle on. The
+        # link is fetched with its own query — a nullable reverse OneToOne
+        # cannot join into the select_for_update above. No HTTP happens
+        # inside this transaction; the supplier call runs after commit.
+        fazer_link = None
+        if not is_auto and fulfillment.autofulfill_enabled():
+            fazer_link = fulfillment.get_active_link(listing)
 
         wallet = get_or_create_locked_wallet(buyer)
 
@@ -3251,6 +3283,17 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
         order.conversation = conversation
         order.save(update_fields=['conversation'])
 
+        # Queue automatic fulfillment (order stays 'pending'; the supplier
+        # call happens after this transaction commits).
+        fazer_task = None
+        if fazer_link is not None:
+            if checkout_info:
+                order.checkout_payload = encrypt_sensitive_text(
+                    json.dumps(checkout_info, ensure_ascii=False)
+                )
+                order.save(update_fields=['checkout_payload'])
+            fazer_task = fulfillment.build_task_for_order(order, fazer_link)
+
         # Announce the purchase in the buyer↔seller chat
         qty_part = f' (x{qty}{unit_suffix})' if qty > 1 or is_currency else ''
         if is_auto:
@@ -3260,6 +3303,15 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
                 f'{buyer.username}, please check the delivery details and press the '
                 f'«Confirm order» button on the order page once everything works.'
             )
+        elif fazer_task is not None:
+            item_word = 'top-up' if fazer_task.kind == 'topup' else 'code'
+            paid_content = (
+                f'{buyer.username} has paid for order #{order.order_number} — '
+                f'{listing.title}{qty_part}. This order is delivered automatically — '
+                f'your {item_word} will arrive in this chat within a few minutes. '
+                f'{buyer.username}, press the «Confirm order» button on the order '
+                f'page once you receive everything.'
+            )
         else:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
@@ -3268,6 +3320,22 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
                 f'order page once you receive everything.'
             )
         post_order_chat_message(order, event='order_paid', content=paid_content, sender=buyer)
+
+        # Record the buyer's player/user ID in chat so a manual fallback
+        # (seller fulfilling by hand) has it in the usual place.
+        if fazer_task is not None and fazer_task.kind == 'topup' and checkout_info:
+            id_bits = ', '.join(
+                str(v) for v in (checkout_info.get('fields') or {}).values()
+                if str(v).strip()
+            )
+            if id_bits:
+                player_name = str(checkout_info.get('player_name') or '')
+                name_part = f' ({player_name})' if player_name else ''
+                post_order_chat_message(
+                    order,
+                    content=f'Player/User ID provided at checkout: {id_bits}{name_part}',
+                    sender=buyer,
+                )
 
         # Hand over auto-delivery data and the seller's standing instructions
         if is_auto:
@@ -3304,7 +3372,57 @@ def execute_listing_purchase(*, buyer, listing_id, quantity):
                 order=order,
             )
 
+        # Kick off the supplier purchase once this transaction commits (the
+        # 1-minute fulfillment timer is the safety net if the worker dies).
+        if fazer_task is not None:
+            fulfillment.schedule_fulfillment_after_commit(fazer_task.pk)
+
     return order, None
+
+
+DEFAULT_TOPUP_CHECKOUT_FIELDS = [{'key': 'player_id', 'label': 'Player ID'}]
+
+
+def prepare_fazer_checkout(listing, raw_fields):
+    """For auto-fulfilled top-up listings: require and verify the buyer's
+    player/user ID BEFORE any money moves. Returns ``(checkout_info, error)``
+    — both ``None`` when the listing needs no checkout info. Runs outside any
+    transaction (it calls the supplier); verification fails open so a supplier
+    outage never blocks a purchase (fulfillment then falls back to manual).
+    """
+    if listing is None or not fulfillment.autofulfill_enabled():
+        return None, None
+    link = fulfillment.get_active_link(listing)
+    if link is None or link.kind != 'topup':
+        return None, None
+
+    spec = link.checkout_fields or DEFAULT_TOPUP_CHECKOUT_FIELDS
+    raw_fields = raw_fields or {}
+    fields = {}
+    for field in spec:
+        key = str(field.get('key') or 'player_id')
+        label = str(field.get('label') or 'Player ID')
+        value = str(raw_fields.get(key, '')).strip()[:100]
+        if not value:
+            return None, f'{label} is required for this item.'
+        fields[key] = value
+
+    player_name = ''
+    try:
+        result = fazer.validate_topup_id(link.fazer_category_id, fields)
+    except fazer.FazerError:
+        # Unreachable OR "ID validation is not available for this
+        # category_id" (most categories, verified live 2026-07-11) — never
+        # block the purchase on the soft check; a truly wrong ID fails at
+        # fulfillment and falls back to manual.
+        result = None
+    if result is not None:
+        if result.get('valid') is False:
+            return None, ('This ID was not found — please double-check it '
+                          'and try again.')
+        player_name = str(result.get('player_name') or '')[:100]
+
+    return {'fields': fields, 'player_name': player_name}, None
 
 
 class BuyListingView(APIView):
@@ -3316,15 +3434,64 @@ class BuyListingView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        listing = Listing.objects.filter(id=data['listing_id']).first()
+        checkout_info, checkout_error = prepare_fazer_checkout(
+            listing, data.get('checkout_fields'),
+        )
+        if checkout_error:
+            return Response({'error': checkout_error}, status=400)
+
         order, error = execute_listing_purchase(
             buyer=request.user,
             listing_id=data['listing_id'],
             quantity=data.get('quantity', 1),
+            checkout_info=checkout_info,
         )
         if error:
             return Response({'error': error}, status=400)
 
         return Response(OrderSerializer(order, context={'request': request}).data, status=201)
+
+
+class ValidateTopupIdView(ScopedPostThrottleMixin, APIView):
+    """POST /api/listings/<id>/validate-topup-id/ — Pre-checkout ID check.
+
+    Lets the buy modal verify a player/user ID against the supplier and show
+    the matched nickname before the buyer pays.
+    """
+    permission_classes = [HasCompletedProfile]
+    throttle_scope = 'validate_topup_id'
+
+    def post(self, request, pk):
+        listing = Listing.objects.filter(pk=pk, status='active').first()
+        if listing is None or not fulfillment.autofulfill_enabled():
+            raise Http404
+        link = fulfillment.get_active_link(listing)
+        if link is None or link.kind != 'topup':
+            raise Http404
+
+        spec = link.checkout_fields or DEFAULT_TOPUP_CHECKOUT_FIELDS
+        fields = {}
+        for field in spec:
+            key = str(field.get('key') or 'player_id')
+            label = str(field.get('label') or 'Player ID')
+            value = str((request.data or {}).get(key, '')).strip()[:100]
+            if not value:
+                return Response({'error': f'{label} is required.'}, status=400)
+            fields[key] = value
+
+        try:
+            result = fazer.validate_topup_id(link.fazer_category_id, fields)
+        except fazer.FazerError:
+            # Supplier unreachable, or validation unsupported for this
+            # category (the common case) — don't block checkout on a soft
+            # check; the UI shows "couldn't verify, double-check the ID".
+            return Response({'valid': True, 'player_name': '', 'unverified': True})
+
+        return Response({
+            'valid': result.get('valid') is not False,
+            'player_name': str(result.get('player_name') or '')[:100],
+        })
 
 
 class MyOrdersView(APIView):

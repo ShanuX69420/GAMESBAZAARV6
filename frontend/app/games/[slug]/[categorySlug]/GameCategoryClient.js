@@ -46,7 +46,7 @@ const formatAmount = (n) => Number(n).toLocaleString('en-PK');
 const CURRENCY_DESC_CLAMP_LENGTH = 220;
 
 function DeliveryTimeBadge({ listing }) {
-  return listing.is_auto_delivery ? (
+  return (listing.is_auto_delivery || listing.instant_delivery) ? (
     <span className="offer-delivery offer-delivery-instant">
       <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
         <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
@@ -1229,8 +1229,8 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
                     </div>
                   </div>
-                  <div className={`listing-card-delivery ${listing.is_auto_delivery ? 'listing-card-delivery-instant' : ''}`}>
-                    {listing.is_auto_delivery ? (
+                  <div className={`listing-card-delivery ${(listing.is_auto_delivery || listing.instant_delivery) ? 'listing-card-delivery-instant' : ''}`}>
+                    {(listing.is_auto_delivery || listing.instant_delivery) ? (
                       <>
                         <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                           <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>

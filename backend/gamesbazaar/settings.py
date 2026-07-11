@@ -302,6 +302,7 @@ REST_FRAMEWORK = {
         'create_report': '10/hour',
         'create_support_ticket': '5/hour',
         'create_item_request': '5/hour',
+        'validate_topup_id': '20/min',
     },
 }
 
@@ -479,6 +480,25 @@ JAZZCASH_ENABLED = bool(
     JAZZCASH_MERCHANT_ID and JAZZCASH_PASSWORD
     and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
 )
+
+# FazerCards supplier API — automatic fulfillment of Fazer-sourced listings
+# (Steam keys, gift cards, game top-ups). Auto-fulfillment additionally needs
+# the runtime PlatformSetting toggle 'fazer_autofulfill_enabled' switched on
+# (manage.py fazer_autofulfill on|off|status).
+FAZER_API_BASE_URL = (
+    os.environ.get('FAZER_API_BASE_URL', 'https://api.fzr.cards/api/v2')
+    .strip().rstrip('/')
+)
+FAZER_API_KEY = os.environ.get('FAZER_API_KEY', '').strip()
+FAZER_REQUEST_TIMEOUT_SECONDS = env_int('FAZER_REQUEST_TIMEOUT_SECONDS', 30)
+# Hard ceiling on the supplier cost of one order (USD) — bounds worst-case
+# spend if prices or quantities go sideways.
+FAZER_MAX_ORDER_USD = Decimal(str(env_int('FAZER_MAX_ORDER_USD', 30)))
+# Refuse to auto-buy when the live supplier price exceeds the last-synced
+# cost by more than this percentage (protects against stale sale prices).
+FAZER_PRICE_TOLERANCE_PCT = env_int('FAZER_PRICE_TOLERANCE_PCT', 10)
+# Alert (once a day) when the Fazer USD balance drops below this.
+FAZER_LOW_BALANCE_USD = env_int('FAZER_LOW_BALANCE_USD', 10)
 
 # Error monitoring — active whenever SENTRY_DSN is set. Captures unhandled
 # exceptions and ERROR-level log records (including failed transactional

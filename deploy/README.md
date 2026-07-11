@@ -11,7 +11,9 @@ machine can be rebuilt from this repo plus the nightly database backups
 | `backup_db.py` | `/opt/gamesbazaar/backup_db.py` (chmod 750) |
 
 Timers: `auto-confirm` and `reconcile-jazzcash` every 10 min,
-`release-holds` every 30 min, `db-backup` nightly at 21:30 UTC (02:30 PKT).
+`release-holds` every 30 min, `fazer-fulfill` every 1 min (Fazer
+auto-fulfillment driver — safety net behind the in-process worker),
+`db-backup` nightly at 21:30 UTC (02:30 PKT).
 After copying units: `systemctl daemon-reload && systemctl enable --now <name>.timer`.
 
 Secrets are NOT in this folder — they live only in

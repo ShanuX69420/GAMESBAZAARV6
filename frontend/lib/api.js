@@ -508,11 +508,15 @@ export async function initiateJazzCashTopUp(amount, mobileNumber) {
   return data;
 }
 
-export async function initiateJazzCashPurchase(listingId, quantity, mobileNumber) {
+export async function initiateJazzCashPurchase(listingId, quantity, mobileNumber, checkoutFields) {
+  const body = { listing_id: listingId, quantity, mobile_number: mobileNumber };
+  if (checkoutFields && Object.keys(checkoutFields).length) {
+    body.checkout_fields = checkoutFields;
+  }
   const res = await authFetch(`${API_BASE}/api/payments/jazzcash/buy/`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ listing_id: listingId, quantity, mobile_number: mobileNumber }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -556,14 +560,30 @@ export async function pollJazzCashPayment(paymentId, {
 
 // ── Orders API ──────────────────────────────────────────────────────────────
 
-export async function buyListing(listingId, quantity = 1) {
+export async function buyListing(listingId, quantity = 1, checkoutFields) {
+  const body = { listing_id: listingId, quantity };
+  if (checkoutFields && Object.keys(checkoutFields).length) {
+    body.checkout_fields = checkoutFields;
+  }
   const res = await authFetch(`${API_BASE}/api/orders/buy/`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ listing_id: listingId, quantity }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Purchase failed');
+  return data;
+}
+
+// Pre-checkout verification of a player/user ID for auto-fulfilled top-ups.
+export async function validateTopupId(listingId, fields) {
+  const res = await authFetch(`${API_BASE}/api/listings/${listingId}/validate-topup-id/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(fields),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Could not verify the ID');
   return data;
 }
 

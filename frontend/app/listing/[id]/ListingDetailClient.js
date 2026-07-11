@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
   buyListing, getWallet, getSellerReviews,
-  initiateJazzCashPurchase, pollJazzCashPayment,
+  initiateJazzCashPurchase, pollJazzCashPayment, validateTopupId,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
@@ -44,6 +44,9 @@ export default function ListingDetailClient({ initialListing = null }) {
   const buyingRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
+  const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
+  const [idVerify, setIdVerify] = useState({ status: 'idle', name: '' });
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -178,8 +181,26 @@ export default function ListingDetailClient({ initialListing = null }) {
   function openConfirmModal() {
     setBuyError('');
     setBuySuccess('');
+    setIdVerify({ status: 'idle', name: '' });
     setShowConfirm(true);
     trackBeginCheckout(listing, quantity);
+  }
+
+  async function handleVerifyTopupId() {
+    setIdVerify({ status: 'checking', name: '' });
+    try {
+      const result = await validateTopupId(listing.id, checkoutFieldValues);
+      if (result.valid) {
+        setIdVerify({
+          status: result.unverified ? 'unverified' : 'ok',
+          name: result.player_name || '',
+        });
+      } else {
+        setIdVerify({ status: 'bad', name: '' });
+      }
+    } catch {
+      setIdVerify({ status: 'unverified', name: '' });
+    }
   }
 
   async function handleBuy() {
@@ -189,7 +210,7 @@ export default function ListingDetailClient({ initialListing = null }) {
     setBuySuccess('');
     setBuying(true);
     try {
-      const order = await buyListing(listing.id, quantity);
+      const order = await buyListing(listing.id, quantity, checkoutFieldValues);
       trackPurchase(order, listing, quantity);
       setShowConfirm(false);
       setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
@@ -213,7 +234,7 @@ export default function ListingDetailClient({ initialListing = null }) {
     setBuySuccess('');
     setBuying(true);
     try {
-      let payment = await initiateJazzCashPurchase(listing.id, quantity, mobile);
+      let payment = await initiateJazzCashPurchase(listing.id, quantity, mobile, checkoutFieldValues);
       if (payment.status === 'pending') {
         setJazzCashWaiting(true);
         payment = await pollJazzCashPayment(payment.id);
@@ -307,6 +328,11 @@ export default function ListingDetailClient({ initialListing = null }) {
   const hasBalance = wallet && walletBalance >= parseFloat(totalPrice);
   const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
+  const isInstant = listing.is_auto_delivery || listing.instant_delivery;
+  const requiredCheckoutFields = listing.required_checkout_fields || [];
+  const checkoutFieldsFilled = requiredCheckoutFields.every(
+    (f) => (checkoutFieldValues[f.key] || '').trim()
+  );
   // JazzCash only covers what the wallet is missing, subject to the minimum
   // top-up — anything above the shortfall lands back in the wallet.
   const payWithJazzCash = !hasBalance && jazzCashEnabled;
@@ -391,7 +417,7 @@ export default function ListingDetailClient({ initialListing = null }) {
               </div>
 
               {/* Delivery Time */}
-              {listing.is_auto_delivery ? (
+              {isInstant ? (
                 <div className="instant-delivery-badge">
                   <svg className="instant-delivery-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                     <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
@@ -727,6 +753,54 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
               </div>
 
+              {/* Auto-fulfilled top-ups: buyer's player/user ID */}
+              {requiredCheckoutFields.map((field) => (
+                <div className="form-group" key={field.key} style={{ marginBottom: 0 }}>
+                  <label className="form-label">{field.label} *</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={checkoutFieldValues[field.key] || ''}
+                      onChange={(e) => {
+                        setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }));
+                        setIdVerify({ status: 'idle', name: '' });
+                      }}
+                      placeholder={field.label}
+                      maxLength={100}
+                      disabled={buying}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={handleVerifyTopupId}
+                      disabled={buying || !checkoutFieldsFilled || idVerify.status === 'checking'}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      {idVerify.status === 'checking' ? 'Checking…' : 'Verify'}
+                    </button>
+                  </div>
+                  {idVerify.status === 'ok' && (
+                    <span className="form-hint" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
+                      ✓ Found{idVerify.name ? `: ${idVerify.name}` : ''}
+                    </span>
+                  )}
+                  {idVerify.status === 'bad' && (
+                    <span className="form-hint form-error-text">
+                      This ID was not found — please double-check it.
+                    </span>
+                  )}
+                  {idVerify.status === 'unverified' && (
+                    <span className="form-hint">
+                      Couldn't verify right now — double-check the ID before paying.
+                    </span>
+                  )}
+                  <span className="form-hint">
+                    The top-up goes directly to this account — a wrong ID cannot be reversed.
+                  </span>
+                </div>
+              ))}
+
               {/* Wallet info / payment breakdown */}
               {wallet && (
                 <div className="confirm-order-wallet">
@@ -803,7 +877,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
               )}
 
-              {listing.is_auto_delivery && (
+              {isInstant && (
                 <div className="confirm-order-notice confirm-order-notice-instant">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
@@ -829,7 +903,7 @@ export default function ListingDetailClient({ initialListing = null }) {
               <button
                 className="btn btn-primary"
                 onClick={handleConfirmPurchase}
-                disabled={buying || (!hasBalance && !jazzCashEnabled)}
+                disabled={buying || (!hasBalance && !jazzCashEnabled) || !checkoutFieldsFilled}
               >
                 {buying ? (
                   <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> {jazzCashWaiting ? 'Waiting for JazzCash...' : 'Processing...'}</>
