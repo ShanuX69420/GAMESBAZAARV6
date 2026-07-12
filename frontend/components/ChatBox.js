@@ -94,12 +94,21 @@ export default function ChatBox({
   const loadingOlderRef = useRef(false);
   const mountedRef = useRef(true);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
   const initialImageAutoScrollRef = useRef(false);
   const pendingInitialImageLoadsRef = useRef(0);
   const initialImageScrollTimerRef = useRef(null);
   const [listingContextSent, setListingContextSent] = useState(false);
   const onOrderEventRef = useRef(onOrderEvent);
   onOrderEventRef.current = onOrderEvent;
+
+  // Auto-grow the message box as lines are added (Shift+Enter), reset after send.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [input]);
 
 
   function handleScroll() {
@@ -810,13 +819,20 @@ export default function ChatBox({
           style={{ display: 'none' }}
           onChange={handleFileSelect}
         />
-        <input
-          type="text"
+        <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSend(e);
+            }
+          }}
           placeholder="Message..."
           maxLength={MAX_CHAT_MESSAGE_LENGTH}
           disabled={sending}
+          rows={1}
         />
         <button
           type="button"
