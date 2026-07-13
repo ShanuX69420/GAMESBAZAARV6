@@ -459,7 +459,7 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '').strip()
 # JazzCash MWallet payment gateway (REST API v1.1). Payments stay disabled
 # until the merchant credentials are configured.
 JAZZCASH_BASE_URL = (
-    os.environ.get('JAZZCASH_BASE_URL', 'https://onlinepayments.jazzcash.com.pk')
+    os.environ.get('JAZZCASH_BASE_URL', 'https://pgw.jazzcash.com.pk')
     .strip().rstrip('/')
 )
 JAZZCASH_MERCHANT_ID = os.environ.get('JAZZCASH_MERCHANT_ID', '').strip()
@@ -467,6 +467,12 @@ JAZZCASH_PASSWORD = os.environ.get('JAZZCASH_PASSWORD', '').strip()
 JAZZCASH_INTEGRITY_SALT = os.environ.get('JAZZCASH_INTEGRITY_SALT', '').strip()
 # Must be pre-registered with JazzCash; the same URL is sent on every request.
 JAZZCASH_RETURN_URL = os.environ.get('JAZZCASH_RETURN_URL', '').strip()
+# pp_SubMerchantName: mandatory and signed. JazzCash rejects anything that is
+# not pure letters, so strip the value down to letters rather than trusting env.
+JAZZCASH_SUB_MERCHANT_NAME = ''.join(
+    ch for ch in os.environ.get('JAZZCASH_SUB_MERCHANT_NAME', 'GamesBazaar').strip()
+    if ch.isascii() and ch.isalpha()
+) or 'GamesBazaar'
 # Only needed for the optional Refund API.
 JAZZCASH_MERCHANT_MPIN = os.environ.get('JAZZCASH_MERCHANT_MPIN', '').strip()
 # First three letters of the merchant domain, used in pp_TxnRefNo.

@@ -4,6 +4,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+import requests
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -22,11 +23,12 @@ from .payments import (
 
 JAZZCASH_TEST_SETTINGS = dict(
     JAZZCASH_ENABLED=True,
-    JAZZCASH_BASE_URL='https://onlinepayments.jazzcash.com.pk',
+    JAZZCASH_BASE_URL='https://pgw.jazzcash.com.pk',
     JAZZCASH_MERCHANT_ID='MC25041',
     JAZZCASH_PASSWORD='sz1v4agvyf',
     JAZZCASH_INTEGRITY_SALT='3vv9wu3a18',
     JAZZCASH_RETURN_URL='https://www.gamesbazaar.pk/wallet',
+    JAZZCASH_SUB_MERCHANT_NAME='GamesBazaar',
     JAZZCASH_TXN_REF_PREFIX='Gam',
     JAZZCASH_REQUEST_TIMEOUT_SECONDS=5,
 )
@@ -86,6 +88,63 @@ class JazzCashHashTests(TestCase):
         self.assertEqual(len(ref), 20)
         self.assertTrue(ref.isalnum())
         self.assertTrue(ref.startswith('Gam'))
+
+
+@override_settings(**JAZZCASH_TEST_SETTINGS)
+class JazzCashInitiationRequestTests(TestCase):
+    """Lock the wire format of the MWallet v1.1 request to the 2026 guides."""
+
+    def _capture_request(self):
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured['url'] = url
+            captured['payload'] = json
+            raise requests.RequestException('captured')
+
+        with patch('core.jazzcash.requests.post', side_effect=fake_post):
+            with self.assertRaises(jazzcash.JazzCashUnavailable):
+                jazzcash.initiate_mwallet_payment(
+                    amount=Decimal('500.00'),
+                    mobile_number='03001234567',
+                    txn_ref_no='Gam20260610120000123',
+                    bill_reference='GBTOPUP1',
+                    description='GamesBazaar wallet top-up',
+                )
+        return captured
+
+    def test_initiation_posts_to_the_production_dotransaction_endpoint(self):
+        self.assertEqual(
+            self._capture_request()['url'],
+            'https://pgw.jazzcash.com.pk/api/payment/DoTransaction',
+        )
+
+    def test_initiation_sends_exactly_the_documented_fields(self):
+        payload = self._capture_request()['payload']
+        self.assertEqual(set(payload), {
+            'pp_Amount', 'pp_BankID', 'pp_BillReference', 'pp_Description',
+            'pp_Language', 'pp_MerchantID', 'pp_Password', 'pp_ProductID',
+            'pp_ReturnURL', 'pp_SecureHash', 'pp_SubMerchantID',
+            'pp_SubMerchantName', 'pp_TxnCurrency', 'pp_TxnDateTime',
+            'pp_TxnExpiryDateTime', 'pp_TxnRefNo', 'pp_TxnType', 'pp_Version',
+            'ppmpf_1', 'ppmpf_2', 'ppmpf_3', 'ppmpf_4', 'ppmpf_5',
+        })
+        # Unused fields travel as "" — never null, never dropped.
+        for key in ('pp_BankID', 'pp_ProductID', 'pp_SubMerchantID', 'ppmpf_5'):
+            self.assertEqual(payload[key], '')
+
+    def test_sub_merchant_name_is_letters_only_and_signed(self):
+        payload = self._capture_request()['payload']
+        self.assertEqual(payload['pp_SubMerchantName'], 'GamesBazaar')
+        self.assertTrue(payload['pp_SubMerchantName'].isalpha())
+
+        # A hash computed without pp_SubMerchantName is what JazzCash rejects
+        # as "Hash Mismatch" — ours must not match that.
+        without = {k: v for k, v in payload.items() if k != 'pp_SubMerchantName'}
+        self.assertTrue(jazzcash.verify_secure_hash(payload))
+        self.assertNotEqual(
+            payload['pp_SecureHash'], jazzcash.generate_secure_hash(without),
+        )
 
 
 @override_settings(**JAZZCASH_TEST_SETTINGS)

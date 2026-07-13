@@ -17,11 +17,13 @@ self-heals within one timer interval.
    integrity salt (these will be DIFFERENT from the sandbox `MC990370` set).
 2. **Server IP whitelisted by JazzCash.** Their F5 WAF blocked our VPS IP
    `64.227.182.238` during UAT (support ID 2070602475517634790, whitelisting
-   requested 2026-07-06). Verify from the VPS — this is the #1 go-live blocker:
+   requested 2026-07-06). That was against the OLD host; production lives on
+   `pgw.jazzcash.com.pk`, which may or may not block us. Verify from the VPS —
+   this is the #1 go-live blocker:
 
    ```bash
    curl -s -o /tmp/jc_probe -w "%{http_code} %{content_type}\n" -X POST \
-     "https://onlinepayments.jazzcash.com.pk/payment-orchestrator/api/v1/rest/payments/m-wallet" \
+     "https://pgw.jazzcash.com.pk/api/payment/DoTransaction" \
      -H "Content-Type: application/json" -d '{}'
    head -c 300 /tmp/jc_probe; echo
    ```
@@ -29,10 +31,25 @@ self-heals within one timer interval.
    - **PASS:** response is JSON (an API error object is fine — we sent an empty body).
    - **FAIL:** HTML containing "Request Rejected" → still blocked. Stop; reply to
      JazzCash with the support ID shown in that HTML.
-3. **Live merchant-portal access** (the production portal, not sandbox).
-4. If JazzCash says the production API lives on a different host than
-   `https://onlinepayments.jazzcash.com.pk`, note it — you'll set
-   `JAZZCASH_BASE_URL` in step 2.
+3. **Live merchant-portal access** — `https://pgw-portal.jazzcash.com.pk/account/login`
+   (production portal, not sandbox). Portal credentials come from the bank team
+   separately from the API credentials.
+4. Production endpoints (email from Imran Haider, 2026-07-13) — already the
+   defaults in `settings.py` / `jazzcash.py`, so `JAZZCASH_BASE_URL` only needs
+   setting if these change:
+
+   | Call | URL |
+   |---|---|
+   | MWallet v1.1 | `https://pgw.jazzcash.com.pk/api/payment/DoTransaction` |
+   | Status Inquiry | `https://pgw.jazzcash.com.pk/ApplicationAPI/API/PaymentInquiry/Inquire` |
+   | MWallet Refund | `https://pgw.jazzcash.com.pk/api/Purchase/domwalletrefundtransaction` |
+
+5. `pp_SubMerchantName` is mandatory and signed (letters only). We send
+   `GamesBazaar` by default — override with `JAZZCASH_SUB_MERCHANT_NAME` if
+   JazzCash requires a specific registered name.
+6. After the first live transaction, JazzCash want the request/response logs for
+   verification — `journalctl -u gamesbazaar-backend | grep JazzCash` has them
+   (initiation and IPN are logged at INFO).
 
 ## 1. Register URLs in the LIVE merchant portal
 
@@ -66,11 +83,10 @@ JAZZCASH_INTEGRITY_SALT=<production integrity salt>
 JAZZCASH_RETURN_URL=https://gamesbazaar.pk/wallet
 ```
 
-Only if JazzCash gave a different production host in step 0.4:
-
-```env
-JAZZCASH_BASE_URL=<production base url>
-```
+`JAZZCASH_BASE_URL` defaults to `https://pgw.jazzcash.com.pk` and only needs an
+entry if JazzCash move the API off that host. If an old
+`JAZZCASH_BASE_URL=https://onlinepayments.jazzcash.com.pk` line is still in the
+`.env`, DELETE it — it points at the pre-production host and every call would fail.
 
 `JAZZCASH_ENABLED` switches on automatically when all four core vars are set
 (see `backend/gamesbazaar/settings.py`).

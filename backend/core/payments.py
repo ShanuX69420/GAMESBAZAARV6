@@ -34,10 +34,10 @@ from .services import (
 
 logger = logging.getLogger(__name__)
 
-# JazzCash requires the Status Inquiry for pending (157) transactions to run
-# 5-7 minutes after initiation; the reconcile timer should fire every 2-3
-# minutes so payments are inquired within that window.
-STATUS_INQUIRY_MIN_AGE = timedelta(minutes=5)
+# The 2026 Status Inquiry guide requires at least 10 minutes between initiation
+# and the first inquiry. Inquiring earlier risks a verdict on an in-flight
+# transaction, which apply_gateway_result would treat as final.
+STATUS_INQUIRY_MIN_AGE = timedelta(minutes=10)
 # Don't hammer the inquiry API when the user is polling our status endpoint.
 STATUS_INQUIRY_REPOLL_SECONDS = 60
 # pp_TxnExpiryDateTime is one day after initiation; add an hour of grace

@@ -16,6 +16,9 @@ Gateway rules this module encodes:
   and pp_TxnExpiryDateTime is one day after pp_TxnDateTime.
 - pp_TxnRefNo is unique per transaction (20 alphanumeric chars max).
 - Empty parameters must be sent as "" and must not be removed from payloads.
+- pp_SubMerchantName is mandatory on initiation and must be letters only (no
+  spaces or symbols). It is a signed parameter: leaving it out of the hash
+  fails the transaction with "Hash Mismatch".
 
 This module talks only to the gateway; persistence and wallet orchestration
 live in core.payments.
@@ -36,9 +39,9 @@ logger = logging.getLogger(__name__)
 
 PAKISTAN_TZ = ZoneInfo('Asia/Karachi')
 
-MWALLET_PATH = '/payment-orchestrator/api/v1/rest/payments/m-wallet'
-STATUS_INQUIRY_PATH = '/payment-orchestrator/api/v1/rest/payments/status/inquiry'
-REFUND_PATH = '/payment-orchestrator/api/v1/rest/payments/m-wallet/refund'
+MWALLET_PATH = '/api/payment/DoTransaction'
+STATUS_INQUIRY_PATH = '/ApplicationAPI/API/PaymentInquiry/Inquire'
+REFUND_PATH = '/api/Purchase/domwalletrefundtransaction'
 
 GATEWAY_DATETIME_FORMAT = '%Y%m%d%H%M%S'
 
@@ -176,12 +179,16 @@ def initiate_mwallet_payment(*, amount, mobile_number, txn_ref_no, bill_referenc
     txn_datetime = txn_datetime or pakistan_now()
     payload = {
         'pp_Amount': amount_to_paisa(amount),
+        'pp_BankID': '',
         'pp_BillReference': bill_reference,
         'pp_Description': description,
         'pp_Language': 'EN',
         'pp_MerchantID': settings.JAZZCASH_MERCHANT_ID,
         'pp_Password': settings.JAZZCASH_PASSWORD,
+        'pp_ProductID': '',
         'pp_ReturnURL': settings.JAZZCASH_RETURN_URL,
+        'pp_SubMerchantID': '',
+        'pp_SubMerchantName': settings.JAZZCASH_SUB_MERCHANT_NAME,
         'pp_TxnCurrency': 'PKR',
         'pp_TxnDateTime': format_gateway_datetime(txn_datetime),
         'pp_TxnExpiryDateTime': format_gateway_datetime(txn_datetime + timedelta(days=1)),
