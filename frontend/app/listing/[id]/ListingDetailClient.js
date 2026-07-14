@@ -41,7 +41,6 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [buyError, setBuyError] = useState('');
   const [buySuccess, setBuySuccess] = useState('');
   const [jazzCashMobile, setJazzCashMobile] = useState('');
-  const [jazzCashWaiting, setJazzCashWaiting] = useState(false);
   const buyingRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -237,13 +236,11 @@ export default function ListingDetailClient({ initialListing = null }) {
     try {
       let payment = await initiateJazzCashPurchase(listing.id, quantity, mobile, checkoutFieldValues);
       if (payment.status === 'pending') {
-        setJazzCashWaiting(true);
         payment = await pollJazzCashPayment(payment.id);
       }
       if (payment?.status === 'completed' && payment.order_id) {
         const order = { id: payment.order_id, order_number: payment.order_number };
         trackPurchase(order, listing, quantity);
-        setJazzCashWaiting(false);
         setShowConfirm(false);
         setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
         // Keep `buying` true so the buy button stays disabled until redirect.
@@ -256,14 +253,13 @@ export default function ListingDetailClient({ initialListing = null }) {
         setBuyError(payment.note || 'Your payment was received but the purchase could not be completed. The amount was added to your wallet.');
         getWallet().then(w => setWallet(w)).catch(() => {});
       } else if (payment?.status === 'failed') {
-        setBuyError(payment.response_message || 'JazzCash payment failed. Please try again.');
+        setBuyError(payment.user_message || 'JazzCash payment failed. Please try again.');
       } else {
         setBuyError('Your JazzCash payment is still processing. Once it is confirmed, your order will appear in My Orders automatically.');
       }
     } catch (err) {
       setBuyError(err.message);
     }
-    setJazzCashWaiting(false);
     buyingRef.current = false;
     setBuying(false);
   }
@@ -341,6 +337,10 @@ export default function ListingDetailClient({ initialListing = null }) {
   const jazzCashShortfall = Math.max(0, parseFloat(totalPrice) - walletBalance);
   const jazzCashCharge = Math.max(jazzCashShortfall, MIN_JAZZCASH_PAYMENT);
   const jazzCashChange = jazzCashCharge - jazzCashShortfall;
+  // JazzCash holds the initiate call open while the buyer approves on their
+  // phone, so the prompt has to show for the whole request — not just once the
+  // gateway has come back saying "pending".
+  const jazzCashInFlight = payWithJazzCash && buying;
 
   return (
     <div className="container">
@@ -869,10 +869,13 @@ export default function ListingDetailClient({ initialListing = null }) {
                     Prefer a bank transfer? <Link href="/wallet" className="buy-topup-link">Add funds to your wallet</Link> and
                     come back to complete the purchase.
                   </div>
-                  {jazzCashWaiting && (
+                  {jazzCashInFlight && (
                     <div className="alert alert-success" style={{ marginTop: '8px', marginBottom: 0 }}>
-                      ⏳ Payment request sent! Approve it in your JazzCash app — this
-                      page will update automatically.
+                      <strong>📲 Approve the payment on your phone</strong>
+                      <div style={{ marginTop: '4px' }}>
+                        Open your JazzCash app and approve the PKR {formatPKR(jazzCashCharge)} request.
+                        Keep this page open — it updates automatically once you approve.
+                      </div>
                     </div>
                   )}
                 </div>
@@ -907,7 +910,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                 disabled={buying || (!hasBalance && !jazzCashEnabled) || !checkoutFieldsFilled}
               >
                 {buying ? (
-                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> {jazzCashWaiting ? 'Waiting for JazzCash...' : 'Processing...'}</>
+                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> {jazzCashInFlight ? 'Waiting for your approval...' : 'Processing...'}</>
                 ) : payWithJazzCash ? (
                   `⚡ Pay with JazzCash — PKR ${formatPKR(jazzCashCharge)}`
                 ) : (

@@ -36,7 +36,6 @@ export default function WalletPage() {
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMethod, setTopUpMethod] = useState('jazzcash');
   const [jazzCashMobile, setJazzCashMobile] = useState('');
-  const [jazzCashWaiting, setJazzCashWaiting] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('JazzCash');
   const [withdrawAccountTitle, setWithdrawAccountTitle] = useState('');
@@ -172,7 +171,6 @@ export default function WalletPage() {
     try {
       let payment = await initiateJazzCashTopUp(topUpAmount, mobile);
       if (payment.status === 'pending') {
-        setJazzCashWaiting(true);
         payment = await pollJazzCashPayment(payment.id);
       }
       if (payment?.status === 'completed') {
@@ -182,7 +180,7 @@ export default function WalletPage() {
         setShowTopUp(false);
         await loadData();
       } else if (payment?.status === 'failed') {
-        setError(payment.response_message || 'JazzCash payment failed. Please try again.');
+        setError(payment.user_message || 'JazzCash payment failed. Please try again.');
       } else {
         setSuccess('Your JazzCash payment is still processing. Your wallet will be credited automatically once JazzCash confirms it.');
         setShowTopUp(false);
@@ -191,7 +189,6 @@ export default function WalletPage() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setJazzCashWaiting(false);
       setSubmitting(false);
     }
   }
@@ -368,16 +365,17 @@ export default function WalletPage() {
                   />
                   <span className="form-hint">The JazzCash account that will be charged.</span>
                 </div>
-                {jazzCashWaiting && (
+                {submitting && (
                   <div className="alert alert-success" style={{ marginBottom: '12px' }}>
-                    ⏳ Payment request sent! Approve it in your JazzCash app — this
-                    page will update automatically.
+                    <strong>📲 Approve the payment on your phone</strong>
+                    <div style={{ marginTop: '4px' }}>
+                      Open your JazzCash app and approve the request. Keep this page
+                      open — it updates automatically once you approve.
+                    </div>
                   </div>
                 )}
                 <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit || topUpBelowMin}>
-                  {submitting
-                    ? (jazzCashWaiting ? 'Waiting for confirmation...' : 'Sending request...')
-                    : 'Pay with JazzCash'}
+                  {submitting ? 'Waiting for your approval...' : 'Pay with JazzCash'}
                 </button>
               </form>
             </>

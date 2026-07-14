@@ -1320,17 +1320,39 @@ class JazzCashPaymentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     order_id = serializers.IntegerField(read_only=True)
     order_number = serializers.SerializerMethodField()
+    user_message = serializers.SerializerMethodField()
 
     class Meta:
         model = JazzCashPayment
         fields = [
             'id', 'purpose', 'amount', 'mobile_number', 'txn_ref_no',
             'status', 'status_display', 'response_message', 'note',
-            'order_id', 'order_number', 'created_at', 'completed_at',
+            'user_message', 'order_id', 'order_number', 'created_at', 'completed_at',
         ]
 
     def get_order_number(self, obj):
         return obj.order.order_number if obj.order_id else None
+
+    def get_user_message(self, obj):
+        # response_message is the gateway's own wording ("A confirmer sends the
+        # short message 'N' to cancel a transaction.") and is meaningless to a
+        # buyer. Show this instead; response_message stays for admin/debugging.
+        if obj.status == 'completed':
+            return ''
+        if obj.status == 'pending':
+            return (
+                'Still waiting for you to approve this payment in your JazzCash '
+                'app. It goes through automatically as soon as you approve it.'
+            )
+        outcome = (
+            'Your order was not placed.' if obj.purpose == 'purchase'
+            else 'Your wallet was not topped up.'
+        )
+        return (
+            "Your JazzCash payment wasn't approved — it was declined, or the "
+            f'request timed out on your phone. {outcome} Please try again; any '
+            'amount that was deducted is reversed automatically.'
+        )
 
 
 class WithdrawRequestSerializer(serializers.ModelSerializer):
