@@ -61,15 +61,18 @@ export function trackPurchase(order, listing, quantity) {
     value,
     items: [gaItem(listing, quantity)],
   });
+  // The backend sends the same Purchase via the Conversions API with this
+  // exact eventID (purchase-<order id>), so Meta deduplicates the pair.
   fbq('track', 'Purchase', {
     ...pixelContents(listing),
     currency: CURRENCY,
     value,
     num_items: quantity,
-  });
+  }, { eventID: `purchase-${order.id}` });
 }
 
 export function trackSignUp(method) {
   gtag('event', 'sign_up', { method });
-  fbq('track', 'CompleteRegistration', { content_name: method });
+  // No fbq here: Meta CompleteRegistration is sent server-side only
+  // (Conversions API), so signups blocked by ad blockers still count.
 }

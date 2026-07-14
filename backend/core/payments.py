@@ -48,13 +48,16 @@ TXN_REF_ALLOCATION_ATTEMPTS = 5
 
 
 def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
-                           listing=None, listing_quantity=1, checkout_payload=''):
+                           listing=None, listing_quantity=1, checkout_payload='',
+                           meta_tracking=''):
     """Create a payment row and send the MWallet initiation request.
 
     Returns the payment in its post-initiation state. Network failures leave
     the payment pending so IPN / Status Inquiry can settle it later — the
     same pp_TxnRefNo is never re-sent. ``checkout_payload`` (already
-    encrypted) carries buyer checkout info for auto-fulfilled purchases.
+    encrypted) carries buyer checkout info for auto-fulfilled purchases;
+    ``meta_tracking`` (JSON) carries browser attribution data for the
+    server-side Meta Purchase event sent when the payment finalizes.
     """
     payment = None
     for _ in range(TXN_REF_ALLOCATION_ATTEMPTS):
@@ -68,6 +71,7 @@ def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
                 listing=listing,
                 listing_quantity=listing_quantity,
                 checkout_payload=checkout_payload,
+                meta_tracking=meta_tracking,
             )
             break
         except IntegrityError:
@@ -253,11 +257,24 @@ def finalize_jazzcash_payment(payment_id, *, response_code='', response_message=
                             checkout_info = parsed
                     except ValueError:
                         checkout_info = None
+                # Browser attribution snapshot from initiation — this may be
+                # running from IPN or the reconcile timer with no buyer
+                # request in sight, which is exactly why it was stored.
+                tracking = {}
+                if payment.meta_tracking:
+                    try:
+                        parsed = json.loads(payment.meta_tracking)
+                        if isinstance(parsed, dict):
+                            tracking = parsed
+                    except ValueError:
+                        tracking = {}
+                tracking['phone'] = payment.mobile_number
                 order, purchase_error = execute_listing_purchase(
                     buyer=payment.user,
                     listing_id=payment.listing_id,
                     quantity=payment.listing_quantity,
                     checkout_info=checkout_info,
+                    meta_tracking=tracking,
                 )
             else:
                 purchase_error = 'This listing is no longer available.'

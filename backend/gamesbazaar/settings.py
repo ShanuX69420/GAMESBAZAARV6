@@ -495,6 +495,17 @@ JAZZCASH_ENABLED = bool(
     and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
 )
 
+# Meta (Facebook) Conversions API — server-side Purchase/CompleteRegistration
+# events, deduplicated against the browser pixel via shared event IDs
+# (core/meta_capi.py). Stays disabled until both values are configured.
+# The pixel ID matches the frontend's NEXT_PUBLIC_META_PIXEL_ID; the access
+# token comes from Events Manager → dataset Settings → Conversions API.
+META_PIXEL_ID = os.environ.get('META_PIXEL_ID', '').strip()
+META_CAPI_ACCESS_TOKEN = os.environ.get('META_CAPI_ACCESS_TOKEN', '').strip()
+# When set, events land in Events Manager's Test Events tab instead of the
+# production dataset — for verifying the integration, then unset it.
+META_CAPI_TEST_EVENT_CODE = os.environ.get('META_CAPI_TEST_EVENT_CODE', '').strip()
+
 # FazerCards supplier API — automatic fulfillment of Fazer-sourced listings
 # (Steam keys, gift cards, game top-ups). Auto-fulfillment additionally needs
 # the runtime PlatformSetting toggle 'fazer_autofulfill_enabled' switched on

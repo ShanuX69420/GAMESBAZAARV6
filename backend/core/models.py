@@ -887,6 +887,13 @@ class JazzCashPayment(models.Model):
         help_text='Encrypted JSON of buyer info collected at initiation '
                   '(e.g. game player ID) — forwarded to the purchase on finalize.',
     )
+    meta_tracking = models.TextField(
+        blank=True, default='',
+        help_text='JSON snapshot of browser attribution data (IP, user agent, '
+                  '_fbp/_fbc cookies) captured at initiation — used for the '
+                  'server-side Meta Purchase event when the payment resolves '
+                  'after the buyer left the site.',
+    )
     order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True,
                               related_name='jazzcash_payments')
 

@@ -129,7 +129,7 @@ from .services import (
     send_email_verification_code,
     notify_staff_about_item_request,
 )
-from . import fazer, fulfillment, jazzcash
+from . import fazer, fulfillment, jazzcash, meta_capi
 from .payments import (
     apply_gateway_result,
     maybe_refresh_payment_status,
@@ -1097,6 +1097,12 @@ class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
+        # Server-side Meta CompleteRegistration (the pixel doesn't send one).
+        meta_capi.queue_registration_event(
+            user, method='email',
+            tracking=meta_capi.tracking_from_request(request),
+        )
+
         # Send verification email
         code = generate_email_verification_code()
         token = create_email_verification_token(user.pk, code)
@@ -1279,7 +1285,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
         google_sub = google_sub.strip()
 
         try:
-            user = self._get_or_create_google_user(
+            user, user_created = self._get_or_create_google_user(
                 google_sub=google_sub,
                 google_email=google_email,
                 google_name=idinfo.get('name', '').strip(),
@@ -1299,6 +1305,16 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
             if existing_account is None:
                 raise
             user = existing_account.user
+            user_created = False
+
+        if user_created:
+            # Server-side Meta CompleteRegistration (the pixel doesn't send
+            # one). Only for genuinely new users — linking Google to an
+            # existing account is a login, not a registration.
+            meta_capi.queue_registration_event(
+                user, method='google',
+                tracking=meta_capi.tracking_from_request(request),
+            )
 
         if not user.is_active:
             return Response(
@@ -1349,7 +1365,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                 if social_account.email != google_email:
                     social_account.email = google_email
                     social_account.save(update_fields=['email', 'updated_at'])
-                return cls._claim_pending_google_registration(social_account.user)
+                return cls._claim_pending_google_registration(social_account.user), False
 
             matching_users = list(
                 User.objects.select_for_update()
@@ -1361,6 +1377,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                     'More than one account uses this email. Please sign in with your password or contact support.'
                 )
 
+            user_created = not matching_users
             if matching_users:
                 user = cls._claim_pending_google_registration(matching_users[0])
             else:
@@ -1377,7 +1394,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
                 uid=google_sub,
                 email=google_email,
             )
-            return user
+            return user, user_created
 
     @staticmethod
     def _claim_pending_google_registration(user):
@@ -3068,6 +3085,9 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                     encrypt_sensitive_text(json.dumps(checkout_info, ensure_ascii=False))
                     if checkout_info else ''
                 ),
+                # The purchase may execute from IPN/reconcile long after the
+                # buyer left — snapshot their attribution data now.
+                meta_tracking=json.dumps(meta_capi.tracking_from_request(request)),
             )
         except jazzcash.JazzCashError:
             return _jazzcash_disabled_response()
@@ -3186,7 +3206,8 @@ def get_order_by_reference_or_404(queryset, order_ref, **filters):
     return get_object_or_404(queryset.filter(order_reference_filter(order_ref), **filters))
 
 
-def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None):
+def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
+                             meta_tracking=None):
     """Run the full purchase flow for a listing, paying from the buyer's wallet.
 
     Shared by BuyListingView and the JazzCash direct-buy flow (which credits
@@ -3197,6 +3218,11 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None)
     ``checkout_info`` carries buyer-supplied checkout data (e.g. the player
     ID for auto-fulfilled top-ups) — stored encrypted on the order and used
     by the Fazer fulfillment engine after commit.
+
+    ``meta_tracking`` carries browser attribution data for the server-side
+    Meta Purchase event (queued here, delivered after commit) — every
+    completed sale flows through this function, so this is the one place
+    Meta learns about all of them.
     """
     qty = quantity
 
@@ -3333,6 +3359,10 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None)
 
         order.conversation = conversation
         order.save(update_fields=['conversation'])
+
+        # Server-side Meta Purchase event (sent after commit, deduplicated
+        # against the browser pixel via the shared purchase-<id> event ID).
+        meta_capi.queue_purchase_event(order, buyer=buyer, tracking=meta_tracking)
 
         # Queue automatic fulfillment (order stays 'pending'; the supplier
         # call happens after this transaction commits).
@@ -3497,6 +3527,7 @@ class BuyListingView(APIView):
             listing_id=data['listing_id'],
             quantity=data.get('quantity', 1),
             checkout_info=checkout_info,
+            meta_tracking=meta_capi.tracking_from_request(request),
         )
         if error:
             return Response({'error': error}, status=400)
