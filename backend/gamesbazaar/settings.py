@@ -164,9 +164,12 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'gamesbazaar.wsgi.application'
 
-# Database — PostgreSQL. Connections are kept alive between requests
-# (DB_CONN_MAX_AGE seconds) instead of reconnecting per request; health
-# checks drop stale connections before reuse.
+# Database — PostgreSQL. CONN_MAX_AGE must stay 0 under daphne/ASGI:
+# persistent connections leak there (each request thread keeps one that is
+# never reused or closed), which exhausted Postgres' 100 slots and 500'd the
+# site in a 2026-07-14 load test. Postgres is on localhost, so per-request
+# reconnects cost ~1-2ms. If pooling is ever needed, migrate to psycopg 3 and
+# Django's OPTIONS {"pool": True} — do NOT raise this value.
 DATABASES = {
     'default': {
         'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.postgresql'),
@@ -175,7 +178,7 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
-        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
+        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 0),
         'CONN_HEALTH_CHECKS': True,
     }
 }
