@@ -16,7 +16,8 @@ import ReportModal from '@/components/ReportModal';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
-const MIN_JAZZCASH_TOPUP = 500;
+// Keep in sync with JAZZCASH_MIN_PAYMENT_PKR (backend settings).
+const MIN_JAZZCASH_PAYMENT = 20;
 
 const formatPKR = (n) => Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2 });
 // Per-unit prices can be tiny (e.g., PKR 1.4 / M) — keep up to 2 decimals.
@@ -333,12 +334,12 @@ export default function ListingDetailClient({ initialListing = null }) {
   const checkoutFieldsFilled = requiredCheckoutFields.every(
     (f) => (checkoutFieldValues[f.key] || '').trim()
   );
-  // JazzCash only covers what the wallet is missing, subject to the minimum
-  // top-up — anything above the shortfall lands back in the wallet.
+  // JazzCash only covers what the wallet is missing, subject to the gateway's
+  // minimum charge — anything above the shortfall lands back in the wallet.
   const payWithJazzCash = !hasBalance && jazzCashEnabled;
   const walletApplied = Math.min(walletBalance, parseFloat(totalPrice));
   const jazzCashShortfall = Math.max(0, parseFloat(totalPrice) - walletBalance);
-  const jazzCashCharge = Math.max(jazzCashShortfall, MIN_JAZZCASH_TOPUP);
+  const jazzCashCharge = Math.max(jazzCashShortfall, MIN_JAZZCASH_PAYMENT);
   const jazzCashChange = jazzCashCharge - jazzCashShortfall;
 
   return (
@@ -834,7 +835,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                             </span>
                           </div>
                           <div className="form-hint" style={{ marginTop: '6px' }}>
-                            The minimum JazzCash payment is PKR {MIN_JAZZCASH_TOPUP} — the extra
+                            The minimum JazzCash payment is PKR {MIN_JAZZCASH_PAYMENT} — the extra
                             PKR {formatPKR(jazzCashChange)} stays in your wallet.
                           </div>
                         </>

@@ -71,7 +71,7 @@ from .serializers import (
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     JazzCashTopUpInitiateSerializer, JazzCashBuyInitiateSerializer,
-    JazzCashPaymentSerializer, MIN_TOPUP_AMOUNT,
+    JazzCashPaymentSerializer,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
     ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
@@ -3038,7 +3038,7 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                 {'error': 'You have enough wallet balance for this order — pay with your wallet.'},
                 status=400,
             )
-        charge = max(total - wallet.balance, MIN_TOPUP_AMOUNT)
+        charge = max(total - wallet.balance, settings.JAZZCASH_MIN_PAYMENT_PKR)
         if charge > settings.JAZZCASH_MAX_PAYMENT_PKR:
             return Response(
                 {'error': f'JazzCash payments are limited to PKR {settings.JAZZCASH_MAX_PAYMENT_PKR:,.0f} '

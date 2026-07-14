@@ -247,7 +247,10 @@ class JazzCashPaymentFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
 
-    def test_direct_buy_charges_min_topup_and_keeps_change_in_wallet(self):
+    def test_direct_buy_lifts_a_tiny_shortfall_to_the_minimum_charge(self):
+        self.buyer_wallet.balance = Decimal('145.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
         def fake_post(path, payload):
             return self._gateway_response(
                 code='000', txn_ref_no=payload['pp_TxnRefNo'],
@@ -268,15 +271,15 @@ class JazzCashPaymentFlowTests(TestCase):
         self.assertTrue(response.data['order_number'])
 
         payment = JazzCashPayment.objects.get(pk=response.data['id'])
-        # The 150.00 shortfall is below the minimum top-up, so 500.00 is charged.
-        self.assertEqual(payment.amount, Decimal('500.00'))
+        # The 5.00 shortfall is below the gateway minimum, so 20.00 is charged.
+        self.assertEqual(payment.amount, Decimal('20.00'))
         order = Order.objects.get(pk=payment.order_id)
         self.assertEqual(order.buyer, self.buyer)
         self.assertEqual(order.total_amount, Decimal('150.00'))
 
-        # JazzCash credit (500) then purchase debit (150) — change stays in wallet.
+        # 145 wallet + 20 JazzCash - 150 purchase — the change stays in wallet.
         self.buyer_wallet.refresh_from_db()
-        self.assertEqual(self.buyer_wallet.balance, Decimal('350.00'))
+        self.assertEqual(self.buyer_wallet.balance, Decimal('15.00'))
 
         self.listing.refresh_from_db()
         self.assertEqual(self.listing.quantity, 1)
@@ -311,14 +314,14 @@ class JazzCashPaymentFlowTests(TestCase):
         self.assertEqual(response.data['status'], 'completed')
 
         payment = JazzCashPayment.objects.get(pk=response.data['id'])
-        # Shortfall is 250.00 but the minimum top-up is 500.00.
-        self.assertEqual(payment.amount, Decimal('500.00'))
+        # Shortfall is 250.00, well above the minimum — charge exactly that.
+        self.assertEqual(payment.amount, Decimal('250.00'))
         order = Order.objects.get(pk=payment.order_id)
         self.assertEqual(order.total_amount, Decimal('1000.00'))
 
-        # 750 wallet + 500 JazzCash - 1000 purchase = 250 stays in the wallet.
+        # 750 wallet + 250 JazzCash - 1000 purchase = nothing left over.
         self.buyer_wallet.refresh_from_db()
-        self.assertEqual(self.buyer_wallet.balance, Decimal('250.00'))
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
 
     def test_direct_buy_charges_full_shortfall_when_above_min_topup(self):
         self.buyer_wallet.balance = Decimal('200.00')

@@ -485,6 +485,11 @@ JAZZCASH_REQUEST_TIMEOUT_SECONDS = env_int('JAZZCASH_REQUEST_TIMEOUT_SECONDS', 6
 # declines anything beyond the customer's wallet limits; this only blocks
 # absurd amounts that would overflow money fields.
 JAZZCASH_MAX_PAYMENT_PKR = Decimal(str(env_int('JAZZCASH_MAX_PAYMENT_PKR', 1_000_000)))
+# Floor for a single JazzCash charge (PKR). A direct buy charges only the
+# wallet shortfall, but the gateway rejects trivially small amounts, so the
+# charge is lifted to this floor and the difference lands in the buyer's
+# wallet. Unrelated to the wallet top-up minimum (MIN_TOPUP_AMOUNT).
+JAZZCASH_MIN_PAYMENT_PKR = Decimal(str(env_int('JAZZCASH_MIN_PAYMENT_PKR', 20)))
 JAZZCASH_ENABLED = bool(
     JAZZCASH_MERCHANT_ID and JAZZCASH_PASSWORD
     and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
