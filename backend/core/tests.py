@@ -10158,3 +10158,99 @@ class AdminDirectTopUpCreditTests(TestCase):
         self.assertFalse(TopUpRequest.objects.exists())
         self.assertEqual(Wallet.objects.get(user=self.user).balance, Decimal('0.00'))
 
+
+
+class SitemapListingsFeedTests(TestCase):
+    """The feed that /sitemap-listings/*.xml is built from."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='sitemap-seller', password='password123')
+
+        self.game = Game.objects.create(name='Sitemap Game', slug='sitemap-game')
+        self.category = Category.objects.create(name='Keys', slug='sitemap-keys')
+        self.game_category = GameCategory.objects.create(game=self.game, category=self.category)
+
+    def tearDown(self):
+        cache.clear()
+
+    def create_listing(self, title, *, status='active', game_category=None):
+        return Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category or self.game_category,
+            title=title,
+            price=Decimal('10.00'),
+            status=status,
+        )
+
+    def test_returns_only_active_listings_with_lastmod(self):
+        active = self.create_listing('Active key')
+        self.create_listing('Sold key', status='sold')
+        self.create_listing('Inactive key', status='inactive')
+
+        response = self.client.get('/api/sitemap/listings/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual([row['id'] for row in response.data['results']], [active.pk])
+        self.assertTrue(response.data['results'][0]['updated_at'])
+
+    def test_excludes_listings_on_inactive_games(self):
+        hidden_game = Game.objects.create(name='Hidden', slug='hidden-game', is_active=False)
+        hidden_gc = GameCategory.objects.create(game=hidden_game, category=self.category)
+        visible = self.create_listing('Visible key')
+        self.create_listing('Hidden key', game_category=hidden_gc)
+
+        response = self.client.get('/api/sitemap/listings/')
+
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual([row['id'] for row in response.data['results']], [visible.pk])
+
+    def test_pages_by_stable_pk_order_so_chunks_do_not_reshuffle(self):
+        listings = [self.create_listing(f'Key {index}') for index in range(5)]
+        expected = [listing.pk for listing in listings]
+
+        first = self.client.get('/api/sitemap/listings/?limit=2&offset=0')
+        second = self.client.get('/api/sitemap/listings/?limit=2&offset=2')
+        third = self.client.get('/api/sitemap/listings/?limit=2&offset=4')
+
+        self.assertEqual([row['id'] for row in first.data['results']], expected[0:2])
+        self.assertEqual([row['id'] for row in second.data['results']], expected[2:4])
+        self.assertEqual([row['id'] for row in third.data['results']], expected[4:5])
+        # count is the full total on every page so the caller can size the index.
+        for response in (first, second, third):
+            self.assertEqual(response.data['count'], 5)
+
+    def test_offset_past_the_end_is_empty_not_an_error(self):
+        self.create_listing('Only key')
+
+        response = self.client.get('/api/sitemap/listings/?limit=10&offset=500')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'], [])
+
+    def test_limit_is_capped_at_googles_per_sitemap_url_limit(self):
+        self.create_listing('Only key')
+
+        response = self.client.get('/api/sitemap/listings/?limit=999999&offset=0')
+
+        # Clamped rather than rejected — a crawler asking for too much still
+        # gets a usable page.
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 1)
+
+    def test_rejects_non_integer_paging(self):
+        response = self.client.get('/api/sitemap/listings/?limit=abc')
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_is_public_and_cacheable(self):
+        self.create_listing('Only key')
+
+        response = self.client.get('/api/sitemap/listings/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('max-age', response['Cache-Control'])
+        self.assertIn('public', response['Cache-Control'])

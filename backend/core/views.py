@@ -52,6 +52,11 @@ HOME_POPULAR_GAMES_PER_SECTION = 8
 HOME_POPULAR_CACHE_KEY = 'home-popular:v1'
 HOME_POPULAR_CACHE_SECONDS = 60
 BROWSE_CACHE_SECONDS = 30
+# Sitemap listing feed: crawlers hit this rarely, so cache hard and cap the page
+# size at Google's per-sitemap URL limit.
+SITEMAP_LISTINGS_CACHE_KEY = 'sitemap-listings:v1'
+SITEMAP_LISTINGS_CACHE_SECONDS = 900
+SITEMAP_LISTINGS_MAX_LIMIT = 50000
 SELLER_PROFILE_CACHE_SECONDS = 30
 UNREAD_COUNT_CACHE_SECONDS = 5
 from .serializers import (
@@ -894,6 +899,52 @@ class GameCategoryDetailView(APIView):
             response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
         else:
             response['Cache-Control'] = 'private'
+        return response
+
+
+class SitemapListingsView(APIView):
+    """GET /api/sitemap/listings/ — active listing ids + lastmod for sitemap.xml.
+
+    Paginated with limit/offset so the frontend can split listings across as many
+    sitemap files as it needs (Google caps a single sitemap at 50,000 URLs).
+    Ordered by pk so a listing keeps its page as the catalogue grows — without a
+    stable order, one insert would reshuffle every page and churn the sitemaps.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get('limit', SITEMAP_LISTINGS_MAX_LIMIT))
+            offset = int(request.query_params.get('offset', 0))
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': 'limit and offset must be integers.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        limit = max(1, min(limit, SITEMAP_LISTINGS_MAX_LIMIT))
+        offset = max(0, offset)
+
+        cache_key = f'{SITEMAP_LISTINGS_CACHE_KEY}:{limit}:{offset}'
+        data = cache.get(cache_key)
+        if data is None:
+            listings = Listing.objects.filter(
+                status='active',
+                game_category__game__is_active=True,
+            ).order_by('pk')
+
+            rows = listings.values('pk', 'updated_at')[offset:offset + limit]
+            data = {
+                'count': listings.count(),
+                'results': [
+                    {'id': row['pk'], 'updated_at': row['updated_at'].isoformat()}
+                    for row in rows
+                ],
+            }
+            cache.set(cache_key, data, SITEMAP_LISTINGS_CACHE_SECONDS)
+
+        response = Response(data)
+        response['Cache-Control'] = f'public, max-age={SITEMAP_LISTINGS_CACHE_SECONDS}'
         return response
 
 

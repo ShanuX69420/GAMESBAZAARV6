@@ -27,7 +27,10 @@ describe('SEO route metadata', () => {
     const { default: robots } = await importFresh('../app/robots.js');
     const config = robots();
 
-    expect(config.sitemap).toBe('https://www.gamesbazaar.pk/sitemap.xml');
+    expect(config.sitemap).toEqual([
+      'https://www.gamesbazaar.pk/sitemap.xml',
+      'https://www.gamesbazaar.pk/sitemap-listings.xml',
+    ]);
     expect(config.rules).toEqual([
       expect.objectContaining({
         userAgent: '*',
@@ -147,6 +150,82 @@ describe('SEO route metadata', () => {
     expect(entries).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/valorant' }),
     ]));
+  });
+
+  it('fans the listing sitemap index out into one chunk per 25k listings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ count: 60000, results: [] }),
+    }));
+
+    const { GET } = await importFresh('../app/sitemap-listings.xml/route.js');
+    const xml = await (await GET()).text();
+
+    // 60,000 listings -> ceil(60000 / 25000) = 3 chunks, with no cap to raise.
+    expect(xml).toContain('<loc>https://www.gamesbazaar.pk/sitemap-listings/0.xml</loc>');
+    expect(xml).toContain('<loc>https://www.gamesbazaar.pk/sitemap-listings/1.xml</loc>');
+    expect(xml).toContain('<loc>https://www.gamesbazaar.pk/sitemap-listings/2.xml</loc>');
+    expect(xml).not.toContain('sitemap-listings/3.xml');
+  });
+
+  it('still serves a valid listing sitemap index when the feed is down', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    const { GET } = await importFresh('../app/sitemap-listings.xml/route.js');
+    const response = await GET();
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('<sitemapindex');
+    expect(xml).toContain('<loc>https://www.gamesbazaar.pk/sitemap-listings/0.xml</loc>');
+  });
+
+  it('lists active listing URLs with lastmod in a sitemap chunk', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        count: 30000,
+        results: [
+          { id: 19890, updated_at: '2026-07-13T10:00:00+00:00' },
+          { id: 19891, updated_at: '2026-07-13T11:00:00+00:00' },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { GET } = await importFresh('../app/sitemap-listings/[chunk]/route.js');
+    const response = await GET({}, { params: Promise.resolve({ chunk: '1.xml' }) });
+    const xml = await response.text();
+
+    // Chunk 1 must page past the first 25,000 listings.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/sitemap/listings/?limit=25000&offset=25000',
+      { next: { revalidate: 3600 } },
+    );
+    expect(response.headers.get('Content-Type')).toContain('application/xml');
+    expect(xml).toContain('<loc>https://www.gamesbazaar.pk/listing/19890</loc>');
+    expect(xml).toContain('<lastmod>2026-07-13T11:00:00+00:00</lastmod>');
+  });
+
+  it('404s a malformed sitemap chunk and never 5xxes on a feed failure', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    const { GET } = await importFresh('../app/sitemap-listings/[chunk]/route.js');
+
+    const bad = await GET({}, { params: Promise.resolve({ chunk: 'not-a-chunk' }) });
+    expect(bad.status).toBe(404);
+
+    const down = await GET({}, { params: Promise.resolve({ chunk: '0.xml' }) });
+    expect(down.status).toBe(200);
+    expect(await down.text()).toContain('<urlset');
   });
 
   it('generates rich listing metadata from public listing data', async () => {

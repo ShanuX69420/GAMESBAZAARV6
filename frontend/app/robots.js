@@ -1,4 +1,5 @@
 import { getSiteUrl } from '@/lib/seo';
+import { listingSitemapIndexUrl } from '@/lib/sitemap';
 
 export default function robots() {
   const siteUrl = getSiteUrl();
@@ -29,6 +30,8 @@ export default function robots() {
         ],
       },
     ],
-    sitemap: `${siteUrl}/sitemap.xml`,
+    // Static + game-category pages in the first, every listing page in the
+    // second (an index that fans out into as many chunks as the catalogue needs).
+    sitemap: [`${siteUrl}/sitemap.xml`, listingSitemapIndexUrl()],
   };
 }

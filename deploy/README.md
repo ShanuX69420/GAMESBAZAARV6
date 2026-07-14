@@ -7,6 +7,7 @@ machine can be rebuilt from this repo plus the nightly database backups
 | File | Lives on the server at |
 |---|---|
 | `nginx/gamesbazaar.conf` | `/etc/nginx/sites-available/gamesbazaar` (symlinked into `sites-enabled/`) |
+| `nginx/api-cache.conf` | `/etc/nginx/conf.d/api-cache.conf` (proxy-cache zone — `gamesbazaar.conf` fails `nginx -t` without it) |
 | `systemd/*.service`, `systemd/*.timer` | `/etc/systemd/system/` |
 | `backup_db.py` | `/opt/gamesbazaar/backup_db.py` (chmod 750) |
 

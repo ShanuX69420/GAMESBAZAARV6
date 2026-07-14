@@ -175,7 +175,7 @@ describe('security proxy', () => {
 
     expect(module.config.matcher).toEqual([
       {
-        source: '/((?!api|_next/static|_next/image|favicon.ico|logo.png|apple-touch-icon.png|manifest.json|robots.txt|sitemap.xml).*)',
+        source: '/((?!api|_next/static|_next/image|favicon.ico|logo.png|apple-touch-icon.png|manifest.json|robots.txt|sitemap.xml|sitemap-listings).*)',
         missing: [
           { type: 'header', key: 'next-router-prefetch' },
           { type: 'header', key: 'purpose', value: 'prefetch' },
