@@ -365,7 +365,14 @@ export default function SupportPage() {
                     <span className="support-info-icon">📧</span>
                     <div>
                       <strong>Email</strong>
-                      <p>support@gamesbazaar.pk</p>
+                      <p><a href="mailto:support@gamesbazaar.pk">support@gamesbazaar.pk</a></p>
+                    </div>
+                  </div>
+                  <div className="support-info-card">
+                    <span className="support-info-icon">📱</span>
+                    <div>
+                      <strong>Phone / WhatsApp</strong>
+                      <p><a href="tel:+923712101998">+92 371 2101998</a></p>
                     </div>
                   </div>
                   <div className="support-info-card">

@@ -34,6 +34,15 @@ export default function Footer() {
             </ul>
           </div>
 
+          {/* Contact */}
+          <div>
+            <div className="footer-nav-title">Contact</div>
+            <ul className="footer-links">
+              <li><a href="mailto:support@gamesbazaar.pk">support@gamesbazaar.pk</a></li>
+              <li><a href="tel:+923712101998">+92 371 2101998</a></li>
+            </ul>
+          </div>
+
           {/* Social */}
           <div className="footer-social">
             <div className="footer-nav-title">Follow Us</div>

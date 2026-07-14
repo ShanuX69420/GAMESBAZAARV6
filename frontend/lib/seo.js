@@ -72,6 +72,15 @@ export function organizationJsonLd() {
     url: absoluteUrl('/'),
     logo: absoluteUrl('/logo.png'),
     email: 'support@gamesbazaar.pk',
+    telephone: '+92-371-2101998',
+    contactPoint: [{
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      email: 'support@gamesbazaar.pk',
+      telephone: '+92-371-2101998',
+      areaServed: 'PK',
+      availableLanguage: ['en', 'ur'],
+    }],
   };
 }
 
