@@ -34,8 +34,11 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 
 ## Production
 
-- DigitalOcean VPS `64.227.182.238` (Bangalore, 1 GB). Domains: gamesbazaar.pk, www, api.
-- SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@64.227.182.238`
+- DigitalOcean VPS `68.183.184.129` (**Singapore / SGP1**, 1 GB). Domains: gamesbazaar.pk, www, api.
+  Migrated out of Bangalore on 2026-07-14 — see the India landmine below. **Never move it
+  back to an Indian region.** DNS is Cloudflare, 3 A records (apex/www/api), TTL 300s,
+  proxy OFF (grey cloud — the orange cloud made the site slower, don't re-enable).
+- SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129`
   — then run git/pip/manage.py as `sudo -u gamesbazaar`.
 - App at `/opt/gamesbazaar/app`, venv `/opt/gamesbazaar/venv`.
 - Services: `gamesbazaar-backend` (daphne :8000), `gamesbazaar-frontend`.
@@ -64,11 +67,26 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 - **JazzCash return URL must EXACTLY match the merchant-portal registration**
   (scheme, host, path — `www.` vs bare domain matters) or initiation fails with
   code 999 "insufficient merchant information". Registered: `https://gamesbazaar.pk/wallet`.
-- **JazzCash's WAF blocks outbound API calls from the VPS IP.** Symptom:
-  `JazzCash returned non-JSON response (HTTP 200)` and an HTML "Request Rejected"
-  page. Whitelisting of 64.227.182.238 was requested 2026-07-06. If the server IP
-  ever changes (migration, new droplet), get the NEW IP whitelisted by JazzCash
-  BEFORE switching. Inbound (their IPN → us) is not affected.
+- **JazzCash's WAF geo-blocks INDIA — never host this app in an Indian region.**
+  Symptom: `JazzCash returned non-JSON response (HTTP 200)` and an HTML "Request
+  Rejected" page with a support ID. It is NOT an IP-reputation or datacenter issue
+  and NOT fixable by whitelisting: proven 2026-07-14 by probing `pgw.jazzcash.com.pk`
+  from five origins — PK residential, PK datacenter and SG datacenter all returned
+  JSON; an unrelated Indian VPN IP and our Bangalore VPS both got "Request Rejected".
+  SG and IN were the *same VPN vendor*, so country was the only variable. Fix was to
+  move the server to Singapore (2026-07-14), not to chase a whitelist. Assume every
+  Pakistani payment provider (Easypaisa next) does the same. Inbound (their IPN → us)
+  was never affected.
+- **Pakistan↔India is network-FAR despite being geographically close** — there is
+  essentially no direct PK–IN peering, so traffic detours via Europe/Singapore.
+  Measured from Karachi: Bangalore **164 ms**, Singapore **80 ms**, Frankfurt ~120 ms,
+  Nayatel (in-country) 25 ms. Singapore is *twice as fast* as Bangalore was. Never
+  estimate Pakistani latency from a map — measure it.
+- **Hosts selling "Pakistan VPS" are usually not in Pakistan.** MiddleHost's own
+  datacenter page lists Dallas/Montreal/London/Amsterdam/Frankfurt and zero PK metal
+  (Dallas ≈ 250 ms from Karachi). The tell is marketing that talks about *routing*
+  ("optimized routes for PTCL/Nayatel/Stormfiber") instead of naming a city. Latency
+  cannot be faked — ping before believing. Nayatel is the only verified real-PK host.
 - **Never leave the live server pointed at JazzCash's sandbox** — a sandbox
   payment matching a real txn record would credit a real wallet with fake money.
   Sandbox creds on prod are for short, monitored windows only.
@@ -79,19 +97,32 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   silently drops ALL events when UA contains "HeadlessChrome" or
   `navigator.webdriver` is true — mask both when testing pixels headlessly.
 - Dependent filters: "As a Gift" showing on PS/Xbox keys categories is a KNOWN,
-  ACCEPTED tradeoff — don't "fix" it unprompted. After catalog changes re-run
-  `manage.py copy_category_filters --game steam --category keys` (adds/updates,
-  never deletes).
+  ACCEPTED tradeoff — don't "fix" it unprompted.
+- **NEVER run `copy_category_filters --game steam --category keys` again.** That
+  command copies the SOURCE page's filters onto EVERY page with that category,
+  and steam/keys stopped being the canonical template on 2026-07-13 — it is now
+  a Method-less catch-all with its own page-local Region filter. Running it
+  pushed that Region filter onto all 309 other keys pages (dead dropdown on
+  every game page + listings failing validation; undone by
+  `tools/fix_stray_steam_filter_server.py`). New keys pages are healed instead
+  by `fazer_sync_lib.HEAL_SNIPPET`, which attaches Method + the two dependent
+  Region filters directly to the pages that lack them. If you ever do need to
+  copy filters, copy from a page that has the shape you want on the target.
 - Local dev `.env.local` deliberately has NO GA measurement id (keeps dev traffic
   out of analytics).
 
-## Payments state (2026-07-06)
+## Payments state (2026-07-14)
 
-- JazzCash MWallet v1.1, wallet payments only (no cards) — production approval in
-  progress; UAT evidence submitted. `JAZZCASH_ENABLED` derives from the four
-  `JAZZCASH_*` env vars (settings.py). IPN endpoint:
-  `/api/payments/jazzcash/ipn/` — hash-authenticated, returns signed ack, logs the
-  full exchange at INFO (commit 819aa44).
+- **JazzCash is LIVE on production** since 2026-07-14 (merchant `10030551`, production
+  host `pgw.jazzcash.com.pk`). Proven with a real PKR 500 top-up on the live site:
+  code `000`, wallet credited exactly once. Wallet payments only (no cards).
+  Two things had to be true: production creds (commit `0ab9437` — production endpoints
+  + mandatory signed `pp_SubMerchantName`), and getting the server OUT of India.
+- `JAZZCASH_ENABLED` derives from the four `JAZZCASH_*` env vars (settings.py) — there
+  is **no separate switch; setting those vars IS going live.** Kill switch: re-comment
+  them with `# PENDING-APPROVAL # ` and restart (see the go-live runbook).
+- IPN endpoint: `/api/payments/jazzcash/ipn/` — hash-authenticated, returns signed ack,
+  logs the full exchange at INFO (commit 819aa44).
 - Three paths can resolve a payment: IPN callback, user-return status check, and
   the reconcile timer — all feed `apply_gateway_result`.
 - Merchant fee: 1.16% incl. FED (mobile wallets), deducted from settlement.
