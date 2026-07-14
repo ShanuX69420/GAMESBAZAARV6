@@ -30,7 +30,9 @@ COLUMNS = [
     ('delivery_instructions', 50),
     ('filters', 40),
 ]
-DELIVERY_TIMES = ['1-2 Hours', '2-6 Hours', '6-12 Hours', '12-24 Hours', '1-3 Days']
+DELIVERY_TIMES = ['2-3 Minutes', '5 Minutes', '10-15 Minutes', '15-30 Minutes',
+                  '30-60 Minutes', '1-2 Hours', '2-6 Hours', '6-12 Hours',
+                  '12-24 Hours', '1-3 Days']
 MAX_DATA_ROW = 5000
 
 EXAMPLES = [
