@@ -507,11 +507,6 @@ export default function Navbar() {
     );
   }
 
-  // Get user initials for avatar
-  function getInitials() {
-    return username.charAt(0).toUpperCase();
-  }
-
   return (
     <>
       <nav className="navbar">
@@ -621,21 +616,13 @@ export default function Navbar() {
                   {/* Profile avatar with dropdown */}
                   <div className="nav-icon-wrapper" ref={profileRef}>
                     <button className="nav-avatar-btn" onClick={toggleProfileDropdown} aria-label="Profile menu">
-                      {user.avatar_url ? (
-                        <img src={user.avatar_url} alt={username} className="nav-avatar nav-avatar-img" />
-                      ) : (
-                        <span className="nav-avatar">{getInitials()}</span>
-                      )}
+                      <img src={user.avatar_url || '/avatar-default.svg'} alt={username} className="nav-avatar nav-avatar-img" />
                     </button>
 
                     {profileOpen && (
                       <div className="profile-dropdown">
                         <div className="profile-dropdown-header">
-                          {user.avatar_url ? (
-                            <img src={user.avatar_url} alt={username} className="profile-dropdown-avatar profile-dropdown-avatar-img" />
-                          ) : (
-                            <span className="profile-dropdown-avatar">{getInitials()}</span>
-                          )}
+                          <img src={user.avatar_url || '/avatar-default.svg'} alt={username} className="profile-dropdown-avatar profile-dropdown-avatar-img" />
                           <div className="profile-dropdown-name">{username}</div>
                         </div>
                         <div className="profile-dropdown-body">

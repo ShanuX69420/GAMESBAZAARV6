@@ -165,8 +165,6 @@ export default function SettingsPage() {
     finally { setPasswordSaving(false); }
   };
 
-  function getInitials() { return user ? user.username.charAt(0).toUpperCase() : '?'; }
-
   if (loading) return (
     <div className="settings-page container">
       <div className="settings-loading"><div className="settings-loading-spinner"></div><p>Loading settings...</p></div>
@@ -189,7 +187,7 @@ export default function SettingsPage() {
         <nav className="settings-sidebar">
           <div className="settings-sidebar-profile">
             <div className="settings-sidebar-avatar">
-              {avatarPreview ? <img src={avatarPreview} alt={user.username} /> : <span>{getInitials()}</span>}
+              <img src={avatarPreview || '/avatar-default.svg'} alt={user.username} />
             </div>
             <div className="settings-sidebar-info">
               <div className="settings-sidebar-name">{user.username}</div>
@@ -228,7 +226,7 @@ export default function SettingsPage() {
                     onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
                     onClick={() => fileInputRef.current?.click()}>
                     <div className="settings-avatar-large">
-                      {avatarPreview ? <img src={avatarPreview} alt={user.username} /> : <span className="settings-avatar-initials">{getInitials()}</span>}
+                      <img src={avatarPreview || '/avatar-default.svg'} alt={user.username} />
                       {avatarUploading && <div className="settings-avatar-overlay"><div className="settings-avatar-spinner"></div></div>}
                       <div className="settings-avatar-edit-badge">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>

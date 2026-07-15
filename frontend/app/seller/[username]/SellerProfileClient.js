@@ -190,11 +190,7 @@ export default function SellerProfileClient({
       <div className="sp-header">
         <div className="sp-header-left">
           <div className="sp-avatar">
-            {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt={profile.username} />
-            ) : (
-              <span>{profile.username.charAt(0).toUpperCase()}</span>
-            )}
+            <img src={profile.avatar_url || '/avatar-default.svg'} alt={profile.username} />
             <span className={`sp-avatar-dot ${sellerIsOnline ? 'online' : ''}`} />
           </div>
           <div className="sp-header-info">

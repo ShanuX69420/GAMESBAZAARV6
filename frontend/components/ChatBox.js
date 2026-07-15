@@ -707,11 +707,7 @@ export default function ChatBox({
       {!compact && (
         <div className="chatbox-header">
           <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
-            {chatHeaderAvatarUrl ? (
-              <img src={chatHeaderAvatarUrl} alt={chatHeaderName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            ) : (
-              chatHeaderName[0].toUpperCase()
-            )}
+            <img src={chatHeaderAvatarUrl || '/avatar-default.svg'} alt={chatHeaderName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
             {chatHeaderIsOnline && <span className="online-dot"></span>}
           </div>
           <div>

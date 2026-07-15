@@ -774,11 +774,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   <div className="offer-buybox-seller">
                     <div className="listing-card-avatar-wrap">
                       <div className="listing-card-avatar">
-                        {bestOffer.seller_avatar_url ? (
-                          <img src={bestOffer.seller_avatar_url} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                        ) : (
-                          bestOffer.seller_name?.charAt(0).toUpperCase()
-                        )}
+                        <img src={bestOffer.seller_avatar_url || '/avatar-default.svg'} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
                       <span className={`listing-card-status-dot ${isOnlineFromLastActive(bestOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                     </div>
@@ -838,11 +834,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                         <div className="offer-seller-row-seller">
                           <div className="listing-card-avatar-wrap">
                             <div className="listing-card-avatar">
-                              {offer.seller_avatar_url ? (
-                                <img src={offer.seller_avatar_url} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                              ) : (
-                                offer.seller_name?.charAt(0).toUpperCase()
-                              )}
+                              <img src={offer.seller_avatar_url || '/avatar-default.svg'} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
                             <span className={`listing-card-status-dot ${isOnlineFromLastActive(offer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                           </div>
@@ -932,11 +924,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                 <div className="currency-hero-seller">
                   <div className="listing-card-avatar-wrap">
                     <div className="listing-card-avatar currency-hero-avatar">
-                      {currentOffer.seller_avatar_url ? (
-                        <img src={currentOffer.seller_avatar_url} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                      ) : (
-                        currentOffer.seller_name?.charAt(0).toUpperCase()
-                      )}
+                      <img src={currentOffer.seller_avatar_url || '/avatar-default.svg'} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     </div>
                     <span className={`listing-card-status-dot ${isOnlineFromLastActive(currentOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                   </div>
@@ -1097,11 +1085,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                         <div className="offer-seller-row-seller">
                           <div className="listing-card-avatar-wrap">
                             <div className="listing-card-avatar">
-                              {listing.seller_avatar_url ? (
-                                <img src={listing.seller_avatar_url} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                              ) : (
-                                listing.seller_name?.charAt(0).toUpperCase()
-                              )}
+                              <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
                             <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                           </div>
@@ -1211,11 +1195,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   <div className="listing-card-seller">
                     <div className="listing-card-avatar-wrap">
                       <div className="listing-card-avatar">
-                        {listing.seller_avatar_url ? (
-                          <img src={listing.seller_avatar_url} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                        ) : (
-                          listing.seller_name?.charAt(0).toUpperCase()
-                        )}
+                        <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
                       <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
                     </div>
