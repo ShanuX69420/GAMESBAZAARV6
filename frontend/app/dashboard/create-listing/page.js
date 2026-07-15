@@ -480,7 +480,7 @@ export default function CreateListingPage() {
                     rows={8}
                     required
                   />
-                  <span className="form-hint" style={{ color: '#D97706' }}>
+                  <span className="form-hint" style={{ color: 'var(--amber-600)' }}>
                     ⚡ Each line = 1 stock item. Stock quantity is set automatically. Items are delivered one per purchase.
                   </span>
                 </div>

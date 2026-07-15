@@ -63,10 +63,16 @@ export const metadata = {
   },
 };
 
+// Runs before paint so a saved dark preference never flashes white.
+// Kept as a plain inline <script> (not next/script) so it is guaranteed to be
+// in the initial HTML and execute synchronously.
+const themeInitScript = `try{if(localStorage.getItem('gb_theme')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}`;
+
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
         <AuthProvider>
           <Navbar />

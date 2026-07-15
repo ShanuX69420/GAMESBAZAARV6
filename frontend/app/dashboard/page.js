@@ -97,11 +97,11 @@ function RatingBar({ label, count, total, color }) {
 }
 
 const ORDER_STATUS_STYLES = {
-  pending: { icon: '⏳', color: '#f59e0b', bg: '#fffbeb' },
-  delivered: { icon: '📦', color: '#3b82f6', bg: '#eff6ff' },
-  completed: { icon: '✅', color: '#22c55e', bg: '#f0fdf4' },
-  disputed: { icon: '⚠️', color: '#ef4444', bg: '#fef2f2' },
-  cancelled: { icon: '❌', color: '#6b7280', bg: '#f9fafb' },
+  pending: { icon: '⏳', color: '#f59e0b', bg: 'var(--amber-50)' },
+  delivered: { icon: '📦', color: '#3b82f6', bg: 'var(--blue-50)' },
+  completed: { icon: '✅', color: '#22c55e', bg: 'var(--green-50)' },
+  disputed: { icon: '⚠️', color: '#ef4444', bg: 'var(--red-50)' },
+  cancelled: { icon: '❌', color: '#6b7280', bg: 'var(--bg-secondary)' },
 };
 
 export default function DashboardPage() {

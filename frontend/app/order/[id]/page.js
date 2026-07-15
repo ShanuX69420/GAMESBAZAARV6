@@ -349,7 +349,7 @@ export default function OrderDetailPage() {
           {isBuyer && order.delivery_instructions && (
             <div className="order-detail-section">
               <h3 className="order-detail-section-title">📋 Seller Instructions</h3>
-              <div className="order-delivery-note" style={{ margin: 0, background: '#F0F9FF', borderColor: '#BAE6FD', color: '#0C4A6E' }}>
+              <div className="order-delivery-note" style={{ margin: 0, background: 'var(--sky-50)', borderColor: 'var(--sky-200)', color: 'var(--sky-900)' }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
                   {order.delivery_instructions}
                 </pre>

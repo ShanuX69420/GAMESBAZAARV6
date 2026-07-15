@@ -214,9 +214,9 @@
 
 .review-reply-error {
   font-size: 0.8rem;
-  color: #DC2626;
+  color: var(--red-600);
   padding: 6px 10px;
-  background: #FEF2F2;
+  background: var(--red-50);
   border-radius: var(--radius-sm);
 }
 
@@ -270,7 +270,7 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--green-500), var(--green-600));
+  background: linear-gradient(135deg, var(--green-500), var(--green-solid));
   color: white;
   display: flex;
   align-items: center;
@@ -294,7 +294,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #D1D5DB;
+  background: var(--border-hover);
   border: 2.5px solid var(--bg-primary);
 }
 
