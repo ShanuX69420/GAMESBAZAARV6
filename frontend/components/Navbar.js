@@ -9,6 +9,7 @@ import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, mar
 import { notificationOrderPath } from '@/lib/orderNumbers';
 import { WS_BASE } from '@/lib/config';
 import { buildTicketSubprotocols } from '@/lib/inbox';
+import { withUnreadCount, playMessageSound, unlockMessageSound, resetMessageSoundCooldown } from '@/lib/messageAlerts';
 
 // Badges arrive over the inbox socket; these polls are only a fallback for
 // clients whose WebSocket can't connect, so they can afford to be slow.
@@ -100,6 +101,36 @@ export default function Navbar() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user, setupPending, fetchUnread]);
+
+  // Unlock audio on the first user gesture so the message ding can play
+  // later, even while this tab sits in the background.
+  useEffect(() => {
+    if (!user || setupPending) return;
+    window.addEventListener('pointerdown', unlockMessageSound);
+    window.addEventListener('keydown', unlockMessageSound);
+    return () => {
+      window.removeEventListener('pointerdown', unlockMessageSound);
+      window.removeEventListener('keydown', unlockMessageSound);
+    };
+  }, [user, setupPending]);
+
+  // ── Tab title unread counter: "(4) GamesBazaar — …" ───────────────────
+  useEffect(() => {
+    const apply = () => {
+      const wanted = withUnreadCount(document.title, unread);
+      if (document.title !== wanted) document.title = wanted;
+    };
+    apply();
+    // Next.js rewrites <title> on client-side navigation; watch the head
+    // and re-apply. apply() is idempotent, so its own write settles the
+    // observer instead of looping.
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      document.title = withUnreadCount(document.title, 0);
+    };
+  }, [unread]);
 
   // Heartbeat
   useEffect(() => {
@@ -290,6 +321,18 @@ export default function Navbar() {
             setNotifications(prev => (prev.length ? [data.notification, ...prev].slice(0, 15) : prev));
           } else if (data.type === 'conversation_updated') {
             fetchUnread();
+            // Ding only for other people's messages — our own sends echo
+            // here too. Requiring the key keeps a stale backend (deploy
+            // window) from dinging on the user's own messages. The sound
+            // is cooled down per conversation, and replying counts as
+            // caught up: the next message in that chat dings again.
+            if ('sender_id' in data) {
+              if (data.sender_id === user.id) {
+                resetMessageSoundCooldown(data.conversation_id);
+              } else {
+                playMessageSound(data.conversation_id);
+              }
+            }
           }
           // presence events feed the inbox page; nothing to do here
         } catch { }

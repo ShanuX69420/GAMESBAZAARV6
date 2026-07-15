@@ -1244,6 +1244,7 @@ def broadcast_chat_message_after_commit(message, message_data=None):
                     'type': 'inbox.conversation_updated',
                     'conversation_id': message.conversation_id,
                     'other_user_id': other_ids[0] if other_ids else None,
+                    'sender_id': message.sender_id,
                 },
             )
 

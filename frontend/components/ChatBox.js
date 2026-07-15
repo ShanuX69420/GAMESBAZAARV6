@@ -13,6 +13,7 @@ import {
   formatLastActive,
   isOnlineFromLastActive,
 } from '@/lib/api';
+import { resetMessageSoundCooldown } from '@/lib/messageAlerts';
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
@@ -337,6 +338,9 @@ export default function ChatBox({
         if (disposed) return;
         clearTimeout(reconnectTimer.current);
         setConnected(true);
+        // Connecting marks the conversation read server-side; treat it as
+        // caught up so its next incoming message dings again.
+        resetMessageSoundCooldown(activeConvoId);
         if (reconnectAttempts.current > 0) {
           // Catch up quietly on messages and order events missed while
           // offline — no skeleton, no scroll jump.
@@ -364,6 +368,9 @@ export default function ChatBox({
             });
             setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
             setChatError('');
+            // Messages landing in an open chat are auto-read by the server,
+            // so keep the sound cooldown reset while the user watches.
+            if (!data.message.is_mine) resetMessageSoundCooldown(activeConvoId);
             window.dispatchEvent(new Event('chatUpdate'));
             if (
               onOrderEventRef.current &&

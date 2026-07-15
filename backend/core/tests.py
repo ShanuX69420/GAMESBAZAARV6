@@ -6298,11 +6298,13 @@ class InboxWebSocketIntegrationTests(TransactionTestCase):
             self.assertEqual(seller_event['type'], 'conversation_updated')
             self.assertEqual(seller_event['conversation_id'], self.conversation.id)
             self.assertEqual(seller_event['other_user_id'], self.buyer.id)
+            self.assertEqual(seller_event['sender_id'], self.buyer.id)
 
             buyer_event = await buyer_inbox.receive_json_from()
             self.assertEqual(buyer_event['type'], 'conversation_updated')
             self.assertEqual(buyer_event['conversation_id'], self.conversation.id)
             self.assertEqual(buyer_event['other_user_id'], self.seller.id)
+            self.assertEqual(buyer_event['sender_id'], self.buyer.id)
 
             await chat.disconnect()
             await seller_inbox.disconnect()
@@ -6340,6 +6342,7 @@ class InboxWebSocketIntegrationTests(TransactionTestCase):
             self.assertEqual(event['type'], 'conversation_updated')
             self.assertEqual(event['conversation_id'], self.conversation.id)
             self.assertEqual(event['other_user_id'], self.buyer.id)
+            self.assertEqual(event['sender_id'], self.buyer.id)
             await seller_inbox.disconnect()
 
         async_to_sync(run_rest_inbox_flow)()
@@ -6374,6 +6377,7 @@ class InboxWebSocketIntegrationTests(TransactionTestCase):
             self.assertEqual(event['type'], 'conversation_updated')
             self.assertEqual(event['conversation_id'], self.conversation.id)
             self.assertEqual(event['other_user_id'], self.buyer.id)
+            self.assertEqual(event['sender_id'], self.buyer.id)
             await seller_inbox.disconnect()
 
         async_to_sync(run_image_inbox_flow)()
@@ -6419,6 +6423,8 @@ class InboxWebSocketIntegrationTests(TransactionTestCase):
             self.assertEqual(event['type'], 'conversation_updated')
             self.assertEqual(event['conversation_id'], self.conversation.id)
             self.assertEqual(event['other_user_id'], self.buyer.id)
+            # System notices carry no sender; clients still ding for them.
+            self.assertIsNone(event['sender_id'])
             await seller_inbox.disconnect()
 
         async_to_sync(run_order_event_flow)()

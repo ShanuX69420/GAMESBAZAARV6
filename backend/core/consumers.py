@@ -246,10 +246,13 @@ class InboxConsumer(AsyncJsonWebsocketConsumer):
 
     async def inbox_conversation_updated(self, event):
         """Relay a compact "this conversation changed" notice to the client."""
+        # sender_id lets the client skip the message sound for its own sends
+        # (None for system notices). .get(): events queued by older code.
         await self.send_json({
             'type': 'conversation_updated',
             'conversation_id': event['conversation_id'],
             'other_user_id': event['other_user_id'],
+            'sender_id': event.get('sender_id'),
         })
 
     async def notification_created(self, event):
