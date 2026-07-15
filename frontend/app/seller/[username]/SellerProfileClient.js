@@ -82,6 +82,9 @@ export default function SellerProfileClient({
       }
     };
 
+    // The server-rendered profile can be up to 2 minutes stale (revalidate
+    // window), which is longer than the online window — refresh immediately.
+    pollProfile();
     const pollInterval = setInterval(pollProfile, PRESENCE_TICK_MS);
 
     return () => {
