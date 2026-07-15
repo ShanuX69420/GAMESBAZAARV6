@@ -17,7 +17,7 @@ export default function Footer() {
                 height="28"
                 loading="lazy"
               />
-              GamesBazaar
+              <span>Games<span className="footer-brand-accent">Bazaar</span></span>
             </div>
             <p className="footer-brand-tagline">
               Pakistan&apos;s trusted marketplace for buying &amp; selling game accounts, items, and services.

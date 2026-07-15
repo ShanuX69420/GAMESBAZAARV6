@@ -525,7 +525,7 @@ export default function Navbar() {
               width="36"
               height="36"
             />
-            <span className="navbar-logo-text">GamesBazaar</span>
+            <span className="navbar-logo-text">Games<span className="navbar-logo-accent">Bazaar</span></span>
           </Link>
 
           {/* ── Center: Desktop Search ── */}

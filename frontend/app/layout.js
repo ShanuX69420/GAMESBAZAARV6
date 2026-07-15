@@ -1,5 +1,6 @@
 import './globals.css';
 import './reviews.css';
+import { Inter } from 'next/font/google';
 import Analytics from '@/components/Analytics';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -14,6 +15,12 @@ import {
   organizationJsonLd,
   websiteJsonLd,
 } from '@/lib/seo';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 export const metadata = {
   title: {
@@ -58,7 +65,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body>
         <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
         <AuthProvider>

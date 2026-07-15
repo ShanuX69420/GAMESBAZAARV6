@@ -28,8 +28,8 @@ describe('PWA assets', () => {
     expect(manifest.start_url).toBe('/');
     expect(manifest.scope).toBe('/');
     expect(manifest.display).toBe('standalone');
-    expect(manifest.theme_color).toBe('#22c55e');
-    expect(manifest.background_color).toBe('#0a0e17');
+    expect(manifest.theme_color).toBe('#18874A');
+    expect(manifest.background_color).toBe('#FFFFFF');
     expect(manifest.icons.map((icon) => icon.sizes)).toEqual(
       expectedSizes.map((size) => `${size}x${size}`)
     );

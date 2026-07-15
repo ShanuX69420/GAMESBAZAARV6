@@ -4,8 +4,8 @@
   "description": "Pakistan's #1 Digital Gaming Marketplace — Buy & sell game accounts, top-ups, items, and boosting services.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0e17",
-  "theme_color": "#22c55e",
+  "background_color": "#FFFFFF",
+  "theme_color": "#18874A",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
