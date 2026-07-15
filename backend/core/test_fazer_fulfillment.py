@@ -55,6 +55,12 @@ class FakeFazer:
                         'price_usd': '1.8670'}],
             'fields': [{'key': 'user_id', 'label': 'User ID', 'type': 'text'}],
         }
+        self.gift_offers = [
+            {'sub_id': 54029, 'name': 'ELDEN RING', 'regions': [
+                {'region': 'PK', 'price': '25.4000'},
+                {'region': 'RU', 'price': '20.1000'},
+            ]},
+        ]
         self.validate_response = {'ok': True, 'valid': True, 'player_name': 'Nick'}
         # What GET /orders/:id returns once an order exists. Tests mutate
         # completed_payload/status to steer the poll outcome. Default shape
@@ -78,6 +84,8 @@ class FakeFazer:
                 return {'ok': True, 'keys': self.gamekey_offers}
             if path == '/topups/offers':
                 return self.topup_response
+            if path.startswith('/steam-gifts/games/'):
+                return {'ok': True, 'offers': self.gift_offers}
             if path.startswith('/orders/'):
                 order_id = path.rsplit('/', 1)[1]
                 order = {'id': order_id, 'kind': 'gift_card',
@@ -171,6 +179,30 @@ class FazerTestBase(TestCase):
             offer_name='830 Diamonds',
             last_cost_usd=Decimal('1.867'),
             checkout_fields=[{'key': 'user_id', 'label': 'User ID'}],
+        )
+        return listing
+
+    def make_gift_listing(self, region='PK'):
+        gift_gc = GameCategory.objects.create(
+            game=Game.objects.create(name='Elden Ring', slug='elden-ring'),
+            category=Category.objects.create(name='Keys', slug='keys'),
+        )
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=gift_gc,
+            title=f'ELDEN RING (PC) | Steam Gift | {region} Region',
+            price=Decimal('8100.00'),
+            quantity=None,
+            status='active',
+        )
+        FazerProductLink.objects.create(
+            listing=listing,
+            kind='gift',
+            fazer_category_id='1245620',
+            offer_name='ELDEN RING',
+            last_sku_id='54029',
+            fazer_region=region,
+            last_cost_usd=Decimal('25.4'),
         )
         return listing
 
@@ -300,6 +332,60 @@ class PurchaseHookTests(FazerTestBase):
         response = self.client.post(
             f'/api/listings/{self.listing.pk}/validate-topup-id/',
             {'user_id': 'x'}, format='json',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    GIFT_INVITE = 'https://s.team/p/abcd-efg/HIJKLMNO'
+
+    def test_gift_buy_api_requires_invite_link(self):
+        listing = self.make_gift_listing()
+        response = self.client.post('/api/orders/buy/', {
+            'listing_id': listing.pk, 'quantity': 1,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Steam friend invite link is required',
+                      response.data['error'])
+
+    def test_gift_buy_api_rejects_profile_url(self):
+        listing = self.make_gift_listing()
+        response = self.client.post('/api/orders/buy/', {
+            'listing_id': listing.pk, 'quantity': 1,
+            'checkout_fields': {
+                'invite_url': 'https://steamcommunity.com/id/somebody',
+            },
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('INVITE link', response.data['error'])
+        self.assertFalse(Order.objects.exists())
+
+    def test_gift_buy_api_snapshots_invite_and_posts_chat_note(self):
+        listing = self.make_gift_listing()
+        response = self.client.post('/api/orders/buy/', {
+            'listing_id': listing.pk, 'quantity': 1,
+            'checkout_fields': {'invite_url': self.GIFT_INVITE},
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(pk=response.data['id'])
+        payload = json.loads(decrypt_sensitive_text(order.checkout_payload))
+        self.assertEqual(payload['fields'], {'invite_url': self.GIFT_INVITE})
+        self.assertEqual(order.fazer_task.kind, 'gift')
+        self.assertEqual(order.fazer_task.fazer_region, 'PK')
+        # Invite link lands in chat for the manual-fallback path.
+        self.assertTrue(Message.objects.filter(
+            order=order, content__contains=self.GIFT_INVITE,
+        ).exists())
+
+    def test_gift_listing_detail_exposes_invite_checkout_field(self):
+        listing = self.make_gift_listing()
+        response = self.client.get(f'/api/listings/{listing.pk}/')
+        self.assertEqual(response.status_code, 200)
+        fields = response.data['required_checkout_fields']
+        self.assertEqual([f['key'] for f in fields], ['invite_url'])
+        self.assertIs(fields[0]['verify'], False)
+        # Gifts have no supplier-side ID validation endpoint.
+        response = self.client.post(
+            f'/api/listings/{listing.pk}/validate-topup-id/',
+            {'invite_url': self.GIFT_INVITE}, format='json',
         )
         self.assertEqual(response.status_code, 404)
 
@@ -540,6 +626,113 @@ class EngineTests(FazerTestBase):
         self.assertEqual(payload['fields'], {'user_id': '12345678'})
 
 
+class GiftEngineTests(FazerTestBase):
+    INVITE = 'https://s.team/p/abcd-efg/HIJKLMNO'
+
+    def process(self, task, budget=5):
+        fulfillment.process_fulfillment_task(task.pk, poll_budget_seconds=budget)
+        task.refresh_from_db()
+        return task
+
+    def buy_gift(self, listing=None, quantity=1, invite=INVITE):
+        listing = listing or self.make_gift_listing()
+        checkout = {'fields': {'invite_url': invite}} if invite else None
+        return self.buy(listing=listing, quantity=quantity,
+                        checkout_info=checkout)
+
+    def test_gift_happy_path_delivers_order(self):
+        order = self.buy_gift()
+        task = self.process(order.fazer_task)
+        order.refresh_from_db()
+
+        self.assertEqual(task.status, 'delivered')
+        self.assertEqual(order.status, 'delivered')
+        note = decrypt_sensitive_text(order.delivery_note)
+        self.assertIn('Steam gift has been sent', note)
+        self.assertIn(self.INVITE, note)
+        path, body, key = self.fake.created[0]
+        self.assertEqual(path, '/steam-gifts/order')
+        self.assertEqual(body, {'app_id': 1245620, 'sub_id': 54029,
+                                'region': 'PK', 'invite_url': self.INVITE})
+        self.assertEqual(key, f'gb-{order.pk}')
+
+    def test_gift_task_gets_longer_deadline(self):
+        order = self.buy_gift()
+        task = order.fazer_task
+        self.assertGreater(
+            task.deadline_at - task.created_at, timedelta(minutes=40))
+
+    def test_gift_missing_invite_link_goes_manual(self):
+        order = self.buy_gift(invite=None)
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('invite link missing', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_gift_profile_url_goes_manual(self):
+        # Defense in depth: checkout normally rejects these, but old orders
+        # or admin-created ones must still fail safe.
+        order = self.buy_gift(invite='https://steamcommunity.com/id/somebody')
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('not a Steam friend invite link', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_gift_quantity_two_goes_manual(self):
+        order = self.buy_gift(quantity=2)
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('one copy', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_gift_region_price_missing_goes_manual(self):
+        self.fake.gift_offers[0]['regions'] = [
+            {'region': 'RU', 'price': '20.1000'},
+        ]
+        order = self.buy_gift()
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('PK region price', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_gift_sub_id_rotation_falls_back_to_name_match(self):
+        self.fake.gift_offers[0]['sub_id'] = 99999
+        order = self.buy_gift()
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'delivered')
+        self.assertEqual(self.fake.created[0][1]['sub_id'], 99999)
+
+    def test_gift_price_sanity_guard(self):
+        listing = self.make_gift_listing()
+        # Live PK price is 25.40; a synced cost of 20 makes that +27% > 10%.
+        FazerProductLink.objects.filter(listing=listing).update(
+            last_cost_usd=Decimal('20'))
+        order = self.buy_gift(listing=listing)
+        task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('price sanity', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_gift_supplier_failure_reads_camelcase_fail_reason(self):
+        # Steam-gift orders report failReason/chargedUsd (camelCase).
+        self.fake.order_status = 'failed'
+        order = self.buy_gift()
+
+        def gift_order_get(method, path, **kwargs):
+            if method == 'GET' and path.startswith('/orders/'):
+                return {'ok': True, 'order': {
+                    'id': path.rsplit('/', 1)[1], 'kind': 'steam_gift',
+                    'status': 'failed', 'failReason': 'invite link invalid',
+                    'chargedUsd': '0',
+                }}
+            return FakeFazer.__call__(self.fake, method, path, **kwargs)
+
+        with patch('core.fazer._request', new=gift_order_get):
+            task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('invite link invalid', task.fail_reason)
+
+
 class ParseDeliveredCodesTests(TestCase):
     def test_common_shapes(self):
         cases = [
@@ -578,16 +771,34 @@ TOPUP_INSTR = ('After purchase, send your Free Fire Player ID in the order '
                'Diamonds directly to your account and confirm here — usually '
                'within 10–15 minutes. Please double-check the ID before '
                'sending — top-ups to a wrong ID cannot be reversed.')
+GIFT_DESC = ('How it works: after purchase, send me your Steam friend link '
+             'in the order chat. I add you and send the game as a gift — '
+             'usually done within 10–15 minutes.')
+GIFT_INSTR = ('After purchase, send your Steam profile / friend link in the '
+              'order chat. Make sure your Steam account region is PK — the '
+              'gift can only be delivered to a PK region account. I will add '
+              'you as a friend and send ELDEN RING as a gift to your account '
+              "— usually within 10–15 minutes. Accept the gift and it's in "
+              'your library forever.')
 
 
 class InstantTextFlipTests(TestCase):
     def test_round_trip_restores_original_prose(self):
-        for original in (GC_DESC, GC_INSTR, TOPUP_DESC, TOPUP_INSTR):
+        for original in (GC_DESC, GC_INSTR, TOPUP_DESC, TOPUP_INSTR,
+                         GIFT_DESC, GIFT_INSTR):
             flipped = fulfillment.apply_instant_texts(original, True)
             self.assertNotEqual(flipped, original)
             self.assertNotIn('10–15 minutes', flipped)
             restored = fulfillment.apply_instant_texts(flipped, False)
             self.assertEqual(restored, original)
+
+    def test_gift_prose_moves_invite_link_to_checkout(self):
+        flipped = fulfillment.apply_instant_texts(GIFT_DESC, True)
+        self.assertIn('enter your Steam friend invite link at checkout', flipped)
+        flipped_instr = fulfillment.apply_instant_texts(GIFT_INSTR, True)
+        self.assertIn('Enter your Steam friend invite link at checkout',
+                      flipped_instr)
+        self.assertIn('no need to send it in chat', flipped_instr)
 
     def test_topup_prose_moves_id_to_checkout(self):
         flipped = fulfillment.apply_instant_texts(TOPUP_DESC, True)
@@ -704,6 +915,26 @@ class ApplyFazerLinksTests(FazerTestBase):
         ])
         self.link.refresh_from_db()
         self.assertEqual(self.link.last_cost_usd, Decimal('8.5'))
+
+    def test_gift_row_requires_region(self):
+        gift_listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='ELDEN RING (PC) | Steam Gift | PK Region',
+            price=Decimal('8100.00'),
+            status='active',
+        )
+        base = {'listing_id': gift_listing.pk, 'kind': 'gift',
+                'fazer_category_id': '1245620', 'offer_name': 'ELDEN RING',
+                'sku_id': '54029', 'cost_usd': '25.4'}
+        self._run([base])  # no fazer_region → skipped
+        self.assertFalse(
+            FazerProductLink.objects.filter(listing=gift_listing).exists())
+
+        self._run([dict(base, fazer_region='PK')])
+        link = FazerProductLink.objects.get(listing=gift_listing)
+        self.assertEqual(link.fazer_region, 'PK')
+        self.assertEqual(link.last_sku_id, '54029')
 
 
 @override_settings(**FAZER_TEST_SETTINGS)

@@ -1375,6 +1375,7 @@ class FazerProductLink(models.Model):
         ('gamekey', 'Game Key'),
         ('giftcard', 'Gift Card'),
         ('topup', 'Top-Up'),
+        ('gift', 'Steam Gift'),
     ]
 
     listing = models.OneToOneField(Listing, on_delete=models.CASCADE,
@@ -1382,7 +1383,14 @@ class FazerProductLink(models.Model):
     kind = models.CharField(max_length=10, choices=KIND_CHOICES)
     fazer_category_id = models.CharField(
         max_length=100,
-        help_text='Fazer game_id (gamekey) or category_id (giftcard/topup).',
+        help_text='Fazer game_id (gamekey), category_id (giftcard/topup) '
+                  'or Steam appid (gift).',
+    )
+    fazer_region = models.CharField(
+        max_length=8, blank=True, default='',
+        help_text='Steam gifts only: the region whose price this listing '
+                  'sells (PK/UA/RU/CN...). The gift is bought at this '
+                  "region's price and the buyer's account must match it.",
     )
     offer_name = models.CharField(max_length=200)
     last_sku_id = models.CharField(max_length=100, blank=True, default='')
@@ -1436,6 +1444,7 @@ class FazerFulfillmentTask(models.Model):
     kind = models.CharField(max_length=10, choices=FazerProductLink.KIND_CHOICES)
     fazer_category_id = models.CharField(max_length=100)
     offer_name = models.CharField(max_length=200)
+    fazer_region = models.CharField(max_length=8, blank=True, default='')
     quantity = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='queued')
     idempotency_key = models.CharField(max_length=64, unique=True)

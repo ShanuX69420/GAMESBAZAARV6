@@ -3385,11 +3385,17 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                 f'«Confirm order» button on the order page once everything works.'
             )
         elif fazer_task is not None:
-            item_word = 'top-up' if fazer_task.kind == 'topup' else 'code'
+            if fazer_task.kind == 'gift':
+                arrival = ('the game will be sent to your Steam account as a '
+                           'gift within a few minutes')
+            elif fazer_task.kind == 'topup':
+                arrival = 'your top-up will arrive in this chat within a few minutes'
+            else:
+                arrival = 'your code will arrive in this chat within a few minutes'
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. This order is delivered automatically — '
-                f'your {item_word} will arrive in this chat within a few minutes. '
+                f'{arrival}. '
                 f'{buyer.username}, press the «Confirm order» button on the order '
                 f'page once you receive everything.'
             )
@@ -3402,9 +3408,10 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             )
         post_order_chat_message(order, event='order_paid', content=paid_content, sender=buyer)
 
-        # Record the buyer's player/user ID in chat so a manual fallback
-        # (seller fulfilling by hand) has it in the usual place.
-        if fazer_task is not None and fazer_task.kind == 'topup' and checkout_info:
+        # Record the buyer's player/user ID or invite link in chat so a
+        # manual fallback (seller fulfilling by hand) has it in the usual place.
+        if (fazer_task is not None and fazer_task.kind in ('topup', 'gift')
+                and checkout_info):
             id_bits = ', '.join(
                 str(v) for v in (checkout_info.get('fields') or {}).values()
                 if str(v).strip()
@@ -3412,9 +3419,11 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             if id_bits:
                 player_name = str(checkout_info.get('player_name') or '')
                 name_part = f' ({player_name})' if player_name else ''
+                id_label = ('Steam friend invite link'
+                            if fazer_task.kind == 'gift' else 'Player/User ID')
                 post_order_chat_message(
                     order,
-                    content=f'Player/User ID provided at checkout: {id_bits}{name_part}',
+                    content=f'{id_label} provided at checkout: {id_bits}{name_part}',
                     sender=buyer,
                 )
 
@@ -3465,19 +3474,23 @@ DEFAULT_TOPUP_CHECKOUT_FIELDS = [{'key': 'player_id', 'label': 'Player ID'}]
 
 
 def prepare_fazer_checkout(listing, raw_fields):
-    """For auto-fulfilled top-up listings: require and verify the buyer's
-    player/user ID BEFORE any money moves. Returns ``(checkout_info, error)``
-    — both ``None`` when the listing needs no checkout info. Runs outside any
-    transaction (it calls the supplier); verification fails open so a supplier
-    outage never blocks a purchase (fulfillment then falls back to manual).
+    """For auto-fulfilled top-up and Steam-gift listings: require and verify
+    the buyer's player ID / invite link BEFORE any money moves. Returns
+    ``(checkout_info, error)`` — both ``None`` when the listing needs no
+    checkout info. Runs outside any transaction (it calls the supplier);
+    verification fails open so a supplier outage never blocks a purchase
+    (fulfillment then falls back to manual).
     """
     if listing is None or not fulfillment.autofulfill_enabled():
         return None, None
     link = fulfillment.get_active_link(listing)
-    if link is None or link.kind != 'topup':
+    if link is None or link.kind not in ('topup', 'gift'):
         return None, None
 
-    spec = link.checkout_fields or DEFAULT_TOPUP_CHECKOUT_FIELDS
+    if link.kind == 'gift':
+        spec = link.checkout_fields or fulfillment.GIFT_CHECKOUT_FIELDS
+    else:
+        spec = link.checkout_fields or DEFAULT_TOPUP_CHECKOUT_FIELDS
     raw_fields = raw_fields or {}
     fields = {}
     for field in spec:
@@ -3487,6 +3500,19 @@ def prepare_fazer_checkout(listing, raw_fields):
         if not value:
             return None, f'{label} is required for this item.'
         fields[key] = value
+
+    if link.kind == 'gift':
+        # Format-only check — catches profile URLs before money moves; a
+        # dead/mistyped invite link still fails at fulfillment and falls
+        # back to manual.
+        if not fulfillment.GIFT_INVITE_URL_RE.search(fields.get('invite_url', '')):
+            return None, (
+                'Please paste your Steam friend INVITE link — open Steam → '
+                'Friends → Add a Friend → copy your Invite Link (it looks '
+                'like https://s.team/p/...). A profile link cannot receive '
+                'a gift.'
+            )
+        return {'fields': fields}, None
 
     player_name = ''
     try:

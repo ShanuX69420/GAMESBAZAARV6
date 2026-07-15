@@ -30,10 +30,12 @@ BALANCE_PATH = '/balance'
 GAMEKEY_OFFERS_PATH = '/gamekeys/keys'
 GIFTCARD_OFFERS_PATH = '/giftcards/cards'
 TOPUP_OFFERS_PATH = '/topups/offers'
+GIFT_OFFERS_PATH = '/steam-gifts/games/{app_id}'
 ORDER_PATH = '/orders/{order_id}'
 CREATE_GAMEKEY_ORDER_PATH = '/gamekeys/order'
 CREATE_GIFTCARD_ORDER_PATH = '/giftcards/order'
 CREATE_TOPUP_ORDER_PATH = '/topups/order'
+CREATE_GIFT_ORDER_PATH = '/steam-gifts/order'
 VALIDATE_TOPUP_ID_PATH = '/topups/validate-id'
 
 # Terminal supplier order statuses. Anything else ('created', 'processing',
@@ -165,6 +167,13 @@ def list_topup_offers(category_id):
     return _request('GET', TOPUP_OFFERS_PATH, params={'category_id': category_id})
 
 
+def list_gift_offers(app_id):
+    """Giftable editions for one Steam app:
+    [{sub_id, name, regions: [{region, price}]}] — prices are USD strings."""
+    data = _request('GET', GIFT_OFFERS_PATH.format(app_id=app_id))
+    return data.get('offers') or []
+
+
 def get_order(order_id):
     """Fetch one supplier order: {id, kind, status, failReason, …}."""
     data = _request('GET', ORDER_PATH.format(order_id=order_id))
@@ -212,5 +221,19 @@ def create_topup_order(*, category_id, offer_id, fields, idempotency_key):
         'POST', CREATE_TOPUP_ORDER_PATH,
         json_body={'category_id': category_id, 'offer_id': offer_id,
                    'fields': fields},
+        idempotency_key=idempotency_key,
+    ))
+
+
+def create_gift_order(*, app_id, sub_id, region, invite_url, idempotency_key):
+    """Buy one Steam gift: Fazer's bot friends the buyer via their invite
+    link and sends the game to that account. One gift per order — an account
+    cannot own the same game twice."""
+    def as_int(value):
+        return int(value) if str(value).isdigit() else value
+    return _extract_order(_request(
+        'POST', CREATE_GIFT_ORDER_PATH,
+        json_body={'app_id': as_int(app_id), 'sub_id': as_int(sub_id),
+                   'region': region, 'invite_url': invite_url},
         idempotency_key=idempotency_key,
     ))

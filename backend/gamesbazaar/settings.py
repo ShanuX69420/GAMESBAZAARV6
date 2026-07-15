@@ -517,8 +517,10 @@ FAZER_API_BASE_URL = (
 FAZER_API_KEY = os.environ.get('FAZER_API_KEY', '').strip()
 FAZER_REQUEST_TIMEOUT_SECONDS = env_int('FAZER_REQUEST_TIMEOUT_SECONDS', 30)
 # Hard ceiling on the supplier cost of one order (USD) — bounds worst-case
-# spend if prices or quantities go sideways.
-FAZER_MAX_ORDER_USD = Decimal(str(env_int('FAZER_MAX_ORDER_USD', 30)))
+# spend if prices or quantities go sideways. Set above the dearest
+# auto-fulfilled listing's cost so it only catches true anomalies
+# (raised 30 → 100 on 2026-07-16 for Steam gifts / deluxe editions).
+FAZER_MAX_ORDER_USD = Decimal(str(env_int('FAZER_MAX_ORDER_USD', 100)))
 # Refuse to auto-buy when the live supplier price exceeds the last-synced
 # cost by more than this percentage (protects against stale sale prices).
 FAZER_PRICE_TOLERANCE_PCT = env_int('FAZER_PRICE_TOLERANCE_PCT', 10)

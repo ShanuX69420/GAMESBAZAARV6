@@ -57,6 +57,9 @@ PLACING_STALE_AFTER = timedelta(minutes=2)
 QUEUED_PICKUP_DELAY = timedelta(seconds=30)
 # Supplier order still not terminal this long after purchase -> attention.
 FULFILLMENT_DEADLINE = timedelta(minutes=15)
+# Steam gifts get longer: Fazer's bot has to friend the buyer via their
+# invite link and send the gift, which can queue behind other orders.
+GIFT_FULFILLMENT_DEADLINE = timedelta(minutes=45)
 # In-thread polling: check every POLL_INTERVAL for up to THREAD_POLL_BUDGET,
 # then hand the task to the timer (poll due every TIMER_POLL_INTERVAL).
 POLL_INTERVAL_SECONDS = 3
@@ -67,6 +70,21 @@ BUYER_DELAY_NOTE = (
     'Automatic delivery is taking a little longer than usual — the seller '
     'will complete this order for you shortly. Thanks for your patience!'
 )
+
+# Steam gifts: what the buyer must provide at checkout. Fazer's bot friends
+# them through this link and sends the game to that account.
+GIFT_CHECKOUT_FIELDS = [{
+    'key': 'invite_url',
+    'label': 'Steam friend invite link',
+    'placeholder': 'https://s.team/p/...',
+    'hint': 'Steam → Friends → Add a Friend → copy your Invite Link. '
+            'The gift is sent to this Steam account.',
+    'verify': False,
+}]
+# Friend INVITE links only (s.team/p/... or its long form
+# steamcommunity.com/user/...). A profile URL cannot receive a gift.
+GIFT_INVITE_URL_RE = re.compile(
+    r'(s\.team/p/|steamcommunity\.com/user/)', re.IGNORECASE)
 
 
 def autofulfill_enabled():
@@ -81,15 +99,18 @@ def get_active_link(listing):
 
 def build_task_for_order(order, link):
     """Create the fulfillment task inside the purchase transaction."""
+    deadline = (GIFT_FULFILLMENT_DEADLINE if link.kind == 'gift'
+                else FULFILLMENT_DEADLINE)
     return FazerFulfillmentTask.objects.create(
         order=order,
         link=link,
         kind=link.kind,
         fazer_category_id=link.fazer_category_id,
         offer_name=link.offer_name,
+        fazer_region=link.fazer_region,
         quantity=order.quantity,
         idempotency_key=f'gb-{order.pk}',
-        deadline_at=timezone.now() + FULFILLMENT_DEADLINE,
+        deadline_at=timezone.now() + deadline,
     )
 
 
@@ -168,6 +189,44 @@ def _match_offer(offers, offer_name, *, sku_field):
     return matched[0] if matched else None
 
 
+def _gift_region_price(offer, region):
+    """USD price one gift offer quotes for `region`, or None."""
+    for entry in offer.get('regions') or []:
+        if str(entry.get('region')) == region:
+            try:
+                price = Decimal(str(entry.get('price')))
+            except (InvalidOperation, TypeError):
+                return None
+            return price if price > 0 else None
+    return None
+
+
+def _match_gift_offer(offers, offer_name, *, sub_id, region):
+    """Pick the gift offer to buy: (offer, region_price_usd) or (None, None).
+
+    The synced sub_id wins (Steam package ids are stable), name matching is
+    the fallback — region coverage sometimes moves between sub_ids day to
+    day, so any rung only qualifies when it quotes a positive price for the
+    listing's region. Cheapest wins inside a rung."""
+    if not region:
+        return None, None
+    rungs = []
+    if sub_id:
+        rungs.append([o for o in offers if str(o.get('sub_id')) == str(sub_id)])
+    rungs.append([o for o in offers if str(o.get('name', '')) == offer_name])
+    wanted = _norm(offer_name)
+    rungs.append([o for o in offers if _norm(o.get('name', '')) == wanted])
+    for rung in rungs:
+        best = None
+        for offer in rung:
+            price = _gift_region_price(offer, region)
+            if price is not None and (best is None or price < best[1]):
+                best = (offer, price)
+        if best:
+            return best
+    return None, None
+
+
 def _checkout_info(order):
     raw = decrypt_sensitive_text(order.checkout_payload)
     if not raw:
@@ -189,6 +248,13 @@ def _place_supplier_orders(task):
         _fail_to_manual(task, 'order is no longer pending', notify=False)
         return False
 
+    # A Steam account can only own one copy — gifts go one per order, and
+    # this engine deliberately doesn't split multi-quantity gift purchases
+    # across accounts (the buyer would have to supply several invite links).
+    if task.kind == 'gift' and qty != 1:
+        _fail_to_manual(task, f'gift orders deliver one copy only (qty={qty})')
+        return False
+
     # Resolve the live offer (fresh price + stock + sku id) by name.
     try:
         if task.kind == 'gamekey':
@@ -197,6 +263,9 @@ def _place_supplier_orders(task):
         elif task.kind == 'giftcard':
             offers = fazer.list_giftcard_offers(task.fazer_category_id)
             sku_field, has_stock = 'card_id', True
+        elif task.kind == 'gift':
+            offers = fazer.list_gift_offers(task.fazer_category_id)
+            sku_field, has_stock = 'sub_id', False
         else:
             topup_data = fazer.list_topup_offers(task.fazer_category_id)
             offers = topup_data.get('offers') or []
@@ -208,18 +277,31 @@ def _place_supplier_orders(task):
         _release_for_retry(task, f'supplier unreachable: {exc}')
         return False
 
-    offer = _match_offer(offers, task.offer_name, sku_field=sku_field)
-    if offer is None:
-        _fail_to_manual(task, f'offer "{task.offer_name}" not found on Fazer')
-        return False
-    if has_stock and int(offer.get('stock') or 0) < qty:
-        _fail_to_manual(task, f'out of stock on Fazer (stock={offer.get("stock")})')
-        return False
-
-    try:
-        unit_cost = Decimal(str(offer.get('price_usd', '0')))
-    except InvalidOperation:
-        unit_cost = Decimal('0')
+    if task.kind == 'gift':
+        offer, unit_cost = _match_gift_offer(
+            offers, task.offer_name,
+            sub_id=task.link.last_sku_id if task.link else '',
+            region=task.fazer_region,
+        )
+        if offer is None:
+            _fail_to_manual(
+                task,
+                f'no "{task.offer_name}" gift offer with a '
+                f'{task.fazer_region or "?"} region price on Fazer',
+            )
+            return False
+    else:
+        offer = _match_offer(offers, task.offer_name, sku_field=sku_field)
+        if offer is None:
+            _fail_to_manual(task, f'offer "{task.offer_name}" not found on Fazer')
+            return False
+        if has_stock and int(offer.get('stock') or 0) < qty:
+            _fail_to_manual(task, f'out of stock on Fazer (stock={offer.get("stock")})')
+            return False
+        try:
+            unit_cost = Decimal(str(offer.get('price_usd', '0')))
+        except InvalidOperation:
+            unit_cost = Decimal('0')
     if unit_cost <= 0:
         _fail_to_manual(task, 'supplier offer has no valid price')
         return False
@@ -246,6 +328,20 @@ def _place_supplier_orders(task):
         checkout_fields = _checkout_info(order).get('fields') or {}
         if not any(str(v).strip() for v in checkout_fields.values()):
             _fail_to_manual(task, 'buyer player/user ID missing from checkout data')
+            return False
+
+    invite_url = ''
+    if task.kind == 'gift':
+        fields = _checkout_info(order).get('fields') or {}
+        invite_url = str(fields.get('invite_url') or '').strip()
+        if not invite_url:
+            _fail_to_manual(task, 'buyer Steam invite link missing from checkout data')
+            return False
+        if not GIFT_INVITE_URL_RE.search(invite_url):
+            _fail_to_manual(
+                task,
+                f'buyer link is not a Steam friend invite link: {invite_url[:80]}',
+            )
             return False
 
     try:
@@ -287,6 +383,15 @@ def _place_supplier_orders(task):
                 game_id=task.fazer_category_id,
                 key_id=offer['key_id'],
                 quantity=qty,
+                idempotency_key=task.idempotency_key,
+            )
+            task.fazer_order_id = supplier_order['id']
+        elif task.kind == 'gift':
+            supplier_order = fazer.create_gift_order(
+                app_id=task.fazer_category_id,
+                sub_id=offer['sub_id'],
+                region=task.fazer_region,
+                invite_url=invite_url,
                 idempotency_key=task.idempotency_key,
             )
             task.fazer_order_id = supplier_order['id']
@@ -372,11 +477,13 @@ def _poll_once(task):
         return True
 
     if task.deadline_at and timezone.now() > task.deadline_at:
+        limit = (GIFT_FULFILLMENT_DEADLINE if task.kind == 'gift'
+                 else FULFILLMENT_DEADLINE)
         _store_raw(task, supplier_orders)
         _needs_attention(
             task,
             f'supplier order still processing after '
-            f'{int(FULFILLMENT_DEADLINE.total_seconds() // 60)} minutes',
+            f'{int(limit.total_seconds() // 60)} minutes',
         )
         return True
 
@@ -483,6 +590,16 @@ def _deliver(task, supplier_orders):
             f'✅ Top-up delivered directly to your account'
             f'{f" — ID {id_bits}" if id_bits else ""}{name_part}. '
             'Please check in-game and press «Confirm order» on the order page.'
+        )
+    elif task.kind == 'gift':
+        info = _checkout_info(order).get('fields') or {}
+        invite = str(info.get('invite_url') or '').strip()
+        delivery_text = (
+            '🎁 Your Steam gift has been sent to your account'
+            f'{f" ({invite})" if invite else ""}. '
+            'Open Steam, accept the friend request if one is pending, and '
+            'accept the gift — it stays in your library forever. Then please '
+            'press «Confirm order» on the order page.'
         )
     else:
         codes = []
@@ -653,6 +770,18 @@ INSTANT_TEXT_PAIRS = [
      'Delivered instantly (automatic delivery)'),
     ('— usually within 10–15 minutes',
      '— instantly (automatic delivery)'),
+    # Steam gift listings (listing_templates key_gift / key_gift_region)
+    ('after purchase, send me your Steam friend link in the order chat. '
+     'I add you and send the game as a gift — usually done within '
+     '10–15 minutes.',
+     'enter your Steam friend invite link at checkout — you are added '
+     'automatically and the game is sent as a gift, usually within a few '
+     'minutes.'),
+    # NOTE: no parenthetical in the instant text — a '(...)' here would get
+    # captured by the top-up OFF-regex above and break the round trip.
+    ('After purchase, send your Steam profile / friend link in the order chat.',
+     'Enter your Steam friend invite link at checkout — no need to send '
+     'it in chat.'),
 ]
 INSTANT_TEXT_FALLBACKS = [
     ('Average delivery: 10-15 minutes after purchase',

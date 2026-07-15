@@ -533,17 +533,20 @@ class ListingSerializer(serializers.ModelSerializer):
         return obj.is_auto_delivery or obj.delivery_time == 'Instant'
 
     def get_required_checkout_fields(self, obj):
-        """Checkout inputs the buyer must fill (auto-fulfilled top-ups only).
-        Computed only where the view opts in — the listing detail page — to
-        avoid an N+1 on category listings."""
+        """Checkout inputs the buyer must fill (auto-fulfilled top-ups and
+        Steam gifts). Computed only where the view opts in — the listing
+        detail page — to avoid an N+1 on category listings."""
         if not self.context.get('include_checkout_fields'):
             return []
-        from .fulfillment import autofulfill_enabled, get_active_link
+        from .fulfillment import (GIFT_CHECKOUT_FIELDS, autofulfill_enabled,
+                                  get_active_link)
         if not autofulfill_enabled():
             return []
         link = get_active_link(obj)
-        if link is None or link.kind != 'topup':
+        if link is None or link.kind not in ('topup', 'gift'):
             return []
+        if link.kind == 'gift':
+            return link.checkout_fields or GIFT_CHECKOUT_FIELDS
         return link.checkout_fields or [{'key': 'player_id', 'label': 'Player ID'}]
 
     def get_delivery_instructions(self, obj):

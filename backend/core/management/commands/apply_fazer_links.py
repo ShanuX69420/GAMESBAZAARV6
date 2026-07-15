@@ -62,6 +62,7 @@ class Command(BaseCommand):
                 'kind': kind,
                 'fazer_category_id': str(row.get('fazer_category_id') or '')[:100],
                 'offer_name': str(row.get('offer_name') or '')[:200],
+                'fazer_region': str(row.get('fazer_region') or '')[:8],
                 'checkout_fields': row.get('checkout_fields') or [],
                 'enabled': True,
                 'last_synced_at': now,
@@ -75,6 +76,10 @@ class Command(BaseCommand):
             if not defaults['fazer_category_id'] or not defaults['offer_name']:
                 skipped += 1
                 self.stderr.write(f'  skip: listing {listing_id} missing ids')
+                continue
+            if kind == 'gift' and not defaults['fazer_region']:
+                skipped += 1
+                self.stderr.write(f'  skip: gift listing {listing_id} has no region')
                 continue
 
             if options['dry_run']:

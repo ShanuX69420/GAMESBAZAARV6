@@ -754,7 +754,9 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
               </div>
 
-              {/* Auto-fulfilled top-ups: buyer's player/user ID */}
+              {/* Auto-fulfilled top-ups / Steam gifts: buyer info the supplier
+                  needs (player ID, friend invite link). Verify only exists for
+                  top-ups — the field spec turns it off elsewhere. */}
               {requiredCheckoutFields.map((field) => (
                 <div className="form-group" key={field.key} style={{ marginBottom: 0 }}>
                   <label className="form-label">{field.label} *</label>
@@ -767,37 +769,39 @@ export default function ListingDetailClient({ initialListing = null }) {
                         setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }));
                         setIdVerify({ status: 'idle', name: '' });
                       }}
-                      placeholder={field.label}
+                      placeholder={field.placeholder || field.label}
                       maxLength={100}
                       disabled={buying}
                     />
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={handleVerifyTopupId}
-                      disabled={buying || !checkoutFieldsFilled || idVerify.status === 'checking'}
-                      style={{ whiteSpace: 'nowrap' }}
-                    >
-                      {idVerify.status === 'checking' ? 'Checking…' : 'Verify'}
-                    </button>
+                    {field.verify !== false && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={handleVerifyTopupId}
+                        disabled={buying || !checkoutFieldsFilled || idVerify.status === 'checking'}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >
+                        {idVerify.status === 'checking' ? 'Checking…' : 'Verify'}
+                      </button>
+                    )}
                   </div>
-                  {idVerify.status === 'ok' && (
+                  {field.verify !== false && idVerify.status === 'ok' && (
                     <span className="form-hint" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
                       ✓ Found{idVerify.name ? `: ${idVerify.name}` : ''}
                     </span>
                   )}
-                  {idVerify.status === 'bad' && (
+                  {field.verify !== false && idVerify.status === 'bad' && (
                     <span className="form-hint form-error-text">
                       This ID was not found — please double-check it.
                     </span>
                   )}
-                  {idVerify.status === 'unverified' && (
+                  {field.verify !== false && idVerify.status === 'unverified' && (
                     <span className="form-hint">
                       Couldn't verify right now — double-check the ID before paying.
                     </span>
                   )}
                   <span className="form-hint">
-                    The top-up goes directly to this account — a wrong ID cannot be reversed.
+                    {field.hint || 'The top-up goes directly to this account — a wrong ID cannot be reversed.'}
                   </span>
                 </div>
               ))}

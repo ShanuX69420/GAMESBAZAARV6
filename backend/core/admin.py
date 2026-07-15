@@ -1224,7 +1224,7 @@ class PlatformSettingAdmin(admin.ModelAdmin):
 @admin.register(FazerProductLink)
 class FazerProductLinkAdmin(admin.ModelAdmin):
     list_display = ['id', 'listing', 'kind', 'fazer_category_id', 'offer_name',
-                    'last_cost_usd', 'enabled', 'last_synced_at']
+                    'fazer_region', 'last_cost_usd', 'enabled', 'last_synced_at']
     list_filter = ['kind', 'enabled']
     search_fields = ['listing__title', 'fazer_category_id', 'offer_name']
     raw_id_fields = ['listing']
@@ -1233,8 +1233,9 @@ class FazerProductLinkAdmin(admin.ModelAdmin):
 
 @admin.register(FazerFulfillmentTask)
 class FazerFulfillmentTaskAdmin(admin.ModelAdmin):
-    list_display = ['id', 'order', 'kind', 'offer_name', 'quantity', 'status',
-                    'fazer_order_id', 'charged_usd', 'fail_reason', 'created_at']
+    list_display = ['id', 'order', 'kind', 'offer_name', 'fazer_region',
+                    'quantity', 'status', 'fazer_order_id', 'charged_usd',
+                    'fail_reason', 'created_at']
     list_filter = ['status', 'kind']
     search_fields = ['order__order_number', 'offer_name', 'fazer_order_id']
     raw_id_fields = ['order', 'link']
