@@ -15,7 +15,7 @@ from .models import (
     JazzCashPayment,
     Notification, Report, SupportTicket, ItemRequest,
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
-    SteamOfflineAccount,
+    OfflineAccount,
 )
 from .payments import run_status_inquiry
 from .services import (
@@ -384,25 +384,25 @@ class ListingAdmin(admin.ModelAdmin):
         return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
 
 
-@admin.register(SteamOfflineAccount)
-class SteamOfflineAccountAdmin(admin.ModelAdmin):
-    """Offline-activation accounts: credentials + Steam Guard secret.
+@admin.register(OfflineAccount)
+class OfflineAccountAdmin(admin.ModelAdmin):
+    """Offline-activation accounts (Steam/Ubisoft/EA): credentials + guard.
 
     Paste plaintext into password / shared_secret — they are encrypted on
     save (an already-encrypted value is kept as-is). The live code column
     exists so support questions can be answered without any external tool.
     """
-    list_display = ['label', 'login', 'guard_type', 'enabled',
-                    'code_window_days', 'listing_count', 'live_code']
-    list_filter = ['enabled', 'guard_type']
-    search_fields = ['label', 'login']
+    list_display = ['label', 'platform', 'login', 'guard_type', 'guard_email',
+                    'enabled', 'code_window_days', 'listing_count', 'live_code']
+    list_filter = ['platform', 'enabled', 'guard_type']
+    search_fields = ['label', 'login', 'guard_email']
     readonly_fields = ['live_code', 'created_at', 'updated_at']
 
     @admin.display(description='Listings')
     def listing_count(self, obj):
         return obj.listings.count()
 
-    @admin.display(description='Current Steam Guard code')
+    @admin.display(description='Current login code')
     def live_code(self, obj):
         if not obj or not obj.pk:
             return '—'

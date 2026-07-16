@@ -1435,6 +1435,7 @@ class OrderSerializer(serializers.ModelSerializer):
     can_dispute = serializers.SerializerMethodField()
     guard_code_available = serializers.SerializerMethodField()
     guard_code_used = serializers.SerializerMethodField()
+    guard_code_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -1449,7 +1450,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'is_auto_delivery', 'auto_delivery_data',
             'delivery_instructions', 'delivered_at', 'auto_confirm_at',
             'buyer_protection_enabled', 'seller_payout_status', 'can_dispute',
-            'guard_code_available', 'guard_code_used',
+            'guard_code_available', 'guard_code_used', 'guard_code_label',
             'seller_payout_available_at', 'seller_payout_released_at',
             'created_at', 'updated_at',
         ]
@@ -1535,6 +1536,17 @@ class OrderSerializer(serializers.ModelSerializer):
         if obj.guard_code_issued_at is None:
             return False
         return get_order_guard_account(obj) is not None
+
+    def get_guard_code_label(self, obj):
+        """What the order page should call the code, e.g. 'Steam Guard code'
+        or 'EA security code'. Empty when no code UI should show."""
+        if not self.context.get('include_guard_code'):
+            return ''
+        request = self.context.get('request')
+        if not request or getattr(request.user, 'id', None) != obj.buyer_id:
+            return ''
+        account = get_order_guard_account(obj)
+        return account.code_label() if account else ''
 
     def _seller_payout_has_been_released(self, obj):
         cache = getattr(self, '_seller_payout_released_cache', None)

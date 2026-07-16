@@ -102,7 +102,7 @@ export default function OrderDetailPage() {
     return () => clearInterval(timer);
   }, [guardCode]);
 
-  // Email-guard accounts: Steam only emails a code once a login is
+  // Email-guard accounts: the platform only emails a code once a login is
   // attempted, so a "pending" answer is normal — poll a few times while the
   // email lands.
   async function pollGuardCode(attempt) {
@@ -116,7 +116,7 @@ export default function OrderDetailPage() {
         }
         setGuardLoading(false);
         setGuardWaiting(false);
-        setGuardError(data.message || 'No code email yet — start the Steam login first, then request again.');
+        setGuardError(data.message || 'No code email yet — start the login first, then request again.');
         return;
       }
       // The one code has now been spent — mark used so the button doesn't
@@ -407,10 +407,10 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Steam Guard code on demand (offline-activation orders) */}
+          {/* Login code on demand (offline-activation orders) */}
           {isBuyer && (order.guard_code_available || order.guard_code_used || guardCode || guardUsed) && (
             <div className="order-detail-section">
-              <h3 className="order-detail-section-title">🔐 Steam Guard</h3>
+              <h3 className="order-detail-section-title">🔐 Login code</h3>
               <div className="order-delivery-note" style={{ margin: 0 }}>
                 {guardCode ? (
                   <>
@@ -422,7 +422,7 @@ export default function OrderDetailPage() {
                         {guardCode.code}
                       </span>
                       <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>
-                        {guardCode.valid_for ? `valid ~${guardRemaining}s` : 'enter this in Steam now'}
+                        {guardCode.valid_for ? `valid ~${guardRemaining}s` : 'enter this at the login screen now'}
                       </span>
                     </div>
                     <p style={{ margin: '12px 0 0', fontSize: '0.9rem' }}>
@@ -432,25 +432,26 @@ export default function OrderDetailPage() {
                   </>
                 ) : (order.guard_code_used || guardUsed) ? (
                   <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                    You have already received your Steam Guard code — it is in the
-                    chat. If Steam shows an error while signing in, start the login
-                    again and enter that same code. Message the seller if you still
-                    need help.
+                    You have already received your {order.guard_code_label || 'login code'} —
+                    it is in the chat. If the login shows an error, start it
+                    again and enter that same code. Message the seller if you
+                    still need help.
                   </p>
                 ) : (
                   <>
                     <p style={{ margin: '0 0 12px' }}>
-                      When Steam asks for a Steam Guard code at login, get it here —
-                      it is also posted in the chat, or type <code>!code</code> there.
-                      You can request it <strong>once</strong>, so ask only when Steam
-                      is ready for it.
+                      When you are asked for a {order.guard_code_label || 'login code'} at
+                      login, get it here — it is also posted in the chat, or type{' '}
+                      <code>!code</code> there. You can request it{' '}
+                      <strong>once</strong>, so ask only when the login screen is
+                      ready for it.
                     </p>
                     <button
                       className="btn btn-primary"
                       onClick={handleGuardCode}
                       disabled={guardLoading}
                     >
-                      {guardWaiting ? "Waiting for Steam's email..." : guardLoading ? 'Getting code...' : '🔐 Get Steam Guard code'}
+                      {guardWaiting ? 'Waiting for the code email...' : guardLoading ? 'Getting code...' : `🔐 Get ${order.guard_code_label || 'login code'}`}
                     </button>
                   </>
                 )}

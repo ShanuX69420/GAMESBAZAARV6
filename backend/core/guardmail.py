@@ -1,16 +1,18 @@
-"""Fetch Steam Guard codes from the shared guard mailbox.
+"""Fetch login-verification codes from the shared guard mailbox.
 
-Email-guard offline-activation accounts can't use the TOTP generator (no
-mobile authenticator — Steam requires a phone number those accounts can't
-add). Instead, every such account's contact email points at ONE dedicated
-mailbox (Steam allows the same email on many accounts) and this module pulls
-codes out of it over IMAP.
+Email-guard offline-activation accounts get their codes from ONE dedicated
+mailbox that this module reads over IMAP. The platforms only email a code
+when a login is attempted, so the flow is: buyer starts the login → the
+platform emails the code → buyer presses the button / types !code → the
+newest fresh code email for that account is parsed and the code handed over.
 
-Steam only emails a code when a login is attempted, so the flow is: buyer
-starts the Steam login → Steam emails the code → buyer presses the button /
-types !code → the newest fresh guard email naming that account login is
-parsed and the code handed over. The email body contains the account name,
-which is how one mailbox serves every account.
+How an email is tied to an account differs per platform:
+- Steam allows the same contact email on many accounts, and its guard email
+  names the account login in the body — one mailbox serves every account,
+  matched by login.
+- Ubisoft/EA allow only ONE account per email address. Each such account
+  stores its own guard_email — a Gmail dot/plus alias of the mailbox, or an
+  address auto-forwarded into it — and emails are matched by To: address.
 """
 
 import email
@@ -38,12 +40,43 @@ IMAP_TIMEOUT_SECONDS = 10
 _CODE_LINE_RE = re.compile(r'^\s*([A-Z0-9]{5})\s*$', re.MULTILINE)
 _HTML_TAG_RE = re.compile(r'<[^>]+>')
 
-# Only Steam's LOGIN-code template ("Your Steam account: Access from new
-# computer/browser/device", some variants say "Steam Guard") may ever be
-# parsed. With email guard the mailbox IS the account's second factor —
-# email-change / password-reset / recovery mails must never reach a buyer,
-# regardless of what their bodies contain. Fail closed on anything else.
-_LOGIN_SUBJECT_RE = re.compile(r'access from|steam guard', re.IGNORECASE)
+# Ubisoft/EA codes are plain digits: alone on a line, or right after the
+# word "code" (EA puts it in the subject: "Your EA Security Code is: NNNNNN").
+_DIGIT_AFTER_CODE_RE = re.compile(r'code\D{0,20}(\d{4,8})', re.IGNORECASE)
+_DIGIT_LINE_RE = re.compile(r'^\s*(\d{4,8})\s*$', re.MULTILINE)
+
+# Only LOGIN-code templates may ever be parsed. With email guard the mailbox
+# IS the account's second factor — email-change / password-reset / recovery
+# mails must never reach a buyer, regardless of what their bodies contain.
+# Two gates, both fail closed: a hard blocklist of account-security words,
+# then a per-platform allowlist of the login-code template's subject.
+_SUBJECT_BLOCK_RE = re.compile(
+    r'password|reset|recover|chang|delet', re.IGNORECASE)
+
+PLATFORM_MAIL = {
+    'steam': {
+        # "Your Steam account: Access from new computer/browser/device";
+        # some variants say "Steam Guard".
+        'search_from': 'steampowered.com',
+        'sender_domains': ('steampowered.com',),
+        'subject_allow': re.compile(r'access from|steam guard', re.IGNORECASE),
+    },
+    # Ubisoft/EA have no 'search_from': Gmail's IMAP SEARCH matches whole
+    # tokens, not substrings (FROM "ubi" finds nothing from ubisoft.com), so
+    # their search keys on the account's unique To: alias instead and the
+    # sender is verified by _sender_domain_ok after fetching.
+    'ubisoft': {
+        # live-verified 2026-07-16: "Ubisoft Account Security Code"
+        # from updates@account.ubisoft.com
+        'sender_domains': ('ubisoft.com', 'ubi.com'),
+        'subject_allow': re.compile(r'\bcode\b', re.IGNORECASE),
+    },
+    'ea': {
+        # "Your EA Security Code is: NNNNNN"
+        'sender_domains': ('ea.com',),
+        'subject_allow': re.compile(r'security code', re.IGNORECASE),
+    },
+}
 
 
 class GuardMailError(Exception):
@@ -58,10 +91,51 @@ def is_configured():
     )
 
 
+def subject_allowed(platform, subject):
+    """True only for the platform's login-code email template.
+    Account-security emails (email change, password reset, recovery)
+    always return False — blocklist first, then the allowlist."""
+    text = str(subject or '')
+    if _SUBJECT_BLOCK_RE.search(text):
+        return False
+    return bool(PLATFORM_MAIL[platform]['subject_allow'].search(text))
+
+
 def is_login_code_subject(subject):
-    """True only for Steam's login-code email template. Account-security
-    emails (email change, password reset, recovery) always return False."""
-    return bool(_LOGIN_SUBJECT_RE.search(str(subject or '')))
+    """Steam shorthand for subject_allowed (kept for its long-proven name)."""
+    return subject_allowed('steam', subject)
+
+
+def extract_generic_code(subject, body):
+    """The digit code in a Ubisoft/EA email — subject first (EA puts it
+    there), then body. Only called for emails already matched to an account
+    by To: address and vetted by subject_allowed."""
+    for text in (str(subject or ''), str(body or '')):
+        match = _DIGIT_AFTER_CODE_RE.search(text) or _DIGIT_LINE_RE.search(text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _sender_domain_ok(message, domains):
+    """The From: address really is the platform (the IMAP FROM search only
+    matches substrings — 'ea.com' would also match sea.com)."""
+    address = email.utils.parseaddr(str(message.get('From', '')))[1].lower()
+    domain = address.rsplit('@', 1)[-1]
+    return any(domain == d or domain.endswith('.' + d) for d in domains)
+
+
+def _addressed_to(message, guard_email):
+    """Ubisoft/EA: the email was sent to this account's registered address
+    (dot/plus aliases and forwards keep the original To: header)."""
+    needle = str(guard_email).strip().lower()
+    if not needle:
+        return False
+    headers = ' '.join(
+        str(message.get(h, '') or '')
+        for h in ('To', 'Cc', 'Delivered-To', 'X-Original-To')
+    )
+    return needle in headers.lower()
 
 
 def _subject(message):
@@ -128,16 +202,25 @@ def _sent_at(message):
     return sent
 
 
-def fetch_latest_code(login):
-    """The newest fresh Steam Guard code for ``login``, or None when no
-    fresh guard email exists yet (buyer must attempt the Steam login first).
+def fetch_latest_code(account):
+    """The newest fresh login code for an OfflineAccount, or None when no
+    fresh code email exists yet (buyer must attempt the login first).
     Raises GuardMailError when the mailbox cannot be read."""
     if not is_configured():
         raise GuardMailError('guard mailbox is not configured')
 
+    spec = PLATFORM_MAIL[account.platform]
     cutoff = timezone.now() - timedelta(
         minutes=settings.GUARD_EMAIL_MAX_AGE_MINUTES)
     since = cutoff.strftime('%d-%b-%Y')  # IMAP SINCE is day-granular
+
+    if account.platform == 'steam':
+        criteria = f'(FROM "{spec["search_from"]}" SINCE {since})'
+    else:
+        # One account per address: the unique To: alias is the search key
+        # (see the PLATFORM_MAIL note on Gmail's token-only FROM search).
+        alias = str(account.guard_email).replace('"', '').strip()
+        criteria = f'(TO "{alias}" SINCE {since})'
 
     conn = None
     try:
@@ -147,8 +230,7 @@ def fetch_latest_code(login):
         conn.login(settings.GUARD_EMAIL_IMAP_USER,
                    settings.GUARD_EMAIL_IMAP_PASSWORD)
         conn.select('INBOX', readonly=True)
-        status, data = conn.search(
-            None, f'(FROM "steampowered.com" SINCE {since})')
+        status, data = conn.search(None, criteria)
         if status != 'OK':
             raise GuardMailError(f'IMAP search failed: {status}')
         message_ids = data[0].split()
@@ -160,12 +242,20 @@ def fetch_latest_code(login):
             if status != 'OK' or not fetched or not isinstance(fetched[0], tuple):
                 continue
             message = email.message_from_bytes(fetched[0][1])
-            if not is_login_code_subject(_subject(message)):
+            subject = _subject(message)
+            if not subject_allowed(account.platform, subject):
                 continue  # never parse account-security emails
+            if not _sender_domain_ok(message, spec['sender_domains']):
+                continue  # IMAP FROM matches substrings; verify for real
             sent = _sent_at(message)
             if sent is not None and sent < cutoff:
                 continue  # stale code from an earlier login attempt
-            code = extract_code(_body_text(message), login)
+            if account.platform == 'steam':
+                code = extract_code(_body_text(message), account.login)
+            else:
+                if not _addressed_to(message, account.guard_email):
+                    continue
+                code = extract_generic_code(subject, _body_text(message))
             if code:
                 return code
         return None

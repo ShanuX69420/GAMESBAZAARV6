@@ -457,11 +457,12 @@ class Listing(models.Model):
         help_text='Optional instructions shown to every buyer (e.g., "Change password after receiving").',
     )
     offline_account = models.ForeignKey(
-        'SteamOfflineAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        'OfflineAccount', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='listings',
-        help_text='Offline activation: the shared Steam account delivered to '
-                  'every buyer of this listing (never consumed). Enables '
-                  'instant delivery + on-demand Steam Guard codes.',
+        help_text='Offline activation: the shared game account '
+                  '(Steam/Ubisoft/EA) delivered to every buyer of this '
+                  'listing (never consumed). Enables instant delivery + '
+                  'on-demand login codes.',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1497,27 +1498,46 @@ class FazerFulfillmentTask(models.Model):
         return f"Task for order #{self.order_id} — {self.kind} — {self.get_status_display()}"
 
 
-class SteamOfflineAccount(models.Model):
-    """A shared Steam account behind offline-activation listings.
+class OfflineAccount(models.Model):
+    """A shared game account (Steam/Ubisoft/EA) behind offline-activation
+    listings.
 
     The same account is delivered to every buyer — listings pointing here are
     evergreen, nothing is consumed. ``password`` and ``shared_secret`` are
     encrypted at rest (save() encrypts plaintext automatically).
 
     Two guard types: 'totp' computes codes from the mobile-authenticator
-    shared_secret (maFile); 'email' pulls them from the shared guard mailbox
-    (see core.guardmail) — the type limited accounts are stuck with, since
-    they cannot add the phone number an authenticator requires. Either way,
-    entitled buyers get codes on demand (order-page button or !code in chat).
+    shared_secret (Steam maFile; Steam only); 'email' pulls them from the
+    shared guard mailbox (see core.guardmail). Steam allows one contact email
+    on many accounts, so Steam codes are matched by the login named in the
+    email body. Ubisoft/EA allow only ONE account per email address — each
+    such account stores its own ``guard_email`` (a Gmail dot/plus alias of
+    the guard mailbox, or an address auto-forwarded into it) and codes are
+    matched by the To: address instead. Either way, entitled buyers get
+    codes on demand (order-page button or !code in chat).
     """
+    PLATFORM_CHOICES = [
+        ('steam', 'Steam'),
+        ('ubisoft', 'Ubisoft'),
+        ('ea', 'EA'),
+    ]
     GUARD_TYPE_CHOICES = [
         ('totp', 'Mobile authenticator (shared_secret)'),
-        ('email', 'Email Steam Guard (shared mailbox)'),
+        ('email', 'Email code (shared mailbox)'),
     ]
+    # What the buyer-facing button/chat message calls the code.
+    CODE_LABELS = {
+        'steam': 'Steam Guard code',
+        'ubisoft': 'Ubisoft verification code',
+        'ea': 'EA security code',
+    }
 
     label = models.CharField(
         max_length=200,
         help_text='Admin-facing name, e.g. "GTA V — account 1".',
+    )
+    platform = models.CharField(
+        max_length=10, choices=PLATFORM_CHOICES, default='steam',
     )
     login = models.CharField(max_length=150)
     password = models.TextField(
@@ -1525,8 +1545,17 @@ class SteamOfflineAccount(models.Model):
     )
     guard_type = models.CharField(
         max_length=8, choices=GUARD_TYPE_CHOICES, default='totp',
-        help_text='email: the account\'s contact email must point at the '
-                  'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars).',
+        help_text='email: code emails for this account must land in the '
+                  'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars). '
+                  'Ubisoft/EA accounts are always email.',
+    )
+    guard_email = models.CharField(
+        max_length=254, blank=True, default='',
+        help_text='Ubisoft/EA only: the email address this account is '
+                  'registered under. Must deliver into the shared guard '
+                  'mailbox (Gmail dot/plus alias of it, or auto-forwarded) — '
+                  'codes are matched by this To: address. Steam accounts '
+                  'leave it blank (matched by login in the email body).',
     )
     shared_secret = models.TextField(
         blank=True, default='',
@@ -1541,7 +1570,7 @@ class SteamOfflineAccount(models.Model):
     )
     code_window_days = models.PositiveIntegerField(
         default=7,
-        help_text='Buyers can request Steam Guard codes this many days after '
+        help_text='Buyers can request login codes this many days after '
                   'delivery (0 = no limit).',
     )
     notes = models.TextField(blank=True, default='')
@@ -1555,7 +1584,17 @@ class SteamOfflineAccount(models.Model):
         return f"{self.label} ({self.login})"
 
     def clean(self):
-        if self.guard_type == 'totp' and not str(self.shared_secret).strip():
+        if self.platform != 'steam':
+            if self.guard_type != 'email':
+                raise ValidationError({
+                    'guard_type': 'Ubisoft/EA accounts use email codes only.',
+                })
+            if not str(self.guard_email).strip():
+                raise ValidationError({
+                    'guard_email': 'Required for Ubisoft/EA accounts — the '
+                                   'email the account is registered under.',
+                })
+        elif self.guard_type == 'totp' and not str(self.shared_secret).strip():
             raise ValidationError({
                 'shared_secret': 'Required for the mobile-authenticator guard type.',
             })
@@ -1567,6 +1606,10 @@ class SteamOfflineAccount(models.Model):
         self.password = encrypt_sensitive_text(str(self.password).strip())
         self.shared_secret = encrypt_sensitive_text(str(self.shared_secret).strip())
         super().save(*args, **kwargs)
+
+    def code_label(self):
+        """Buyer-facing name of the login code, e.g. 'Steam Guard code'."""
+        return self.CODE_LABELS.get(self.platform, 'login code')
 
     def current_code(self):
         """TOTP accounts: the Steam Guard code valid right now (raises
@@ -1580,12 +1623,15 @@ class SteamOfflineAccount(models.Model):
     def delivery_text(self):
         """The credentials hand-over posted to the buyer at purchase."""
         from .services import decrypt_sensitive_text
+        name = self.get_platform_display()
+        label = self.code_label()
         return (
             f'Login: {self.login}\n'
             f'Password: {decrypt_sensitive_text(self.password)}\n\n'
-            'This account is protected by Steam Guard. When Steam asks for a '
-            'code, press «Get Steam Guard code» on your order page or type '
-            '!code in this chat. You can request the code only once, so ask '
-            'for it when Steam is ready for it. If you get an error while '
-            'signing in, start the login again and enter the same code.'
+            f'This account is protected by a one-time login code. When '
+            f'{name} asks for a code, press «Get {label}» on your order '
+            'page or type !code in this chat. You can request the code only '
+            f'once, so ask for it when {name} is ready for it. If you get '
+            'an error while signing in, start the login again and enter the '
+            'same code.'
         )

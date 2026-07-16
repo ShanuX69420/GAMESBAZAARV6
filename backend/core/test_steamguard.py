@@ -18,8 +18,8 @@ from rest_framework.test import APIClient
 
 from . import guardmail, steamguard
 from .models import (
-    Category, Game, GameCategory, Listing, Message, Notification, Order,
-    SteamOfflineAccount, Wallet,
+    Category, Game, GameCategory, Listing, Message, Notification,
+    OfflineAccount, Order, Wallet,
 )
 from .services import (
     ENCRYPTED_TEXT_V1_PREFIX,
@@ -155,7 +155,7 @@ class OfflineAccountTestBase(TestCase):
         category = Category.objects.create(name='Offline Activation', slug='offline-activation')
         self.game_category = GameCategory.objects.create(game=game, category=category)
 
-        self.account = SteamOfflineAccount.objects.create(
+        self.account = OfflineAccount.objects.create(
             label='OA Game — account 1',
             login='steamuser1',
             password='hunter2-plaintext',
@@ -440,7 +440,7 @@ class EmailGuardTests(OfflineAccountTestBase):
 
     def test_model_validation(self):
         self.account.full_clean()  # email type needs no shared_secret
-        totp = SteamOfflineAccount(
+        totp = OfflineAccount(
             label='x', login='y', password='z', guard_type='totp',
         )
         with self.assertRaises(ValidationError):
@@ -456,8 +456,9 @@ class EmailGuardTests(OfflineAccountTestBase):
         response = self.request_code(order)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['code'], 'H7K2M')
+        self.assertEqual(response.data['label'], 'Steam Guard code')
         self.assertNotIn('valid_for', response.data)
-        fetch.assert_called_once_with('steamuser1')
+        fetch.assert_called_once_with(self.account)
 
         messages = Message.objects.filter(
             conversation=order.conversation, system_event='guard_code',
@@ -475,7 +476,7 @@ class EmailGuardTests(OfflineAccountTestBase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('already received', response.data['error'])
         # Second request must not re-read the mailbox or re-post a code.
-        fetch.assert_called_once_with('steamuser1')
+        fetch.assert_called_once_with(self.account)
         self.assertEqual(
             Message.objects.filter(
                 conversation=order.conversation, system_event='guard_code',
@@ -530,7 +531,7 @@ class EmailGuardTests(OfflineAccountTestBase):
         order = self.buy()
         self.assertTrue(self.request_code(order).data['pending'])
         self.assertTrue(self.request_code(order).data['pending'])
-        fetch.assert_called_once_with('steamuser1')
+        fetch.assert_called_once_with(self.account)
 
     @patch('core.guardmail.fetch_latest_code', return_value=None)
     def test_command_explains_login_first(self, fetch):
@@ -552,3 +553,117 @@ class EmailGuardTests(OfflineAccountTestBase):
         response = self.request_code(order)
         self.assertEqual(response.status_code, 400)
         self.assertIn('notified', response.data['error'])
+
+
+class PlatformMailParserTests(SimpleTestCase):
+    """Ubisoft/EA subject vetting and digit-code extraction."""
+
+    def test_ea_login_code_subject_allowed(self):
+        self.assertTrue(guardmail.subject_allowed(
+            'ea', 'Your EA Security Code is: 869817'))
+
+    def test_ubisoft_code_subject_allowed(self):
+        self.assertTrue(guardmail.subject_allowed(
+            'ubisoft', 'Your Ubisoft verification code'))
+
+    def test_account_security_subjects_blocked_even_if_they_mention_code(self):
+        # The blocklist wins over the allowlist: a password-reset email that
+        # also says "code" must NEVER be parsed — relaying it would hand a
+        # buyer the account.
+        for platform, subject in (
+            ('ea', 'Your EA password reset code'),
+            ('ea', 'Reset your EA password'),
+            ('ubisoft', 'Password change code for your Ubisoft account'),
+            ('ubisoft', 'Recover your Ubisoft account'),
+            ('ea', ''),
+            ('ubisoft', None),
+        ):
+            self.assertFalse(
+                guardmail.subject_allowed(platform, subject), (platform, subject))
+
+    def test_extract_code_from_ea_subject(self):
+        self.assertEqual(
+            guardmail.extract_generic_code(
+                'Your EA Security Code is: 869817', 'irrelevant body'),
+            '869817')
+
+    def test_extract_code_from_ubisoft_body_line(self):
+        body = 'Hello,\n\nYour verification code:\n\n1234\n\nThe Ubisoft team\n'
+        self.assertEqual(guardmail.extract_generic_code('', body), '1234')
+
+    def test_no_code_in_marketing_text(self):
+        body = ('Big sale! Save 70% until July 20, 2026.\n'
+                '© 2026 Electronic Arts Inc.\n')
+        self.assertIsNone(guardmail.extract_generic_code('', body))
+
+
+class UbisoftEaAccountTests(OfflineAccountTestBase):
+    """platform='ubisoft'/'ea': email-only guard, matched by guard_email."""
+
+    def setUp(self):
+        super().setUp()
+        self.ea_account = OfflineAccount.objects.create(
+            label='FC 26 — EA account 1',
+            platform='ea',
+            login='eauser1',
+            password='ea-hunter2',
+            guard_type='email',
+            guard_email='gb.guard+ea1@gmail.com',
+        )
+        self.ea_listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='FC 26 (Offline Activation)',
+            price=Decimal('2000.00'),
+            quantity=None,
+            status='active',
+            offline_account=self.ea_account,
+        )
+
+    def test_validation_rules(self):
+        self.ea_account.full_clean()  # valid as created
+        with self.assertRaises(ValidationError):
+            OfflineAccount(
+                label='x', platform='ubisoft', login='y', password='z',
+                guard_type='totp', shared_secret=TEST_SECRET,
+            ).full_clean()  # non-Steam platforms are email-only
+        with self.assertRaises(ValidationError):
+            OfflineAccount(
+                label='x', platform='ea', login='y', password='z',
+                guard_type='email', guard_email='',
+            ).full_clean()  # guard_email required off-Steam
+
+    def test_purchase_delivers_platform_wording(self):
+        order = self.buy(self.ea_listing)
+        self.assertEqual(order.status, 'delivered')
+        note = decrypt_sensitive_text(order.delivery_note)
+        self.assertIn('eauser1', note)
+        self.assertIn('EA security code', note)
+        self.assertIn('!code', note)
+
+    @patch('core.guardmail.fetch_latest_code', return_value='869817')
+    def test_code_and_label_delivered(self, fetch):
+        order = self.buy(self.ea_listing)
+        detail = self.client.get(f'/api/orders/{order.pk}/').data
+        self.assertEqual(detail['guard_code_label'], 'EA security code')
+
+        response = self.client.post(f'/api/orders/{order.pk}/guard-code/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['code'], '869817')
+        self.assertEqual(response.data['label'], 'EA security code')
+        fetch.assert_called_once_with(self.ea_account)
+
+        message = Message.objects.filter(
+            conversation=order.conversation, system_event='guard_code',
+        ).first()
+        self.assertIn('EA security code', message.content)
+        self.assertIn('869817', message.content)
+
+    @patch('core.guardmail.fetch_latest_code', return_value=None)
+    def test_pending_message_names_the_platform(self, fetch):
+        order = self.buy(self.ea_listing)
+        response = self.client.post(f'/api/orders/{order.pk}/guard-code/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['pending'])
+        self.assertIn('EA', response.data['message'])
+        self.assertNotIn('Steam', response.data['message'])

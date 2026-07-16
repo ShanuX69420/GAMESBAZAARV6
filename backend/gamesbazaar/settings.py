@@ -528,12 +528,14 @@ FAZER_PRICE_TOLERANCE_PCT = env_int('FAZER_PRICE_TOLERANCE_PCT', 10)
 # Alert (once a day) when the Fazer USD balance drops below this.
 FAZER_LOW_BALANCE_USD = env_int('FAZER_LOW_BALANCE_USD', 10)
 
-# ── Steam Guard email fetch (offline-activation accounts) ────────────────────
-# One dedicated mailbox receives the Steam Guard emails for ALL email-guard
-# offline-activation accounts (Steam allows one contact email on many
-# accounts; the guard email body names the account, which is how codes are
-# matched). Setting all three vars enables the email guard_type. Use a
-# mailbox that contains nothing but Steam mail — these credentials read it.
+# ── Login-code email fetch (offline-activation accounts) ─────────────────────
+# One dedicated mailbox receives the login-code emails for ALL email-guard
+# offline-activation accounts. Steam allows one contact email on many
+# accounts and names the account in the email body (matched by login);
+# Ubisoft/EA allow one account per address, so each account registers under
+# an alias of / forward into this mailbox (matched by To: header). Setting
+# all three vars enables the email guard_type. Use a mailbox that contains
+# nothing but game-platform mail — these credentials read it.
 GUARD_EMAIL_IMAP_HOST = os.environ.get('GUARD_EMAIL_IMAP_HOST', '').strip()
 GUARD_EMAIL_IMAP_PORT = env_int('GUARD_EMAIL_IMAP_PORT', 993)
 GUARD_EMAIL_IMAP_USER = os.environ.get('GUARD_EMAIL_IMAP_USER', '').strip()

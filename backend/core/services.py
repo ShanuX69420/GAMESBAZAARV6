@@ -1333,10 +1333,13 @@ def guard_code_window_open(order, account):
     return timezone.now() <= base + timedelta(days=account.code_window_days)
 
 
-GUARD_EMAIL_PENDING_MESSAGE = (
-    'No code email from Steam yet. Start the Steam login first — Steam only '
-    'sends a code when a login is attempted — then request the code again.'
-)
+def guard_pending_message(account):
+    name = account.get_platform_display()
+    return (
+        f'No code email from {name} yet. Start the {name} login first — '
+        f'{name} only sends a code when a login is attempted — then request '
+        'the code again.'
+    )
 
 
 def _alert_seller_guard_problem(order, account, title, message):
@@ -1386,15 +1389,15 @@ def issue_guard_code(order, *, account=None):
             # Too soon since the last mailbox check for this account —
             # answer "no email yet" without touching IMAP; the order page
             # polls again in a few seconds anyway.
-            return {'pending': True, 'message': GUARD_EMAIL_PENDING_MESSAGE}, None
+            return {'pending': True, 'message': guard_pending_message(account)}, None
         try:
-            code = guardmail.fetch_latest_code(account.login)
+            code = guardmail.fetch_latest_code(account)
         except guardmail.GuardMailError as exc:
             logger.warning('Guard mailbox unavailable for account %s: %s',
                            account.pk, exc)
             _alert_seller_guard_problem(
                 order, account,
-                title='Steam Guard mailbox is unreachable',
+                title='Login-code mailbox is unreachable',
                 message=(
                     f'Could not read the guard mailbox for account '
                     f'"{account.label}" (order #{order.order_number}): '
@@ -1405,7 +1408,7 @@ def issue_guard_code(order, *, account=None):
                           'has been notified and will help you shortly.')
         if code is None:
             # No login-code email yet — allowance untouched, buyer can retry.
-            return {'pending': True, 'message': GUARD_EMAIL_PENDING_MESSAGE}, None
+            return {'pending': True, 'message': guard_pending_message(account)}, None
         guidance = ('If you get an error while signing in, start the Steam '
                     'login again and enter this same code.')
     else:
@@ -1444,11 +1447,12 @@ def issue_guard_code(order, *, account=None):
         event='guard_code',
         sender=order.buyer,
         content=(
-            f'Steam Guard code for order #{order.order_number}: {code}\n'
+            f'{account.code_label()} for order #{order.order_number}: {code}\n'
             f'{guidance} For security, this code is sent only once.'
         ),
     )
-    payload = {'code': code, 'listing_title': order.listing_title}
+    payload = {'code': code, 'listing_title': order.listing_title,
+               'label': account.code_label()}
     if valid_for is not None:
         payload['valid_for'] = valid_for
     return payload, None
