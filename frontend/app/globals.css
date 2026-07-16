@@ -11687,3 +11687,30 @@ img {
     justify-content: space-between;
   }
 }
+
+/* ── Category SEO text (below listings on game+category pages) ─────────────── */
+
+.category-seo-text {
+  margin: 40px 0 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+  max-width: 760px;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.category-seo-text h2 {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+
+.category-seo-text h2:first-child {
+  margin-top: 0;
+}
+
+.category-seo-text p {
+  margin: 0 0 12px;
+}

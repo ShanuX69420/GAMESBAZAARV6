@@ -147,6 +147,23 @@ class GameCategory(models.Model):
         help_text='Currency mode only: the unit buyers purchase in (e.g., "M" for '
                   'million coins, "K" for thousand). Seller prices are PKR per 1 unit.',
     )
+    seo_title = models.CharField(
+        max_length=120, blank=True, default='',
+        help_text='Custom search/browser title for this page, WITHOUT the '
+                  '"| GamesBazaar" suffix (the site adds it). Aim for ~50 characters. '
+                  'Blank = auto-generated from the game and category names.',
+    )
+    seo_description = models.CharField(
+        max_length=300, blank=True, default='',
+        help_text='Custom meta description shown under the title in Google. '
+                  'Aim for 140-160 characters. Blank = auto-generated.',
+    )
+    seo_body = models.TextField(
+        blank=True, default='',
+        help_text='Visible SEO text rendered below the listings on the category page. '
+                  'Separate paragraphs with a blank line; lines starting with "## " '
+                  'become subheadings. Blank = no text block.',
+    )
 
     class Meta:
         ordering = ['order']

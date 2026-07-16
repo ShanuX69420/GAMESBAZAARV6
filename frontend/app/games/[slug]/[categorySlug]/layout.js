@@ -13,7 +13,7 @@ import {
 const LISTING_PAGE_SIZE = 48;
 const PUBLIC_CATEGORY_REVALIDATE_SECONDS = 120;
 
-async function fetchCategoryListingCount(slug, categorySlug) {
+async function fetchCategorySeoSummary(slug, categorySlug) {
   const url = buildGameCategoryListingUrl({
     apiBase: API_BASE,
     gameSlug: slug,
@@ -26,7 +26,11 @@ async function fetchCategoryListingCount(slug, categorySlug) {
   });
   if (!res.ok) return null;
   const data = await res.json();
-  return data?.listing_pagination?.count ?? data?.listings?.length ?? 0;
+  return {
+    listingCount: data?.listing_pagination?.count ?? data?.listings?.length ?? 0,
+    seoTitle: data?.seo_title || '',
+    seoDescription: data?.seo_description || '',
+  };
 }
 
 function titleFromSlug(value, fallback) {
@@ -40,28 +44,41 @@ function titleFromSlug(value, fallback) {
   return text.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
-export async function generateMetadata({ params }) {
-  const { slug, categorySlug } = await params;
+function fallbackTitle(slug, categorySlug) {
   const gameName = titleFromSlug(slug, 'Game');
   const categoryName = titleFromSlug(categorySlug, 'Listings');
-  const title = `${gameName} ${categoryName} Listings`;
-  const description = `Browse ${gameName} ${categoryName} listings on GamesBazaar. Compare prices from verified sellers with buyer protection.`;
+  return `${gameName} ${categoryName} Listings`;
+}
+
+function fallbackDescription(slug, categorySlug) {
+  const gameName = titleFromSlug(slug, 'Game');
+  const categoryName = titleFromSlug(categorySlug, 'Listings');
+  return `Browse ${gameName} ${categoryName} listings on GamesBazaar. Compare prices from verified sellers with buyer protection.`;
+}
+
+export async function generateMetadata({ params }) {
+  const { slug, categorySlug } = await params;
+
+  // Hand-written copy (seeded via seed_seo_text) wins; pages without it keep
+  // the generic slug-derived title/description.
+  let seo = null;
+  try {
+    seo = await fetchCategorySeoSummary(slug, categorySlug);
+  } catch {
+    seo = null;
+  }
+
+  const title = seo?.seoTitle || fallbackTitle(slug, categorySlug);
+  const description = seo?.seoDescription || fallbackDescription(slug, categorySlug);
 
   // Empty categories stay out of search engines until they have stock —
   // hundreds of near-identical "no listings" pages read as thin content.
   // The noindex lifts automatically once the first listing goes active.
-  let listingCount = null;
-  try {
-    listingCount = await fetchCategoryListingCount(slug, categorySlug);
-  } catch {
-    listingCount = null;
-  }
-
   return createPublicMetadata({
     title,
     description,
     path: `/games/${encodeURIComponent(slug)}/${encodeURIComponent(categorySlug)}`,
-    robots: listingCount === 0 ? { index: false, follow: true } : undefined,
+    robots: seo?.listingCount === 0 ? { index: false, follow: true } : undefined,
     openGraph: {
       type: 'website',
     },
@@ -70,10 +87,20 @@ export async function generateMetadata({ params }) {
 
 export default async function GameCategoryLayout({ children, params }) {
   const { slug, categorySlug } = await params;
+
+  let seo = null;
+  try {
+    // Same URL + revalidate as generateMetadata and the page, so Next reuses
+    // one request for all three.
+    seo = await fetchCategorySeoSummary(slug, categorySlug);
+  } catch {
+    seo = null;
+  }
+
+  const title = seo?.seoTitle || fallbackTitle(slug, categorySlug);
+  const description = seo?.seoDescription || fallbackDescription(slug, categorySlug);
   const gameName = titleFromSlug(slug, 'Game');
   const categoryName = titleFromSlug(categorySlug, 'Listings');
-  const title = `${gameName} ${categoryName} Listings`;
-  const description = `Browse ${gameName} ${categoryName} listings on GamesBazaar. Compare prices from verified sellers with buyer protection.`;
   const path = `/games/${encodeURIComponent(slug)}/${encodeURIComponent(categorySlug)}`;
 
   return createElement(

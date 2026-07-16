@@ -219,6 +219,9 @@ class GameCategoryDetailSerializer(serializers.Serializer):
     allow_auto_delivery = serializers.BooleanField(read_only=True)
     listing_mode = serializers.CharField(read_only=True)
     unit_name = serializers.CharField(read_only=True)
+    seo_title = serializers.CharField(read_only=True)
+    seo_description = serializers.CharField(read_only=True)
+    seo_body = serializers.CharField(read_only=True)
 
     def get_game(self, obj):
         return {

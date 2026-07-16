@@ -1,0 +1,109 @@
+{
+  "about": [
+    "Per-page SEO copy for game+category pages, applied by:",
+    "    python manage.py seed_seo_text          (add --dry-run to preview)",
+    "Keys: game + category are the URL slugs (display-slug renames like",
+    "free-fire/diamonds resolve automatically). Only the fields present in an",
+    "entry are written, so a page can set just a title. seo_title is rendered",
+    "WITHOUT the '| GamesBazaar' suffix (the site adds it) - aim ~50 chars.",
+    "seo_description: aim 140-160 chars. seo_body: blank line = new paragraph,",
+    "lines starting with '## ' become subheadings.",
+    "Payment wording rule: never JazzCash-only - say 'JazzCash, Easypaisa or",
+    "bank transfer' or 'Pakistani payment methods', varied per page.",
+    "Batch 1 (2026-07-17): highest-search Pakistani pages - mobile top-ups,",
+    "gift cards, Steam keys."
+  ],
+  "pages": [
+    {
+      "game": "pubg-mobile",
+      "category": "uc",
+      "seo_title": "Buy PUBG Mobile UC in Pakistan — Instant Top-Up",
+      "seo_description": "Top up PUBG Mobile UC in minutes and pay with JazzCash, Easypaisa or bank transfer. PKR prices, all popular UC packs, buyer protection on every order.",
+      "seo_body": "## PUBG Mobile UC top-up at PKR prices\n\nBuy UC for PUBG Mobile in Pakistani rupees and pay the way you already pay for everything else — JazzCash, Easypaisa, bank transfer and other Pakistani payment methods all work. Choose a UC pack, share your player ID, and the UC is delivered straight to your account, usually within minutes. A top-up only needs your player ID; you never hand over your password.\n\n## Why buy UC on GamesBazaar\n\nEvery order is covered by buyer protection: your payment is held safely and only released to the seller once you confirm the UC arrived. Prices are in PKR with no hidden conversion charges, and support is one chat message away whenever you need help."
+    },
+    {
+      "game": "pubg-mobile",
+      "category": "gift-cards",
+      "seo_title": "PUBG Mobile UC Vouchers & Gift Cards in Pakistan",
+      "seo_description": "Buy PUBG Mobile UC voucher codes at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Codes arrive in minutes; ideal for gifting UC to friends.",
+      "seo_body": "## UC voucher codes, delivered in minutes\n\nA UC voucher is a code you redeem on your own account whenever you like, so you stay in full control. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or other local methods, receive the code in your order chat within minutes, and redeem it for UC when you're ready.\n\n## A safe way to gift UC\n\nBecause vouchers are simple codes, they're perfect for gifting UC to a friend or topping up a second account. Your payment stays protected until you confirm the code works, so there's no risk of paying for a dead code."
+    },
+    {
+      "game": "free-fire",
+      "category": "diamonds",
+      "seo_title": "Buy Free Fire Diamonds in Pakistan — Cheap Top-Up",
+      "seo_description": "Free Fire diamond top-ups at PKR prices with JazzCash, Easypaisa or bank transfer. Delivered to your player ID in minutes — Pakistan server supported.",
+      "seo_body": "## Free Fire diamond top-up by player ID\n\nPick a diamond pack, enter your Free Fire player ID, and the diamonds are topped up directly on your account — no password needed, usually within minutes. Pakistani server players are fully supported, and international servers are available too; just pick the region that matches your account.\n\n## PKR prices, Pakistani payment methods\n\nAll prices are in Pakistani rupees and you can pay with JazzCash, Easypaisa, bank transfer or other local methods, so there are no dollar conversions or foreign payment headaches. Buyer protection holds your payment until you confirm the diamonds arrived, and memberships are available alongside regular diamond packs."
+    },
+    {
+      "game": "free-fire",
+      "category": "gift-cards",
+      "seo_title": "Free Fire Diamond Voucher Codes in Pakistan",
+      "seo_description": "Buy Free Fire diamond gift cards at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Voucher codes delivered in minutes with buyer protection.",
+      "seo_body": "## Diamond vouchers you redeem yourself\n\nThese are Free Fire voucher codes: you buy the card, receive the code in minutes, and redeem it on your own account. Check the region on each listing and pick the one that matches your Free Fire account before ordering.\n\n## Simple, protected checkout\n\nPay in Pakistani rupees with any popular local payment method, and your money stays protected until you confirm the code redeemed successfully. If anything is unclear, the seller is one chat message away."
+    },
+    {
+      "game": "steam",
+      "category": "gift-cards",
+      "seo_title": "Buy Steam Wallet Gift Cards in Pakistan",
+      "seo_description": "Steam Wallet codes at PKR prices — pay with JazzCash, Easypaisa or bank transfer. Pakistan and dozens of other regions, delivered within minutes.",
+      "seo_body": "## Steam Wallet codes for Pakistani gamers\n\nTop up your Steam Wallet without a credit card: pay in Pakistani rupees — JazzCash, Easypaisa and bank transfer all work — and receive your wallet code within minutes. Codes are available for the Pakistan Steam store as well as dozens of other regions.\n\n## Match the region to your account\n\nSteam Wallet codes are region-locked, so always pick the region your Steam account actually uses — for most players here, that's the Pakistan store. Every purchase is covered by buyer protection: the seller is only paid after you confirm your code worked."
+    },
+    {
+      "game": "steam",
+      "category": "keys",
+      "seo_title": "Buy Steam Games & Keys Cheap in Pakistan",
+      "seo_description": "Hundreds of Steam games at PKR prices — pay with JazzCash, Easypaisa or bank transfer and get your game as a key or Steam gift, usually within minutes.",
+      "seo_body": "## Cheap Steam games, paid in rupees\n\nThis page collects every Steam game key on GamesBazaar in one place — use the search and filters to find your game. Prices are in Pakistani rupees, every popular Pakistani payment method is accepted, and most orders are delivered within minutes.\n\n## How delivery works\n\nDepending on the listing, you either get a key to redeem on Steam, receive the game as a Steam gift, or the seller activates it for you — in every case the game ends up in your own Steam library. Keys can be region-locked, so check the region noted on each listing. Your payment is protected until you confirm the game is in your library."
+    },
+    {
+      "game": "playstation",
+      "category": "gift-cards",
+      "seo_title": "Buy PSN Gift Cards in Pakistan — All Regions",
+      "seo_description": "PSN wallet codes at PKR prices with JazzCash, Easypaisa or bank transfer. US, UK, UAE and many more regions, delivered in minutes — no credit card needed.",
+      "seo_body": "## PSN cards without a credit card\n\nThere is no Pakistani PlayStation Store, so most players here run US, UK or UAE accounts — and this page has PSN wallet codes for those regions and many more. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method, and your code arrives within minutes.\n\n## Pick the right region\n\nPSN codes only redeem on accounts from the same region, so match the card to your PSN account's region before buying. Every order is covered by buyer protection: your payment is released only after you confirm the code redeemed."
+    },
+    {
+      "game": "yalla-ludo",
+      "category": "top-ups",
+      "seo_title": "Yalla Ludo Diamonds & Gold Top-Up in Pakistan",
+      "seo_description": "Top up Yalla Ludo diamonds and gold at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Delivered to your Yalla ID in minutes, fully protected.",
+      "seo_body": "## Yalla Ludo top-up by user ID\n\nBuy diamonds and gold for Yalla Ludo the easy way: choose a pack, share your Yalla ID, and the balance is added directly to your account — no password needed, usually within minutes.\n\n## Pay in rupees, stay protected\n\nPrices are in Pakistani rupees and every popular local payment method is accepted — JazzCash, Easypaisa, bank transfer and more — so topping up takes a couple of taps. Your payment is held safely until you confirm the diamonds or gold arrived, and support is available in chat if you need a hand."
+    },
+    {
+      "game": "yalla-ludo",
+      "category": "gift-cards",
+      "seo_title": "Yalla Ludo Gift Cards & Voucher Codes in Pakistan",
+      "seo_description": "Buy Yalla Ludo gift card codes at PKR prices with JazzCash, Easypaisa or bank transfer. Delivered in minutes and covered by buyer protection.",
+      "seo_body": "## Yalla Ludo vouchers delivered in minutes\n\nPrefer a code instead of an ID top-up? Yalla Ludo gift cards are voucher codes you redeem yourself, delivered to your order chat within minutes of payment.\n\n## Simple and safe\n\nPay in Pakistani rupees with any local payment method, and buyer protection holds your money until you confirm the code worked — ideal for gifting diamonds to friends and family too."
+    },
+    {
+      "game": "call-of-duty-mobile",
+      "category": "cp",
+      "seo_title": "Buy CODM CP in Pakistan — Call of Duty Mobile Top-Up",
+      "seo_description": "Call of Duty Mobile CP at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast top-ups from trusted sellers with buyer protection.",
+      "seo_body": "## CP for Call of Duty Mobile, in rupees\n\nBuy CODM CP without dollar cards or foreign wallets: prices are in Pakistani rupees and local payment methods like JazzCash, Easypaisa and bank transfer are accepted. Pick a CP pack, follow the simple delivery steps on the listing, and most orders are completed within minutes.\n\n## Protected from payment to delivery\n\nYour payment is held by GamesBazaar and released to the seller only after you confirm your CP arrived. If you have any question about a pack, message the seller in chat before or after ordering."
+    },
+    {
+      "game": "fc-mobile",
+      "category": "top-ups",
+      "seo_title": "FC Mobile Top-Up in Pakistan — Buy FC Points",
+      "seo_description": "Top up FC Mobile at PKR prices and pay with JazzCash, Easypaisa or bank transfer. Fast delivery, buyer protection — back in the game within minutes.",
+      "seo_body": "## FC Mobile top-ups without the hassle\n\nBuy FC Mobile top-ups at Pakistani rupee prices and pay with any local method — JazzCash, Easypaisa, bank transfer and more. No international card required: choose your pack, follow the delivery steps on the listing, and most top-ups are finished within minutes.\n\n## Buy with confidence\n\nEvery order is covered by buyer protection: your money is only released once you confirm the top-up landed in your account. The seller is one chat message away throughout your order."
+    },
+    {
+      "game": "8-ball-pool",
+      "category": "cash",
+      "seo_title": "8 Ball Pool Cash Top-Up in Pakistan",
+      "seo_description": "Buy 8 Ball Pool cash at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast, protected top-ups completed within minutes.",
+      "seo_body": "## 8 Ball Pool cash at rupee prices\n\nTop up 8 Ball Pool cash while paying in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. Pick the cash pack you want, follow the short delivery steps on the listing, and you're back at the table within minutes.\n\n## Every order protected\n\nGamesBazaar holds your payment until you confirm the cash arrived in your account, so there's no risk of paying and getting nothing. Questions? Message the seller directly in chat."
+    },
+    {
+      "game": "nintendo",
+      "category": "gift-cards",
+      "seo_title": "Nintendo eShop Gift Cards in Pakistan",
+      "seo_description": "Buy Nintendo eShop cards at PKR prices with JazzCash, Easypaisa or bank transfer. US, Europe, Japan and more regions — codes delivered in minutes.",
+      "seo_body": "## eShop credit without a foreign card\n\nTop up your Nintendo eShop balance from Pakistan: pay in rupees using JazzCash, Easypaisa or bank transfer and receive your card code within minutes. Cards are available for the US, European, Japanese and several other eShop regions.\n\n## Check your account region first\n\neShop cards only redeem in their own region, so match the card to the region your Nintendo account uses. Buyer protection covers every order — your payment is only released after you confirm the code redeemed."
+    }
+  ]
+}
