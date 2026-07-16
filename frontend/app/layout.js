@@ -63,10 +63,13 @@ export const metadata = {
   },
 };
 
-// Runs before paint so a saved dark preference never flashes white.
-// Kept as a plain inline <script> (not next/script) so it is guaranteed to be
-// in the initial HTML and execute synchronously.
-const themeInitScript = `try{if(localStorage.getItem('gb_theme')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}`;
+// Runs before paint so a saved dark preference never flashes white, and so
+// guest-only UI (navbar Login/Sign Up, home CTA) is hidden for returning
+// logged-in users before it can flash or shift the layout (gb_auth_hint is
+// kept in sync by AuthProvider). Kept as a plain inline <script> (not
+// next/script) so it is guaranteed to be in the initial HTML and execute
+// synchronously.
+const themeInitScript = `try{if(localStorage.getItem('gb_theme')==='dark')document.documentElement.dataset.theme='dark';if(localStorage.getItem('gb_auth_hint')==='1')document.documentElement.dataset.authHint='1'}catch(e){}`;
 
 export default function RootLayout({ children }) {
   return (

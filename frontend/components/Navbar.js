@@ -579,7 +579,11 @@ export default function Navbar() {
                 </svg>
               )}
             </button>
-            {!loading && (
+            {/* Guest links render during the auth check too, so they are in
+                the server HTML (no pop-in shift, crawlable). Returning
+                logged-in users don't see them flash: the pre-paint auth hint
+                hides .navbar-guest-links via CSS (see app/layout.js). */}
+            {(
               user ? (
                 setupPending ? (
                   <div className="navbar-auth-links">
@@ -724,7 +728,7 @@ export default function Navbar() {
                 </>
                 )
               ) : (
-                <div className="navbar-auth-links">
+                <div className="navbar-auth-links navbar-guest-links">
                   <Link href="/login" className="nav-quick-link">Login</Link>
                   <Link href="/register" className="nav-btn-primary">Sign Up</Link>
                 </div>

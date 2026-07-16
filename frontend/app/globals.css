@@ -1333,6 +1333,15 @@ img {
 
 /* ── Home CTA ──────────────────────────────────────────────────────────────── */
 
+/* Guest-only UI is server-rendered for everyone (guests are the common case
+   and late insertion shifts the layout). For returning logged-in users the
+   pre-paint script in app/layout.js sets data-auth-hint from localStorage,
+   hiding these before first paint — no flash, no shift. */
+html[data-auth-hint="1"] .home-cta,
+html[data-auth-hint="1"] .navbar-guest-links {
+  display: none;
+}
+
 .home-cta {
   text-align: center;
   padding: 48px 24px;

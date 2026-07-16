@@ -62,6 +62,21 @@ export function AuthProvider({ children }) {
     fetchUser();
   }, [fetchUser]);
 
+  // Pre-paint hint for the NEXT page load: the inline script in app/layout.js
+  // reads gb_auth_hint and hides guest-only UI (navbar Login/Sign Up, home
+  // CTA) before first paint, so returning logged-in users get neither a
+  // flash nor a layout shift. Also corrects the current page when the hint
+  // was stale (e.g. logged out elsewhere).
+  useEffect(() => {
+    if (loading) return;
+    try { localStorage.setItem('gb_auth_hint', user ? '1' : '0'); } catch {}
+    if (user) {
+      document.documentElement.dataset.authHint = '1';
+    } else {
+      delete document.documentElement.dataset.authHint;
+    }
+  }, [user, loading]);
+
   const login = useCallback(async (email, password) => {
     const res = await fetch(`${API_BASE}/api/auth/login/`, {
       method: 'POST',

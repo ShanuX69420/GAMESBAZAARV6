@@ -74,7 +74,11 @@ export default function RegisterPage() {
     setError(message);
   }
 
-  if (loading || user) {
+  // The form renders during the auth check so it's in the server HTML —
+  // swapping a full-page spinner for the form shoved the footer down and was
+  // a real mobile CLS hit. Logged-in visitors (rare here) see the form
+  // briefly until the effect above redirects them.
+  if (user) {
     return (
       <div className="container">
         <div className="loading"><div className="loading-spinner"></div> Loading...</div>
