@@ -4,9 +4,10 @@ import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 
 export default function HomeCTA() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (user) return null;
+  // Wait for the auth check so logged-in users don't see this flash on refresh.
+  if (loading || user) return null;
 
   return (
     <section className="home-cta">
