@@ -24,6 +24,7 @@ from django.utils.crypto import constant_time_compare
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
+from . import guardmail, steamguard
 from .models import (
     Conversation,
     Listing,
@@ -1298,6 +1299,222 @@ def post_order_chat_message(order, *, content, event='', message_type='system', 
     conversation.save()  # bump updated_at so the chat surfaces in inboxes
     broadcast_chat_message_after_commit(message)
     return message
+
+
+# ── Steam Guard codes for offline-activation orders ─────────────────────────
+
+GUARD_CODE_COOLDOWN_SECONDS = 12
+# One shared mailbox serves every email-guard account, and Gmail locks out
+# heavy IMAP users — gate fetches per account so one buyer's retries (or
+# !code spam at the 60/min chat rate) can't take codes down for everyone.
+GUARD_FETCH_COOLDOWN_SECONDS = 5
+GUARD_CODE_UNAVAILABLE_ERROR = 'Steam Guard codes are not available for this order.'
+GUARD_ALREADY_ISSUED_ERROR = (
+    'You have already received your Steam Guard code for this order. If Steam '
+    'shows an error while signing in, start the login again and enter that '
+    'same code. Message the seller if you still need help.'
+)
+
+
+def get_order_guard_account(order):
+    """The enabled offline-activation account behind an order, or None."""
+    if order.listing_id is None:
+        return None
+    account = order.listing.offline_account
+    if account is None or not account.enabled:
+        return None
+    return account
+
+
+def guard_code_window_open(order, account):
+    if not account.code_window_days:
+        return True
+    base = order.delivered_at or order.created_at
+    return timezone.now() <= base + timedelta(days=account.code_window_days)
+
+
+GUARD_EMAIL_PENDING_MESSAGE = (
+    'No code email from Steam yet. Start the Steam login first — Steam only '
+    'sends a code when a login is attempted — then request the code again.'
+)
+
+
+def _alert_seller_guard_problem(order, account, title, message):
+    """Tell the seller a guard account is broken — at most once an hour per
+    account, since every buyer retry would otherwise re-fire it."""
+    if cache.add(f'core:guard-code:alert:{account.pk}', 1, timeout=3600):
+        create_notification(
+            recipient=order.seller,
+            notification_type='fulfillment_alert',
+            title=title,
+            message=message,
+            order=order,
+        )
+
+
+def issue_guard_code(order, *, account=None):
+    """Fetch the Steam Guard code for an order, post it into the order chat,
+    and permanently consume the order's single allowed issuance. Returns
+    ``(payload, error)`` — exactly one is None.
+
+    A buyer gets ONE code per order. A payload with ``pending=True`` (email
+    guard only) means no login-code email exists yet — this does NOT consume
+    the allowance, so the buyer can retry after they attempt the Steam login.
+    An error (mailbox down, bad secret) likewise never consumes it. Only a
+    code actually delivered to the buyer spends the one shot.
+
+    Callers must have verified the requester IS the buyer."""
+    if account is None:
+        account = get_order_guard_account(order)
+    if account is None:
+        return None, GUARD_CODE_UNAVAILABLE_ERROR
+    if order.status not in ('delivered', 'completed'):
+        return None, ('Steam Guard codes become available once the order '
+                      'is delivered.')
+    if not guard_code_window_open(order, account):
+        return None, ('The Steam Guard code window for this order has ended. '
+                      'Please message the seller if you still need a code.')
+    # One code per order. Checked up front so a spent allowance never even
+    # touches the mailbox; the atomic claim below is the race-safe guard.
+    if order.guard_code_issued_at is not None:
+        return None, GUARD_ALREADY_ISSUED_ERROR
+
+    valid_for = None
+    if account.guard_type == 'email':
+        if not cache.add(f'core:guard-code:fetch:{account.pk}', 1,
+                         timeout=GUARD_FETCH_COOLDOWN_SECONDS):
+            # Too soon since the last mailbox check for this account —
+            # answer "no email yet" without touching IMAP; the order page
+            # polls again in a few seconds anyway.
+            return {'pending': True, 'message': GUARD_EMAIL_PENDING_MESSAGE}, None
+        try:
+            code = guardmail.fetch_latest_code(account.login)
+        except guardmail.GuardMailError as exc:
+            logger.warning('Guard mailbox unavailable for account %s: %s',
+                           account.pk, exc)
+            _alert_seller_guard_problem(
+                order, account,
+                title='Steam Guard mailbox is unreachable',
+                message=(
+                    f'Could not read the guard mailbox for account '
+                    f'"{account.label}" (order #{order.order_number}): '
+                    f'{str(exc)[:150]}. Check the GUARD_EMAIL_IMAP_* settings.'
+                ),
+            )
+            return None, ('Could not fetch the code right now — the seller '
+                          'has been notified and will help you shortly.')
+        if code is None:
+            # No login-code email yet — allowance untouched, buyer can retry.
+            return {'pending': True, 'message': GUARD_EMAIL_PENDING_MESSAGE}, None
+        guidance = ('If you get an error while signing in, start the Steam '
+                    'login again and enter this same code.')
+    else:
+        try:
+            code = steamguard.generate_code(
+                decrypt_sensitive_text(account.shared_secret))
+        except ValueError:
+            logger.exception('Steam Guard secret invalid for account %s', account.pk)
+            _alert_seller_guard_problem(
+                order, account,
+                title='Steam Guard secret is invalid',
+                message=(
+                    f'Could not generate a Steam Guard code for account '
+                    f'"{account.label}" (order #{order.order_number}). '
+                    'Check its shared_secret in admin.'
+                ),
+            )
+            return None, ('Could not generate a code right now — the seller '
+                          'has been notified and will help you shortly.')
+        valid_for = steamguard.seconds_remaining()
+        guidance = (f'This code changes every 30 seconds — enter it in Steam '
+                    f'right away (valid ~{valid_for} seconds).')
+
+    # Atomically spend the single allowance. If a concurrent request already
+    # claimed it, don't deliver (or double-post) a second code.
+    now = timezone.now()
+    claimed = Order.objects.filter(
+        pk=order.pk, guard_code_issued_at__isnull=True,
+    ).update(guard_code_issued_at=now, updated_at=now)
+    if not claimed:
+        return None, GUARD_ALREADY_ISSUED_ERROR
+    order.guard_code_issued_at = now
+
+    post_order_chat_message(
+        order,
+        event='guard_code',
+        sender=order.buyer,
+        content=(
+            f'Steam Guard code for order #{order.order_number}: {code}\n'
+            f'{guidance} For security, this code is sent only once.'
+        ),
+    )
+    payload = {'code': code, 'listing_title': order.listing_title}
+    if valid_for is not None:
+        payload['valid_for'] = valid_for
+    return payload, None
+
+
+def maybe_answer_guard_command(message):
+    """FunPay-style chat command: a buyer typing !code / !guard / !2fa in an
+    order conversation gets the current Steam Guard code for their
+    offline-activation order(s). Called after every saved text message;
+    returns True when the message was treated as a command. Never raises —
+    a guard-path bug must not break normal chat delivery."""
+    try:
+        return _answer_guard_command(message)
+    except Exception:  # noqa: BLE001
+        logger.exception('Guard command handling failed for message %s', message.pk)
+        return False
+
+
+def _answer_guard_command(message):
+    if message.sender_id is None or not steamguard.is_guard_command(message.content):
+        return False
+
+    orders = list(
+        Order.objects.filter(
+            conversation_id=message.conversation_id,
+            buyer_id=message.sender_id,
+            listing__offline_account__isnull=False,
+        )
+        .select_related('listing__offline_account', 'buyer', 'seller')
+        .order_by('-created_at')[:20]
+    )
+    if not orders:
+        return False  # not an offline-activation chat — stay silent
+
+    # One code per distinct account: a buyer can hold several offline games
+    # with the same seller in one conversation.
+    issued_accounts = set()
+    first_error = None
+    error_order = None
+    for order in orders:
+        account = get_order_guard_account(order)
+        if account is None or account.pk in issued_accounts:
+            continue
+        payload, error = issue_guard_code(order, account=account)
+        if payload and not payload.get('pending'):
+            issued_accounts.add(account.pk)
+            if len(issued_accounts) >= 3:
+                break
+        elif first_error is None:
+            # Email-guard 'pending' reads like an error here: tell the buyer
+            # to attempt the Steam login and ask again.
+            first_error = payload['message'] if payload else error
+            error_order = order
+
+    if not issued_accounts:
+        # Explain once why nothing was issued (own cooldown so a repeated
+        # command can't flood the chat with error notices).
+        note_key = f'core:guard-code:errnote:{message.conversation_id}'
+        if cache.add(note_key, 1, timeout=GUARD_CODE_COOLDOWN_SECONDS):
+            post_order_chat_message(
+                error_order or orders[0],
+                event='guard_code',
+                sender=message.sender,
+                content=first_error or GUARD_CODE_UNAVAILABLE_ERROR,
+            )
+    return True
 
 
 def consume_chat_ws_message_quota(user_id, conversation_id):

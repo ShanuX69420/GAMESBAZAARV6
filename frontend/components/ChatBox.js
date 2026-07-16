@@ -28,6 +28,7 @@ const SYSTEM_EVENT_ICONS = {
   order_refunded: '↩️',
   review_posted: '⭐',
   review_updated: '⭐',
+  guard_code: '🔐',
 };
 
 // Turn the order number and participant usernames inside a system notice

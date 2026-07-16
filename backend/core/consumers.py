@@ -14,6 +14,7 @@ from .services import (
     broadcast_chat_message_after_commit,
     chat_unread_cache_key,
     consume_chat_ws_message_quota,
+    maybe_answer_guard_command,
     validate_chat_listing_reference,
     validate_chat_message_content,
 )
@@ -183,6 +184,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         )
         conversation.save()  # Update updated_at
         broadcast_chat_message_after_commit(msg)
+        maybe_answer_guard_command(msg)
         return None
 
     @database_sync_to_async

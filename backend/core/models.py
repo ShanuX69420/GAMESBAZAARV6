@@ -8,6 +8,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
 
+from . import steamguard
+
 
 ORDER_NUMBER_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 
@@ -454,6 +456,13 @@ class Listing(models.Model):
         blank=True, default='',
         help_text='Optional instructions shown to every buyer (e.g., "Change password after receiving").',
     )
+    offline_account = models.ForeignKey(
+        'SteamOfflineAccount', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='listings',
+        help_text='Offline activation: the shared Steam account delivered to '
+                  'every buyer of this listing (never consumed). Enables '
+                  'instant delivery + on-demand Steam Guard codes.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -530,6 +539,7 @@ class Message(models.Model):
         ('order_refunded', 'Order Refunded'),
         ('review_posted', 'Review Posted'),
         ('review_updated', 'Review Updated'),
+        ('guard_code', 'Steam Guard Code'),
     ]
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE,
@@ -974,6 +984,11 @@ class Order(models.Model):
         blank=True, default='',
         help_text='Encrypted JSON of buyer info collected at checkout '
                   '(e.g. game player ID for auto-fulfilled top-ups).',
+    )
+    guard_code_issued_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Offline activation: when the buyer was given their one '
+                  'Steam Guard code. Set once — further requests are refused.',
     )
     delivered_at = models.DateTimeField(
         null=True,
@@ -1480,3 +1495,97 @@ class FazerFulfillmentTask(models.Model):
 
     def __str__(self):
         return f"Task for order #{self.order_id} — {self.kind} — {self.get_status_display()}"
+
+
+class SteamOfflineAccount(models.Model):
+    """A shared Steam account behind offline-activation listings.
+
+    The same account is delivered to every buyer — listings pointing here are
+    evergreen, nothing is consumed. ``password`` and ``shared_secret`` are
+    encrypted at rest (save() encrypts plaintext automatically).
+
+    Two guard types: 'totp' computes codes from the mobile-authenticator
+    shared_secret (maFile); 'email' pulls them from the shared guard mailbox
+    (see core.guardmail) — the type limited accounts are stuck with, since
+    they cannot add the phone number an authenticator requires. Either way,
+    entitled buyers get codes on demand (order-page button or !code in chat).
+    """
+    GUARD_TYPE_CHOICES = [
+        ('totp', 'Mobile authenticator (shared_secret)'),
+        ('email', 'Email Steam Guard (shared mailbox)'),
+    ]
+
+    label = models.CharField(
+        max_length=200,
+        help_text='Admin-facing name, e.g. "GTA V — account 1".',
+    )
+    login = models.CharField(max_length=150)
+    password = models.TextField(
+        help_text='Stored encrypted. Paste the plaintext password to change it.',
+    )
+    guard_type = models.CharField(
+        max_length=8, choices=GUARD_TYPE_CHOICES, default='totp',
+        help_text='email: the account\'s contact email must point at the '
+                  'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars).',
+    )
+    shared_secret = models.TextField(
+        blank=True, default='',
+        help_text='Mobile-authenticator type only: the Steam Guard '
+                  'shared_secret (base64, from the maFile). Stored encrypted '
+                  '— paste plaintext to change it.',
+    )
+    enabled = models.BooleanField(
+        default=True,
+        help_text='Off: purchases fall back to manual delivery and buyers '
+                  'can no longer request codes.',
+    )
+    code_window_days = models.PositiveIntegerField(
+        default=7,
+        help_text='Buyers can request Steam Guard codes this many days after '
+                  'delivery (0 = no limit).',
+    )
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['label']
+
+    def __str__(self):
+        return f"{self.label} ({self.login})"
+
+    def clean(self):
+        if self.guard_type == 'totp' and not str(self.shared_secret).strip():
+            raise ValidationError({
+                'shared_secret': 'Required for the mobile-authenticator guard type.',
+            })
+
+    def save(self, *args, **kwargs):
+        # encrypt_sensitive_text is a no-op on already-encrypted values, so
+        # plaintext pasted in admin gets encrypted and saved rows round-trip.
+        from .services import encrypt_sensitive_text
+        self.password = encrypt_sensitive_text(str(self.password).strip())
+        self.shared_secret = encrypt_sensitive_text(str(self.shared_secret).strip())
+        super().save(*args, **kwargs)
+
+    def current_code(self):
+        """TOTP accounts: the Steam Guard code valid right now (raises
+        ValueError on a bad secret). None for email-guard accounts — their
+        codes only exist in the mailbox after a login attempt."""
+        if self.guard_type != 'totp':
+            return None
+        from .services import decrypt_sensitive_text
+        return steamguard.generate_code(decrypt_sensitive_text(self.shared_secret))
+
+    def delivery_text(self):
+        """The credentials hand-over posted to the buyer at purchase."""
+        from .services import decrypt_sensitive_text
+        return (
+            f'Login: {self.login}\n'
+            f'Password: {decrypt_sensitive_text(self.password)}\n\n'
+            'This account is protected by Steam Guard. When Steam asks for a '
+            'code, press «Get Steam Guard code» on your order page or type '
+            '!code in this chat. You can request the code only once, so ask '
+            'for it when Steam is ready for it. If you get an error while '
+            'signing in, start the login again and enter the same code.'
+        )

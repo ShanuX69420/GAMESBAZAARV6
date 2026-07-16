@@ -23,6 +23,8 @@ from .models import (
 )
 from .services import (
     get_order_auto_confirm_at,
+    get_order_guard_account,
+    guard_code_window_open,
     order_seller_payout_has_been_released,
     create_private_media_ticket,
     decrypt_sensitive_text,
@@ -1431,6 +1433,8 @@ class OrderSerializer(serializers.ModelSerializer):
     auto_confirm_at = serializers.SerializerMethodField()
     seller_payout_status = serializers.SerializerMethodField()
     can_dispute = serializers.SerializerMethodField()
+    guard_code_available = serializers.SerializerMethodField()
+    guard_code_used = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -1445,6 +1449,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'is_auto_delivery', 'auto_delivery_data',
             'delivery_instructions', 'delivered_at', 'auto_confirm_at',
             'buyer_protection_enabled', 'seller_payout_status', 'can_dispute',
+            'guard_code_available', 'guard_code_used',
             'seller_payout_available_at', 'seller_payout_released_at',
             'created_at', 'updated_at',
         ]
@@ -1500,6 +1505,36 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_auto_confirm_at(self, obj):
         """Return the deadline when delivered orders auto-complete."""
         return get_order_auto_confirm_at(obj)
+
+    def get_guard_code_available(self, obj):
+        """Whether the buyer can request their one Steam Guard code right now.
+        Computed only on the order-detail view (context flag) — order lists
+        would pay an extra query per row for a button they never show."""
+        if not self.context.get('include_guard_code'):
+            return False
+        request = self.context.get('request')
+        if not request or getattr(request.user, 'id', None) != obj.buyer_id:
+            return False
+        if obj.status not in ('delivered', 'completed'):
+            return False
+        if obj.guard_code_issued_at is not None:
+            return False  # their single code has already been issued
+        account = get_order_guard_account(obj)
+        if account is None:
+            return False
+        return guard_code_window_open(obj, account)
+
+    def get_guard_code_used(self, obj):
+        """True once the buyer has spent their single code — the order page
+        then shows a reminder (the code itself stays in the chat)."""
+        if not self.context.get('include_guard_code'):
+            return False
+        request = self.context.get('request')
+        if not request or getattr(request.user, 'id', None) != obj.buyer_id:
+            return False
+        if obj.guard_code_issued_at is None:
+            return False
+        return get_order_guard_account(obj) is not None
 
     def _seller_payout_has_been_released(self, obj):
         cache = getattr(self, '_seller_payout_released_cache', None)

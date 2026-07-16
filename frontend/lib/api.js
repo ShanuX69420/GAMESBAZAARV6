@@ -653,6 +653,17 @@ export async function confirmOrder(id) {
   return data;
 }
 
+export async function getGuardCode(id) {
+  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/guard-code/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to get Steam Guard code');
+  return data;
+}
+
 export async function disputeOrder(id, reason) {
   const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/dispute/`, {
     method: 'POST',

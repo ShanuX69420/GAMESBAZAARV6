@@ -104,6 +104,8 @@ from .services import (
     encrypt_sensitive_text,
     broadcast_presence_update,
     get_or_create_private_conversation,
+    issue_guard_code,
+    maybe_answer_guard_command,
     post_order_chat_message,
     validate_chat_listing_reference,
     validate_chat_message_content,
@@ -2549,6 +2551,7 @@ class SendMessageView(ScopedPostThrottleMixin, APIView):
         conversation.save()  # Update updated_at
 
         data = broadcast_chat_message(message, request)
+        maybe_answer_guard_command(message)
         return Response(data, status=201)
 
 
@@ -3283,12 +3286,25 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             delivered_at = None
             delivery_note = ''
 
+        # Offline activation: the listing's shared Steam account is handed
+        # over instantly on every purchase (evergreen — nothing consumed);
+        # the buyer can then request Steam Guard codes on demand.
+        offline_account = None
+        if not is_auto and listing.offline_account_id:
+            account = listing.offline_account
+            if account.enabled:
+                offline_account = account
+                delivery_note = encrypt_sensitive_text(account.delivery_text())
+                initial_status = 'delivered'
+                delivered_at = timezone.now()
+        delivered_instantly = is_auto or offline_account is not None
+
         # Fazer auto-fulfillment: linked listing + global toggle on. The
         # link is fetched with its own query — a nullable reverse OneToOne
         # cannot join into the select_for_update above. No HTTP happens
         # inside this transaction; the supplier call runs after commit.
         fazer_link = None
-        if not is_auto and fulfillment.autofulfill_enabled():
+        if not delivered_instantly and fulfillment.autofulfill_enabled():
             fazer_link = fulfillment.get_active_link(listing)
 
         wallet = get_or_create_locked_wallet(buyer)
@@ -3338,7 +3354,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             commission_amount=commission,
             seller_amount=seller_receives,
             status=initial_status,
-            was_auto_delivery=is_auto,
+            was_auto_delivery=delivered_instantly,
             delivery_note=delivery_note,
             delivered_at=delivered_at,
             buyer_protection_enabled=category.buyer_protection_enabled,
@@ -3377,7 +3393,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
 
         # Announce the purchase in the buyer↔seller chat
         qty_part = f' (x{qty}{unit_suffix})' if qty > 1 or is_currency else ''
-        if is_auto:
+        if delivered_instantly:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. The order was delivered automatically. '
@@ -3428,7 +3444,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                 )
 
         # Hand over auto-delivery data and the seller's standing instructions
-        if is_auto:
+        if delivered_instantly:
             post_order_chat_message(
                 order,
                 message_type='delivery',
@@ -3453,7 +3469,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         )
 
         # For auto-delivery, also notify buyer that it's delivered
-        if is_auto:
+        if delivered_instantly:
             create_notification(
                 recipient=buyer,
                 notification_type='order_delivered',
@@ -3770,8 +3786,8 @@ class OrderDetailView(APIView):
     def get(self, request, order_ref):
         order = get_order_by_reference_or_404(
             Order.objects.select_related(
-                'listing', 'buyer', 'seller', 'conversation',
-                'review', 'review__reviewer',
+                'listing', 'listing__offline_account', 'buyer', 'seller',
+                'conversation', 'review', 'review__reviewer',
             ),
             order_ref,
         )
@@ -3786,7 +3802,31 @@ class OrderDetailView(APIView):
             order.conversation = conversation
             order.save(update_fields=['conversation'])
 
-        return Response(OrderSerializer(order, context={'request': request}).data)
+        return Response(OrderSerializer(
+            order,
+            context={'request': request, 'include_guard_code': True},
+        ).data)
+
+
+class OrderGuardCodeView(ScopedPostThrottleMixin, APIView):
+    """POST /api/orders/<id>/guard-code/ — Buyer requests the current Steam
+    Guard code for an offline-activation order. The code is returned and
+    also posted into the order chat."""
+    permission_classes = [HasCompletedProfile]
+    throttle_scope = 'guard_code'
+
+    def post(self, request, order_ref):
+        order = get_order_by_reference_or_404(
+            Order.objects.select_related(
+                'listing__offline_account', 'buyer', 'seller',
+            ),
+            order_ref,
+            buyer=request.user,
+        )
+        payload, error = issue_guard_code(order)
+        if error:
+            return Response({'error': error}, status=400)
+        return Response(payload)
 
 
 class DeliverOrderView(APIView):

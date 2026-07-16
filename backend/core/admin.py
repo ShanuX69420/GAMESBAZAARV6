@@ -15,6 +15,7 @@ from .models import (
     JazzCashPayment,
     Notification, Report, SupportTicket, ItemRequest,
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
+    SteamOfflineAccount,
 )
 from .payments import run_status_inquiry
 from .services import (
@@ -371,6 +372,7 @@ class ListingAdmin(admin.ModelAdmin):
     search_fields = ['title', 'seller__username']
     readonly_fields = ['seller', 'created_at', 'updated_at', 'auto_delivery_inventory']
     exclude = ['auto_delivery_data']
+    raw_id_fields = ['offline_account']
 
     @admin.display(description='Auto-delivery inventory')
     def auto_delivery_inventory(self, obj):
@@ -380,6 +382,36 @@ class ListingAdmin(admin.ModelAdmin):
             decrypt_sensitive_text(obj.auto_delivery_data)
         ))
         return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
+
+
+@admin.register(SteamOfflineAccount)
+class SteamOfflineAccountAdmin(admin.ModelAdmin):
+    """Offline-activation accounts: credentials + Steam Guard secret.
+
+    Paste plaintext into password / shared_secret — they are encrypted on
+    save (an already-encrypted value is kept as-is). The live code column
+    exists so support questions can be answered without any external tool.
+    """
+    list_display = ['label', 'login', 'guard_type', 'enabled',
+                    'code_window_days', 'listing_count', 'live_code']
+    list_filter = ['enabled', 'guard_type']
+    search_fields = ['label', 'login']
+    readonly_fields = ['live_code', 'created_at', 'updated_at']
+
+    @admin.display(description='Listings')
+    def listing_count(self, obj):
+        return obj.listings.count()
+
+    @admin.display(description='Current Steam Guard code')
+    def live_code(self, obj):
+        if not obj or not obj.pk:
+            return '—'
+        if obj.guard_type != 'totp':
+            return 'email guard (codes arrive in the mailbox)'
+        try:
+            return obj.current_code()
+        except ValueError:
+            return '⚠ invalid shared_secret'
 
 
 # ── Wallet & Orders (Visible in Sidebar) ────────────────────────────────────

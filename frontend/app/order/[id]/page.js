@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview, updateReview, replyToReview } from '@/lib/api';
+import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview, updateReview, replyToReview, getGuardCode } from '@/lib/api';
 import { orderLabel } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 
@@ -31,6 +31,12 @@ export default function OrderDetailPage() {
   const [sellerReplyText, setSellerReplyText] = useState('');
   const [replyingToReview, setReplyingToReview] = useState(false);
   const [replyLoading, setReplyLoading] = useState(false);
+  const [guardCode, setGuardCode] = useState(null);
+  const [guardRemaining, setGuardRemaining] = useState(0);
+  const [guardLoading, setGuardLoading] = useState(false);
+  const [guardWaiting, setGuardWaiting] = useState(false);
+  const [guardUsed, setGuardUsed] = useState(false);
+  const [guardError, setGuardError] = useState('');
   const actionRef = useRef(false);
   const orderLoadedRef = useRef(false);
   const refreshTimerRef = useRef(null);
@@ -76,6 +82,62 @@ export default function OrderDetailPage() {
   useEffect(() => {
     return () => clearTimeout(refreshTimerRef.current);
   }, []);
+
+  // Authenticator codes rotate every 30 seconds — count down and clear the
+  // shown code once it can no longer be trusted. Email-fetched codes carry
+  // no valid_for and stay displayed.
+  useEffect(() => {
+    if (!guardCode || !guardCode.valid_for) return;
+    setGuardRemaining(guardCode.valid_for);
+    const timer = setInterval(() => {
+      setGuardRemaining((s) => {
+        if (s <= 1) {
+          clearInterval(timer);
+          setGuardCode(null);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [guardCode]);
+
+  // Email-guard accounts: Steam only emails a code once a login is
+  // attempted, so a "pending" answer is normal — poll a few times while the
+  // email lands.
+  async function pollGuardCode(attempt) {
+    try {
+      const data = await getGuardCode(id);
+      if (data.pending) {
+        if (attempt < 5) {
+          setGuardWaiting(true);
+          setTimeout(() => pollGuardCode(attempt + 1), 4000);
+          return;
+        }
+        setGuardLoading(false);
+        setGuardWaiting(false);
+        setGuardError(data.message || 'No code email yet — start the Steam login first, then request again.');
+        return;
+      }
+      // The one code has now been spent — mark used so the button doesn't
+      // come back (e.g. after an authenticator code's countdown clears).
+      setGuardCode(data);
+      setGuardUsed(true);
+      setGuardLoading(false);
+      setGuardWaiting(false);
+    } catch (err) {
+      setGuardLoading(false);
+      setGuardWaiting(false);
+      setGuardError(err.message);
+    }
+  }
+
+  function handleGuardCode() {
+    if (guardLoading) return;
+    setGuardLoading(true);
+    setGuardError('');
+    pollGuardCode(0);
+  }
 
   async function doAction(action) {
     if (actionRef.current) return;
@@ -341,6 +403,62 @@ export default function OrderDetailPage() {
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
                   {order.delivery_note}
                 </pre>
+              </div>
+            </div>
+          )}
+
+          {/* Steam Guard code on demand (offline-activation orders) */}
+          {isBuyer && (order.guard_code_available || order.guard_code_used || guardCode || guardUsed) && (
+            <div className="order-detail-section">
+              <h3 className="order-detail-section-title">🔐 Steam Guard</h3>
+              <div className="order-delivery-note" style={{ margin: 0 }}>
+                {guardCode ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontFamily: 'monospace', fontSize: '1.6rem', fontWeight: 700,
+                        letterSpacing: '0.2em', color: 'var(--green-600)',
+                      }}>
+                        {guardCode.code}
+                      </span>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>
+                        {guardCode.valid_for ? `valid ~${guardRemaining}s` : 'enter this in Steam now'}
+                      </span>
+                    </div>
+                    <p style={{ margin: '12px 0 0', fontSize: '0.9rem' }}>
+                      This is your one code for this order. If Steam shows an error,
+                      start the login again and enter this same code.
+                    </p>
+                  </>
+                ) : (order.guard_code_used || guardUsed) ? (
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                    You have already received your Steam Guard code — it is in the
+                    chat. If Steam shows an error while signing in, start the login
+                    again and enter that same code. Message the seller if you still
+                    need help.
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ margin: '0 0 12px' }}>
+                      When Steam asks for a Steam Guard code at login, get it here —
+                      it is also posted in the chat, or type <code>!code</code> there.
+                      You can request it <strong>once</strong>, so ask only when Steam
+                      is ready for it.
+                    </p>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleGuardCode}
+                      disabled={guardLoading}
+                    >
+                      {guardWaiting ? "Waiting for Steam's email..." : guardLoading ? 'Getting code...' : '🔐 Get Steam Guard code'}
+                    </button>
+                  </>
+                )}
+                {guardError && (
+                  <p style={{ margin: '10px 0 0', color: 'var(--red-600, #DC2626)', fontSize: '0.9rem' }}>
+                    {guardError}
+                  </p>
+                )}
               </div>
             </div>
           )}

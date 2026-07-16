@@ -292,6 +292,7 @@ REST_FRAMEWORK = {
         'inbox_ws_ticket': '30/min',
         'chat_message': '60/min',
         'chat_upload': '20/min',
+        'guard_code': '60/hour',
         'topup_request': '10/hour',
         'jazzcash_initiate': '15/hour',
         'withdraw_request': '10/hour',
@@ -526,6 +527,20 @@ FAZER_MAX_ORDER_USD = Decimal(str(env_int('FAZER_MAX_ORDER_USD', 100)))
 FAZER_PRICE_TOLERANCE_PCT = env_int('FAZER_PRICE_TOLERANCE_PCT', 10)
 # Alert (once a day) when the Fazer USD balance drops below this.
 FAZER_LOW_BALANCE_USD = env_int('FAZER_LOW_BALANCE_USD', 10)
+
+# ── Steam Guard email fetch (offline-activation accounts) ────────────────────
+# One dedicated mailbox receives the Steam Guard emails for ALL email-guard
+# offline-activation accounts (Steam allows one contact email on many
+# accounts; the guard email body names the account, which is how codes are
+# matched). Setting all three vars enables the email guard_type. Use a
+# mailbox that contains nothing but Steam mail — these credentials read it.
+GUARD_EMAIL_IMAP_HOST = os.environ.get('GUARD_EMAIL_IMAP_HOST', '').strip()
+GUARD_EMAIL_IMAP_PORT = env_int('GUARD_EMAIL_IMAP_PORT', 993)
+GUARD_EMAIL_IMAP_USER = os.environ.get('GUARD_EMAIL_IMAP_USER', '').strip()
+GUARD_EMAIL_IMAP_PASSWORD = os.environ.get('GUARD_EMAIL_IMAP_PASSWORD', '').strip()
+# Only guard emails younger than this are handed to buyers — anything older
+# is a stale code from an earlier login attempt.
+GUARD_EMAIL_MAX_AGE_MINUTES = env_int('GUARD_EMAIL_MAX_AGE_MINUTES', 10)
 
 # Error monitoring — active whenever SENTRY_DSN is set. Captures unhandled
 # exceptions and ERROR-level log records (including failed transactional

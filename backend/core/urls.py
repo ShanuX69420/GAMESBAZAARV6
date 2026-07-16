@@ -81,6 +81,7 @@ urlpatterns = [
     path('orders/<str:order_ref>/confirm/', views.ConfirmOrderView.as_view(), name='confirm-order'),
     path('orders/<str:order_ref>/dispute/', views.DisputeOrderView.as_view(), name='dispute-order'),
     path('orders/<str:order_ref>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
+    path('orders/<str:order_ref>/guard-code/', views.OrderGuardCodeView.as_view(), name='order-guard-code'),
     path('admin/orders/<int:pk>/resolve-dispute/',
          views.ResolveDisputeView.as_view(), name='admin-resolve-dispute'),
 
