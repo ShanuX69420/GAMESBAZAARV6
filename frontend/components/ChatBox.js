@@ -82,6 +82,7 @@ export default function ChatBox({
   const [connected, setConnected] = useState(false);
   const [pendingImage, setPendingImage] = useState(null); // { file, preview }
   const [imageUploading, setImageUploading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
   const [chatError, setChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
@@ -417,6 +418,16 @@ export default function ChatBox({
     };
   }, [activeConvoId, user, loadMessages, listingId]);
 
+  // Close the image lightbox with Escape
+  useEffect(() => {
+    if (!lightboxUrl) return;
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') setLightboxUrl(null);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxUrl]);
+
   // Handle paste for images
   function handlePaste(e) {
     const items = e.clipboardData?.items;
@@ -661,7 +672,7 @@ export default function ChatBox({
                 loading="lazy"
                 onLoad={handleImageLoad}
                 onError={handleImageLoad}
-                onClick={() => window.open(msg.image_url, '_blank', 'noopener,noreferrer')}
+                onClick={() => setLightboxUrl(msg.image_url)}
               />
             </div>
           )}
@@ -794,6 +805,14 @@ export default function ChatBox({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Image Lightbox — view a sent/received image full size */}
+      {lightboxUrl && (
+        <div className="chat-image-lightbox" onClick={() => setLightboxUrl(null)}>
+          <button className="chat-image-lightbox-close" onClick={() => setLightboxUrl(null)} aria-label="Close">✕</button>
+          <img src={lightboxUrl} alt="Shared image" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
