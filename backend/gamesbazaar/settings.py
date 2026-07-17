@@ -203,6 +203,11 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# The GameCategory admin page posts every CategoryOption inline row as form
+# fields; offer pages with hundreds of options (PlayStation Gift Cards: 377)
+# blow past Django's 1000-field default and get a bare 400 on save.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10_000
+
 CLOUDFLARE_R2_ENABLED = env_bool('CLOUDFLARE_R2_ENABLED', False)
 CLOUDFLARE_R2_BUCKET_NAME = os.environ.get('CLOUDFLARE_R2_BUCKET_NAME', '').strip()
 CLOUDFLARE_R2_ACCESS_KEY_ID = os.environ.get('CLOUDFLARE_R2_ACCESS_KEY_ID', '').strip()

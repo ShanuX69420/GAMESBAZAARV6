@@ -1,14 +1,19 @@
+import tempfile
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.urls import reverse
 from rest_framework.test import APIClient
 
 from .models import (
     Category, CategoryOption, Filter, FilterOption, Game, GameCategory,
     GameCategoryFilter, Listing,
 )
+from .tests import local_media_storage_settings, make_image_file
 
 
 class OfferModeTests(TestCase):
@@ -344,3 +349,110 @@ class OfferModeTests(TestCase):
         order = Order.objects.get(pk=response.data['id'])
         self.assertEqual(order.listing_title, '60 UC')
         self.assertEqual(order.total_amount, Decimal('120.00'))
+
+
+class CategoryOptionBulkIconAdminTests(TestCase):
+    """Bulk 'set one icon on many options' admin action."""
+
+    def setUp(self):
+        cache.clear()
+        self.admin_user = User.objects.create_superuser(
+            username='iconadmin', email='admin@example.com', password='password123')
+        self.client.force_login(self.admin_user)
+
+        game = Game.objects.create(name='PlayStation', slug='playstation')
+        category = Category.objects.create(name='Gift Cards', slug='gift-cards')
+        self.game_category = GameCategory.objects.create(
+            game=game, category=category, listing_mode='offer',
+        )
+        self.options = [
+            CategoryOption.objects.create(
+                game_category=self.game_category, name=f'PSN ${value} (US)', order=i,
+            )
+            for i, value in enumerate([10, 25, 50])
+        ]
+        self.changelist_url = reverse('admin:core_categoryoption_changelist')
+
+    def post_action(self, action, extra=None):
+        data = {
+            'action': action,
+            '_selected_action': [str(opt.pk) for opt in self.options],
+        }
+        if extra:
+            data.update(extra)
+        return self.client.post(self.changelist_url, data)
+
+    def test_upload_field_limit_covers_large_option_pages(self):
+        # PlayStation Gift Cards has 377 option inline rows; Django's 1000-field
+        # default made saving that admin page fail with a bare 400.
+        self.assertGreaterEqual(settings.DATA_UPLOAD_MAX_NUMBER_FIELDS, 10_000)
+
+    def test_action_shows_confirmation_page(self):
+        response = self.post_action('bulk_set_icon')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Set one icon on 3 options')
+        self.assertContains(response, 'PSN $10 (US)')
+
+    def test_apply_sets_one_shared_icon_on_all_selected(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                response = self.post_action('bulk_set_icon', {
+                    'apply': '1',
+                    'select_across': '0',
+                    'icon': make_image_file('psn-card.png'),
+                })
+
+        self.assertEqual(response.status_code, 302)
+        names = set()
+        for opt in self.options:
+            opt.refresh_from_db()
+            names.add(opt.icon.name)
+        self.assertEqual(len(names), 1)
+        stored = names.pop()
+        self.assertIn('option_icons/', stored)
+        self.assertTrue(stored.endswith('.webp'))
+
+    def test_apply_with_invalid_file_rerenders_and_sets_nothing(self):
+        response = self.post_action('bulk_set_icon', {
+            'apply': '1',
+            'select_across': '0',
+            'icon': SimpleUploadedFile(
+                'not-an-image.txt', b'plain text', content_type='text/plain'),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        for opt in self.options:
+            opt.refresh_from_db()
+            self.assertFalse(opt.icon)
+
+    def test_game_category_page_links_to_bulk_icon_editor(self):
+        response = self.client.get(reverse(
+            'admin:core_gamecategory_change', args=[self.game_category.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'?game_category__id__exact={self.game_category.pk}',
+        )
+
+    def test_changelist_accepts_game_category_filter(self):
+        response = self.client.get(
+            self.changelist_url,
+            {'game_category__id__exact': str(self.game_category.pk)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'PSN $25 (US)')
+
+    def test_clear_action_removes_icons(self):
+        CategoryOption.objects.filter(
+            pk__in=[opt.pk for opt in self.options],
+        ).update(icon='option_icons/shared.webp')
+
+        response = self.post_action('bulk_clear_icon')
+
+        self.assertEqual(response.status_code, 302)
+        for opt in self.options:
+            opt.refresh_from_db()
+            self.assertFalse(opt.icon)

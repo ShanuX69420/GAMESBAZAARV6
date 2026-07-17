@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.db import transaction
 from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import UploadedFile
+from django.shortcuts import render
 from .models import (
     Game, Category, GameCategory, CategoryOption, Filter, FilterOption,
     GameCategoryFilter, UserProfile, SocialAccount, Listing,
@@ -131,6 +132,21 @@ class CategoryOptionInlineForm(forms.ModelForm):
 
     def clean_icon(self):
         icon = self.cleaned_data.get('icon')
+        if isinstance(icon, UploadedFile):
+            validation_error = validate_uploaded_image(icon)
+            if validation_error:
+                raise forms.ValidationError(validation_error)
+        return icon
+
+
+class CategoryOptionBulkIconForm(forms.Form):
+    icon = forms.ImageField(
+        label='Icon',
+        help_text='One image, applied to every selected option. Square, 64–256px works best.',
+    )
+
+    def clean_icon(self):
+        icon = self.cleaned_data['icon']
         if isinstance(icon, UploadedFile):
             validation_error = validate_uploaded_image(icon)
             if validation_error:
@@ -975,6 +991,18 @@ class GameCategoryAdmin(HiddenModelAdmin):
     search_fields = ['game__name', 'category__name', 'display_name']
     autocomplete_fields = ['game', 'category']
     inlines = [GameCategoryFilterInline, CategoryOptionInline]
+    readonly_fields = ['bulk_icon_editor_link']
+
+    @admin.display(description='Option icons')
+    def bulk_icon_editor_link(self, obj):
+        if obj.pk:
+            url = reverse('admin:core_categoryoption_changelist')
+            return format_html(
+                '<a href="{}?game_category__id__exact={}">🖼️ Bulk-edit icons for this '
+                'page\'s options (set one icon on many at once)</a>',
+                url, obj.pk,
+            )
+        return '—save first—'
 
     @admin.display(description='Filters')
     def filter_count(self, obj):
@@ -995,11 +1023,61 @@ class GameCategoryAdmin(HiddenModelAdmin):
 
 @admin.register(CategoryOption)
 class CategoryOptionAdmin(HiddenModelAdmin):
-    list_display = ['name', 'game_category', 'order', 'is_popular']
-    list_filter = ['game_category__game']
+    list_display = ['name', 'icon_preview', 'game_category', 'order', 'is_popular']
+    list_filter = ['game_category__game', 'game_category__category']
     list_editable = ['order', 'is_popular']
+    list_per_page = 200
     search_fields = ['name', 'game_category__game__name', 'game_category__category__name']
     autocomplete_fields = ['game_category']
+    actions = ['bulk_set_icon', 'bulk_clear_icon']
+
+    def lookup_allowed(self, lookup, value, *args, **kwargs):
+        # Allows the "bulk-edit icons" link on the GameCategory page to
+        # pre-filter this changelist to that page's options.
+        if lookup == 'game_category__id__exact':
+            return True
+        return super().lookup_allowed(lookup, value, *args, **kwargs)
+
+    @admin.display(description='Icon')
+    def icon_preview(self, obj):
+        if obj.icon:
+            return format_html(
+                '<img src="{}" style="height:24px;width:24px;object-fit:contain;" alt="">',
+                obj.icon.url,
+            )
+        return '—'
+
+    @admin.action(description='Set one icon on selected options')
+    def bulk_set_icon(self, request, queryset):
+        form = None
+        if 'apply' in request.POST:
+            form = CategoryOptionBulkIconForm(request.POST, request.FILES)
+            if form.is_valid():
+                icon = optimize_uploaded_image(form.cleaned_data['icon'], preset='game_icon')
+                storage = CategoryOption._meta.get_field('icon').storage
+                # Store the file once; every selected option shares it.
+                saved_name = storage.save(f'option_icons/{icon.name}', icon)
+                updated = queryset.update(icon=saved_name)
+                self.message_user(
+                    request, f'Icon set on {updated} option(s).', messages.SUCCESS)
+                return None
+        if form is None:
+            form = CategoryOptionBulkIconForm()
+        return render(request, 'admin/core/categoryoption/bulk_set_icon.html', {
+            **self.admin_site.each_context(request),
+            'title': 'Set icon on selected options',
+            'options': queryset.select_related(
+                'game_category__game', 'game_category__category'),
+            'form': form,
+            'select_across': request.POST.get('select_across', '0'),
+            'opts': self.model._meta,
+        })
+
+    @admin.action(description='Remove icon from selected options')
+    def bulk_clear_icon(self, request, queryset):
+        updated = queryset.exclude(icon='').exclude(icon__isnull=True).update(icon='')
+        self.message_user(
+            request, f'Icon removed from {updated} option(s).', messages.SUCCESS)
 
 
 @admin.register(FilterOption)
