@@ -270,6 +270,34 @@ describe('SEO route metadata', () => {
     expect(metadata.description).toContain('Valorant PC Accounts listing sold by sellerpk');
   });
 
+  it('emits the Product fields Google requires for merchant listings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+
+    const { productJsonLd } = await importFresh('../lib/seo.js');
+    const data = productJsonLd({
+      name: 'Rare Valorant Account',
+      path: '/listing/GB-123',
+      sku: 'GB-123',
+      brand: 'Valorant',
+      price: '12500.00',
+      sellerName: 'sellerpk',
+    });
+
+    // Without an image Google marks the whole item invalid.
+    expect(data.image).toBe('https://www.gamesbazaar.pk/opengraph-image');
+    expect(data.brand).toEqual({ '@type': 'Brand', name: 'Valorant' });
+    expect(data.offers.hasMerchantReturnPolicy).toMatchObject({
+      '@type': 'MerchantReturnPolicy',
+      applicableCountry: 'PK',
+      returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
+    });
+    expect(data.offers.shippingDetails).toMatchObject({
+      '@type': 'OfferShippingDetails',
+      shippingRate: { value: 0, currency: 'PKR' },
+      shippingDestination: { addressCountry: 'PK' },
+    });
+  });
+
   it('does not force static/client-rendered shells dynamic for CSP', () => {
     const nonceOnlyDynamicPaths = [
       'app/not-found.js',

@@ -110,7 +110,9 @@ export function productJsonLd({
   name,
   description,
   path,
+  image,
   sku,
+  brand,
   category,
   price,
   priceCurrency = 'PKR',
@@ -124,7 +126,11 @@ export function productJsonLd({
     '@type': 'Product',
     name,
     ...(description ? { description } : {}),
+    // Google rejects Product markup without an image; listings have no photos
+    // yet, so fall back to the stable branded image (signed R2 URLs expire).
+    image: image || absoluteUrl(DEFAULT_OG_IMAGE.url),
     ...(sku ? { sku } : {}),
+    ...(brand ? { brand: { '@type': 'Brand', name: brand } } : {}),
     ...(category ? { category } : {}),
     url,
     offers: {
@@ -133,6 +139,40 @@ export function productJsonLd({
       price,
       priceCurrency,
       availability: `https://schema.org/${availability}`,
+      // Digital delivery: Google has no digital-goods variant of these offer
+      // fields, so declare zero-cost/zero-day shipping and no returns.
+      shippingDetails: {
+        '@type': 'OfferShippingDetails',
+        shippingRate: {
+          '@type': 'MonetaryAmount',
+          value: 0,
+          currency: priceCurrency,
+        },
+        shippingDestination: {
+          '@type': 'DefinedRegion',
+          addressCountry: 'PK',
+        },
+        deliveryTime: {
+          '@type': 'ShippingDeliveryTime',
+          handlingTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 0,
+            maxValue: 0,
+            unitCode: 'DAY',
+          },
+          transitTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 0,
+            maxValue: 0,
+            unitCode: 'DAY',
+          },
+        },
+      },
+      hasMerchantReturnPolicy: {
+        '@type': 'MerchantReturnPolicy',
+        applicableCountry: 'PK',
+        returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
+      },
       ...(sellerName ? { seller: { '@type': 'Person', name: sellerName } } : {}),
     },
   };

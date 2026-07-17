@@ -116,6 +116,7 @@ export default async function ListingLayout({ children, params }) {
         description: cleanText(listing.description),
         path: `/listing/${encodeURIComponent(listingId)}`,
         sku: listingId,
+        brand: cleanText(listing.game_name),
         category: categoryParts.join(' - '),
         price: price.toFixed(2),
         availability: availabilityFromStatus(listing.status),
