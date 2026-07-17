@@ -12,6 +12,7 @@ import {
 } from '@/lib/marketplaceUrls';
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
 import ItemRequestForm from '@/components/ItemRequestForm';
+import Select from '@/components/Select';
 
 const LISTING_PAGE_SIZE = 48;
 const PRESENCE_TICK_MS = 30000;
@@ -516,19 +517,16 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     ))}
                   </div>
                 ) : (
-                  <select
+                  <Select
                     id={`filter-${filter.id}`}
                     className="filter-select"
                     value={activeFilters[filter.id] || ''}
-                    onChange={(e) => handleDropdownChange(filter.id, e.target.value)}
-                  >
-                    <option value="">All {filter.name}</option>
-                    {filter.options.map((opt) => (
-                      <option key={opt.id} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => handleDropdownChange(filter.id, value)}
+                    options={[
+                      { value: '', label: `All ${filter.name}` },
+                      ...filter.options.map((opt) => ({ value: opt.value, label: opt.label })),
+                    ]}
+                  />
                 )}
               </div>
             ))}
@@ -638,17 +636,16 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                         ))}
                       </div>
                     ) : (
-                      <select
+                      <Select
                         id={`offer-gate-${filter.id}`}
                         className="filter-select offer-gate-select"
                         value={activeFilters[filter.id] || ''}
-                        onChange={(e) => handleDropdownChange(filter.id, e.target.value)}
-                      >
-                        <option value="">Choose {filter.name}...</option>
-                        {filter.options.map((opt) => (
-                          <option key={opt.id} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => handleDropdownChange(filter.id, value)}
+                        options={[
+                          { value: '', label: `Choose ${filter.name}...` },
+                          ...filter.options.map((opt) => ({ value: opt.value, label: opt.label })),
+                        ]}
+                      />
                     )}
                   </div>
                 ))}
@@ -808,17 +805,14 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     <line x1="4" y1="12" x2="14" y2="12"/>
                     <line x1="4" y1="18" x2="8" y2="18"/>
                   </svg>
-                  <select
+                  <Select
                     className="listing-sort-select"
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
+                    onChange={setSortBy}
                     id="listing-sort-select"
-                    aria-label="Sort offers"
-                  >
-                    {OFFER_SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                    ariaLabel="Sort offers"
+                    options={OFFER_SORT_OPTIONS}
+                  />
                 </div>
               </div>
 
@@ -1153,17 +1147,14 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               <line x1="4" y1="12" x2="14" y2="12"/>
               <line x1="4" y1="18" x2="8" y2="18"/>
             </svg>
-            <select
+            <Select
               className="listing-sort-select"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={setSortBy}
               id="listing-sort-select"
-              aria-label="Sort listings"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              ariaLabel="Sort listings"
+              options={SORT_OPTIONS}
+            />
           </div>
         </div>
 

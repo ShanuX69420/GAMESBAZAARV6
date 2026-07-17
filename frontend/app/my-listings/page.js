@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { getMyListings, updateListing, deleteListing, restockAutoDeliveryListing, getAutoDeliveryStock, getAutoDeliveryStockItem, updateAutoDeliveryStock, removeAutoDeliveryStock } from '@/lib/api';
+import Select from '@/components/Select';
 
 const MY_LISTING_PAGE_SIZE = 24;
 
@@ -426,34 +427,30 @@ export default function MyListingsPage() {
 
           {/* Game Filter */}
           {sellerGames.length > 0 && (
-            <select
+            <Select
               className="ml-filter-select"
               value={gameFilter}
-              onChange={(e) => handleGameChange(e.target.value)}
-            >
-              <option value="">All Games</option>
-              {sellerGames.map((g) => (
-                <option key={g.slug} value={g.slug}>
-                  {g.name} ({g.listing_count})
-                </option>
-              ))}
-            </select>
+              onChange={handleGameChange}
+              ariaLabel="Filter by game"
+              options={[
+                { value: '', label: 'All Games' },
+                ...sellerGames.map((g) => ({ value: g.slug, label: `${g.name} (${g.listing_count})` })),
+              ]}
+            />
           )}
 
           {/* Category Filter — only shown when a game is selected */}
           {gameFilter && availableCategories.length > 0 && (
-            <select
+            <Select
               className="ml-filter-select"
               value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-            >
-              <option value="">All Categories</option>
-              {availableCategories.map((c) => (
-                <option key={c.slug} value={c.slug}>
-                  {c.icon} {c.name} ({c.listing_count})
-                </option>
-              ))}
-            </select>
+              onChange={setCategoryFilter}
+              ariaLabel="Filter by category"
+              options={[
+                { value: '', label: 'All Categories' },
+                ...availableCategories.map((c) => ({ value: c.slug, label: `${c.icon} ${c.name} (${c.listing_count})` })),
+              ]}
+            />
           )}
 
           {hasActiveFilters && (
@@ -740,15 +737,16 @@ export default function MyListingsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Status</label>
-                <select
-                  className="form-input"
+                <Select
+                  className="form-select"
                   value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="sold">Sold</option>
-                </select>
+                  onChange={(value) => setEditForm({ ...editForm, status: value })}
+                  options={[
+                    { value: 'active', label: 'Active' },
+                    { value: 'inactive', label: 'Inactive' },
+                    { value: 'sold', label: 'Sold' },
+                  ]}
+                />
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
                 <button className="btn btn-outline" onClick={() => setEditModal(null)}>Cancel</button>

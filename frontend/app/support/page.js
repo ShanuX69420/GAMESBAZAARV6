@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { submitSupportTicket, getMySupportTickets } from '@/lib/api';
 import Link from 'next/link';
+import Select from '@/components/Select';
 
 const FAQ_ITEMS = [
   {
@@ -423,18 +424,15 @@ export default function SupportPage() {
                 <div className="support-form-row">
                   <div className="support-form-group">
                     <label htmlFor="support-category">Category</label>
-                    <select
+                    <Select
                       id="support-category"
-                      name="category"
                       value={formData.category}
-                      onChange={handleChange}
-                    >
-                      {CATEGORY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.icon} {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
+                      options={CATEGORY_OPTIONS.map((opt) => ({
+                        value: opt.value,
+                        label: `${opt.icon} ${opt.label}`,
+                      }))}
+                    />
                   </div>
                   {(formData.category === 'order') && (
                     <div className="support-form-group">

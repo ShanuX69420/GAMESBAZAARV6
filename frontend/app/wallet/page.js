@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import Select from '@/components/Select';
 import {
   getWallet, getTopUpRequests, requestWithdraw, getWithdrawRequests,
   initiateJazzCashTopUp, pollJazzCashPayment,
@@ -470,16 +471,17 @@ export default function WalletPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Payment Method *</label>
-              <select
-                className="form-input"
+              <Select
+                className="form-select"
                 value={withdrawMethod}
-                onChange={(e) => setWithdrawMethod(e.target.value)}
+                onChange={setWithdrawMethod}
                 required
-              >
-                <option value="JazzCash">JazzCash</option>
-                <option value="EasyPaisa">EasyPaisa</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-              </select>
+                options={[
+                  { value: 'JazzCash', label: 'JazzCash' },
+                  { value: 'EasyPaisa', label: 'EasyPaisa' },
+                  { value: 'Bank Transfer', label: 'Bank Transfer' },
+                ]}
+              />
             </div>
             <div className="form-group">
               <label className="form-label">Account Title *</label>

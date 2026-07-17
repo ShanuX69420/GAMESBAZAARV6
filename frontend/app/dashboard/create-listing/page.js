@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { createListing } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
+import Select from '@/components/Select';
 
 export default function CreateListingPage() {
   const { user, loading } = useAuth();
@@ -205,42 +206,38 @@ export default function CreateListingPage() {
           {/* Step 1: Select Game */}
           <div className="form-group">
             <label className="form-label">Game</label>
-            <select
-              className="form-input"
+            <Select
+              className="form-select"
               value={selectedGame?.slug || ''}
-              onChange={(e) => {
-                const game = games.find(g => g.slug === e.target.value);
+              onChange={(value) => {
+                const game = games.find(g => g.slug === value);
                 setSelectedGame(game || null);
               }}
               required
-            >
-              <option value="">Select a game</option>
-              {games.map(g => (
-                <option key={g.id} value={g.slug}>{g.name}</option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'Select a game' },
+                ...games.map(g => ({ value: g.slug, label: g.name })),
+              ]}
+            />
           </div>
 
           {/* Step 2: Select Category */}
           {selectedGame && (
             <div className="form-group">
               <label className="form-label">Category</label>
-              <select
-                className="form-input"
+              <Select
+                className="form-select"
                 value={selectedCategory?.slug || ''}
-                onChange={(e) => {
-                  const gc = categories.find(c => c.category.slug === e.target.value);
+                onChange={(value) => {
+                  const gc = categories.find(c => c.category.slug === value);
                   setSelectedCategory(gc?.category || null);
                 }}
                 required
-              >
-                <option value="">Select a category</option>
-                {categories.map(gc => (
-                  <option key={gc.id} value={gc.category.slug}>
-                    {gc.category.icon} {gc.category.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'Select a category' },
+                  ...categories.map(gc => ({ value: gc.category.slug, label: `${gc.category.icon} ${gc.category.name}` })),
+                ]}
+              />
             </div>
           )}
 
@@ -268,17 +265,16 @@ export default function CreateListingPage() {
                       ))}
                     </div>
                   ) : (
-                    <select
-                      className="form-input"
+                    <Select
+                      className="form-select"
                       value={filterValues[filter.id] || ''}
-                      onChange={(e) => updateFilterValue(filter.id, e.target.value || undefined)}
+                      onChange={(value) => updateFilterValue(filter.id, value || undefined)}
                       required
-                    >
-                      <option value="">Select {filter.name}</option>
-                      {filter.options.map(opt => (
-                        <option key={opt.id} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: '', label: `Select ${filter.name}` },
+                        ...filter.options.map(opt => ({ value: opt.value, label: opt.label })),
+                      ]}
+                    />
                   )}
                 </div>
               ))}
@@ -293,20 +289,19 @@ export default function CreateListingPage() {
                   <label className="form-label">Option</label>
                   {options.length > 0 ? (
                     <>
-                      <select
-                        className="form-input"
+                      <Select
+                        className="form-select"
                         value={selectedOptionId}
-                        onChange={(e) => setSelectedOptionId(e.target.value)}
+                        onChange={setSelectedOptionId}
                         required
-                      >
-                        <option value="">Select an option</option>
-                        {options.map(opt => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                            {opt.min_price ? ` — lowest offer PKR ${Number(opt.min_price).toLocaleString()}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: '', label: 'Select an option' },
+                          ...options.map(opt => ({
+                            value: String(opt.id),
+                            label: `${opt.name}${opt.min_price ? ` — lowest offer PKR ${Number(opt.min_price).toLocaleString()}` : ''}`,
+                          })),
+                        ]}
+                      />
                       <span className="form-hint">
                         Your offer will appear under this option, competing with other sellers
                         on price and delivery time. The listing title is set automatically.
@@ -490,22 +485,16 @@ export default function CreateListingPage() {
               {!isAutoDelivery && (
                 <div className="form-group">
                   <label className="form-label">Delivery Time</label>
-                  <select
-                    className="form-input"
+                  <Select
+                    className="form-select"
                     value={deliveryTime}
-                    onChange={(e) => setDeliveryTime(e.target.value)}
-                  >
-                    <option value="2-3 Minutes">2-3 Minutes</option>
-                    <option value="5 Minutes">5 Minutes</option>
-                    <option value="10-15 Minutes">10-15 Minutes</option>
-                    <option value="15-30 Minutes">15-30 Minutes</option>
-                    <option value="30-60 Minutes">30-60 Minutes</option>
-                    <option value="1-2 Hours">1-2 Hours</option>
-                    <option value="2-6 Hours">2-6 Hours</option>
-                    <option value="6-12 Hours">6-12 Hours</option>
-                    <option value="12-24 Hours">12-24 Hours</option>
-                    <option value="1-3 Days">1-3 Days</option>
-                  </select>
+                    onChange={setDeliveryTime}
+                    options={[
+                      '2-3 Minutes', '5 Minutes', '10-15 Minutes', '15-30 Minutes',
+                      '30-60 Minutes', '1-2 Hours', '2-6 Hours', '6-12 Hours',
+                      '12-24 Hours', '1-3 Days',
+                    ].map(t => ({ value: t, label: t }))}
+                  />
                 </div>
               )}
 
