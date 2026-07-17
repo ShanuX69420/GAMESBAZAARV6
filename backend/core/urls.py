@@ -8,6 +8,8 @@ urlpatterns = [
     path('games/<slug:slug>/', views.GameDetailView.as_view(), name='game-detail'),
     path('games/<slug:game_slug>/<slug:category_slug>/',
          views.GameCategoryDetailView.as_view(), name='game-category-detail'),
+    path('categories/<slug:slug>/games/',
+         views.CategorySectionGamesView.as_view(), name='category-section-games'),
 
     # Public — SEO
     path('sitemap/listings/', views.SitemapListingsView.as_view(), name='sitemap-listings'),

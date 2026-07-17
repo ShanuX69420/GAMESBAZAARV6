@@ -1665,11 +1665,31 @@ html[data-auth-hint="1"] .navbar-guest-links {
   box-shadow: var(--shadow-sm);
 }
 
+.popular-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 10px;
+}
+
 .popular-panel-title {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
-  padding: 0 8px 10px;
+}
+
+.popular-panel-link {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--green-600);
+  flex-shrink: 0;
+  transition: color var(--transition);
+}
+
+.popular-panel-link:hover {
+  color: var(--green-700);
+  text-decoration: underline;
 }
 
 .popular-panel-list {

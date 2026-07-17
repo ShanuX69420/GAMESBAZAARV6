@@ -5,7 +5,12 @@ import { getGameIcon } from '@/lib/icons';
 export default function PopularPanel({ section }) {
   return (
     <div className="popular-panel">
-      <h3 className="popular-panel-title">{section.title}</h3>
+      <div className="popular-panel-header">
+        <h3 className="popular-panel-title">{section.title}</h3>
+        <Link href={`/${section.slug}`} className="popular-panel-link">
+          View All →
+        </Link>
+      </div>
       <ul className="popular-panel-list">
         {section.items.map((item) => (
           <li key={`${item.game_slug}-${item.category_slug}`}>

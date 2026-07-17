@@ -51,6 +51,11 @@ HOME_POPULAR_SECTIONS = [
 HOME_POPULAR_GAMES_PER_SECTION = 8
 HOME_POPULAR_CACHE_KEY = 'home-popular:v1'
 HOME_POPULAR_CACHE_SECONDS = 60
+# "View All" pages behind the popular panels reuse the same section registry.
+CATEGORY_SECTION_BY_SLUG = {
+    section['slug']: section for section in HOME_POPULAR_SECTIONS
+}
+CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v1'
 BROWSE_CACHE_SECONDS = 30
 # Sitemap listing feed: crawlers hit this rarely, so cache hard and cap the page
 # size at Google's per-sitemap URL limit.
@@ -629,6 +634,76 @@ class HomePopularView(APIView):
                 for section in HOME_POPULAR_SECTIONS
                 if games_by_section.get(section['slug'])
             ],
+        }
+
+
+class CategorySectionGamesView(APIView):
+    """GET /api/categories/{slug}/games/ — every game in one home "Popular"
+    section (accounts, top-ups, offline-activation, gift-cards), for that
+    section's View All page. Same item shape as HomePopularView, uncapped.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, slug):
+        section = CATEGORY_SECTION_BY_SLUG.get(slug)
+        if section is None:
+            raise Http404
+        cache_key = (
+            f'{CATEGORY_SECTION_CACHE_KEY}:{slug}:'
+            f'{request_origin_cache_scope(request)}'
+        )
+        data = cache.get(cache_key)
+        if data is None:
+            data = self.build_payload(request, section)
+            cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
+        response = Response(data)
+        response['Cache-Control'] = f'public, max-age={HOME_POPULAR_CACHE_SECONDS}'
+        return response
+
+    def build_payload(self, request, section):
+        rows = (
+            GameCategory.objects
+            .filter(
+                category__slug__in=section['category_slugs'],
+                game__is_active=True,
+            )
+            .select_related('game', 'category')
+            .annotate(
+                active_listing_count=Count(
+                    'listings', filter=Q(listings__status='active'),
+                )
+            )
+            .order_by('-active_listing_count', 'game__order', 'game__name')
+        )
+
+        items = []
+        seen_game_ids = set()
+        for row in rows:
+            # A game can hold two spellings of the same category (the Top Ups
+            # rename kept both slugs in play) — keep its best-stocked row only.
+            if row.game_id in seen_game_ids:
+                continue
+            seen_game_ids.add(row.game_id)
+            icon_url = None
+            if row.game.icon:
+                icon_url = cached_media_url(
+                    row.game.icon,
+                    request=request,
+                    cache_seconds=GAME_ICON_CACHE_SECONDS,
+                    cache_scope='public',
+                )
+            items.append({
+                'game_name': row.game.name,
+                'game_slug': row.game.slug,
+                'category_slug': row.effective_slug,
+                'icon_url': icon_url,
+                'listing_count': row.active_listing_count,
+            })
+
+        return {
+            'slug': section['slug'],
+            'title': section['title'],
+            'items': items,
         }
 
 
