@@ -8242,6 +8242,65 @@ class ReviewTests(TestCase):
         self.assertEqual(response.data['rating'], 4)
         self.assertEqual(response.data['comment'], '')
 
+    def test_listing_detail_returns_per_listing_reviews_only(self):
+        """The detail endpoint feeds Product JSON-LD: stats must cover only
+        reviews of THIS listing, never the seller's whole history."""
+        Review.objects.create(
+            order=self.completed_order,
+            reviewer=self.buyer,
+            seller=self.seller,
+            rating=4,
+            comment='Solid delivery',
+        )
+        other_listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Other Listing',
+            price=Decimal('20.00'),
+            quantity=1,
+            status='active',
+        )
+        other_order = Order.objects.create(
+            buyer=self.other_buyer,
+            seller=self.seller,
+            listing=other_listing,
+            listing_title=other_listing.title,
+            quantity=1,
+            unit_price=Decimal('20.00'),
+            total_amount=Decimal('20.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('2.00'),
+            seller_amount=Decimal('18.00'),
+            status='completed',
+        )
+        Review.objects.create(
+            order=other_order,
+            reviewer=self.other_buyer,
+            seller=self.seller,
+            rating=1,
+            comment='Review of a different listing',
+        )
+
+        response = self.client.get(f'/api/listings/{self.listing.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        reviews = response.data['listing_reviews']
+        self.assertEqual(reviews['count'], 1)
+        self.assertEqual(reviews['average'], 4.0)
+        self.assertEqual(len(reviews['recent']), 1)
+        self.assertEqual(reviews['recent'][0]['rating'], 4)
+        self.assertEqual(reviews['recent'][0]['comment'], 'Solid delivery')
+        self.assertEqual(reviews['recent'][0]['reviewer_name'], 'buyer')
+
+    def test_listing_detail_reviews_empty_for_unreviewed_listing(self):
+        response = self.client.get(f'/api/listings/{self.listing.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        reviews = response.data['listing_reviews']
+        self.assertEqual(reviews['count'], 0)
+        self.assertIsNone(reviews['average'])
+        self.assertEqual(reviews['recent'], [])
+
     def test_cannot_review_same_order_twice(self):
         Review.objects.create(
             order=self.completed_order,

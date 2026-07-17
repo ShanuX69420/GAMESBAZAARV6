@@ -118,8 +118,14 @@ export function productJsonLd({
   priceCurrency = 'PKR',
   availability = 'InStock',
   sellerName,
+  aggregateRating,
+  reviews,
 }) {
   const url = absoluteUrl(path);
+  const ratingCount = Number(aggregateRating?.count) || 0;
+  const reviewList = Array.isArray(reviews)
+    ? reviews.filter((review) => Number.isFinite(Number(review?.rating)))
+    : [];
 
   return {
     '@context': 'https://schema.org',
@@ -133,6 +139,39 @@ export function productJsonLd({
     ...(brand ? { brand: { '@type': 'Brand', name: brand } } : {}),
     ...(category ? { category } : {}),
     url,
+    // Ratings/reviews are per-listing (this product only, never seller-wide
+    // stats — Google's Product guidelines forbid store/seller ratings here)
+    // and omitted entirely until the listing has at least one review.
+    ...(ratingCount > 0 && Number.isFinite(Number(aggregateRating.value))
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: Number(aggregateRating.value),
+            reviewCount: ratingCount,
+            bestRating: 5,
+            worstRating: 1,
+          },
+        }
+      : {}),
+    ...(reviewList.length
+      ? {
+          review: reviewList.map((review) => ({
+            '@type': 'Review',
+            reviewRating: {
+              '@type': 'Rating',
+              ratingValue: Number(review.rating),
+              bestRating: 5,
+              worstRating: 1,
+            },
+            author: {
+              '@type': 'Person',
+              name: review.author || 'GamesBazaar buyer',
+            },
+            ...(review.date ? { datePublished: review.date } : {}),
+            ...(review.body ? { reviewBody: review.body } : {}),
+          })),
+        }
+      : {}),
     offers: {
       '@type': 'Offer',
       url,

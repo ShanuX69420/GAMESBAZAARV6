@@ -270,6 +270,54 @@ describe('SEO route metadata', () => {
     expect(metadata.description).toContain('Valorant PC Accounts listing sold by sellerpk');
   });
 
+  it('wires per-listing reviews into the listing page Product JSON-LD', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        title: 'Rare Valorant Account',
+        price: '12500',
+        game_name: 'Valorant',
+        category_name: 'Accounts',
+        seller_name: 'sellerpk',
+        status: 'active',
+        listing_reviews: {
+          average: 4.5,
+          count: 2,
+          recent: [
+            {
+              rating: 5,
+              comment: 'Fast delivery',
+              reviewer_name: 'buyer1',
+              created_at: '2026-07-01T10:00:00+00:00',
+            },
+            {
+              rating: 4,
+              comment: '',
+              reviewer_name: 'buyer2',
+              created_at: '2026-06-20T10:00:00+00:00',
+            },
+          ],
+        },
+      }),
+    }));
+
+    const { default: ListingLayout } = await importFresh('../app/listing/[id]/layout.js');
+    const element = await ListingLayout({
+      children: null,
+      params: Promise.resolve({ id: 'GB-123' }),
+    });
+    const data = element.props.children[0].props.data;
+
+    expect(data.aggregateRating).toMatchObject({ ratingValue: 4.5, reviewCount: 2 });
+    expect(data.review).toHaveLength(2);
+    expect(data.review[0].author).toEqual({ '@type': 'Person', name: 'buyer1' });
+    // ISO datetime from the API is trimmed to the date Google expects.
+    expect(data.review[0].datePublished).toBe('2026-07-01');
+    expect(data.review[1]).not.toHaveProperty('reviewBody');
+  });
+
   it('emits the Product fields Google requires for merchant listings', async () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
 
@@ -296,6 +344,62 @@ describe('SEO route metadata', () => {
       shippingRate: { value: 0, currency: 'PKR' },
       shippingDestination: { addressCountry: 'PK' },
     });
+  });
+
+  it('emits aggregateRating and review when the listing has reviews', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+
+    const { productJsonLd } = await importFresh('../lib/seo.js');
+    const data = productJsonLd({
+      name: 'Rare Valorant Account',
+      path: '/listing/GB-123',
+      price: '12500.00',
+      aggregateRating: { value: 4.5, count: 2 },
+      reviews: [
+        { rating: 5, author: 'buyer1', body: 'Fast delivery', date: '2026-07-01' },
+        { rating: 4, author: '', body: '', date: '' },
+      ],
+    });
+
+    expect(data.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.5,
+      reviewCount: 2,
+      bestRating: 5,
+      worstRating: 1,
+    });
+    expect(data.review).toHaveLength(2);
+    expect(data.review[0]).toEqual({
+      '@type': 'Review',
+      reviewRating: { '@type': 'Rating', ratingValue: 5, bestRating: 5, worstRating: 1 },
+      author: { '@type': 'Person', name: 'buyer1' },
+      datePublished: '2026-07-01',
+      reviewBody: 'Fast delivery',
+    });
+    // Empty author/body/date fall back or drop out rather than emitting
+    // blank fields Google would flag.
+    expect(data.review[1]).toEqual({
+      '@type': 'Review',
+      reviewRating: { '@type': 'Rating', ratingValue: 4, bestRating: 5, worstRating: 1 },
+      author: { '@type': 'Person', name: 'GamesBazaar buyer' },
+    });
+  });
+
+  it('omits aggregateRating and review entirely for unreviewed listings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+
+    const { productJsonLd } = await importFresh('../lib/seo.js');
+    const data = productJsonLd({
+      name: 'Rare Valorant Account',
+      path: '/listing/GB-123',
+      price: '12500.00',
+      aggregateRating: null,
+      reviews: [],
+    });
+
+    // A zero-count AggregateRating is invalid markup — the keys must be absent.
+    expect(data).not.toHaveProperty('aggregateRating');
+    expect(data).not.toHaveProperty('review');
   });
 
   it('does not force static/client-rendered shells dynamic for CSP', () => {

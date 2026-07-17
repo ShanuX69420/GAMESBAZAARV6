@@ -10,6 +10,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Avg
 from django.urls import reverse
 from django.utils import timezone
 from .models import (
@@ -513,6 +514,7 @@ class ListingSerializer(serializers.ModelSerializer):
     delivery_instructions = serializers.SerializerMethodField()
     instant_delivery = serializers.SerializerMethodField()
     required_checkout_fields = serializers.SerializerMethodField()
+    listing_reviews = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -525,7 +527,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'instant_delivery',
-            'required_checkout_fields', 'created_at',
+            'required_checkout_fields', 'listing_reviews', 'created_at',
         ]
 
     def get_option_name(self, obj):
@@ -553,6 +555,32 @@ class ListingSerializer(serializers.ModelSerializer):
         if link.kind == 'gift':
             return link.checkout_fields or GIFT_CHECKOUT_FIELDS
         return link.checkout_fields or [{'key': 'player_id', 'label': 'Player ID'}]
+
+    def get_listing_reviews(self, obj):
+        """Reviews of completed orders for THIS listing (not the seller's
+        whole history) — feeds aggregateRating/review in the Product JSON-LD.
+        Google requires product ratings to be about the product itself, so
+        seller-wide stats must not be used here. Computed only where the view
+        opts in — the listing detail page — to avoid an N+1 on category
+        listings."""
+        if not self.context.get('include_listing_reviews'):
+            return None
+        reviews_qs = Review.objects.filter(order__listing=obj).select_related('reviewer')
+        stats = reviews_qs.aggregate(avg=Avg('rating'))
+        recent = [
+            {
+                'rating': review.rating,
+                'comment': review.comment,
+                'reviewer_name': review.reviewer.username if review.reviewer_id else '',
+                'created_at': review.created_at.isoformat(),
+            }
+            for review in reviews_qs[:5]
+        ]
+        return {
+            'average': round(float(stats['avg']), 1) if stats['avg'] is not None else None,
+            'count': reviews_qs.count(),
+            'recent': recent,
+        }
 
     def get_delivery_instructions(self, obj):
         """Offer and currency listings show instructions to buyers before

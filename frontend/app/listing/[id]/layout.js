@@ -107,6 +107,9 @@ export default async function ListingLayout({ children, params }) {
     .map(cleanText)
     .filter(Boolean);
 
+  const listingReviews = listing.listing_reviews;
+  const reviewCount = Number(listingReviews?.count) || 0;
+
   return createElement(
     Fragment,
     null,
@@ -121,6 +124,15 @@ export default async function ListingLayout({ children, params }) {
         price: price.toFixed(2),
         availability: availabilityFromStatus(listing.status),
         sellerName: cleanText(listing.seller_name),
+        aggregateRating: reviewCount > 0
+          ? { value: listingReviews.average, count: reviewCount }
+          : null,
+        reviews: (listingReviews?.recent || []).map((review) => ({
+          rating: review.rating,
+          author: cleanText(review.reviewer_name),
+          body: cleanText(review.comment),
+          date: String(review.created_at || '').slice(0, 10),
+        })),
       }),
     }),
     children,

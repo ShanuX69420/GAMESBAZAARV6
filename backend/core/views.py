@@ -2001,6 +2001,8 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
                 # Detail page only: expose required checkout inputs for
                 # auto-fulfilled top-ups (avoids N+1 on category pages).
                 'include_checkout_fields': True,
+                # Detail page only: per-listing reviews for Product JSON-LD.
+                'include_listing_reviews': True,
             },
         ).data)
 
