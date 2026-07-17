@@ -10,9 +10,9 @@ How an email is tied to an account differs per platform:
 - Steam allows the same contact email on many accounts, and its guard email
   names the account login in the body — one mailbox serves every account,
   matched by login.
-- Ubisoft/EA allow only ONE account per email address. Each such account
-  stores its own guard_email — a Gmail dot/plus alias of the mailbox, or an
-  address auto-forwarded into it — and emails are matched by To: address.
+- Ubisoft/EA/Epic allow only ONE account per email address. Each such
+  account stores its own guard_email — a Gmail dot/plus alias of the mailbox,
+  or an address auto-forwarded into it — and emails are matched by To: address.
 """
 
 import email
@@ -40,7 +40,7 @@ IMAP_TIMEOUT_SECONDS = 10
 _CODE_LINE_RE = re.compile(r'^\s*([A-Z0-9]{5})\s*$', re.MULTILINE)
 _HTML_TAG_RE = re.compile(r'<[^>]+>')
 
-# Ubisoft/EA codes are plain digits: alone on a line, or right after the
+# Ubisoft/EA/Epic codes are plain digits: alone on a line, or right after the
 # word "code" (EA puts it in the subject: "Your EA Security Code is: NNNNNN").
 _DIGIT_AFTER_CODE_RE = re.compile(r'code\D{0,20}(\d{4,8})', re.IGNORECASE)
 _DIGIT_LINE_RE = re.compile(r'^\s*(\d{4,8})\s*$', re.MULTILINE)
@@ -50,8 +50,9 @@ _DIGIT_LINE_RE = re.compile(r'^\s*(\d{4,8})\s*$', re.MULTILINE)
 # mails must never reach a buyer, regardless of what their bodies contain.
 # Two gates, both fail closed: a hard blocklist of account-security words,
 # then a per-platform allowlist of the login-code template's subject.
+# 'remov'/'disabl' guard against 2FA-removal emails, which carry a code too.
 _SUBJECT_BLOCK_RE = re.compile(
-    r'password|reset|recover|chang|delet', re.IGNORECASE)
+    r'password|reset|recover|chang|delet|remov|disabl', re.IGNORECASE)
 
 PLATFORM_MAIL = {
     'steam': {
@@ -61,9 +62,9 @@ PLATFORM_MAIL = {
         'sender_domains': ('steampowered.com',),
         'subject_allow': re.compile(r'access from|steam guard', re.IGNORECASE),
     },
-    # Ubisoft/EA have no 'search_from': Gmail's IMAP SEARCH matches whole
-    # tokens, not substrings (FROM "ubi" finds nothing from ubisoft.com), so
-    # their search keys on the account's unique To: alias instead and the
+    # Non-Steam platforms have no 'search_from': Gmail's IMAP SEARCH matches
+    # whole tokens, not substrings (FROM "ubi" finds nothing from ubisoft.com),
+    # so their search keys on the account's unique To: alias instead and the
     # sender is verified by _sender_domain_ok after fetching.
     'ubisoft': {
         # live-verified 2026-07-16: "Ubisoft Account Security Code"
@@ -75,6 +76,12 @@ PLATFORM_MAIL = {
         # "Your EA Security Code is: NNNNNN"
         'sender_domains': ('ea.com',),
         'subject_allow': re.compile(r'security code', re.IGNORECASE),
+    },
+    'epic': {
+        # Sign-in codes come from help@accts.epicgames.com (subdomain match).
+        # Subject kept broad like Ubisoft's until live-verified.
+        'sender_domains': ('epicgames.com',),
+        'subject_allow': re.compile(r'\bcode\b', re.IGNORECASE),
     },
 }
 
@@ -107,9 +114,9 @@ def is_login_code_subject(subject):
 
 
 def extract_generic_code(subject, body):
-    """The digit code in a Ubisoft/EA email — subject first (EA puts it
-    there), then body. Only called for emails already matched to an account
-    by To: address and vetted by subject_allowed."""
+    """The digit code in a Ubisoft/EA/Epic email — subject first (EA puts
+    it there), then body. Only called for emails already matched to an
+    account by To: address and vetted by subject_allowed."""
     for text in (str(subject or ''), str(body or '')):
         match = _DIGIT_AFTER_CODE_RE.search(text) or _DIGIT_LINE_RE.search(text)
         if match:
@@ -126,8 +133,8 @@ def _sender_domain_ok(message, domains):
 
 
 def _addressed_to(message, guard_email):
-    """Ubisoft/EA: the email was sent to this account's registered address
-    (dot/plus aliases and forwards keep the original To: header)."""
+    """Ubisoft/EA/Epic: the email was sent to this account's registered
+    address (dot/plus aliases and forwards keep the original To: header)."""
     needle = str(guard_email).strip().lower()
     if not needle:
         return False

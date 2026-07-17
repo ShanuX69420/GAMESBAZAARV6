@@ -402,7 +402,7 @@ class ListingAdmin(admin.ModelAdmin):
 
 @admin.register(OfflineAccount)
 class OfflineAccountAdmin(admin.ModelAdmin):
-    """Offline-activation accounts (Steam/Ubisoft/EA): credentials + guard.
+    """Offline-activation accounts (Steam/Ubisoft/EA/Epic): credentials + guard.
 
     Paste plaintext into password / shared_secret — they are encrypted on
     save (an already-encrypted value is kept as-is). The live code column

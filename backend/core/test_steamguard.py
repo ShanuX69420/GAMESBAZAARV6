@@ -566,6 +566,10 @@ class PlatformMailParserTests(SimpleTestCase):
         self.assertTrue(guardmail.subject_allowed(
             'ubisoft', 'Your Ubisoft verification code'))
 
+    def test_epic_code_subject_allowed(self):
+        self.assertTrue(guardmail.subject_allowed(
+            'epic', 'Your Epic Games sign-in code'))
+
     def test_account_security_subjects_blocked_even_if_they_mention_code(self):
         # The blocklist wins over the allowlist: a password-reset email that
         # also says "code" must NEVER be parsed — relaying it would hand a
@@ -575,6 +579,8 @@ class PlatformMailParserTests(SimpleTestCase):
             ('ea', 'Reset your EA password'),
             ('ubisoft', 'Password change code for your Ubisoft account'),
             ('ubisoft', 'Recover your Ubisoft account'),
+            ('epic', 'Your code to remove two-factor authentication'),
+            ('epic', 'Epic Games password reset code'),
             ('ea', ''),
             ('ubisoft', None),
         ):
@@ -590,6 +596,11 @@ class PlatformMailParserTests(SimpleTestCase):
     def test_extract_code_from_ubisoft_body_line(self):
         body = 'Hello,\n\nYour verification code:\n\n1234\n\nThe Ubisoft team\n'
         self.assertEqual(guardmail.extract_generic_code('', body), '1234')
+
+    def test_extract_code_from_epic_body(self):
+        body = ('Hi,\n\nHere is your sign-in code:\n\n483920\n\n'
+                'The Epic Games team\n')
+        self.assertEqual(guardmail.extract_generic_code('', body), '483920')
 
     def test_no_code_in_marketing_text(self):
         body = ('Big sale! Save 70% until July 20, 2026.\n'
@@ -667,3 +678,60 @@ class UbisoftEaAccountTests(OfflineAccountTestBase):
         self.assertTrue(response.data['pending'])
         self.assertIn('EA', response.data['message'])
         self.assertNotIn('Steam', response.data['message'])
+
+
+class EpicAccountTests(OfflineAccountTestBase):
+    """platform='epic': same email-guard flow as Ubisoft/EA."""
+
+    def setUp(self):
+        super().setUp()
+        self.epic_account = OfflineAccount.objects.create(
+            label='Alan Wake 2 — Epic account 1',
+            platform='epic',
+            login='epicuser1',
+            password='epic-hunter2',
+            guard_type='email',
+            guard_email='gb.guard+epic1@gmail.com',
+        )
+        self.epic_listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Alan Wake 2 (Offline Activation)',
+            price=Decimal('2500.00'),
+            quantity=None,
+            status='active',
+            offline_account=self.epic_account,
+        )
+
+    def test_validation_rules(self):
+        self.epic_account.full_clean()  # valid as created
+        with self.assertRaises(ValidationError):
+            OfflineAccount(
+                label='x', platform='epic', login='y', password='z',
+                guard_type='totp', shared_secret=TEST_SECRET,
+            ).full_clean()  # email-only, like Ubisoft/EA
+        with self.assertRaises(ValidationError):
+            OfflineAccount(
+                label='x', platform='epic', login='y', password='z',
+                guard_type='email', guard_email='',
+            ).full_clean()
+
+    def test_purchase_delivers_platform_wording(self):
+        order = self.buy(self.epic_listing)
+        self.assertEqual(order.status, 'delivered')
+        note = decrypt_sensitive_text(order.delivery_note)
+        self.assertIn('epicuser1', note)
+        self.assertIn('Epic Games security code', note)
+        self.assertIn('!code', note)
+
+    @patch('core.guardmail.fetch_latest_code', return_value='483920')
+    def test_code_and_label_delivered(self, fetch):
+        order = self.buy(self.epic_listing)
+        detail = self.client.get(f'/api/orders/{order.pk}/').data
+        self.assertEqual(detail['guard_code_label'], 'Epic Games security code')
+
+        response = self.client.post(f'/api/orders/{order.pk}/guard-code/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['code'], '483920')
+        self.assertEqual(response.data['label'], 'Epic Games security code')
+        fetch.assert_called_once_with(self.epic_account)

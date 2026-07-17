@@ -477,7 +477,7 @@ class Listing(models.Model):
         'OfflineAccount', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='listings',
         help_text='Offline activation: the shared game account '
-                  '(Steam/Ubisoft/EA) delivered to every buyer of this '
+                  '(Steam/Ubisoft/EA/Epic) delivered to every buyer of this '
                   'listing (never consumed). Enables instant delivery + '
                   'on-demand login codes.',
     )
@@ -1516,7 +1516,7 @@ class FazerFulfillmentTask(models.Model):
 
 
 class OfflineAccount(models.Model):
-    """A shared game account (Steam/Ubisoft/EA) behind offline-activation
+    """A shared game account (Steam/Ubisoft/EA/Epic) behind offline-activation
     listings.
 
     The same account is delivered to every buyer — listings pointing here are
@@ -1527,9 +1527,9 @@ class OfflineAccount(models.Model):
     shared_secret (Steam maFile; Steam only); 'email' pulls them from the
     shared guard mailbox (see core.guardmail). Steam allows one contact email
     on many accounts, so Steam codes are matched by the login named in the
-    email body. Ubisoft/EA allow only ONE account per email address — each
-    such account stores its own ``guard_email`` (a Gmail dot/plus alias of
-    the guard mailbox, or an address auto-forwarded into it) and codes are
+    email body. Ubisoft/EA/Epic allow only ONE account per email address —
+    each such account stores its own ``guard_email`` (a Gmail dot/plus alias
+    of the guard mailbox, or an address auto-forwarded into it) and codes are
     matched by the To: address instead. Either way, entitled buyers get
     codes on demand (order-page button or !code in chat).
     """
@@ -1537,6 +1537,7 @@ class OfflineAccount(models.Model):
         ('steam', 'Steam'),
         ('ubisoft', 'Ubisoft'),
         ('ea', 'EA'),
+        ('epic', 'Epic Games'),
     ]
     GUARD_TYPE_CHOICES = [
         ('totp', 'Mobile authenticator (shared_secret)'),
@@ -1547,6 +1548,7 @@ class OfflineAccount(models.Model):
         'steam': 'Steam Guard code',
         'ubisoft': 'Ubisoft verification code',
         'ea': 'EA security code',
+        'epic': 'Epic Games security code',
     }
 
     label = models.CharField(
@@ -1564,11 +1566,11 @@ class OfflineAccount(models.Model):
         max_length=8, choices=GUARD_TYPE_CHOICES, default='totp',
         help_text='email: code emails for this account must land in the '
                   'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars). '
-                  'Ubisoft/EA accounts are always email.',
+                  'Ubisoft/EA/Epic accounts are always email.',
     )
     guard_email = models.CharField(
         max_length=254, blank=True, default='',
-        help_text='Ubisoft/EA only: the email address this account is '
+        help_text='Ubisoft/EA/Epic only: the email address this account is '
                   'registered under. Must deliver into the shared guard '
                   'mailbox (Gmail dot/plus alias of it, or auto-forwarded) — '
                   'codes are matched by this To: address. Steam accounts '
@@ -1604,11 +1606,11 @@ class OfflineAccount(models.Model):
         if self.platform != 'steam':
             if self.guard_type != 'email':
                 raise ValidationError({
-                    'guard_type': 'Ubisoft/EA accounts use email codes only.',
+                    'guard_type': 'Ubisoft/EA/Epic accounts use email codes only.',
                 })
             if not str(self.guard_email).strip():
                 raise ValidationError({
-                    'guard_email': 'Required for Ubisoft/EA accounts — the '
+                    'guard_email': 'Required for Ubisoft/EA/Epic accounts — the '
                                    'email the account is registered under.',
                 })
         elif self.guard_type == 'totp' and not str(self.shared_secret).strip():
