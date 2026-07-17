@@ -4471,12 +4471,13 @@ class CategorySectionGamesViewTests(TestCase):
         response = self.client.get('/api/categories/keys/games/')
         self.assertEqual(response.status_code, 404)
 
-    def test_returns_every_game_uncapped(self):
+    def test_returns_every_stocked_game_uncapped(self):
         from .views import HOME_POPULAR_GAMES_PER_SECTION
 
         total = HOME_POPULAR_GAMES_PER_SECTION + 3
         for i in range(total):
-            self.add_game(f'Game {i:02d}', f'game-{i:02d}', self.accounts)
+            self.add_listing(
+                self.add_game(f'Game {i:02d}', f'game-{i:02d}', self.accounts))
 
         response = self.client.get('/api/categories/accounts/games/')
 
@@ -4484,6 +4485,20 @@ class CategorySectionGamesViewTests(TestCase):
         self.assertEqual(response['Cache-Control'], 'public, max-age=60')
         self.assertEqual(response.data['slug'], 'accounts')
         self.assertEqual(len(response.data['items']), total)
+
+    def test_games_without_active_listings_are_excluded(self):
+        stocked = self.add_game('Stocked', 'stocked', self.accounts)
+        self.add_listing(stocked)
+        self.add_game('Empty', 'empty', self.accounts)
+        sold_out = self.add_game('Sold Out', 'sold-out', self.accounts)
+        self.add_listing(sold_out, status='sold')
+
+        response = self.client.get('/api/categories/accounts/games/')
+
+        self.assertEqual(
+            [item['game_slug'] for item in response.data['items']],
+            ['stocked'],
+        )
 
     def test_item_shape_counts_only_active_listings(self):
         stocked = self.add_game('Stocked', 'stocked', self.accounts)
@@ -4502,8 +4517,9 @@ class CategorySectionGamesViewTests(TestCase):
 
     def test_top_ups_accepts_both_category_slug_spellings(self):
         local_topup = Category.objects.create(name='Top-Up', slug='top-up')
-        self.add_game('PUBG Mobile', 'pubg-mobile', local_topup)
-        self.add_game('ChatGPT', 'chatgpt', self.topups, display_name='Subscriptions')
+        self.add_listing(self.add_game('PUBG Mobile', 'pubg-mobile', local_topup))
+        self.add_listing(self.add_game(
+            'ChatGPT', 'chatgpt', self.topups, display_name='Subscriptions'))
 
         response = self.client.get('/api/categories/top-ups/games/')
 
@@ -4529,7 +4545,7 @@ class CategorySectionGamesViewTests(TestCase):
     def test_serves_cached_payload(self):
         from .views import CATEGORY_SECTION_CACHE_KEY, HOME_POPULAR_CACHE_SECONDS
 
-        self.add_game('Valorant', 'valorant', self.accounts)
+        self.add_listing(self.add_game('Valorant', 'valorant', self.accounts))
         response = self.client.get('/api/categories/accounts/games/')
         cache_key = (
             f'{CATEGORY_SECTION_CACHE_KEY}:accounts:'

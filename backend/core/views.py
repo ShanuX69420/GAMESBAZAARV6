@@ -638,9 +638,10 @@ class HomePopularView(APIView):
 
 
 class CategorySectionGamesView(APIView):
-    """GET /api/categories/{slug}/games/ — every game in one home "Popular"
-    section (accounts, top-ups, offline-activation, gift-cards), for that
-    section's View All page. Same item shape as HomePopularView, uncapped.
+    """GET /api/categories/{slug}/games/ — every game with active listings in
+    one home "Popular" section (accounts, top-ups, offline-activation,
+    gift-cards), for that section's View All page. Same item shape as
+    HomePopularView, uncapped; unlike the panels, stockless games are omitted.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -673,6 +674,7 @@ class CategorySectionGamesView(APIView):
                     'listings', filter=Q(listings__status='active'),
                 )
             )
+            .filter(active_listing_count__gt=0)
             .order_by('-active_listing_count', 'game__order', 'game__name')
         )
 
