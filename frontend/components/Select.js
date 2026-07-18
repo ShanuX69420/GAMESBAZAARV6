@@ -37,6 +37,7 @@ export default function Select({
   const menuRef = useRef(null);
   const listRef = useRef(null);
   const searchRef = useRef(null);
+  const openUpRef = useRef(null);
   const typeahead = useRef({ q: '', at: 0 });
   const reactId = useId();
   const listboxId = `${id || reactId}-listbox`;
@@ -60,6 +61,7 @@ export default function Select({
     if (disabled) return;
     setQuery('');
     setHighlighted(selectedIndex >= 0 ? selectedIndex : 0);
+    openUpRef.current = null;
     setOpen(true);
   };
 
@@ -161,7 +163,11 @@ export default function Select({
   }, [open, close]);
 
   useEffect(() => {
-    if (open && searchable) searchRef.current?.focus();
+    if (!open || !searchable) return;
+    // Auto-focusing the search box pops the on-screen keyboard on touch
+    // devices, covering half the menu — there, wait for an explicit tap.
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+    searchRef.current?.focus();
   }, [open, searchable]);
 
   // Position the portal menu against the trigger; re-run while scrolling or
@@ -173,12 +179,21 @@ export default function Select({
       const menu = menuRef.current;
       if (!trigger || !menu) return;
       const rect = trigger.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        close(false);
+        return;
+      }
       menu.style.minWidth = `${rect.width}px`;
       menu.style.maxWidth = `${Math.min(360, window.innerWidth - 16)}px`;
       const gap = 6;
       const below = window.innerHeight - rect.bottom - gap - 8;
       const above = rect.top - gap - 8;
-      const openUp = menu.offsetHeight > below && above > below;
+      // Lock the direction on open — re-deciding on every scroll tick makes
+      // the menu flip sides mid-scroll when space above/below is near equal.
+      if (openUpRef.current === null) {
+        openUpRef.current = Math.min(340, menu.offsetHeight) > below && above > below;
+      }
+      const openUp = openUpRef.current;
       menu.style.maxHeight = `${Math.max(120, Math.min(340, openUp ? above : below))}px`;
       menu.style.top = openUp
         ? `${Math.max(8, rect.top - gap - menu.offsetHeight)}px`
