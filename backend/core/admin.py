@@ -18,7 +18,7 @@ from .models import (
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
     OfflineAccount,
 )
-from .payments import run_status_inquiry
+from .payments import dispatch_status_inquiries
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
@@ -594,16 +594,19 @@ class JazzCashPaymentAdmin(admin.ModelAdmin):
 
     @admin.action(description='🔄 Run JazzCash status inquiry')
     def run_status_inquiries(self, request, queryset):
-        checked = 0
-        completed = 0
-        for payment in queryset.exclude(status='completed')[:25]:
-            payment = run_status_inquiry(payment)
-            checked += 1
-            if payment.status == 'completed':
-                completed += 1
+        ids = list(
+            queryset.exclude(status='completed').values_list('pk', flat=True)[:25]
+        )
+        if not ids:
+            self.message_user(request, 'All selected payments are already completed.')
+            return
+        # Never call the gateway on the request thread — an inquiry against a
+        # stuck payment hangs up to 65s and freezes the whole site (2026-07-18).
+        dispatch_status_inquiries(ids)
         self.message_user(
             request,
-            f'Status inquiry run for {checked} payment(s); {completed} completed.',
+            f'Status inquiry started in the background for {len(ids)} '
+            'payment(s) — refresh this page in a minute to see the outcome.',
         )
 
 

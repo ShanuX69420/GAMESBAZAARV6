@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from . import jazzcash, meta_capi
 from .models import Category, Game, GameCategory, Listing, Wallet
-from .payments import finalize_jazzcash_payment, start_jazzcash_payment
+from .payments import _run_initiation, finalize_jazzcash_payment, start_jazzcash_payment
 
 META_TEST_SETTINGS = dict(
     META_PIXEL_ID='1234567890',
@@ -196,6 +196,11 @@ class JazzCashPurchaseEventTests(PurchaseFixtureMixin, TestCase):
         with patch(
             'core.jazzcash._post',
             side_effect=jazzcash.JazzCashUnavailable('timeout'),
+        ), patch(
+            # Initiation runs on a background thread in production; inline
+            # here so the payment is guaranteed pending when we return.
+            'core.payments._dispatch_initiation',
+            side_effect=_run_initiation,
         ):
             return start_jazzcash_payment(
                 user=self.buyer,

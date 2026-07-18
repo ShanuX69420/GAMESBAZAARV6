@@ -1,12 +1,13 @@
 import hashlib
 import hmac
+import time
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 import requests
 from django.contrib.auth.models import User
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -16,7 +17,9 @@ from .models import (
     Wallet, WalletTransaction,
 )
 from .payments import (
+    _run_initiation,
     finalize_jazzcash_payment,
+    inquire_payments,
     reconcile_pending_jazzcash_payments,
     start_jazzcash_payment,
 )
@@ -173,6 +176,16 @@ class JazzCashPaymentFlowTests(TestCase):
 
         self.client.force_authenticate(user=self.buyer)
 
+        # Run the background initiation inline so flows read like the old
+        # synchronous ones. The POST response itself still carries 'pending' —
+        # the view answers before the gateway verdict; that IS the contract
+        # (the blocking call froze the whole site under daphne, 2026-07-18).
+        dispatch_patcher = patch(
+            'core.payments._dispatch_initiation', side_effect=_run_initiation,
+        )
+        dispatch_patcher.start()
+        self.addCleanup(dispatch_patcher.stop)
+
     def _gateway_response(self, code='000', txn_ref_no='Gam20260610120000123', **extra):
         # pp_Amount is only included when the test passes one (or fake_post
         # echoes it from the request, like the real gateway does).
@@ -215,7 +228,9 @@ class JazzCashPaymentFlowTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['status'], 'completed')
+        self.assertEqual(response.data['status'], 'pending')
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.status, 'completed')
 
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('500.00'))
@@ -237,7 +252,9 @@ class JazzCashPaymentFlowTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['status'], 'failed')
+        self.assertEqual(response.data['status'], 'pending')
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.status, 'failed')
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
 
@@ -266,11 +283,17 @@ class JazzCashPaymentFlowTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['status'], 'completed')
-        self.assertIsNotNone(response.data['order_id'])
-        self.assertTrue(response.data['order_number'])
+        self.assertEqual(response.data['status'], 'pending')
 
         payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.status, 'completed')
+        self.assertIsNotNone(payment.order_id)
+        # The frontend learns the order from the polling endpoint, not the
+        # POST — it must carry the order once the payment settles.
+        poll = self.client.get(f'/api/payments/jazzcash/{payment.pk}/')
+        self.assertEqual(poll.data['status'], 'completed')
+        self.assertEqual(poll.data['order_id'], payment.order_id)
+        self.assertTrue(poll.data['order_number'])
         # The 5.00 shortfall is below the gateway minimum, so 20.00 is charged.
         self.assertEqual(payment.amount, Decimal('20.00'))
         order = Order.objects.get(pk=payment.order_id)
@@ -311,9 +334,9 @@ class JazzCashPaymentFlowTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['status'], 'completed')
 
         payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.status, 'completed')
         # Shortfall is 250.00, well above the minimum — charge exactly that.
         self.assertEqual(payment.amount, Decimal('250.00'))
         order = Order.objects.get(pk=payment.order_id)
@@ -566,6 +589,36 @@ class JazzCashPaymentFlowTests(TestCase):
         self.buyer_wallet.refresh_from_db()
         self.assertEqual(self.buyer_wallet.balance, Decimal('400.00'))
 
+    def test_admin_inquiry_helper_settles_payments_and_survives_crashes(self):
+        """inquire_payments backs the admin action's background thread: each
+        payment gets its verdict applied, and one crashing inquiry must not
+        stop the rest of the batch."""
+        crashing = self._start_pending_payment(amount=Decimal('100.00'))
+        settling = self._start_pending_payment(amount=Decimal('400.00'))
+
+        def fake_inquiry(path, payload, timeout=None):
+            if payload['pp_TxnRefNo'] == crashing.txn_ref_no:
+                raise ValueError('boom')
+            response = {
+                'pp_ResponseCode': '000',
+                'pp_ResponseMessage': 'Operation processed successfully.',
+                'pp_PaymentResponseCode': '121',
+                'pp_Status': 'Completed',
+                'pp_RetrievalReferenceNo': '202606101200001',
+            }
+            response['pp_SecureHash'] = jazzcash.generate_secure_hash(response)
+            return response
+
+        with patch('core.jazzcash._post', side_effect=fake_inquiry):
+            inquire_payments([crashing.pk, settling.pk])
+
+        crashing.refresh_from_db()
+        settling.refresh_from_db()
+        self.assertEqual(crashing.status, 'pending')
+        self.assertEqual(settling.status, 'completed')
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('400.00'))
+
     def test_reconcile_expires_old_unconfirmed_payment(self):
         payment = self._start_pending_payment()
         JazzCashPayment.objects.filter(pk=payment.pk).update(
@@ -627,3 +680,66 @@ class JazzCashPaymentFlowTests(TestCase):
         self.client.force_authenticate(user=self.seller)
         response = self.client.get(f'/api/payments/jazzcash/{payment.pk}/')
         self.assertEqual(response.status_code, 404)
+
+    def test_initiation_endpoint_answers_before_the_gateway_verdict(self):
+        """The POST must return 'pending' without touching the gateway on the
+        request thread — the initiate call blocks until the buyer approves on
+        their phone, and under daphne that froze the entire site (2026-07-18)."""
+        with patch('core.payments._dispatch_initiation') as dispatch, \
+                patch('core.jazzcash._post') as post:
+            response = self.client.post(
+                '/api/payments/jazzcash/top-up/',
+                {'amount': '500.00', 'mobile_number': '03001234567'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'pending')
+        post.assert_not_called()
+
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        dispatch.assert_called_once_with(payment.pk, 'GamesBazaar wallet top up')
+        self.assertEqual(payment.status, 'pending')
+        self.assertTrue(payment.bill_reference)
+
+
+@override_settings(**JAZZCASH_TEST_SETTINGS)
+class JazzCashBackgroundInitiationTests(TransactionTestCase):
+    """The genuinely threaded path: the initiation thread must see the
+    committed payment row, settle it on its own DB connection, and leave
+    the wallet credited — without the caller ever waiting on the gateway."""
+
+    def test_background_thread_settles_the_payment(self):
+        buyer = User.objects.create_user(username='threadbuyer', password='password123')
+
+        def fake_post(path, payload):
+            response = {
+                'pp_ResponseCode': '000',
+                'pp_ResponseMessage': 'Test response',
+                'pp_TxnRefNo': payload['pp_TxnRefNo'],
+                'pp_RetreivalReferenceNo': '202606101200001',
+                'pp_Amount': payload['pp_Amount'],
+            }
+            response['pp_SecureHash'] = jazzcash.generate_secure_hash(response)
+            return response
+
+        with patch('core.jazzcash._post', side_effect=fake_post):
+            payment = start_jazzcash_payment(
+                user=buyer,
+                purpose='topup',
+                amount=Decimal('500.00'),
+                mobile_number='03001234567',
+                description='GamesBazaar wallet top up',
+            )
+            self.assertEqual(payment.status, 'pending')  # returned immediately
+
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                payment.refresh_from_db()
+                if payment.status != 'pending':
+                    break
+                time.sleep(0.05)
+
+        self.assertEqual(payment.status, 'completed')
+        wallet = Wallet.objects.get(user=buyer)
+        self.assertEqual(wallet.balance, Decimal('500.00'))

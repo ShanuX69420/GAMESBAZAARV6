@@ -3611,7 +3611,11 @@ def prepare_fazer_checkout(listing, raw_fields):
 
     player_name = ''
     try:
-        result = fazer.validate_topup_id(link.fazer_category_id, fields)
+        # Short (connect, read) timeout: this runs inside a checkout POST on
+        # daphne's shared sync thread — a hung supplier must not stall the
+        # site for the full FAZER_REQUEST_TIMEOUT_SECONDS budget.
+        result = fazer.validate_topup_id(link.fazer_category_id, fields,
+                                         timeout=(5, 10))
     except fazer.FazerError:
         # Unreachable OR "ID validation is not available for this
         # category_id" (most categories, verified live 2026-07-11) — never
@@ -3684,7 +3688,10 @@ class ValidateTopupIdView(ScopedPostThrottleMixin, APIView):
             fields[key] = value
 
         try:
-            result = fazer.validate_topup_id(link.fazer_category_id, fields)
+            # Short timeout for the same reason as prepare_fazer_checkout:
+            # this view shares daphne's single sync thread with the whole site.
+            result = fazer.validate_topup_id(link.fazer_category_id, fields,
+                                             timeout=(5, 10))
         except fazer.FazerError:
             # Supplier unreachable, or validation unsupported for this
             # category (the common case) — don't block checkout on a soft

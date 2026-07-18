@@ -185,11 +185,12 @@ def get_order(order_id):
 
 # ── Writes ───────────────────────────────────────────────────────────────────
 
-def validate_topup_id(category_id, fields):
+def validate_topup_id(category_id, fields, timeout=None):
     """Ask Fazer whether a player/user ID exists. Returns the raw response
     ({ok, valid, player_name?, …})."""
     return _request('POST', VALIDATE_TOPUP_ID_PATH,
-                    json_body={'category_id': category_id, 'fields': fields})
+                    json_body={'category_id': category_id, 'fields': fields},
+                    timeout=timeout)
 
 
 def _extract_order(data):

@@ -2,8 +2,14 @@
 
 Lifecycle of a JazzCashPayment:
 
-1. ``start_jazzcash_payment`` creates the row and sends the MWallet request.
-2. The immediate gateway response, the IPN webhook, and the Status Inquiry
+1. ``start_jazzcash_payment`` creates the row and hands the MWallet request
+   to a background thread. The gateway holds that request open while the
+   buyer approves in their JazzCash app (up to
+   ``JAZZCASH_REQUEST_TIMEOUT_SECONDS``), and daphne runs every sync view on
+   ONE shared thread — awaiting it inside the view froze the whole site for
+   each slow buyer (2026-07-18 outage). Clients poll the payment-status
+   endpoint instead.
+2. The gateway response, the IPN webhook, and the Status Inquiry
    API all funnel through ``apply_gateway_result``, which classifies the
    response code and either finalizes, fails, or keeps the payment pending.
 3. ``finalize_jazzcash_payment`` credits the wallet exactly once (idempotent
@@ -18,10 +24,11 @@ opportunistically when the user polls the payment status endpoint.
 
 import json
 import logging
+import threading
 from datetime import timedelta
 from decimal import InvalidOperation
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connections, transaction
 from django.utils import timezone
 
 from . import jazzcash
@@ -50,14 +57,16 @@ TXN_REF_ALLOCATION_ATTEMPTS = 5
 def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
                            listing=None, listing_quantity=1, checkout_payload='',
                            meta_tracking=''):
-    """Create a payment row and send the MWallet initiation request.
+    """Create a payment row and dispatch the MWallet initiation in the background.
 
-    Returns the payment in its post-initiation state. Network failures leave
-    the payment pending so IPN / Status Inquiry can settle it later — the
-    same pp_TxnRefNo is never re-sent. ``checkout_payload`` (already
-    encrypted) carries buyer checkout info for auto-fulfilled purchases;
-    ``meta_tracking`` (JSON) carries browser attribution data for the
-    server-side Meta Purchase event sent when the payment finalizes.
+    Returns the payment in its pending state immediately — callers must NOT
+    wait for the gateway verdict here (see the module docstring). Network
+    failures and process death both leave the payment pending so IPN /
+    Status Inquiry can settle it later — the same pp_TxnRefNo is never
+    re-sent. ``checkout_payload`` (already encrypted) carries buyer checkout
+    info for auto-fulfilled purchases; ``meta_tracking`` (JSON) carries
+    browser attribution data for the server-side Meta Purchase event sent
+    when the payment finalizes.
     """
     payment = None
     for _ in range(TXN_REF_ALLOCATION_ATTEMPTS):
@@ -83,6 +92,41 @@ def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
     payment.bill_reference = f'GB{purpose.upper()}{payment.pk}'
     payment.save(update_fields=['bill_reference', 'updated_at'])
 
+    _dispatch_initiation(payment.pk, description)
+    return payment
+
+
+def _dispatch_initiation(payment_id, description):
+    """Run the blocking gateway call on a daemon thread (tests run it inline).
+
+    Daemon so a restart never waits out an in-flight 65s initiation; the
+    payment simply stays pending and IPN / Status Inquiry settle it.
+    """
+    threading.Thread(
+        target=_initiate_in_background,
+        args=(payment_id, description),
+        name=f'jazzcash-initiate-{payment_id}',
+        daemon=True,
+    ).start()
+
+
+def _initiate_in_background(payment_id, description):
+    try:
+        _run_initiation(payment_id, description)
+    except Exception:
+        # Unknown outcome — leave the payment pending for IPN / Status
+        # Inquiry, exactly like a network failure.
+        logger.exception('JazzCash initiation for payment %s crashed', payment_id)
+    finally:
+        # This thread's DB connection would otherwise linger until process
+        # exit — request_finished never fires for it.
+        connections.close_all()
+
+
+def _run_initiation(payment_id, description):
+    """Send the MWallet request for a freshly created payment and apply the
+    gateway's verdict. Blocks for as long as the buyer takes to approve."""
+    payment = JazzCashPayment.objects.get(pk=payment_id)
     try:
         response = jazzcash.initiate_mwallet_payment(
             amount=payment.amount,
@@ -90,6 +134,14 @@ def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
             txn_ref_no=payment.txn_ref_no,
             bill_reference=payment.bill_reference,
             description=description,
+        )
+    except jazzcash.JazzCashNotConfigured as exc:
+        # Nothing was sent, so the outcome IS known — don't strand the buyer
+        # on a pending payment that can never confirm.
+        logger.error('JazzCash initiation for %s aborted: %s', payment.txn_ref_no, exc)
+        return mark_jazzcash_payment_failed(
+            payment.pk,
+            note='JazzCash is not available right now — nothing was charged.',
         )
     except jazzcash.JazzCashUnavailable as exc:
         logger.warning('JazzCash initiation for %s had no usable response: %s',
@@ -334,6 +386,39 @@ def mark_jazzcash_payment_failed(payment_id, *, response_code='', response_messa
     logger.info('JazzCash payment %s marked failed (code=%s)',
                 payment.txn_ref_no, payment.response_code)
     return payment
+
+
+def dispatch_status_inquiries(payment_ids):
+    """Run status inquiries for these payments on a daemon thread.
+
+    For the admin "Run JazzCash status inquiry" action: the inquiry call can
+    hang for its full 65s timeout per payment (an inquiry against a stuck
+    157-pending payment did exactly that during the 2026-07-18 outage), so
+    it must never run on daphne's shared request thread.
+    """
+    threading.Thread(
+        target=_inquire_in_background,
+        args=(list(payment_ids),),
+        name='jazzcash-admin-inquiry',
+        daemon=True,
+    ).start()
+
+
+def _inquire_in_background(payment_ids):
+    try:
+        inquire_payments(payment_ids)
+    finally:
+        connections.close_all()
+
+
+def inquire_payments(payment_ids):
+    """Run a status inquiry for each payment; one bad row never stops the rest."""
+    for payment in JazzCashPayment.objects.filter(pk__in=payment_ids).exclude(
+            status='completed'):
+        try:
+            run_status_inquiry(payment)
+        except Exception:
+            logger.exception('Status inquiry for payment %s crashed', payment.pk)
 
 
 def run_status_inquiry(payment, timeout=None):

@@ -337,9 +337,9 @@ export default function ListingDetailClient({ initialListing = null }) {
   const jazzCashShortfall = Math.max(0, parseFloat(totalPrice) - walletBalance);
   const jazzCashCharge = Math.max(jazzCashShortfall, MIN_JAZZCASH_PAYMENT);
   const jazzCashChange = jazzCashCharge - jazzCashShortfall;
-  // JazzCash holds the initiate call open while the buyer approves on their
-  // phone, so the prompt has to show for the whole request — not just once the
-  // gateway has come back saying "pending".
+  // The initiate endpoint answers "pending" right away and we poll while the
+  // buyer approves on their phone, so the prompt has to show for the whole
+  // buying window — initiation and polling both.
   const jazzCashInFlight = payWithJazzCash && buying;
 
   return (
