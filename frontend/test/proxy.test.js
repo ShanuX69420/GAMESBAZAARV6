@@ -61,6 +61,10 @@ describe('security proxy', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk/v1');
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://realtime.gamesbazaar.pk/socket');
     vi.stubEnv('NEXT_PUBLIC_IMAGE_HOSTS', 'cdn.gamesbazaar.pk, https://media.gamesbazaar.pk/images');
+    vi.stubEnv(
+      'NEXT_PUBLIC_SENTRY_DSN',
+      'https://examplepublickey@o4511546.ingest.de.sentry.io/4511546257715280'
+    );
     const { module, nextCalls } = await importFreshProxy();
 
     const request = { headers: new Headers([['accept', 'text/html']]) };
@@ -91,6 +95,11 @@ describe('security proxy', () => {
     expect(csp).toContain('frame-src https://accounts.google.com');
     expect(csp).toContain('https://cdn.gamesbazaar.pk');
     expect(csp).toContain('https://media.gamesbazaar.pk');
+    expect(csp).toContain('https://o4511546.ingest.de.sentry.io');
+    expect(csp).not.toContain('examplepublickey');
+    expect(csp).toContain(
+      "form-action 'self' https://www.facebook.com https://web.facebook.com"
+    );
     expect(csp).toContain('upgrade-insecure-requests');
 
     expect(response.headers.get('Strict-Transport-Security')).toBe(
@@ -121,6 +130,7 @@ describe('security proxy', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'not a url');
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'also not a url');
     vi.stubEnv('NEXT_PUBLIC_IMAGE_HOSTS', 'bad url, wss://not-an-image.example');
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'not a dsn');
     const { module } = await importFreshProxy();
 
     const response = module.proxy({ headers: new Headers() });
@@ -132,6 +142,7 @@ describe('security proxy', () => {
     expect(csp).not.toContain('also not a url');
     expect(csp).not.toContain('bad url');
     expect(csp).not.toContain('wss://not-an-image.example');
+    expect(csp).not.toContain('not a dsn');
   });
 
   it('uses the same static CSP for prerendered and dynamic routes', async () => {

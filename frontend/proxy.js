@@ -70,6 +70,8 @@ function sourceList(values) {
 function buildCspHeader() {
   const apiOrigin = originFromEnv(process.env.NEXT_PUBLIC_API_URL, ['https:']);
   const wsOrigin = originFromEnv(process.env.NEXT_PUBLIC_WS_URL, ['wss:']);
+  // The DSN's origin is where the browser SDK delivers error envelopes.
+  const sentryOrigin = originFromEnv(process.env.NEXT_PUBLIC_SENTRY_DSN, ['https:']);
   const imageOrigins = originsFromEnvList(process.env.NEXT_PUBLIC_IMAGE_HOSTS, ['http:', 'https:']);
 
   const analyticsAndAdsOrigins = [
@@ -96,9 +98,17 @@ function buildCspHeader() {
     "'self'",
     apiOrigin,
     wsOrigin,
+    sentryOrigin,
     GOOGLE_IDENTITY_ORIGIN,
     ...analyticsAndAdsOrigins,
     ...META_ORIGINS,
+  ]);
+  // fbevents.js falls back to a hidden-form POST to facebook.com/tr when an
+  // event payload is too large for its image/beacon transports.
+  const formAction = sourceList([
+    "'self'",
+    'https://www.facebook.com',
+    'https://web.facebook.com',
   ]);
   const imgSrc = sourceList([
     "'self'",
@@ -125,7 +135,7 @@ function buildCspHeader() {
     "base-uri 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
-    "form-action 'self'",
+    `form-action ${formAction}`,
     "font-src 'self' data: https://fonts.gstatic.com",
     `img-src ${imgSrc}`,
     `style-src ${styleSrc}`,
