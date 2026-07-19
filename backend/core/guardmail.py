@@ -1,10 +1,12 @@
-"""Fetch login-verification codes from the shared guard mailbox.
+"""Fetch login-verification codes from the guard mailbox over IMAP.
 
-Email-guard offline-activation accounts get their codes from ONE dedicated
-mailbox that this module reads over IMAP. The platforms only email a code
-when a login is attempted, so the flow is: buyer starts the login → the
-platform emails the code → buyer presses the button / types !code → the
-newest fresh code email for that account is parsed and the code handed over.
+Email-guard offline-activation accounts normally get their codes from ONE
+shared dedicated mailbox. Accounts registered under a mailbox that cannot
+forward into it (e.g. Rambler) store their own IMAP credentials on the
+OfflineAccount row and are read directly instead. The platforms only email
+a code when a login is attempted, so the flow is: buyer starts the login →
+the platform emails the code → buyer presses the button / types !code →
+the newest fresh code email for that account is parsed and handed over.
 
 How an email is tied to an account differs per platform:
 - Steam allows the same contact email on many accounts, and its guard email
@@ -96,6 +98,32 @@ def is_configured():
         and settings.GUARD_EMAIL_IMAP_USER
         and settings.GUARD_EMAIL_IMAP_PASSWORD
     )
+
+
+# Own-mailbox accounts always connect over IMAPS. No provider that matters
+# uses anything but 993 — not worth a per-account field until one does.
+OWN_MAILBOX_PORT = 993
+
+
+def _mailbox_credentials(account):
+    """(host, port, user, password) of the mailbox holding this account's
+    codes: the account's own mailbox when configured, the shared guard
+    mailbox otherwise. Raises GuardMailError when neither is usable."""
+    if account.has_own_mailbox:
+        # Local import: services imports this module at load time.
+        from .services import decrypt_sensitive_text
+        user = str(account.mailbox_user).strip()
+        password = decrypt_sensitive_text(account.mailbox_password)
+        if not (user and password):
+            # Undecryptable (key mishap) or half-filled credentials must
+            # fail loudly, never silently fall back to the shared mailbox.
+            raise GuardMailError(
+                "account's own mailbox is missing its user or password")
+        return str(account.mailbox_host).strip(), OWN_MAILBOX_PORT, user, password
+    if not is_configured():
+        raise GuardMailError('guard mailbox is not configured')
+    return (settings.GUARD_EMAIL_IMAP_HOST, settings.GUARD_EMAIL_IMAP_PORT,
+            settings.GUARD_EMAIL_IMAP_USER, settings.GUARD_EMAIL_IMAP_PASSWORD)
 
 
 def subject_allowed(platform, subject):
@@ -213,8 +241,7 @@ def fetch_latest_code(account):
     """The newest fresh login code for an OfflineAccount, or None when no
     fresh code email exists yet (buyer must attempt the login first).
     Raises GuardMailError when the mailbox cannot be read."""
-    if not is_configured():
-        raise GuardMailError('guard mailbox is not configured')
+    host, port, user, password = _mailbox_credentials(account)
 
     spec = PLATFORM_MAIL[account.platform]
     cutoff = timezone.now() - timedelta(
@@ -231,11 +258,8 @@ def fetch_latest_code(account):
 
     conn = None
     try:
-        conn = imaplib.IMAP4_SSL(settings.GUARD_EMAIL_IMAP_HOST,
-                                 settings.GUARD_EMAIL_IMAP_PORT,
-                                 timeout=IMAP_TIMEOUT_SECONDS)
-        conn.login(settings.GUARD_EMAIL_IMAP_USER,
-                   settings.GUARD_EMAIL_IMAP_PASSWORD)
+        conn = imaplib.IMAP4_SSL(host, port, timeout=IMAP_TIMEOUT_SECONDS)
+        conn.login(user, password)
         conn.select('INBOX', readonly=True)
         status, data = conn.search(None, criteria)
         if status != 'OK':

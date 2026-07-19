@@ -1395,13 +1395,18 @@ def issue_guard_code(order, *, account=None):
         except guardmail.GuardMailError as exc:
             logger.warning('Guard mailbox unavailable for account %s: %s',
                            account.pk, exc)
+            mailbox_hint = (
+                "Check the account's own mailbox settings in admin."
+                if account.has_own_mailbox
+                else 'Check the GUARD_EMAIL_IMAP_* settings.'
+            )
             _alert_seller_guard_problem(
                 order, account,
                 title='Login-code mailbox is unreachable',
                 message=(
                     f'Could not read the guard mailbox for account '
                     f'"{account.label}" (order #{order.order_number}): '
-                    f'{str(exc)[:150]}. Check the GUARD_EMAIL_IMAP_* settings.'
+                    f'{str(exc)[:150]}. {mailbox_hint}'
                 ),
             )
             return None, ('Could not fetch the code right now — the seller '

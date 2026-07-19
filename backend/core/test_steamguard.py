@@ -555,6 +555,67 @@ class EmailGuardTests(OfflineAccountTestBase):
         self.assertIn('notified', response.data['error'])
 
 
+# Shared mailbox force-unset (same reason as EmailGuardTests): these tests
+# prove the account's OWN credentials alone are enough.
+@override_settings(GUARD_EMAIL_IMAP_HOST='', GUARD_EMAIL_IMAP_USER='',
+                   GUARD_EMAIL_IMAP_PASSWORD='')
+class OwnMailboxTests(TestCase):
+    """Accounts whose registered mailbox cannot forward (e.g. Rambler)
+    carry their own IMAP credentials and are read directly."""
+
+    def make_account(self, **overrides):
+        fields = dict(
+            label='Rambler acct', platform='steam', login='gbacct1',
+            password='acct-pass', guard_type='email',
+            mailbox_host='imap.rambler.ru', mailbox_user='acct@rambler.ru',
+            mailbox_password='mail-pass',
+        )
+        fields.update(overrides)
+        account = OfflineAccount(**fields)
+        account.save()
+        return account
+
+    def test_partial_mailbox_config_rejected(self):
+        account = OfflineAccount(
+            label='x', platform='steam', login='y', password='z',
+            guard_type='email', mailbox_host='imap.rambler.ru',
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            account.full_clean()
+        self.assertIn('mailbox_user', ctx.exception.message_dict)
+        self.assertIn('mailbox_password', ctx.exception.message_dict)
+
+    def test_full_mailbox_config_validates(self):
+        self.make_account().full_clean()
+
+    def test_mailbox_password_encrypted_on_save(self):
+        account = self.make_account()
+        account.refresh_from_db()
+        self.assertNotEqual(account.mailbox_password, 'mail-pass')
+        self.assertEqual(
+            decrypt_sensitive_text(account.mailbox_password), 'mail-pass')
+
+    @patch('core.guardmail.imaplib.IMAP4_SSL')
+    def test_fetch_connects_to_the_accounts_own_mailbox(self, imap_cls):
+        account = self.make_account()
+        conn = imap_cls.return_value
+        conn.search.return_value = ('OK', [b''])
+        self.assertIsNone(guardmail.fetch_latest_code(account))
+        imap_cls.assert_called_once_with(
+            'imap.rambler.ru', guardmail.OWN_MAILBOX_PORT,
+            timeout=guardmail.IMAP_TIMEOUT_SECONDS)
+        conn.login.assert_called_once_with('acct@rambler.ru', 'mail-pass')
+
+    def test_undecryptable_mailbox_password_fails_loudly(self):
+        # decrypt_sensitive_text returns '' on a key mishap — that must
+        # raise, never silently fall back to the shared mailbox.
+        account = self.make_account()
+        OfflineAccount.objects.filter(pk=account.pk).update(mailbox_password='')
+        account.refresh_from_db()
+        with self.assertRaises(guardmail.GuardMailError):
+            guardmail.fetch_latest_code(account)
+
+
 class PlatformMailParserTests(SimpleTestCase):
     """Ubisoft/EA subject vetting and digit-code extraction."""
 

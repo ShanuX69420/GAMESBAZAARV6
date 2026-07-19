@@ -1532,6 +1532,10 @@ class OfflineAccount(models.Model):
     of the guard mailbox, or an address auto-forwarded into it) and codes are
     matched by the To: address instead. Either way, entitled buyers get
     codes on demand (order-page button or !code in chat).
+
+    Accounts registered under a mailbox that cannot forward (e.g. Rambler)
+    set the ``mailbox_*`` fields instead: codes are then read directly from
+    that mailbox over IMAP rather than from the shared one.
     """
     PLATFORM_CHOICES = [
         ('steam', 'Steam'),
@@ -1565,8 +1569,9 @@ class OfflineAccount(models.Model):
     guard_type = models.CharField(
         max_length=8, choices=GUARD_TYPE_CHOICES, default='totp',
         help_text='email: code emails for this account must land in the '
-                  'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars). '
-                  'Ubisoft/EA/Epic accounts are always email.',
+                  'shared guard mailbox (GUARD_EMAIL_IMAP_* env vars) — '
+                  'or its own mailbox, when the mailbox fields below are '
+                  'set. Ubisoft/EA/Epic accounts are always email.',
     )
     guard_email = models.CharField(
         max_length=254, blank=True, default='',
@@ -1574,7 +1579,26 @@ class OfflineAccount(models.Model):
                   'registered under. Must deliver into the shared guard '
                   'mailbox (Gmail dot/plus alias of it, or auto-forwarded) — '
                   'codes are matched by this To: address. Steam accounts '
-                  'leave it blank (matched by login in the email body).',
+                  'leave it blank (matched by login in the email body). '
+                  'Own-mailbox accounts: the mailbox\'s own address.',
+    )
+    mailbox_host = models.CharField(
+        max_length=254, blank=True, default='',
+        help_text='Only for accounts whose registered mailbox cannot forward '
+                  '(e.g. Rambler): its IMAP server, e.g. imap.rambler.ru — '
+                  'codes are then fetched from that mailbox directly '
+                  '(SSL, port 993) instead of the shared guard mailbox. '
+                  'Enable IMAP/mail-client access in the provider settings '
+                  'first. Leave blank to use the shared mailbox.',
+    )
+    mailbox_user = models.CharField(
+        max_length=254, blank=True, default='',
+        help_text='Own mailbox only: its login, usually the full address.',
+    )
+    mailbox_password = models.TextField(
+        blank=True, default='',
+        help_text='Own mailbox only: stored encrypted. Paste the plaintext '
+                  'mailbox password to change it.',
     )
     shared_secret = models.TextField(
         blank=True, default='',
@@ -1617,6 +1641,24 @@ class OfflineAccount(models.Model):
             raise ValidationError({
                 'shared_secret': 'Required for the mobile-authenticator guard type.',
             })
+        mailbox = {
+            'mailbox_host': self.mailbox_host,
+            'mailbox_user': self.mailbox_user,
+            'mailbox_password': self.mailbox_password,
+        }
+        missing = [f for f, v in mailbox.items() if not str(v).strip()]
+        if len(missing) not in (0, 3):
+            raise ValidationError({
+                f: 'An own mailbox needs host, user and password together.'
+                for f in missing
+            })
+
+    @property
+    def has_own_mailbox(self):
+        """True when this account's codes are read from its own mailbox
+        (a registered address that cannot forward, e.g. Rambler) instead
+        of the shared guard mailbox."""
+        return bool(str(self.mailbox_host).strip())
 
     def save(self, *args, **kwargs):
         # encrypt_sensitive_text is a no-op on already-encrypted values, so
@@ -1624,6 +1666,8 @@ class OfflineAccount(models.Model):
         from .services import encrypt_sensitive_text
         self.password = encrypt_sensitive_text(str(self.password).strip())
         self.shared_secret = encrypt_sensitive_text(str(self.shared_secret).strip())
+        self.mailbox_password = encrypt_sensitive_text(
+            str(self.mailbox_password).strip())
         super().save(*args, **kwargs)
 
     def code_label(self):

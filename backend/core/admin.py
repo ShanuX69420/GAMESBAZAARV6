@@ -404,14 +404,15 @@ class ListingAdmin(admin.ModelAdmin):
 class OfflineAccountAdmin(admin.ModelAdmin):
     """Offline-activation accounts (Steam/Ubisoft/EA/Epic): credentials + guard.
 
-    Paste plaintext into password / shared_secret — they are encrypted on
-    save (an already-encrypted value is kept as-is). The live code column
-    exists so support questions can be answered without any external tool.
+    Paste plaintext into password / shared_secret / mailbox_password — they
+    are encrypted on save (an already-encrypted value is kept as-is). The
+    live code column exists so support questions can be answered without
+    any external tool.
     """
     list_display = ['label', 'platform', 'login', 'guard_type', 'guard_email',
                     'enabled', 'code_window_days', 'listing_count', 'live_code']
     list_filter = ['platform', 'enabled', 'guard_type']
-    search_fields = ['label', 'login', 'guard_email']
+    search_fields = ['label', 'login', 'guard_email', 'mailbox_user']
     readonly_fields = ['live_code', 'created_at', 'updated_at']
 
     @admin.display(description='Listings')
