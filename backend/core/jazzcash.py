@@ -213,7 +213,11 @@ def inquire_transaction_status(txn_ref_no, timeout=None):
         'pp_Password': settings.JAZZCASH_PASSWORD,
     }
     payload['pp_SecureHash'] = generate_secure_hash(payload)
-    return _post(STATUS_INQUIRY_PATH, payload, timeout=timeout)
+    return _post(
+        STATUS_INQUIRY_PATH,
+        payload,
+        timeout=timeout or settings.JAZZCASH_INQUIRY_TIMEOUT_SECONDS,
+    )
 
 
 def refund_mwallet_payment(*, txn_ref_no, amount):

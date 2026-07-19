@@ -487,6 +487,10 @@ JAZZCASH_MERCHANT_MPIN = os.environ.get('JAZZCASH_MERCHANT_MPIN', '').strip()
 # First three letters of the merchant domain, used in pp_TxnRefNo.
 JAZZCASH_TXN_REF_PREFIX = (os.environ.get('JAZZCASH_TXN_REF_PREFIX', 'Gam').strip() or 'Gam')[:3]
 JAZZCASH_REQUEST_TIMEOUT_SECONDS = env_int('JAZZCASH_REQUEST_TIMEOUT_SECONDS', 65)
+# Status inquiries have no human in the loop (unlike initiate, where the buyer
+# approves on their phone), so a hung gateway should fail fast, not eat the
+# full initiate budget.
+JAZZCASH_INQUIRY_TIMEOUT_SECONDS = env_int('JAZZCASH_INQUIRY_TIMEOUT_SECONDS', 15)
 # Sanity ceiling for a single JazzCash purchase charge (PKR). JazzCash itself
 # declines anything beyond the customer's wallet limits; this only blocks
 # absurd amounts that would overflow money fields.

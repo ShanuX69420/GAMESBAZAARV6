@@ -392,9 +392,10 @@ def dispatch_status_inquiries(payment_ids):
     """Run status inquiries for these payments on a daemon thread.
 
     For the admin "Run JazzCash status inquiry" action: the inquiry call can
-    hang for its full 65s timeout per payment (an inquiry against a stuck
-    157-pending payment did exactly that during the 2026-07-18 outage), so
-    it must never run on daphne's shared request thread.
+    hang for its full timeout per payment (an inquiry against a stuck
+    157-pending payment hung for the then-65s budget during the 2026-07-18
+    outage; the default is now JAZZCASH_INQUIRY_TIMEOUT_SECONDS), so it must
+    never run on the request thread.
     """
     threading.Thread(
         target=_inquire_in_background,

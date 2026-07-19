@@ -122,6 +122,7 @@ class JazzCashInitiationRequestTests(TestCase):
             'https://pgw.jazzcash.com.pk/api/payment/DoTransaction',
         )
 
+
     def test_initiation_sends_exactly_the_documented_fields(self):
         payload = self._capture_request()['payload']
         self.assertEqual(set(payload), {
@@ -148,6 +149,37 @@ class JazzCashInitiationRequestTests(TestCase):
         self.assertNotEqual(
             payload['pp_SecureHash'], jazzcash.generate_secure_hash(without),
         )
+
+
+@override_settings(**JAZZCASH_TEST_SETTINGS)
+class JazzCashInquiryTimeoutTests(TestCase):
+    """Status inquiries must not inherit the 65s human-in-the-loop initiate
+    budget — no one is typing a PIN during an inquiry, so a hung gateway
+    should fail fast (JAZZCASH_INQUIRY_TIMEOUT_SECONDS)."""
+
+    def _capture_inquiry_timeout(self, **kwargs):
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured['timeout'] = timeout
+            raise requests.RequestException('captured')
+
+        with patch('core.jazzcash.requests.post', side_effect=fake_post):
+            with self.assertRaises(jazzcash.JazzCashUnavailable):
+                jazzcash.inquire_transaction_status('Gam20260610120000123', **kwargs)
+        return captured['timeout']
+
+    def test_inquiry_defaults_to_the_short_inquiry_timeout(self):
+        from django.conf import settings
+
+        self.assertEqual(
+            self._capture_inquiry_timeout(),
+            settings.JAZZCASH_INQUIRY_TIMEOUT_SECONDS,
+        )
+        self.assertLessEqual(settings.JAZZCASH_INQUIRY_TIMEOUT_SECONDS, 15)
+
+    def test_explicit_inquiry_timeout_still_wins(self):
+        self.assertEqual(self._capture_inquiry_timeout(timeout=(5, 15)), (5, 15))
 
 
 @override_settings(**JAZZCASH_TEST_SETTINGS)
