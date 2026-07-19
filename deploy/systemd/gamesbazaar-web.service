@@ -1,0 +1,25 @@
+[Unit]
+Description=GamesBazaar Django HTTP workers (gunicorn WSGI)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+# 3 workers x 4 threads = 12 request lanes on the 2-vCPU droplet, so one
+# blocking call can never freeze the whole site (the 2026-07-18 outage class).
+# WebSockets stay on daphne (gamesbazaar-backend, :8000); nginx routes /ws/
+# there and everything else here.
+ExecStart=/opt/gamesbazaar/venv/bin/gunicorn gamesbazaar.wsgi:application \
+    --bind 127.0.0.1:8001 \
+    --worker-class gthread --workers 3 --threads 4 \
+    --timeout 120 --graceful-timeout 30 \
+    --max-requests 1000 --max-requests-jitter 100
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

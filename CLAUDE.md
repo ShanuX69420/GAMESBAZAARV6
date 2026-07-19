@@ -34,14 +34,17 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 
 ## Production
 
-- DigitalOcean VPS `68.183.184.129` (**Singapore / SGP1**, 1 GB). Domains: gamesbazaar.pk, www, api.
+- DigitalOcean VPS `68.183.184.129` (**Singapore / SGP1**, Premium AMD 2 vCPU / 4 GB
+  since 2026-07-19). Domains: gamesbazaar.pk, www, api.
   Migrated out of Bangalore on 2026-07-14 — see the India landmine below. **Never move it
   back to an Indian region.** DNS is Cloudflare, 3 A records (apex/www/api), TTL 300s,
   proxy OFF (grey cloud — the orange cloud made the site slower, don't re-enable).
 - SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129`
   — then run git/pip/manage.py as `sudo -u gamesbazaar`.
 - App at `/opt/gamesbazaar/app`, venv `/opt/gamesbazaar/venv`.
-- Services: `gamesbazaar-backend` (daphne :8000), `gamesbazaar-frontend`.
+- Services: `gamesbazaar-web` (gunicorn :8001 — ALL plain HTTP),
+  `gamesbazaar-backend` (daphne :8000 — websockets `/ws/` ONLY; nginx does the
+  split), `gamesbazaar-frontend`. Restart BOTH backend halves after a backend deploy.
   Timers: auto-confirm + reconcile-jazzcash (10 min), release-holds (30 min),
   db-backup (nightly 21:30 UTC → R2 `db-backups/`).
 - Deploy order matters: **frontend build BEFORE migrate, restart backend right after

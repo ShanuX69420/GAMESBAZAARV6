@@ -1,5 +1,5 @@
 [Unit]
-Description=GamesBazaar Django ASGI backend
+Description=GamesBazaar websocket backend (daphne — nginx routes only /ws/ here; HTTP is gamesbazaar-web)
 After=network.target postgresql.service redis-server.service
 Wants=postgresql.service redis-server.service
 

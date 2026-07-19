@@ -57,7 +57,8 @@ After you SSH in, you are running Linux commands on the VPS.
 These are the main services:
 
 ```bash
-gamesbazaar-backend
+gamesbazaar-web       # gunicorn — serves ALL normal HTTP requests (:8001)
+gamesbazaar-backend   # daphne — serves ONLY websockets /ws/ (:8000)
 gamesbazaar-frontend
 nginx
 postgresql
@@ -67,7 +68,7 @@ redis-server
 Check if everything is running:
 
 ```bash
-systemctl is-active gamesbazaar-backend gamesbazaar-frontend nginx postgresql redis-server
+systemctl is-active gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend nginx postgresql redis-server
 ```
 
 You want each line to say:
@@ -131,9 +132,9 @@ sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --n
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
 
-systemctl restart gamesbazaar-backend gamesbazaar-frontend
+systemctl restart gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend
 
-systemctl is-active gamesbazaar-backend gamesbazaar-frontend nginx postgresql redis-server
+systemctl is-active gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend nginx postgresql redis-server
 ```
 
 If all services say `active`, the deploy probably worked.
@@ -171,18 +172,18 @@ sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py collectstatic --noinput
 sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py check --deploy --fail-level ERROR
 
-systemctl restart gamesbazaar-backend
-systemctl is-active gamesbazaar-backend
+systemctl restart gamesbazaar-web gamesbazaar-backend
+systemctl is-active gamesbazaar-web gamesbazaar-backend
 ```
 
 ---
 
 ## Restart Commands
 
-Restart backend:
+Restart backend (both halves — gunicorn HTTP + daphne websockets):
 
 ```bash
-systemctl restart gamesbazaar-backend
+systemctl restart gamesbazaar-web gamesbazaar-backend
 ```
 
 Restart frontend:
@@ -194,7 +195,7 @@ systemctl restart gamesbazaar-frontend
 Restart both app services:
 
 ```bash
-systemctl restart gamesbazaar-backend gamesbazaar-frontend
+systemctl restart gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend
 ```
 
 Restart Nginx:
