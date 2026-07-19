@@ -736,6 +736,134 @@ class JazzCashPaymentFlowTests(TestCase):
 
 
 @override_settings(**JAZZCASH_TEST_SETTINGS)
+class JazzCashDuplicatePaymentGuardTests(TestCase):
+    """A retry while the previous charge still awaits the buyer's MPIN must
+    resume that charge, never start a second one — a buyer who retried a
+    stuck purchase approved both prompts and paid twice (2026-07-18)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='dupbuyer', password='password123')
+        self.seller = User.objects.create_user(username='dupseller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        game = Game.objects.create(name='Dup Game', slug='dup-game')
+        category = Category.objects.create(name='Dup Accounts', slug='dup-accounts')
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Dup item',
+            price=Decimal('150.00'),
+            quantity=5,
+            status='active',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+
+        # Every payment stays pending: the guard lives in the gap between
+        # initiation and the buyer's MPIN, so the gateway never answers here.
+        dispatch_patcher = patch('core.payments._dispatch_initiation')
+        self.dispatch = dispatch_patcher.start()
+        self.addCleanup(dispatch_patcher.stop)
+
+    def _post_topup(self, amount='500.00'):
+        return self.client.post(
+            '/api/payments/jazzcash/top-up/',
+            {'amount': amount, 'mobile_number': '03001234567'},
+            format='json',
+        )
+
+    def _post_buy(self, listing=None):
+        return self.client.post(
+            '/api/payments/jazzcash/buy/',
+            {'listing_id': (listing or self.listing).id, 'quantity': 1,
+             'mobile_number': '03001234567'},
+            format='json',
+        )
+
+    def _age_payment(self, pk, minutes):
+        # created_at is auto_now_add — backdate via update().
+        JazzCashPayment.objects.filter(pk=pk).update(
+            created_at=timezone.now() - timedelta(minutes=minutes),
+        )
+
+    def test_topup_retry_within_window_resumes_the_pending_payment(self):
+        first = self._post_topup()
+        self.assertEqual(first.status_code, 201)
+
+        second = self._post_topup()
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data['id'], first.data['id'])
+        self.assertEqual(second.data['status'], 'pending')
+        self.assertEqual(JazzCashPayment.objects.count(), 1)
+        self.assertEqual(self.dispatch.call_count, 1)
+
+    def test_buy_retry_within_window_resumes_the_pending_payment(self):
+        first = self._post_buy()
+        self.assertEqual(first.status_code, 201)
+
+        second = self._post_buy()
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data['id'], first.data['id'])
+        self.assertEqual(second.data['status'], 'pending')
+        self.assertEqual(JazzCashPayment.objects.count(), 1)
+        self.assertEqual(self.dispatch.call_count, 1)
+
+    def test_retry_after_the_window_starts_a_fresh_charge(self):
+        first = self._post_buy()
+        self._age_payment(first.data['id'], minutes=3)
+
+        second = self._post_buy()
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        self.assertEqual(JazzCashPayment.objects.count(), 2)
+        self.assertEqual(self.dispatch.call_count, 2)
+
+    def test_settled_payment_does_not_block_a_new_charge(self):
+        first = self._post_topup()
+        JazzCashPayment.objects.filter(pk=first.data['id']).update(status='failed')
+
+        second = self._post_topup()
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        self.assertEqual(JazzCashPayment.objects.count(), 2)
+
+    def test_buy_guard_is_per_listing(self):
+        other = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Other dup item',
+            price=Decimal('200.00'),
+            quantity=5,
+            status='active',
+        )
+        first = self._post_buy()
+        second = self._post_buy(listing=other)
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        self.assertEqual(JazzCashPayment.objects.count(), 2)
+
+    def test_purposes_do_not_cross_guard(self):
+        buy = self._post_buy()
+        topup = self._post_topup()
+        self.assertEqual(topup.status_code, 201)
+        self.assertNotEqual(topup.data['id'], buy.data['id'])
+        self.assertEqual(JazzCashPayment.objects.count(), 2)
+
+    def test_other_users_pending_payment_does_not_match(self):
+        first = self._post_topup()
+
+        other_user = User.objects.create_user(username='dupother', password='password123')
+        self.client.force_authenticate(user=other_user)
+        second = self._post_topup()
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(second.data['id'], first.data['id'])
+        self.assertEqual(JazzCashPayment.objects.count(), 2)
+
+
+@override_settings(**JAZZCASH_TEST_SETTINGS)
 class JazzCashBackgroundInitiationTests(TransactionTestCase):
     """The genuinely threaded path: the initiation thread must see the
     committed payment row, settle it on its own DB connection, and leave

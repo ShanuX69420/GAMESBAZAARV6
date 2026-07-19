@@ -53,6 +53,32 @@ PAYMENT_EXPIRY_AGE = timedelta(hours=25)
 
 TXN_REF_ALLOCATION_ATTEMPTS = 5
 
+# A retry inside this window resumes the existing pending charge instead of
+# sending a second one. Kept short on purpose: the MPIN prompt on the buyer's
+# phone is long dead after two minutes, so genuinely fresh retries stay
+# possible. A pending payment that confirms late (money really moved) is
+# settled by IPN / Status Inquiry regardless of this guard.
+PENDING_REUSE_WINDOW = timedelta(minutes=2)
+
+
+def find_reusable_pending_payment(*, user, purpose, listing=None):
+    """Return the user's freshest still-pending payment inside the reuse window.
+
+    The initiate views answer with this payment instead of charging again —
+    on 2026-07-18 a buyer retried a stuck purchase and approved two MPIN
+    prompts, paying twice for one item. Purchases only match a pending
+    payment for the same listing; a different listing is a new intent.
+    """
+    payments = JazzCashPayment.objects.filter(
+        user=user,
+        purpose=purpose,
+        status='pending',
+        created_at__gte=timezone.now() - PENDING_REUSE_WINDOW,
+    )
+    if purpose == 'purchase':
+        payments = payments.filter(listing=listing)
+    return payments.order_by('-created_at').first()
+
 
 def start_jazzcash_payment(*, user, purpose, amount, mobile_number, description,
                            listing=None, listing_quantity=1, checkout_payload='',

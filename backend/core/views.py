@@ -154,6 +154,7 @@ from .services import (
 from . import fazer, fulfillment, jazzcash, meta_capi
 from .payments import (
     apply_gateway_result,
+    find_reusable_pending_payment,
     maybe_refresh_payment_status,
     start_jazzcash_payment,
 )
@@ -3069,6 +3070,14 @@ class JazzCashTopUpView(ScopedPostThrottleMixin, APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # Duplicate-charge guard: a top-up they started moments ago is still
+        # waiting for their MPIN — resume it instead of pushing a second
+        # prompt they might also approve. Same payload as a fresh initiation,
+        # so the frontend just polls the existing payment.
+        existing = find_reusable_pending_payment(user=request.user, purpose='topup')
+        if existing is not None:
+            return Response(JazzCashPaymentSerializer(existing).data)
+
         try:
             payment = start_jazzcash_payment(
                 user=request.user,
@@ -3115,6 +3124,18 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
             )
         except Listing.DoesNotExist:
             return Response({'error': 'This listing is no longer available.'}, status=400)
+
+        # Duplicate-charge guard: a payment for this listing they started
+        # moments ago is still waiting for their MPIN — resume it instead of
+        # charging again (a retrying buyer approved two prompts and paid twice
+        # for one item, 2026-07-18). Checked before revalidating: the
+        # authoritative checks run when the confirmed payment executes anyway,
+        # and this skips a needless repeat Fazer ID validation.
+        existing = find_reusable_pending_payment(
+            user=request.user, purpose='purchase', listing=listing,
+        )
+        if existing is not None:
+            return Response(JazzCashPaymentSerializer(existing).data)
 
         # Fail fast on obviously invalid purchases. The authoritative checks
         # run again (with locks) when the confirmed payment executes the
