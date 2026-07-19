@@ -57,6 +57,21 @@ CATEGORY_SECTION_BY_SLUG = {
 }
 CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v1'
 BROWSE_CACHE_SECONDS = 30
+# Shared-cache TTL for the public browse endpoints nginx caches (games/,
+# home/popular/, categories/). Browsers keep the short max-age values; s-maxage
+# lets nginx serve the same response for 5 minutes, so cold-cache bursts
+# (homepage SSR fan-out, crawlers) refill each URL once per window instead of
+# once a minute — the 2026-07-18 sitewide lag bursts.
+BROWSE_SHARED_CACHE_SECONDS = 300
+
+
+def public_cache_header(browser_seconds):
+    return (
+        f'public, max-age={browser_seconds}, '
+        f's-maxage={BROWSE_SHARED_CACHE_SECONDS}'
+    )
+
+
 # Sitemap listing feed: crawlers hit this rarely, so cache hard and cap the page
 # size at Google's per-sitemap URL limit.
 SITEMAP_LISTINGS_CACHE_KEY = 'sitemap-listings:v1'
@@ -557,7 +572,7 @@ class GameListView(generics.ListAPIView):
         else:
             response = super().list(request, *args, **kwargs)
             cache.set(cache_key, response.data, GAME_LIST_CACHE_SECONDS)
-        response['Cache-Control'] = 'public, max-age=60'
+        response['Cache-Control'] = public_cache_header(GAME_LIST_CACHE_SECONDS)
         return response
 
 
@@ -578,7 +593,7 @@ class HomePopularView(APIView):
             data = self.build_sections(request)
             cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
         response = Response(data)
-        response['Cache-Control'] = f'public, max-age={HOME_POPULAR_CACHE_SECONDS}'
+        response['Cache-Control'] = public_cache_header(HOME_POPULAR_CACHE_SECONDS)
         return response
 
     def build_sections(self, request):
@@ -658,7 +673,7 @@ class CategorySectionGamesView(APIView):
             data = self.build_payload(request, section)
             cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
         response = Response(data)
-        response['Cache-Control'] = f'public, max-age={HOME_POPULAR_CACHE_SECONDS}'
+        response['Cache-Control'] = public_cache_header(HOME_POPULAR_CACHE_SECONDS)
         return response
 
     def build_payload(self, request, section):
@@ -727,7 +742,7 @@ class GameDetailView(generics.RetrieveAPIView):
 
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)
-        response['Cache-Control'] = 'public, max-age=120'
+        response['Cache-Control'] = public_cache_header(120)
         return response
 
 
@@ -752,7 +767,7 @@ class GameCategoryDetailView(APIView):
             cached = cache.get(browse_cache_key)
             if cached is not None:
                 response = Response(cached)
-                response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
+                response['Cache-Control'] = public_cache_header(BROWSE_CACHE_SECONDS)
                 return response
 
         game_category = GameCategory.resolve_for_slug(
@@ -975,7 +990,7 @@ class GameCategoryDetailView(APIView):
         response = Response(cat_data)
         if browse_cache_key is not None:
             cache.set(browse_cache_key, cat_data, BROWSE_CACHE_SECONDS)
-            response['Cache-Control'] = f'public, max-age={BROWSE_CACHE_SECONDS}'
+            response['Cache-Control'] = public_cache_header(BROWSE_CACHE_SECONDS)
         else:
             response['Cache-Control'] = 'private'
         return response

@@ -4284,7 +4284,7 @@ class GameCatalogCacheHeaderTests(TestCase):
         response = self.client.get('/api/games/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'public, max-age=60')
+        self.assertEqual(response['Cache-Control'], 'public, max-age=60, s-maxage=300')
         cache_key = game_list_cache_key(response.wsgi_request)
         cached_payload = cache.get(cache_key)
         self.assertIsNotNone(cached_payload)
@@ -4306,14 +4306,14 @@ class GameCatalogCacheHeaderTests(TestCase):
         cached_response = self.client.get('/api/games/')
 
         self.assertEqual(cached_response.status_code, 200)
-        self.assertEqual(cached_response['Cache-Control'], 'public, max-age=60')
+        self.assertEqual(cached_response['Cache-Control'], 'public, max-age=60, s-maxage=300')
         self.assertEqual(cached_response.data[0]['slug'], 'cached-game')
 
     def test_game_detail_sets_public_cache_header(self):
         response = self.client.get('/api/games/test-game/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'public, max-age=120')
+        self.assertEqual(response['Cache-Control'], 'public, max-age=120, s-maxage=300')
 
 
 class HomePopularViewTests(TestCase):
@@ -4354,7 +4354,7 @@ class HomePopularViewTests(TestCase):
         response = self.client.get('/api/home/popular/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'public, max-age=60')
+        self.assertEqual(response['Cache-Control'], 'public, max-age=60, s-maxage=300')
         sections = response.data['sections']
         self.assertEqual([s['slug'] for s in sections], ['accounts'])
         self.assertEqual(sections[0]['title'], 'Popular Accounts')
@@ -4482,7 +4482,7 @@ class CategorySectionGamesViewTests(TestCase):
         response = self.client.get('/api/categories/accounts/games/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Cache-Control'], 'public, max-age=60')
+        self.assertEqual(response['Cache-Control'], 'public, max-age=60, s-maxage=300')
         self.assertEqual(response.data['slug'], 'accounts')
         self.assertEqual(len(response.data['items']), total)
 
@@ -4771,7 +4771,7 @@ class GameCategoryListingPaginationTests(TestCase):
     def test_anonymous_browse_response_is_cached(self):
         first = self.client.get('/api/games/test-game/accounts/?limit=2')
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first['Cache-Control'], 'public, max-age=30')
+        self.assertEqual(first['Cache-Control'], 'public, max-age=30, s-maxage=300')
 
         Listing.objects.create(
             seller=self.seller,
