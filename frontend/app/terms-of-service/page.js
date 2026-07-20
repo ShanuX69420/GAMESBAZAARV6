@@ -328,7 +328,7 @@ export default function TermsOfServicePage() {
             </div>
             <div className="legal-contact-row">
               <span>🌐</span>
-              <span>GamesBazaar — Pakistan&rsquo;s #1 Gaming Marketplace</span>
+              <span>GamesBazaar — Pakistan&rsquo;s First Gaming Marketplace</span>
             </div>
           </div>
         </section>

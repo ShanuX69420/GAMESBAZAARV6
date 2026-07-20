@@ -1135,7 +1135,7 @@ img {
 }
 
 .trust-icon {
-  font-size: 1.4rem;
+  color: var(--green-600);
   flex-shrink: 0;
   width: 44px;
   height: 44px;

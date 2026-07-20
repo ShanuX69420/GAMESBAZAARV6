@@ -1,6 +1,6 @@
 export const SITE_NAME = 'GamesBazaar';
 export const DEFAULT_SITE_URL = 'http://localhost:3000';
-export const DEFAULT_TITLE = "GamesBazaar - Pakistan's #1 Digital Gaming Marketplace";
+export const DEFAULT_TITLE = "GamesBazaar - Pakistan's First Digital Gaming Marketplace";
 export const DEFAULT_DESCRIPTION = "Buy & sell game accounts, top-ups, items, and boosting services. Pakistan's trusted gaming marketplace with secure payments and verified sellers.";
 
 export const DEFAULT_OG_IMAGE = {
