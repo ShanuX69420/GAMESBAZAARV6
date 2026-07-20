@@ -765,8 +765,8 @@ GC_INSTR = ('Your 10 USD (India) Steam Wallet code is sent to you in this '
             'Code (or store.steampowered.com/account/redeemwalletcode), enter '
             'the code, and the funds appear in your wallet instantly. Your '
             "Steam account's store currency/region must match India — the "
-            'code will not redeem otherwise. Once redeemed, press «Confirm '
-            'order» on the order page. If anything goes wrong, message me here.')
+            'code will not redeem otherwise. If anything goes wrong, message '
+            'me in the order chat.')
 KEY_DESC = ('How it works: the key is sent to you in the order chat after '
             'purchase — usually within 10–15 minutes. You activate it '
             'yourself (Steam → Games → Activate a Product on Steam).')
@@ -775,8 +775,8 @@ KEY_INSTR = ('Your ELDEN RING Steam key is sent to you in this chat after '
              'Steam → Games menu → Activate a Product on Steam and enter the '
              'key — the game stays in your library forever. Make sure your '
              'Steam account region is India — the key will not activate '
-             'outside it. Once activated, press «Confirm order» on the order '
-             'page. If anything goes wrong, message me here.')
+             'outside it. If anything goes wrong, message me in the order '
+             'chat.')
 TOPUP_DESC = ('✅ Average delivery: 10–15 minutes after purchase\n\n'
               'How it works: after purchase, send your Free Fire Player ID in '
               'the order chat (find it in your in-game profile). I process '

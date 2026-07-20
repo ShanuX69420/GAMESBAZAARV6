@@ -11480,6 +11480,7 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 .offer-instructions-text {
   white-space: pre-line;
+  overflow-wrap: anywhere;
   color: var(--text-secondary);
   font-size: 0.86rem;
   line-height: 1.55;

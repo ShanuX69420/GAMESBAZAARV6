@@ -382,7 +382,7 @@ export default function ListingDetailClient({ initialListing = null }) {
           {(listing.option_id || isCurrency) && listing.delivery_instructions && (
             <div className="listing-detail-desc">
               <h2>Delivery Instructions</h2>
-              <p style={{ whiteSpace: 'pre-line' }}>{listing.delivery_instructions}</p>
+              <p style={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>{listing.delivery_instructions}</p>
             </div>
           )}
 
