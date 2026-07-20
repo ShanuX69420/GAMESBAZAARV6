@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { getGameIcon } from '@/lib/icons';
+import { GameIconFallback } from '@/lib/icons';
 
 export default function GameItem({ game }) {
   return (
@@ -15,7 +15,7 @@ export default function GameItem({ game }) {
             loading="lazy"
           />
         ) : (
-          getGameIcon(game.slug)
+          <GameIconFallback size={24} />
         )}
       </div>
       <div className="game-info">

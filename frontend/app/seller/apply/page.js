@@ -58,7 +58,6 @@ export default function SellerApplyPage() {
         <div className="seller-apply-card">
           {success || sellerData?.seller_status === 'pending' ? (
             <div className="seller-apply-success">
-              <div className="seller-apply-success-icon">⏳</div>
               <h1>Application Submitted!</h1>
               <p>Your seller application is under review. We&apos;ll notify you once it&apos;s been processed.</p>
               <p>Our team may message you here on GamesBazaar if we need more details (for example, a contact number for verification) — keep an eye on your inbox and email.</p>
@@ -66,7 +65,6 @@ export default function SellerApplyPage() {
             </div>
           ) : sellerData?.seller_status === 'rejected' ? (
             <div className="seller-apply-success">
-              <div className="seller-apply-success-icon">❌</div>
               <h1>Application Rejected</h1>
               <p>Unfortunately your previous application was not approved. You can try applying again.</p>
               <form onSubmit={handleApply} style={{ width: '100%', maxWidth: '500px', marginTop: '20px' }}>
@@ -90,28 +88,24 @@ export default function SellerApplyPage() {
           ) : (
             <>
               <div className="seller-apply-header">
-                <div className="seller-apply-icon">🏪</div>
                 <h1>Become a Seller</h1>
                 <p>Start selling digital gaming products on GamesBazaar and reach thousands of buyers.</p>
               </div>
 
               <div className="seller-apply-benefits">
                 <div className="seller-benefit">
-                  <span className="seller-benefit-icon">💰</span>
                   <div>
                     <strong>Earn Money</strong>
                     <p>Sell game accounts, items, and services to earn PKR</p>
                   </div>
                 </div>
                 <div className="seller-benefit">
-                  <span className="seller-benefit-icon">📊</span>
                   <div>
                     <strong>Seller Dashboard</strong>
                     <p>Track your sales, revenue, and analytics in real-time</p>
                   </div>
                 </div>
                 <div className="seller-benefit">
-                  <span className="seller-benefit-icon">⚡</span>
                   <div>
                     <strong>Auto Delivery</strong>
                     <p>Set up instant automated delivery for digital items</p>

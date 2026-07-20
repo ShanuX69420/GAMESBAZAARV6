@@ -231,7 +231,6 @@ export default function InboxPage() {
         <div className="loading"><div className="loading-spinner"></div> Loading...</div>
       ) : conversations.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">💬</div>
           <p>No conversations yet. Start chatting from a listing page!</p>
         </div>
       ) : (
@@ -320,7 +319,6 @@ export default function InboxPage() {
               </>
             ) : (
               <div className="inbox-chat-empty">
-                <div className="empty-state-icon">💬</div>
                 <p>Select a conversation to start chatting</p>
               </div>
             )}

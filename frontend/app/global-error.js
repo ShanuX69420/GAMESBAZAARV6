@@ -47,11 +47,6 @@ export default function GlobalError({ error, reset }) {
             line-height: 1;
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
           }
-          .ge-icon {
-            font-size: 4rem;
-            margin-bottom: 16px;
-            opacity: 0.3;
-          }
           .ge-title {
             font-size: 1.5rem;
             font-weight: 700;
@@ -99,7 +94,6 @@ export default function GlobalError({ error, reset }) {
       <body>
         <div className="ge-container">
           <span className="ge-logo ge-logo-mark" aria-hidden="true">GB</span>
-          <div className="ge-icon">⚠️</div>
           <h1 className="ge-title">Something went wrong</h1>
           <p className="ge-desc">
             A critical error occurred. This is usually temporary — please try again.

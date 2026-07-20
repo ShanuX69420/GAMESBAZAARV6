@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { fetchCategorySectionGames } from '@/lib/api';
-import { getGameIcon } from '@/lib/icons';
+import { GameIconFallback } from '@/lib/icons';
 import JsonLd from '@/components/JsonLd';
 import { breadcrumbJsonLd, collectionPageJsonLd } from '@/lib/seo';
 import { groupGamesByAlphabet } from '@/lib/gameGroups';
@@ -91,7 +91,7 @@ export default async function CategorySectionPage({ section }) {
                           loading="lazy"
                         />
                       ) : (
-                        getGameIcon(item.game_slug)
+                        <GameIconFallback size={24} />
                       )}
                     </div>
                     <div className="game-info">
@@ -111,7 +111,6 @@ export default async function CategorySectionPage({ section }) {
         </>
       ) : (
         <div className="empty-state">
-          <div className="empty-state-icon">🎮</div>
           <p>Nothing here yet. Check back soon!</p>
         </div>
       )}

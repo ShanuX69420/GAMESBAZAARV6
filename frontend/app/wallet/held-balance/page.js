@@ -106,14 +106,12 @@ export default function HeldBalancePage() {
       {/* Stats Row */}
       <div className="held-stats-row">
         <div className="held-stat-card">
-          <div className="held-stat-icon">📦</div>
           <div className="held-stat-info">
             <div className="held-stat-value">{heldOrderCount}</div>
             <div className="held-stat-label">Pending Orders</div>
           </div>
         </div>
         <div className="held-stat-card">
-          <div className="held-stat-icon">💰</div>
           <div className="held-stat-info">
             <div className="held-stat-value">
               PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
@@ -122,7 +120,6 @@ export default function HeldBalancePage() {
           </div>
         </div>
         <div className="held-stat-card">
-          <div className="held-stat-icon">📅</div>
           <div className="held-stat-info">
             <div className="held-stat-value">
               {heldData?.next_release_at
@@ -175,7 +172,6 @@ export default function HeldBalancePage() {
                       </td>
                       <td>
                         <span className="held-release-badge">
-                          <span className="held-release-icon">⏳</span>
                           {daysText}
                         </span>
                       </td>
@@ -202,7 +198,6 @@ export default function HeldBalancePage() {
         </div>
       ) : (
         <div className="empty-state" style={{ marginTop: '40px' }}>
-          <div className="empty-state-icon">🛡️</div>
           <h3>No Pending Orders</h3>
           <p>You don't have any pending order balance at the moment.</p>
           <Link href="/wallet" className="btn btn-primary" style={{ marginTop: '12px' }}>

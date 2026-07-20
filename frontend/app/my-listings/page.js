@@ -10,10 +10,10 @@ import Select from '@/components/Select';
 const MY_LISTING_PAGE_SIZE = 24;
 
 const STATUS_TABS = [
-  { key: '', label: 'All Listings', icon: '📋' },
-  { key: 'active', label: 'Active', icon: '🟢' },
-  { key: 'inactive', label: 'Inactive', icon: '⏸️' },
-  { key: 'sold', label: 'Sold Out', icon: '🏷️' },
+  { key: '', label: 'All Listings' },
+  { key: 'active', label: 'Active' },
+  { key: 'inactive', label: 'Inactive' },
+  { key: 'sold', label: 'Sold Out' },
 ];
 
 export default function MyListingsPage() {
@@ -350,7 +350,7 @@ export default function MyListingsPage() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h1 className="page-title">🛒 My Listings</h1>
+            <h1 className="page-title">My Listings</h1>
             <p className="page-subtitle">Manage your marketplace listings</p>
           </div>
           <Link href="/dashboard/create-listing" className="btn btn-primary">
@@ -362,21 +362,18 @@ export default function MyListingsPage() {
       {/* Listings Stats */}
       <div className="dashboard-stats">
         <div className="stat-card">
-          <div className="stat-icon">🟢</div>
           <div className="stat-info">
             <div className="stat-value">{activeCount}</div>
             <div className="stat-label">Active Listings</div>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">📦</div>
           <div className="stat-info">
             <div className="stat-value">{totalCount}</div>
             <div className="stat-label">Total Listings</div>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">🏷️</div>
           <div className="stat-info">
             <div className="stat-value">{soldCount}</div>
             <div className="stat-label">Sold Out</div>
@@ -394,7 +391,6 @@ export default function MyListingsPage() {
               className={`orders-status-tab ${statusFilter === tab.key ? 'active' : ''}`}
               onClick={() => setStatusFilter(tab.key)}
             >
-              <span className="orders-tab-icon">{tab.icon}</span>
               <span className="orders-tab-label">{tab.label}</span>
               {tab.key && statusCounts[tab.key] > 0 && (
                 <span className="orders-tab-count">{statusCounts[tab.key]}</span>
@@ -406,7 +402,11 @@ export default function MyListingsPage() {
         {/* Search + Game/Category Filters */}
         <div className="orders-filter-row">
           <div className="orders-search-wrap">
-            <span className="orders-search-icon">🔍</span>
+            <span className="orders-search-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+            </span>
             <input
               type="text"
               className="orders-search-input"
@@ -448,7 +448,7 @@ export default function MyListingsPage() {
               ariaLabel="Filter by category"
               options={[
                 { value: '', label: 'All Categories' },
-                ...availableCategories.map((c) => ({ value: c.slug, label: `${c.icon} ${c.name} (${c.listing_count})` })),
+                ...availableCategories.map((c) => ({ value: c.slug, label: `${c.name} (${c.listing_count})` })),
               ]}
             />
           )}
@@ -465,13 +465,13 @@ export default function MyListingsPage() {
           <div className="ml-active-filters">
             {gameFilter && (
               <span className="ml-filter-tag">
-                🎮 {sellerGames.find(g => g.slug === gameFilter)?.name || gameFilter}
+                {sellerGames.find(g => g.slug === gameFilter)?.name || gameFilter}
                 <button className="ml-filter-tag-remove" onClick={() => handleGameChange('')}>✕</button>
               </span>
             )}
             {categoryFilter && (
               <span className="ml-filter-tag">
-                📁 {availableCategories.find(c => c.slug === categoryFilter)?.name || categoryFilter}
+                {availableCategories.find(c => c.slug === categoryFilter)?.name || categoryFilter}
                 <button className="ml-filter-tag-remove" onClick={() => setCategoryFilter('')}>✕</button>
               </span>
             )}
@@ -486,7 +486,6 @@ export default function MyListingsPage() {
         <div className="loading"><div className="loading-spinner"></div> Loading listings...</div>
       ) : listings.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">📦</div>
           <p>{hasActiveFilters ? 'No listings match your filters.' : 'No listings yet. Create your first listing to start selling!'}</p>
           {hasActiveFilters ? (
             <button className="btn btn-outline btn-sm" onClick={clearFilters} style={{ marginTop: 12 }}>
@@ -755,7 +754,7 @@ export default function MyListingsPage() {
                   onClick={handleEditSave}
                   disabled={actionLoading}
                 >
-                  {actionLoading ? 'Saving...' : '💾 Save Changes'}
+                  {actionLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>
@@ -831,7 +830,6 @@ export default function MyListingsPage() {
                 </div>
               ) : stockItems.length === 0 ? (
                 <div className="stock-modal-empty">
-                  <div className="stock-modal-empty-icon">📦</div>
                   <p>No items in stock.</p>
                   <button className="btn btn-primary btn-sm" onClick={() => { setStockModal(null); openRestockModal({ id: stockModal }); }}>
                     + Add Stock

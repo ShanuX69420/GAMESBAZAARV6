@@ -2,6 +2,7 @@ import { fetchGame } from '@/lib/api';
 import { createPublicMetadata } from '@/lib/seo';
 import Image from 'next/image';
 import { redirect, notFound } from 'next/navigation';
+import { GameIconFallback } from '@/lib/icons';
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
@@ -65,7 +66,7 @@ export default async function GameDetailPage({ params }) {
                 width={56}
                 height={56}
               />
-            ) : '🎮'}
+            ) : <GameIconFallback size={32} />}
           </div>
           <div className="game-header-info">
             <h1>{game.name}</h1>
@@ -73,7 +74,6 @@ export default async function GameDetailPage({ params }) {
         </div>
       </div>
       <div className="empty-state">
-        <div className="empty-state-icon">📦</div>
         <p>No categories available for this game yet.</p>
       </div>
     </div>

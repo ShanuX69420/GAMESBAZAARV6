@@ -61,7 +61,6 @@ export default function CompleteProfilePage() {
     <div className="container">
       <div className="auth-page">
         <div className="auth-card">
-          <div className="verify-email-icon">🎮</div>
           <h1 className="auth-title" style={{ textAlign: 'center' }}>Complete Your Profile</h1>
           <p className="auth-subtitle" style={{ textAlign: 'center' }}>
             Choose a username and accept our terms to get started

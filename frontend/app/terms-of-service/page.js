@@ -12,7 +12,6 @@ export default function TermsOfServicePage() {
   return (
     <div className="legal-page container">
       <div className="legal-header">
-        <div className="legal-icon">📜</div>
         <h1>Terms of Service</h1>
         <p className="legal-subtitle">
           These are the rules of our marketplace. We&rsquo;ve kept them as straightforward as possible &mdash; no 50-page legalese.
@@ -23,7 +22,6 @@ export default function TermsOfServicePage() {
       <div className="legal-content">
         {/* Section 1 */}
         <section className="legal-section" id="tos-overview">
-          <div className="legal-section-icon">🎮</div>
           <h2>What is GamesBazaar?</h2>
           <p>
             GamesBazaar is Pakistan&rsquo;s digital gaming marketplace. We connect buyers and sellers of game accounts, top-ups, in-game items, and boosting services. Think of us as the bridge between gamers who want to buy and gamers who want to sell.
@@ -35,7 +33,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 2 */}
         <section className="legal-section" id="tos-eligibility">
-          <div className="legal-section-icon">✋</div>
           <h2>Who Can Use GamesBazaar?</h2>
           <div className="legal-card">
             <ul>
@@ -49,7 +46,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 3 */}
         <section className="legal-section" id="tos-accounts">
-          <div className="legal-section-icon">🔑</div>
           <h2>Your Account</h2>
           <p>When you create a GamesBazaar account:</p>
           <ul>
@@ -63,7 +59,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 4 */}
         <section className="legal-section" id="tos-buying">
-          <div className="legal-section-icon">🛒</div>
           <h2>Buying on GamesBazaar</h2>
           <p>When you purchase something on our platform:</p>
           <div className="legal-steps">
@@ -90,7 +85,6 @@ export default function TermsOfServicePage() {
             </div>
           </div>
           <div className="legal-callout">
-            <span className="legal-callout-icon">⚠️</span>
             <div>
               <strong>Important:</strong> Always verify what you&rsquo;ve received before confirming. For orders <strong>without</strong> Buyer Protection, payment is released to the seller immediately upon confirmation and cannot be reversed.
             </div>
@@ -99,7 +93,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 4b — Buyer Protection */}
         <section className="legal-section" id="tos-buyer-protection">
-          <div className="legal-section-icon">🛡️</div>
           <h2>14-Day Buyer Protection</h2>
           <p>
             For eligible categories, GamesBazaar offers a <strong>14-Day Buyer Protection</strong> program. This feature is designed to safeguard buyers against fraud, misrepresentation, and post-delivery issues.
@@ -132,7 +125,6 @@ export default function TermsOfServicePage() {
             </ul>
           </div>
           <div className="legal-callout">
-            <span className="legal-callout-icon">💡</span>
             <div>
               <strong>Tip:</strong> You can check the real-time status and countdown of your held orders in the <strong>Held Balance</strong> section of your Wallet page.
             </div>
@@ -141,7 +133,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 5 */}
         <section className="legal-section" id="tos-selling">
-          <div className="legal-section-icon">💰</div>
           <h2>Selling on GamesBazaar</h2>
           <p>To sell on GamesBazaar, you must first apply and be approved as a seller. As a seller, you agree to:</p>
           <ul>
@@ -155,7 +146,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 6 */}
         <section className="legal-section" id="tos-wallet">
-          <div className="legal-section-icon">💳</div>
           <h2>Wallet &amp; Withdrawals</h2>
           <ul>
             <li>All transactions on GamesBazaar use our internal wallet system in <strong>Pakistani Rupees (PKR)</strong>.</li>
@@ -170,7 +160,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 7 */}
         <section className="legal-section" id="tos-disputes">
-          <div className="legal-section-icon">⚖️</div>
           <h2>Disputes &amp; Refunds</h2>
           <p>We understand that sometimes things don&rsquo;t go as planned. Here&rsquo;s how we handle disputes:</p>
           <div className="legal-card">
@@ -185,7 +174,6 @@ export default function TermsOfServicePage() {
             </ul>
           </div>
           <div className="legal-callout">
-            <span className="legal-callout-icon">💡</span>
             <div>
               <strong>Pro tip:</strong> Use the in-app chat to try resolving issues with the other party before raising a formal dispute. Most problems can be sorted out through good communication.
             </div>
@@ -194,47 +182,40 @@ export default function TermsOfServicePage() {
 
         {/* Section 8 */}
         <section className="legal-section" id="tos-prohibited">
-          <div className="legal-section-icon">🚫</div>
           <h2>What&rsquo;s Not Allowed</h2>
           <p>To keep GamesBazaar safe for everyone, the following are strictly prohibited:</p>
           <div className="legal-grid">
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Scamming or fraud</strong>
                 <p>Attempting to cheat buyers or sellers in any way.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Off-platform deals</strong>
                 <p>Taking transactions outside GamesBazaar to avoid our protection system.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Fake listings</strong>
                 <p>Listing items or services you don&rsquo;t actually have or can&rsquo;t deliver.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Harassment &amp; abuse</strong>
                 <p>Threatening, abusing, or harassing other users in chat or reviews.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Multiple accounts</strong>
                 <p>Creating more than one account to manipulate the platform.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
-              <span className="legal-grid-icon">❌</span>
               <div>
                 <strong>Illegal content</strong>
                 <p>Selling stolen accounts, using stolen payment methods, or any activity that violates Pakistani law.</p>
@@ -248,7 +229,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 9 */}
         <section className="legal-section" id="tos-reviews">
-          <div className="legal-section-icon">⭐</div>
           <h2>Reviews &amp; Feedback</h2>
           <ul>
             <li>After completing an order, buyers can leave a review with a star rating and comment.</li>
@@ -261,7 +241,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 10 */}
         <section className="legal-section" id="tos-intellectual-property">
-          <div className="legal-section-icon">©️</div>
           <h2>Intellectual Property</h2>
           <p>
             The GamesBazaar name, logo, design, and all original content on our platform belong to us. You may not copy, modify, or use our branding without permission.
@@ -273,7 +252,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 11 */}
         <section className="legal-section" id="tos-liability">
-          <div className="legal-section-icon">📌</div>
           <h2>Our Responsibilities &amp; Limitations</h2>
           <div className="legal-card">
             <h3>What we do</h3>
@@ -298,7 +276,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 12 */}
         <section className="legal-section" id="tos-governing-law">
-          <div className="legal-section-icon">🏛️</div>
           <h2>Governing Law</h2>
           <p>
             These Terms of Service are governed by and interpreted in accordance with the laws of the <strong>Islamic Republic of Pakistan</strong>. Any disputes arising from these terms will be subject to the jurisdiction of Pakistani courts.
@@ -307,7 +284,6 @@ export default function TermsOfServicePage() {
 
         {/* Section 13 */}
         <section className="legal-section" id="tos-changes">
-          <div className="legal-section-icon">📝</div>
           <h2>Changes to These Terms</h2>
           <p>
             We may update these Terms of Service as our platform evolves. When we make significant changes, we&rsquo;ll notify you through the platform. Continued use of GamesBazaar after changes means you accept the updated terms.
@@ -316,18 +292,15 @@ export default function TermsOfServicePage() {
 
         {/* Section 14 */}
         <section className="legal-section" id="tos-contact">
-          <div className="legal-section-icon">📬</div>
           <h2>Questions?</h2>
           <p>
             If anything in these terms is unclear, or if you have questions, don&rsquo;t hesitate to reach out:
           </p>
           <div className="legal-contact-card">
             <div className="legal-contact-row">
-              <span>📧</span>
               <span>support@gamesbazaar.pk</span>
             </div>
             <div className="legal-contact-row">
-              <span>🌐</span>
               <span>GamesBazaar — Pakistan&rsquo;s First Gaming Marketplace</span>
             </div>
           </div>

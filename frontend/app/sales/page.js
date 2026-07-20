@@ -10,12 +10,12 @@ import { orderLabel, orderPath } from '@/lib/orderNumbers';
 const SALES_PAGE_SIZE = 20;
 
 const STATUS_TABS = [
-  { key: '', label: 'All Sales', icon: '📋' },
-  { key: 'pending', label: 'Awaiting Delivery', icon: '⏳' },
-  { key: 'delivered', label: 'Delivered', icon: '📦' },
-  { key: 'completed', label: 'Completed', icon: '✅' },
-  { key: 'disputed', label: 'Disputed', icon: '⚠️' },
-  { key: 'cancelled', label: 'Cancelled', icon: '❌' },
+  { key: '', label: 'All Sales' },
+  { key: 'pending', label: 'Awaiting Delivery' },
+  { key: 'delivered', label: 'Delivered' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'disputed', label: 'Disputed' },
+  { key: 'cancelled', label: 'Cancelled' },
 ];
 
 export default function SalesPage() {
@@ -88,17 +88,6 @@ export default function SalesPage() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  function getStatusIcon(status) {
-    switch (status) {
-      case 'pending': return '⏳';
-      case 'delivered': return '📦';
-      case 'completed': return '✅';
-      case 'disputed': return '⚠️';
-      case 'cancelled': return '❌';
-      default: return '📋';
-    }
-  }
-
   function formatDateTime(isoString) {
     const d = new Date(isoString);
     return d.toLocaleDateString('en-PK', {
@@ -131,7 +120,7 @@ export default function SalesPage() {
   return (
     <div className="container">
       <div className="page-header">
-        <h1 className="page-title">💼 My Sales</h1>
+        <h1 className="page-title">My Sales</h1>
         <p className="page-subtitle">View your sales and order status</p>
       </div>
 
@@ -145,7 +134,6 @@ export default function SalesPage() {
               className={`orders-status-tab ${statusFilter === tab.key ? 'active' : ''}`}
               onClick={() => setStatusFilter(tab.key)}
             >
-              <span className="orders-tab-icon">{tab.icon}</span>
               <span className="orders-tab-label">{tab.label}</span>
               {['pending', 'delivered', 'disputed'].includes(tab.key) && statusCounts[tab.key] > 0 && (
                 <span className="orders-tab-count">{statusCounts[tab.key]}</span>
@@ -157,7 +145,11 @@ export default function SalesPage() {
         {/* Search & Date Filters */}
         <div className="orders-filter-row">
           <div className="orders-search-wrap">
-            <span className="orders-search-icon">🔍</span>
+            <span className="orders-search-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+            </span>
             <input
               type="text"
               className="orders-search-input"
@@ -207,7 +199,6 @@ export default function SalesPage() {
         <div className="loading"><div className="loading-spinner"></div> Loading sales...</div>
       ) : sales.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">💼</div>
           <p>{hasActiveFilters ? 'No sales match your filters.' : 'No sales yet. When buyers purchase your listings, they\'ll appear here.'}</p>
           {hasActiveFilters && (
             <button className="btn btn-outline btn-sm" onClick={clearFilters} style={{ marginTop: 12 }}>
@@ -227,7 +218,7 @@ export default function SalesPage() {
                     </Link>
                   </span>
                   <span className={`status-pill order-pill-${sale.status}`}>
-                    {getStatusIcon(sale.status)} {sale.status_display}
+                    {sale.status_display}
                   </span>
                 </div>
                 <div className="order-card-date">
@@ -254,11 +245,11 @@ export default function SalesPage() {
               {/* Details */}
               <div className="order-card-actions">
                 <Link href={orderPath(sale)} className="btn btn-outline btn-sm">
-                  📋 View Order
+                  View Order
                 </Link>
                 {sale.status === 'delivered' && (
                   <span className="order-completed-msg" style={{ color: 'var(--text-tertiary)' }}>
-                    ⏳ Waiting for buyer to confirm
+                    Waiting for buyer to confirm
                   </span>
                 )}
               </div>

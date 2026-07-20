@@ -325,7 +325,6 @@ export default function SettingsPage() {
                   {emailStep === 'verify' && (
                     <form onSubmit={handleConfirmEmailChange}>
                       <div className="settings-email-verify-box">
-                        <div className="settings-verify-icon">📧</div>
                         <p className="settings-verify-text">Enter the codes sent to <strong>{user.email}</strong> and <strong>{newEmail}</strong></p>
                         <div className="settings-form-row" style={{ marginTop: 12 }}>
                           <div className="settings-form-group">

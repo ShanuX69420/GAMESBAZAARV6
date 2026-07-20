@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { getGameIcon } from '@/lib/icons';
+import { GameIconFallback } from '@/lib/icons';
 
 export default function PopularPanel({ section }) {
   return (
@@ -28,7 +28,7 @@ export default function PopularPanel({ section }) {
                     loading="lazy"
                   />
                 ) : (
-                  getGameIcon(item.game_slug)
+                  <GameIconFallback size={20} />
                 )}
               </span>
               <span className="popular-panel-name">{item.game_name}</span>

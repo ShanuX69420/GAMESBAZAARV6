@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
+import { CheckCircleIcon } from '@/lib/icons';
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -88,7 +89,6 @@ function VerifyEmailContent() {
       <div className="container">
         <div className="auth-page">
           <div className="auth-card" style={{ textAlign: 'center' }}>
-            <div className="verify-email-icon">⚠️</div>
             <h1 className="auth-title">Invalid Link</h1>
             <p className="auth-subtitle">This verification link is invalid or has expired.</p>
             <Link href="/register" className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
@@ -105,7 +105,7 @@ function VerifyEmailContent() {
       <div className="container">
         <div className="auth-page">
           <div className="auth-card" style={{ textAlign: 'center' }}>
-            <div className="verify-success-icon">✅</div>
+            <div className="verify-success-icon"><CheckCircleIcon size={48} /></div>
             <h1 className="auth-title">Email Verified!</h1>
             <p className="auth-subtitle">
               Your email has been verified successfully. You can now sign in to your account.
@@ -123,7 +123,6 @@ function VerifyEmailContent() {
     <div className="container">
       <div className="auth-page">
         <div className="auth-card">
-          <div className="verify-email-icon">📧</div>
           <h1 className="auth-title" style={{ textAlign: 'center' }}>Verify Your Email</h1>
           <p className="auth-subtitle" style={{ textAlign: 'center' }}>
             {token

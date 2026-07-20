@@ -6,7 +6,6 @@ export default function CategoryCard({ gameSlug, category }) {
       href={`/games/${gameSlug}/${category.slug}`}
       className="category-card"
     >
-      <div className="category-icon">{category.icon || '📦'}</div>
       <div className="category-name">{category.name}</div>
       {category.description && (
         <div className="category-desc">{category.description}</div>

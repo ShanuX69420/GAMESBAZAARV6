@@ -10,6 +10,7 @@ import { notificationOrderPath } from '@/lib/orderNumbers';
 import { WS_BASE } from '@/lib/config';
 import { buildTicketSubprotocols } from '@/lib/inbox';
 import { withUnreadCount, playMessageSound, unlockMessageSound, resetMessageSoundCooldown } from '@/lib/messageAlerts';
+import { GameIconFallback } from '@/lib/icons';
 
 // Badges arrive over the inbox socket; these polls are only a fallback for
 // clients whose WebSocket can't connect, so they can afford to be slow.
@@ -20,18 +21,6 @@ const HEARTBEAT_INTERVAL_MS = 65000;
 const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
 const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
 const SETUP_ALLOWED_PATHS = new Set(['/complete-profile', '/terms-of-service', '/privacy-policy']);
-
-const NOTIF_ICONS = {
-  new_order: '🛒',
-  order_delivered: '📦',
-  order_confirmed: '✅',
-  order_disputed: '⚠️',
-  order_cancelled: '❌',
-  new_review: '⭐',
-  item_request: '📨',
-  seller_approved: '🏪',
-  seller_rejected: '🚫',
-};
 
 export default function Navbar() {
   const { user, loading, logout } = useAuth();
@@ -514,7 +503,7 @@ export default function Navbar() {
                       className="search-dropdown-item-img"
                       loading="lazy"
                     />
-                  ) : '🎮'}
+                  ) : <GameIconFallback size={20} />}
                 </span>
                 <span className="search-dropdown-item-label">{item.display_name}</span>
               </a>
@@ -627,7 +616,6 @@ export default function Navbar() {
                           {notifications.map((notif) => (
                             <button key={notif.id} className={`notif-item ${!notif.is_read ? 'notif-item-unread' : ''}`}
                               onClick={() => handleNotifClick(notif)}>
-                              <span className="notif-item-icon">{NOTIF_ICONS[notif.notification_type] || '🔔'}</span>
                               <div className="notif-item-content">
                                 <div className="notif-item-title">{notif.title}</div>
                                 <div className="notif-item-message">{notif.message}</div>

@@ -2,16 +2,17 @@
 
 import { useState } from 'react';
 import { submitReport } from '@/lib/api';
+import { CheckCircleIcon } from '@/lib/icons';
 
 const REPORT_REASONS = [
-  { value: 'scam', label: '🚨 Scam / Fraud', desc: 'Potential fraud or scam attempt' },
-  { value: 'inappropriate', label: '⚠️ Inappropriate Content', desc: 'Offensive or inappropriate material' },
-  { value: 'duplicate', label: '📋 Duplicate / Spam', desc: 'Duplicate listing or spam content' },
-  { value: 'wrong_category', label: '📂 Wrong Category', desc: 'Listed in the wrong category' },
-  { value: 'misleading', label: '🔍 Misleading Information', desc: 'Inaccurate or deceptive details' },
-  { value: 'harassment', label: '🛑 Harassment / Abuse', desc: 'Harassment or abusive behavior' },
-  { value: 'stolen', label: '🔒 Stolen Account / Item', desc: 'Potentially stolen goods' },
-  { value: 'other', label: '📝 Other', desc: 'Other reason not listed above' },
+  { value: 'scam', label: 'Scam / Fraud', desc: 'Potential fraud or scam attempt' },
+  { value: 'inappropriate', label: 'Inappropriate Content', desc: 'Offensive or inappropriate material' },
+  { value: 'duplicate', label: 'Duplicate / Spam', desc: 'Duplicate listing or spam content' },
+  { value: 'wrong_category', label: 'Wrong Category', desc: 'Listed in the wrong category' },
+  { value: 'misleading', label: 'Misleading Information', desc: 'Inaccurate or deceptive details' },
+  { value: 'harassment', label: 'Harassment / Abuse', desc: 'Harassment or abusive behavior' },
+  { value: 'stolen', label: 'Stolen Account / Item', desc: 'Potentially stolen goods' },
+  { value: 'other', label: 'Other', desc: 'Other reason not listed above' },
 ];
 
 export default function ReportModal({ isOpen, onClose, targetType, listingId, userId, targetName }) {
@@ -81,7 +82,7 @@ export default function ReportModal({ isOpen, onClose, targetType, listingId, us
 
         {success ? (
           <div className="report-modal-success">
-            <div className="report-success-icon">✅</div>
+            <div className="report-success-icon"><CheckCircleIcon size={48} /></div>
             <h4>Report Submitted</h4>
             <p>Thank you for helping keep GamesBazaar safe. Our team will review your report and take appropriate action.</p>
             <button className="btn btn-primary" onClick={handleClose} style={{ marginTop: '16px' }}>
@@ -92,9 +93,7 @@ export default function ReportModal({ isOpen, onClose, targetType, listingId, us
           <form onSubmit={handleSubmit}>
             {/* Target info */}
             <div className="report-modal-target">
-              <span className="report-target-label">
-                {targetType === 'listing' ? '📦' : '👤'} Reporting:
-              </span>
+              <span className="report-target-label">Reporting:</span>
               <span className="report-target-name">{targetName || 'Unknown'}</span>
             </div>
 
@@ -143,7 +142,7 @@ export default function ReportModal({ isOpen, onClose, targetType, listingId, us
                 {submitting ? (
                   <><span className="loading-spinner" style={{ width: 14, height: 14 }} /> Submitting...</>
                 ) : (
-                  <>🚩 Submit Report</>
+                  <>Submit Report</>
                 )}
               </button>
             </div>

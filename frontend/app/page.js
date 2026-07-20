@@ -114,7 +114,6 @@ export default async function HomePage() {
           </div>
         ) : (
           <div className="empty-state">
-            <div className="empty-state-icon">🎮</div>
             <p>No games available yet. Check back soon!</p>
           </div>
         )}

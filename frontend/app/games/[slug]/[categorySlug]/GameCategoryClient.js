@@ -600,7 +600,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         {options.length === 0 && !Object.values(activeFilters).some(Boolean) ? (
           <>
             <div className="empty-state">
-              <div className="empty-state-icon">🧩</div>
               <p>No options are available in this category yet.</p>
             </div>
             <ItemRequestForm
@@ -702,7 +701,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               {!gateSatisfied ? (
                 <div className="offer-buybox">
                   <div className="empty-state" style={{ padding: '24px 12px' }}>
-                    <div className="empty-state-icon">🌍</div>
                     <p>Select {missingGateFilters.map((f) => f.name).join(' and ')} to see offers.</p>
                   </div>
                 </div>
@@ -786,7 +784,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               ) : (
                 <div className="offer-buybox">
                   <div className="empty-state" style={{ padding: '24px 12px' }}>
-                    <div className="empty-state-icon">🛒</div>
                     <p>No sellers are offering {selectedOptionData ? selectedOptionData.name : 'this option'} right now.</p>
                   </div>
                 </div>
@@ -898,7 +895,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         {currencyListings.length === 0 ? (
           <>
             <div className="empty-state">
-              <div className="empty-state-icon">🪙</div>
               <p>No sellers are offering {game.name} {category.name} right now{hasActiveFilters ? ' with these filters' : ''}.</p>
             </div>
             {!hasActiveFilters && !sellerFilter && (
@@ -1236,7 +1232,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         ) : (
           <>
             <div className="empty-state">
-              <div className="empty-state-icon">🛒</div>
               <p>No listings found{hasActiveFilters || sellerFilter ? ' with these filters' : ' here yet'}.</p>
             </div>
             {!hasActiveFilters && !sellerFilter && (

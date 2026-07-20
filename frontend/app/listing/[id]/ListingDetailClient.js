@@ -285,7 +285,6 @@ export default function ListingDetailClient({ initialListing = null }) {
     return (
       <div className="container">
         <div className="empty-state">
-          <div className="empty-state-icon">🔍</div>
           <p>Listing not found.</p>
         </div>
       </div>
@@ -438,21 +437,21 @@ export default function ListingDetailClient({ initialListing = null }) {
               {/* Stock */}
               {listing.quantity !== null && listing.quantity > 0 && (
                 <div className="listing-stock">
-                  📦 {isCurrency ? `${formatAmount(listing.quantity)} ${unitName}`.trim() : listing.quantity} in stock
+                  {isCurrency ? `${formatAmount(listing.quantity)} ${unitName}`.trim() : listing.quantity} in stock
                 </div>
               )}
               {isCurrency && (
                 <div className="listing-stock">
-                  🛒 Min. purchase: {formatAmount(minQty)} {unitName}
+                  Min. purchase: {formatAmount(minQty)} {unitName}
                 </div>
               )}
               {listing.quantity === null && listing.status === 'active' && (
                 <div className="listing-stock">
-                  ✅ Available
+                  Available
                 </div>
               )}
               {listing.status === 'sold' && (
-                <div className="listing-sold-badge">🚫 Out of Stock</div>
+                <div className="listing-sold-badge">Out of Stock</div>
               )}
 
               {/* Buy section */}
@@ -545,13 +544,13 @@ export default function ListingDetailClient({ initialListing = null }) {
                         onClick={openConfirmModal}
                         disabled={buying || !canBuy || !currencyQtyValid}
                       >
-                        {buying ? 'Purchasing...' : `🛒 Buy Now — PKR ${formatPKR(totalPrice)}`}
+                        {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(totalPrice)}`}
                       </button>
                       {payWithJazzCash && (
                         <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
                           {walletApplied > 0
-                            ? `⚡ Pay PKR ${formatPKR(walletApplied)} from your wallet + PKR ${formatPKR(jazzCashCharge)} via JazzCash`
-                            : '⚡ Pay directly with JazzCash — no wallet balance needed'}
+                            ? `Pay PKR ${formatPKR(walletApplied)} from your wallet + PKR ${formatPKR(jazzCashCharge)} via JazzCash`
+                            : 'Pay directly with JazzCash — no wallet balance needed'}
                         </div>
                       )}
                     </>
@@ -590,7 +589,6 @@ export default function ListingDetailClient({ initialListing = null }) {
             </div>
           ) : reviews.length === 0 ? (
             <div className="listing-detail-reviews-empty">
-              <span>⭐</span>
               <p>No reviews yet for this seller.</p>
             </div>
           ) : (
@@ -875,7 +873,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                   </div>
                   {jazzCashInFlight && (
                     <div className="alert alert-success" style={{ marginTop: '8px', marginBottom: 0 }}>
-                      <strong>📲 Approve the payment on your phone</strong>
+                      <strong>Approve the payment on your phone</strong>
                       <div style={{ marginTop: '4px' }}>
                         Open your JazzCash app and approve the PKR {formatPKR(jazzCashCharge)} request.
                         Keep this page open — it updates automatically once you approve.
@@ -916,9 +914,9 @@ export default function ListingDetailClient({ initialListing = null }) {
                 {buying ? (
                   <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> {jazzCashInFlight ? 'Waiting for your approval...' : 'Processing...'}</>
                 ) : payWithJazzCash ? (
-                  `⚡ Pay with JazzCash — PKR ${formatPKR(jazzCashCharge)}`
+                  `Pay with JazzCash — PKR ${formatPKR(jazzCashCharge)}`
                 ) : (
-                  `✅ Confirm Purchase — PKR ${formatPKR(totalPrice)}`
+                  `Confirm Purchase — PKR ${formatPKR(totalPrice)}`
                 )}
               </button>
             </div>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { submitItemRequest } from '@/lib/api';
+import { CheckCircleIcon } from '@/lib/icons';
 
 export default function ItemRequestForm({ gameSlug, categorySlug, gameName, categoryName }) {
   const { user } = useAuth();
@@ -30,7 +31,7 @@ export default function ItemRequestForm({ gameSlug, categorySlug, gameName, cate
   if (sent) {
     return (
       <div className="item-request-card item-request-card-sent">
-        <div className="item-request-sent-icon">✅</div>
+        <div className="item-request-sent-icon"><CheckCircleIcon size={32} /></div>
         <h3 className="item-request-title">Request sent!</h3>
         <p className="item-request-sub">
           {user

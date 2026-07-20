@@ -176,7 +176,6 @@ export default function SellerProfileClient({
     return (
       <div className="container">
         <div className="empty-state">
-          <div className="empty-state-icon">🚫</div>
           <p>{error || 'Seller not found.'}</p>
           <Link href="/" className="btn btn-primary" style={{ marginTop: '12px' }}>Back to Home</Link>
         </div>
@@ -308,7 +307,6 @@ export default function SellerProfileClient({
                   <div className="sp-game-tile-cats">
                     {game.categories.map((cat) => (
                       <span key={cat.slug} className="sp-game-tile-cat">
-                        {cat.icon && <span>{cat.icon}</span>}
                         {cat.name}
                         <span className="sp-cat-count">{cat.count}</span>
                       </span>
@@ -319,7 +317,6 @@ export default function SellerProfileClient({
             </div>
           ) : (
             <div className="empty-state">
-              <div className="empty-state-icon">🛒</div>
               <p>No active listings yet.</p>
             </div>
           )}
@@ -358,7 +355,6 @@ export default function SellerProfileClient({
           {/* Reviews List */}
           {reviews.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">⭐</div>
               <p>No reviews yet.</p>
             </div>
           ) : (

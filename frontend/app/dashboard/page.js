@@ -96,12 +96,32 @@ function RatingBar({ label, count, total, color }) {
   );
 }
 
+const statusSvgProps = {
+  width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+};
+
 const ORDER_STATUS_STYLES = {
-  pending: { icon: '⏳', color: '#f59e0b', bg: 'var(--amber-50)' },
-  delivered: { icon: '📦', color: '#3b82f6', bg: 'var(--blue-50)' },
-  completed: { icon: '✅', color: '#22c55e', bg: 'var(--green-50)' },
-  disputed: { icon: '⚠️', color: '#ef4444', bg: 'var(--red-50)' },
-  cancelled: { icon: '❌', color: '#6b7280', bg: 'var(--bg-secondary)' },
+  pending: {
+    icon: <svg {...statusSvgProps}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+    color: '#f59e0b', bg: 'var(--amber-50)',
+  },
+  delivered: {
+    icon: <svg {...statusSvgProps}><path d="M21 16V8a2 2 0 00-1-1.73L13 2.27a2 2 0 00-2 0L4 6.27A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
+    color: '#3b82f6', bg: 'var(--blue-50)',
+  },
+  completed: {
+    icon: <svg {...statusSvgProps}><polyline points="20 6 9 17 4 12"/></svg>,
+    color: '#22c55e', bg: 'var(--green-50)',
+  },
+  disputed: {
+    icon: <svg {...statusSvgProps}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+    color: '#ef4444', bg: 'var(--red-50)',
+  },
+  cancelled: {
+    icon: <svg {...statusSvgProps}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    color: '#6b7280', bg: 'var(--bg-secondary)',
+  },
 };
 
 export default function DashboardPage() {
@@ -279,7 +299,6 @@ export default function DashboardPage() {
           <div className="sd-panel-body">
             {recent_sales.length === 0 ? (
               <div className="sd-empty">
-                <div className="sd-empty-icon">📦</div>
                 <p>No sales yet. Create your first listing to get started!</p>
               </div>
             ) : (
@@ -395,27 +414,21 @@ export default function DashboardPage() {
       {/* Quick Actions Footer */}
       <div className="sd-quick-actions">
         <Link href="/dashboard/create-listing" className="sd-action-card" id="sd-action-create">
-          <span className="sd-action-icon">📝</span>
           <span className="sd-action-label">Create Listing</span>
         </Link>
         <Link href="/my-listings" className="sd-action-card" id="sd-action-listings">
-          <span className="sd-action-icon">📋</span>
           <span className="sd-action-label">My Listings</span>
         </Link>
         <Link href="/sales" className="sd-action-card" id="sd-action-sales">
-          <span className="sd-action-icon">💼</span>
           <span className="sd-action-label">My Sales</span>
         </Link>
         <Link href="/wallet" className="sd-action-card" id="sd-action-wallet">
-          <span className="sd-action-icon">💰</span>
           <span className="sd-action-label">Wallet</span>
         </Link>
         <Link href="/inbox" className="sd-action-card" id="sd-action-inbox">
-          <span className="sd-action-icon">💬</span>
           <span className="sd-action-label">Messages</span>
         </Link>
         <Link href={`/seller/${user.username}`} className="sd-action-card" id="sd-action-profile">
-          <span className="sd-action-icon">👤</span>
           <span className="sd-action-label">Public Profile</span>
         </Link>
       </div>

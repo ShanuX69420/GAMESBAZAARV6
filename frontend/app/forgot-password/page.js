@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { requestPasswordReset, confirmPasswordReset } from '@/lib/api';
+import { CheckCircleIcon } from '@/lib/icons';
 
 export default function ForgotPasswordPage() {
   const { user, loading } = useAuth();
@@ -73,7 +74,6 @@ export default function ForgotPasswordPage() {
         <div className="auth-card">
           {step === 'email' && (
             <>
-              <div className="forgot-pw-icon">🔒</div>
               <h1 className="auth-title">Forgot Password?</h1>
               <p className="auth-subtitle">Enter your email and we&apos;ll send you a reset code</p>
 
@@ -106,7 +106,6 @@ export default function ForgotPasswordPage() {
 
           {step === 'code' && (
             <>
-              <div className="forgot-pw-icon">📧</div>
               <h1 className="auth-title">Check Your Email</h1>
               <p className="auth-subtitle">
                 Enter the 6-digit code sent to <strong>{email}</strong>
@@ -141,8 +140,10 @@ export default function ForgotPasswordPage() {
                       required
                       minLength={6}
                     />
-                    <button type="button" className="form-pw-toggle" onClick={() => setShowPw(!showPw)}>
-                      {showPw ? '🙈' : '👁️'}
+                    <button type="button" className="form-pw-toggle" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                        {showPw ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></> : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -187,7 +188,7 @@ export default function ForgotPasswordPage() {
 
           {step === 'done' && (
             <>
-              <div className="forgot-pw-icon">✅</div>
+              <div className="forgot-pw-icon"><CheckCircleIcon size={40} /></div>
               <h1 className="auth-title">Password Reset!</h1>
               <p className="auth-subtitle">{message || 'Your password has been reset successfully.'}</p>
               <Link href="/login" className="btn btn-primary btn-full" style={{ marginTop: 16 }}>

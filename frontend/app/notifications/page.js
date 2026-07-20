@@ -6,23 +6,6 @@ import { useAuth } from '@/lib/auth';
 import { getNotifications, markNotificationRead } from '@/lib/api';
 import { notificationDestinationPath } from '@/lib/notifications';
 
-const NOTIF_ICONS = {
-  new_order: '🛒',
-  order_delivered: '📦',
-  order_confirmed: '✅',
-  order_disputed: '⚠️',
-  order_cancelled: '❌',
-  new_review: '⭐',
-  topup_approved: '💰',
-  topup_rejected: '🚫',
-  withdraw_approved: '💸',
-  withdraw_rejected: '🚫',
-  admin_message: '💬',
-  item_request: '📨',
-  seller_approved: '🏪',
-  seller_rejected: '🚫',
-};
-
 const NOTIF_LABELS = {
   new_order: 'New Order',
   order_delivered: 'Order Delivered',
@@ -131,7 +114,6 @@ export default function NotificationsPage() {
 
       {notifications.length === 0 ? (
         <div className="notifications-empty">
-          <div className="notifications-empty-icon">🔔</div>
           <p>No notifications yet</p>
           <p className="text-secondary">You'll be notified about order updates, reviews, and more.</p>
         </div>
@@ -143,9 +125,6 @@ export default function NotificationsPage() {
               className={`notification-card ${!notif.is_read ? 'notification-card-unread' : ''}`}
               onClick={() => handleNotifClick(notif)}
             >
-              <span className="notification-card-icon">
-                {NOTIF_ICONS[notif.notification_type] || '🔔'}
-              </span>
               <div className="notification-card-content">
                 <div className="notification-card-top">
                   <span className="notification-card-type">

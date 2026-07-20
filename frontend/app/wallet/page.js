@@ -261,7 +261,7 @@ export default function WalletPage() {
   return (
     <div className="container">
       <div className="page-header">
-        <h1 className="page-title">💰 Wallet</h1>
+        <h1 className="page-title">Wallet</h1>
         <p className="page-subtitle">Manage your funds and transactions</p>
       </div>
 
@@ -313,7 +313,7 @@ export default function WalletPage() {
                 onClick={() => { setTopUpMethod('jazzcash'); setError(''); setSuccess(''); }}
                 disabled={submitting}
               >
-                ⚡ JazzCash — Instant
+                JazzCash — Instant
               </button>
               <button
                 type="button"
@@ -321,7 +321,7 @@ export default function WalletPage() {
                 onClick={() => { setTopUpMethod('manual'); setError(''); setSuccess(''); }}
                 disabled={submitting}
               >
-                💬 WhatsApp
+                WhatsApp
               </button>
             </div>
           )}
@@ -368,7 +368,7 @@ export default function WalletPage() {
                 </div>
                 {submitting && (
                   <div className="alert alert-success" style={{ marginBottom: '12px' }}>
-                    <strong>📲 Approve the payment on your phone</strong>
+                    <strong>Approve the payment on your phone</strong>
                     <div style={{ marginTop: '4px' }}>
                       Open your JazzCash app and approve the request. Keep this page
                       open — it updates automatically once you approve.
@@ -392,7 +392,6 @@ export default function WalletPage() {
           {/* WhatsApp Details Card */}
           <div className="topup-payment-details">
             <div className="topup-payment-details-header">
-              <span className="topup-payment-details-icon">💬</span>
               <strong>Top Up via WhatsApp</strong>
             </div>
             <div className="topup-payment-details-body">
@@ -406,7 +405,6 @@ export default function WalletPage() {
               </div>
             </div>
             <div className="topup-payment-details-footer">
-              <span>⚡</span>
               <span>Tap the button below — your username is included in the message automatically, so we know exactly which account to credit.</span>
             </div>
           </div>
@@ -433,7 +431,7 @@ export default function WalletPage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              💬 Message us on WhatsApp
+              Message us on WhatsApp
             </a>
           </div>
           </>
@@ -540,7 +538,7 @@ export default function WalletPage() {
                   </div>
                   <div className="wallet-request-meta">
                     <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
-                      {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                      {req.status === 'approved' ? 'Approved' : req.status === 'rejected' ? 'Rejected' : 'Pending'}
                     </span>
                     <span className="wallet-request-date">{new Date(req.created_at).toLocaleDateString()}</span>
                   </div>
@@ -548,7 +546,7 @@ export default function WalletPage() {
                 {req.status !== 'pending' && req.admin_note && (
                   <div className={`wallet-request-note ${req.status === 'rejected' ? 'wallet-request-note-rejected' : 'wallet-request-note-approved'}`}>
                     <div className="wallet-request-note-label">
-                      {req.status === 'rejected' ? '❌ Rejection Reason' : '📝 Admin Note'}
+                      {req.status === 'rejected' ? 'Rejection Reason' : 'Admin Note'}
                     </div>
                     <div className="wallet-request-note-text">{req.admin_note}</div>
                   </div>
@@ -588,7 +586,7 @@ export default function WalletPage() {
                   </div>
                   <div className="wallet-request-meta">
                     <span className={`status-pill status-${req.status === 'approved' ? 'active' : req.status === 'rejected' ? 'sold' : 'inactive'}`}>
-                      {req.status === 'approved' ? '✅ Approved' : req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending'}
+                      {req.status === 'approved' ? 'Approved' : req.status === 'rejected' ? 'Rejected' : 'Pending'}
                     </span>
                     <span className="wallet-request-date">{new Date(req.created_at).toLocaleDateString()}</span>
                   </div>
@@ -596,14 +594,14 @@ export default function WalletPage() {
                 {req.status !== 'pending' && req.admin_note && (
                   <div className={`wallet-request-note ${req.status === 'rejected' ? 'wallet-request-note-rejected' : 'wallet-request-note-approved'}`}>
                     <div className="wallet-request-note-label">
-                      {req.status === 'rejected' ? '❌ Rejection Reason' : '📝 Admin Note'}
+                      {req.status === 'rejected' ? 'Rejection Reason' : 'Admin Note'}
                     </div>
                     <div className="wallet-request-note-text">{req.admin_note}</div>
                   </div>
                 )}
                 {req.status === 'approved' && req.payment_receipt_url && (
                   <div className="wallet-request-receipt">
-                    <div className="wallet-request-note-label">🧾 Payment Receipt</div>
+                    <div className="wallet-request-note-label">Payment Receipt</div>
                     <a href={req.payment_receipt_url} target="_blank" rel="noopener noreferrer" className="wallet-receipt-link">
                       <span>Open Receipt</span>
                     </a>
@@ -680,7 +678,6 @@ export default function WalletPage() {
           </div>
         ) : (
           <div className="empty-state">
-            <div className="empty-state-icon">📊</div>
             <p>No transactions yet.</p>
           </div>
         )}

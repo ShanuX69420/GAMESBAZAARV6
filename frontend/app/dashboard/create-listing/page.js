@@ -235,7 +235,7 @@ export default function CreateListingPage() {
                 required
                 options={[
                   { value: '', label: 'Select a category' },
-                  ...categories.map(gc => ({ value: gc.category.slug, label: `${gc.category.icon} ${gc.category.name}` })),
+                  ...categories.map(gc => ({ value: gc.category.slug, label: gc.category.name })),
                 ]}
               />
             </div>
@@ -476,7 +476,7 @@ export default function CreateListingPage() {
                     required
                   />
                   <span className="form-hint" style={{ color: 'var(--amber-600)' }}>
-                    ⚡ Each line = 1 stock item. Stock quantity is set automatically. Items are delivered one per purchase.
+                    Each line = 1 stock item. Stock quantity is set automatically. Items are delivered one per purchase.
                   </span>
                 </div>
               )}
@@ -523,7 +523,7 @@ export default function CreateListingPage() {
               </div>
 
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (listingMode === 'offer' && options.length === 0)}>
-                {submitting ? 'Creating...' : isAutoDelivery ? '⚡ Create Auto-Delivery Listing' : (listingMode === 'offer' || listingMode === 'currency') ? 'Create Offer' : 'Create Listing'}
+                {submitting ? 'Creating...' : isAutoDelivery ? 'Create Auto-Delivery Listing' : (listingMode === 'offer' || listingMode === 'currency') ? 'Create Offer' : 'Create Listing'}
               </button>
             </>
           )}

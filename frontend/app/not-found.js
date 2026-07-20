@@ -42,11 +42,11 @@ export default function NotFound() {
         <div className="error-suggestions">
           <p className="error-suggestions-title">You might be looking for:</p>
           <div className="error-suggestion-links">
-            <Link href="/" className="error-suggestion-chip">🎮 Games</Link>
-            <Link href="/inbox" className="error-suggestion-chip">💬 Inbox</Link>
-            <Link href="/orders" className="error-suggestion-chip">📦 My Orders</Link>
-            <Link href="/wallet" className="error-suggestion-chip">💰 Wallet</Link>
-            <Link href="/support" className="error-suggestion-chip">🛟 Support</Link>
+            <Link href="/" className="error-suggestion-chip">Games</Link>
+            <Link href="/inbox" className="error-suggestion-chip">Inbox</Link>
+            <Link href="/orders" className="error-suggestion-chip">My Orders</Link>
+            <Link href="/wallet" className="error-suggestion-chip">Wallet</Link>
+            <Link href="/support" className="error-suggestion-chip">Support</Link>
           </div>
         </div>
       </div>

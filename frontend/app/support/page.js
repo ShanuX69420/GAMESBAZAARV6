@@ -5,11 +5,11 @@ import { useAuth } from '@/lib/auth';
 import { submitSupportTicket, getMySupportTickets } from '@/lib/api';
 import Link from 'next/link';
 import Select from '@/components/Select';
+import { CheckCircleIcon } from '@/lib/icons';
 
 const FAQ_ITEMS = [
   {
     category: 'Buying',
-    icon: '🛒',
     questions: [
       {
         q: 'How do I buy something on GamesBazaar?',
@@ -27,7 +27,6 @@ const FAQ_ITEMS = [
   },
   {
     category: 'Selling',
-    icon: '💰',
     questions: [
       {
         q: 'How do I become a seller?',
@@ -45,7 +44,6 @@ const FAQ_ITEMS = [
   },
   {
     category: 'Payments & Wallet',
-    icon: '💳',
     questions: [
       {
         q: 'How do I add funds to my wallet?',
@@ -63,7 +61,6 @@ const FAQ_ITEMS = [
   },
   {
     category: 'Account',
-    icon: '👤',
     questions: [
       {
         q: 'How do I change my username?',
@@ -81,7 +78,6 @@ const FAQ_ITEMS = [
   },
   {
     category: 'Safety',
-    icon: '🛡️',
     questions: [
       {
         q: 'How do I report a scam or suspicious user?',
@@ -96,13 +92,13 @@ const FAQ_ITEMS = [
 ];
 
 const CATEGORY_OPTIONS = [
-  { value: 'account', label: 'Account Issue', icon: '👤' },
-  { value: 'order', label: 'Order Problem', icon: '📦' },
-  { value: 'payment', label: 'Payment / Wallet', icon: '💳' },
-  { value: 'seller', label: 'Seller Application', icon: '🏪' },
-  { value: 'report', label: 'Report / Safety', icon: '🛡️' },
-  { value: 'feedback', label: 'Feedback / Suggestion', icon: '💡' },
-  { value: 'other', label: 'Other', icon: '📩' },
+  { value: 'account', label: 'Account Issue' },
+  { value: 'order', label: 'Order Problem' },
+  { value: 'payment', label: 'Payment / Wallet' },
+  { value: 'seller', label: 'Seller Application' },
+  { value: 'report', label: 'Report / Safety' },
+  { value: 'feedback', label: 'Feedback / Suggestion' },
+  { value: 'other', label: 'Other' },
 ];
 
 const STATUS_CONFIG = {
@@ -223,7 +219,6 @@ export default function SupportPage() {
     <div className="support-page container">
       {/* Header */}
       <div className="support-header">
-        <div className="support-header-icon">💬</div>
         <h1>Help & Support</h1>
         <p className="support-subtitle">
           We&rsquo;re here to help. Find answers to common questions or reach out to our team directly.
@@ -237,7 +232,6 @@ export default function SupportPage() {
           onClick={() => setActiveTab('faq')}
           id="tab-faq"
         >
-          <span className="support-tab-icon">❓</span>
           FAQs
         </button>
         <button
@@ -245,7 +239,6 @@ export default function SupportPage() {
           onClick={() => setActiveTab('contact')}
           id="tab-contact"
         >
-          <span className="support-tab-icon">✉️</span>
           Contact Us
         </button>
         {user && (
@@ -254,7 +247,6 @@ export default function SupportPage() {
             onClick={() => setActiveTab('tickets')}
             id="tab-tickets"
           >
-            <span className="support-tab-icon">📋</span>
             My Tickets
           </button>
         )}
@@ -282,7 +274,6 @@ export default function SupportPage() {
                   aria-expanded={openFaqCategory === faqCat.category}
                 >
                   <div className="support-faq-category-left">
-                    <span className="support-faq-category-icon">{faqCat.icon}</span>
                     <span className="support-faq-category-name">{faqCat.category}</span>
                     <span className="support-faq-count">{faqCat.questions.length} questions</span>
                   </div>
@@ -329,7 +320,7 @@ export default function SupportPage() {
         <div className="support-contact-section">
           {submitSuccess ? (
             <div className="support-success-card">
-              <div className="support-success-icon">✅</div>
+              <div className="support-success-icon"><CheckCircleIcon size={48} /></div>
               <h2>Ticket Submitted!</h2>
               <p>
                 Thank you for reaching out. Our support team will review your message and get back to you
@@ -356,28 +347,24 @@ export default function SupportPage() {
               <div className="support-contact-intro">
                 <div className="support-contact-info-cards">
                   <div className="support-info-card">
-                    <span className="support-info-icon">⏰</span>
                     <div>
                       <strong>Response Time</strong>
                       <p>Usually within 24 hours</p>
                     </div>
                   </div>
                   <div className="support-info-card">
-                    <span className="support-info-icon">📧</span>
                     <div>
                       <strong>Email</strong>
                       <p><a href="mailto:support@gamesbazaar.pk">support@gamesbazaar.pk</a></p>
                     </div>
                   </div>
                   <div className="support-info-card">
-                    <span className="support-info-icon">📱</span>
                     <div>
                       <strong>Phone / WhatsApp</strong>
                       <p><a href="tel:+923712101998">+92 371 2101998</a></p>
                     </div>
                   </div>
                   <div className="support-info-card">
-                    <span className="support-info-icon">🕐</span>
                     <div>
                       <strong>Hours</strong>
                       <p>Mon — Sat, 10 AM — 10 PM PKT</p>
@@ -430,7 +417,7 @@ export default function SupportPage() {
                       onChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
                       options={CATEGORY_OPTIONS.map((opt) => ({
                         value: opt.value,
-                        label: `${opt.icon} ${opt.label}`,
+                        label: opt.label,
                       }))}
                     />
                   </div>
@@ -494,7 +481,7 @@ export default function SupportPage() {
                   className="support-btn-primary support-submit-btn"
                   disabled={submitting}
                 >
-                  {submitting ? 'Submitting...' : '📨 Submit Ticket'}
+                  {submitting ? 'Submitting...' : 'Submit Ticket'}
                 </button>
               </form>
             </>
@@ -509,7 +496,6 @@ export default function SupportPage() {
             <div className="support-loading">Loading your tickets...</div>
           ) : tickets.length === 0 ? (
             <div className="support-empty">
-              <div className="support-empty-icon">📭</div>
               <h3>No tickets yet</h3>
               <p>You haven&rsquo;t submitted any support tickets. If you need help, we&rsquo;re just a click away.</p>
               <button
@@ -564,14 +550,13 @@ export default function SupportPage() {
                         {ticket.admin_reply ? (
                           <div className="support-ticket-reply">
                             <div className="support-ticket-reply-header">
-                              <span>💬</span>
                               <strong>GamesBazaar Support</strong>
                             </div>
                             <p>{ticket.admin_reply}</p>
                           </div>
                         ) : (
                           <div className="support-ticket-pending-reply">
-                            <span>⏳</span> Awaiting response from our team
+                            Awaiting response from our team
                           </div>
                         )}
                       </div>
@@ -589,10 +574,10 @@ export default function SupportPage() {
         <p>You can also check our policies:</p>
         <div className="support-policy-links">
           <Link href="/privacy-policy" className="support-policy-link">
-            🔒 Privacy Policy
+            Privacy Policy
           </Link>
           <Link href="/terms-of-service" className="support-policy-link">
-            📜 Terms of Service
+            Terms of Service
           </Link>
         </div>
       </div>
