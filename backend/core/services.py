@@ -1414,8 +1414,9 @@ def issue_guard_code(order, *, account=None):
         if code is None:
             # No login-code email yet — allowance untouched, buyer can retry.
             return {'pending': True, 'message': guard_pending_message(account)}, None
-        guidance = ('If you get an error while signing in, start the Steam '
-                    'login again and enter this same code.')
+        guidance = (f'If you get an error while signing in, start the '
+                    f'{account.get_platform_display()} login again and enter '
+                    'this same code.')
     else:
         try:
             code = steamguard.generate_code(
@@ -1452,7 +1453,7 @@ def issue_guard_code(order, *, account=None):
         event='guard_code',
         sender=order.buyer,
         content=(
-            f'{account.code_label()} for order #{order.order_number}: {code}\n'
+            f'{code}\n'
             f'{guidance} For security, this code is sent only once.'
         ),
     )

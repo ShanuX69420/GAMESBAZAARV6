@@ -20,17 +20,6 @@ const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const CHAT_SUBPROTOCOL = 'gb.chat';
 const PRESENCE_TICK_MS = 30000;
 
-const SYSTEM_EVENT_ICONS = {
-  order_paid: '💳',
-  order_delivered: '📦',
-  order_confirmed: '✅',
-  order_disputed: '⚠️',
-  order_refunded: '↩️',
-  review_posted: '⭐',
-  review_updated: '⭐',
-  guard_code: '🔐',
-};
-
 // Turn the order number and participant usernames inside a system notice
 // into links (order page / seller profiles).
 function renderSystemText(content, orderInfo) {
@@ -50,6 +39,17 @@ function renderSystemText(content, orderInfo) {
     links[part]
       ? <a key={i} href={links[part]} className="chat-event-link">{part}</a>
       : part
+  );
+}
+
+// Sender names in message headers link to the user's public profile;
+// 'You' and the GamesBazaar platform label stay plain text.
+function renderSenderName(label) {
+  if (!label || label === 'You' || label === 'GamesBazaar') return label;
+  return (
+    <a href={`/seller/${encodeURIComponent(label)}`} className="chat-msg-sender-link">
+      {label}
+    </a>
   );
 }
 
@@ -84,9 +84,7 @@ export default function ChatBox({
   const [imageUploading, setImageUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [chatError, setChatError] = useState('');
-  const [copiedMessageId, setCopiedMessageId] = useState(null);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
-  const copiedTimerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -408,7 +406,6 @@ export default function ChatBox({
       mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
       clearTimeout(errorTimerRef.current);
-      clearTimeout(copiedTimerRef.current);
       clearTimeout(initialImageScrollTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -533,21 +530,26 @@ export default function ChatBox({
     }
   }
 
-  async function copyDeliveryData(msg) {
-    try {
-      await navigator.clipboard.writeText(msg.content);
-      setCopiedMessageId(msg.id);
-      clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) setCopiedMessageId(null);
-      }, 2000);
-    } catch { }
-  }
-
   function renderSpecialMessage(msg, msgDate) {
     const time = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (msg.message_type === 'system') {
+      if (msg.system_event === 'guard_code') {
+        // Codes read as a plain message from the seller, even though the
+        // stored sender is the buyer (kept that way for unread badging).
+        const guardSeller = msg.order_info?.seller_username;
+        return (
+          <div key={msg.id} className="chat-msg-row with-header">
+            <div className="chat-msg-header">
+              <span className="chat-msg-sender">
+                {renderSenderName(guardSeller === user?.username ? 'You' : (guardSeller || 'GamesBazaar'))}
+              </span>
+              <span className="chat-msg-time">{time}</span>
+            </div>
+            <div className="chat-msg-content">{msg.content}</div>
+          </div>
+        );
+      }
       return (
         <div key={msg.id} className="chat-msg-row with-header chat-event-row">
           <div className="chat-msg-header">
@@ -557,9 +559,6 @@ export default function ChatBox({
             <span className="chat-msg-time">{time}</span>
           </div>
           <div className={`chat-event-card chat-event-${msg.system_event || 'generic'}`}>
-            <span className="chat-event-icon" aria-hidden="true">
-              {SYSTEM_EVENT_ICONS[msg.system_event] || 'ℹ️'}
-            </span>
             <div className="chat-event-text">{renderSystemText(msg.content, msg.order_info)}</div>
           </div>
         </div>
@@ -570,52 +569,28 @@ export default function ChatBox({
 
     if (msg.message_type === 'delivery') {
       return (
-        <div key={msg.id} className="chat-msg-row with-header chat-event-row">
+        <div key={msg.id} className="chat-msg-row with-header">
           <div className="chat-msg-header">
             <span className="chat-msg-sender">
-              {senderLabel} <span className="chat-badge chat-badge-delivery">delivery</span>
+              {renderSenderName(senderLabel)} <span className="chat-badge chat-badge-delivery">delivery</span>
             </span>
             <span className="chat-msg-time">{time}</span>
           </div>
-          <div className="chat-delivery-card">
-            <div className="chat-delivery-head">
-              <span>
-                🔑 Delivery details
-                {msg.order_info?.order_number && (
-                  <>
-                    {' for '}
-                    <a href={`/order/${encodeURIComponent(msg.order_info.order_number)}`} className="chat-event-link">
-                      #{msg.order_info.order_number}
-                    </a>
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                className="chat-copy-btn"
-                onClick={() => copyDeliveryData(msg)}
-              >
-                {copiedMessageId === msg.id ? 'Copied ✓' : 'Copy'}
-              </button>
-            </div>
-            <pre className="chat-delivery-data">{msg.content}</pre>
-          </div>
+          <div className="chat-msg-content">{msg.content}</div>
         </div>
       );
     }
 
     // message_type === 'instructions'
     return (
-      <div key={msg.id} className="chat-msg-row with-header chat-event-row">
+      <div key={msg.id} className="chat-msg-row with-header">
         <div className="chat-msg-header">
           <span className="chat-msg-sender">
-            {senderLabel} <span className="chat-badge chat-badge-instructions">instructions</span>
+            {renderSenderName(senderLabel)} <span className="chat-badge chat-badge-instructions">instructions</span>
           </span>
           <span className="chat-msg-time">{time}</span>
         </div>
-        <div className="chat-instructions-card">
-          <div className="chat-msg-content">{msg.content}</div>
-        </div>
+        <div className="chat-msg-content">{msg.content}</div>
       </div>
     );
   }
@@ -658,7 +633,7 @@ export default function ChatBox({
         <div key={msg.id} className={`chat-msg-row ${showHeader ? 'with-header' : ''}`}>
           {showHeader && (
             <div className="chat-msg-header">
-              <span className="chat-msg-sender">{msg.is_mine ? 'You' : msg.sender_name}</span>
+              <span className="chat-msg-sender">{renderSenderName(msg.is_mine ? 'You' : msg.sender_name)}</span>
               <span className="chat-msg-time">
                 {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -705,7 +680,7 @@ export default function ChatBox({
     return (
       <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
         <div className="chatbox-header">
-          <span>💬 Chat with {sellerName || 'Seller'}</span>
+          <span>Chat with {sellerName || 'Seller'}</span>
         </div>
         <div className="chatbox-empty">
           <a href="/login" className="btn btn-primary btn-sm">Login to chat</a>

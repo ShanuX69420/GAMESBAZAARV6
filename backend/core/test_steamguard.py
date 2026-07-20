@@ -216,7 +216,8 @@ class OfflinePurchaseTests(OfflineAccountTestBase):
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('steamuser1', note)
         self.assertIn('hunter2-plaintext', note)
-        self.assertIn('!code', note)
+        self.assertIn('«Get Steam Guard code»', note)
+        self.assertNotIn('!code', note)
 
         delivery_messages = Message.objects.filter(
             conversation=order.conversation, message_type='delivery',
@@ -711,7 +712,7 @@ class UbisoftEaAccountTests(OfflineAccountTestBase):
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('eauser1', note)
         self.assertIn('EA security code', note)
-        self.assertIn('!code', note)
+        self.assertNotIn('!code', note)
 
     @patch('core.guardmail.fetch_latest_code', return_value='869817')
     def test_code_and_label_delivered(self, fetch):
@@ -728,8 +729,7 @@ class UbisoftEaAccountTests(OfflineAccountTestBase):
         message = Message.objects.filter(
             conversation=order.conversation, system_event='guard_code',
         ).first()
-        self.assertIn('EA security code', message.content)
-        self.assertIn('869817', message.content)
+        self.assertTrue(message.content.startswith('869817\n'))
 
     @patch('core.guardmail.fetch_latest_code', return_value=None)
     def test_pending_message_names_the_platform(self, fetch):
@@ -783,7 +783,7 @@ class EpicAccountTests(OfflineAccountTestBase):
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('epicuser1', note)
         self.assertIn('Epic Games security code', note)
-        self.assertIn('!code', note)
+        self.assertNotIn('!code', note)
 
     @patch('core.guardmail.fetch_latest_code', return_value='483920')
     def test_code_and_label_delivered(self, fetch):

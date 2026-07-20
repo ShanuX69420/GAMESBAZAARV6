@@ -1693,8 +1693,6 @@ class OfflineAccount(models.Model):
             f'Password: {decrypt_sensitive_text(self.password)}\n\n'
             f'This account is protected by a one-time login code. When '
             f'{name} asks for a code, press «Get {label}» on your order '
-            'page or type !code in this chat. You can request the code only '
-            f'once, so ask for it when {name} is ready for it. If you get '
-            'an error while signing in, start the login again and enter the '
-            'same code.'
+            f'page. You can request the code only once, so ask for it '
+            f'when {name} is ready for it.'
         )

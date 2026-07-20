@@ -259,7 +259,6 @@ export default function OrderDetailPage() {
     return (
       <div className="container">
         <div className="empty-state">
-          <div className="empty-state-icon">🚫</div>
           <p>{error || 'Order not found.'}</p>
           <Link href="/orders" className="btn btn-primary" style={{ marginTop: '12px' }}>Back to Purchases</Link>
         </div>
@@ -284,17 +283,6 @@ export default function OrderDetailPage() {
       case 'disputed': return '#DC2626';
       case 'cancelled': return '#6B7280';
       default: return '#6B7280';
-    }
-  }
-
-  function getStatusIcon(status) {
-    switch (status) {
-      case 'pending': return '⏳';
-      case 'delivered': return '📦';
-      case 'completed': return '✅';
-      case 'disputed': return '⚠️';
-      case 'cancelled': return '❌';
-      default: return '📋';
     }
   }
 
@@ -325,7 +313,7 @@ export default function OrderDetailPage() {
               className="order-detail-status"
               style={{ background: getStatusColor(order.status) + '20', color: getStatusColor(order.status) }}
             >
-              {getStatusIcon(order.status)} {order.status_display}
+              {order.status_display}
             </span>
           </div>
 
@@ -347,7 +335,7 @@ export default function OrderDetailPage() {
                 onClick={() => setConfirmModal(true)}
                 disabled={actionLoading}
               >
-                Order received
+                Confirm order
               </button>
             </div>
           )}
@@ -390,17 +378,10 @@ export default function OrderDetailPage() {
           {order.delivery_note && (
             <div className="order-detail-section">
               <h3 className="order-detail-section-title">
-                {order.is_auto_delivery ? (
-                  <>
-                    <svg className="instant-delivery-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', verticalAlign: '-3px' }}>
-                      <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
-                    </svg>
-                    Auto-Delivered Content
-                  </>
-                ) : '📝 Delivery Details'}
+                {order.is_auto_delivery ? 'Auto-Delivered Content' : 'Delivery Details'}
               </h3>
               <div className={`order-delivery-note ${order.is_auto_delivery ? 'order-auto-delivery-note' : ''}`} style={{ margin: 0 }}>
-                <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+                <pre className="order-delivery-data">
                   {order.delivery_note}
                 </pre>
               </div>
@@ -410,7 +391,7 @@ export default function OrderDetailPage() {
           {/* Login code on demand (offline-activation orders) */}
           {isBuyer && (order.guard_code_available || order.guard_code_used || guardCode || guardUsed) && (
             <div className="order-detail-section">
-              <h3 className="order-detail-section-title">🔐 Login code</h3>
+              <h3 className="order-detail-section-title">Login code</h3>
               <div className="order-delivery-note" style={{ margin: 0 }}>
                 {guardCode ? (
                   <>
@@ -441,17 +422,16 @@ export default function OrderDetailPage() {
                   <>
                     <p style={{ margin: '0 0 12px' }}>
                       When you are asked for a {order.guard_code_label || 'login code'} at
-                      login, get it here — it is also posted in the chat, or type{' '}
-                      <code>!code</code> there. You can request it{' '}
-                      <strong>once</strong>, so ask only when the login screen is
-                      ready for it.
+                      login, get it here — it is also posted in the chat. You can
+                      request it <strong>once</strong>, so ask only when the login
+                      screen is ready for it.
                     </p>
                     <button
                       className="btn btn-primary"
                       onClick={handleGuardCode}
                       disabled={guardLoading}
                     >
-                      {guardWaiting ? 'Waiting for the code email...' : guardLoading ? 'Getting code...' : `🔐 Get ${order.guard_code_label || 'login code'}`}
+                      {guardWaiting ? 'Waiting for the code email...' : guardLoading ? 'Getting code...' : `Get ${order.guard_code_label || 'login code'}`}
                     </button>
                   </>
                 )}
@@ -467,7 +447,7 @@ export default function OrderDetailPage() {
           {/* Delivery Instructions */}
           {isBuyer && order.delivery_instructions && (
             <div className="order-detail-section">
-              <h3 className="order-detail-section-title">📋 Seller Instructions</h3>
+              <h3 className="order-detail-section-title">Seller Instructions</h3>
               <div className="order-delivery-note" style={{ margin: 0, background: 'var(--sky-50)', borderColor: 'var(--sky-200)', color: 'var(--sky-900)' }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
                   {order.delivery_instructions}
@@ -479,7 +459,7 @@ export default function OrderDetailPage() {
           {/* Dispute reason */}
           {order.dispute_reason && (
             <div className="order-detail-section">
-              <h3 className="order-detail-section-title">⚠️ Dispute Reason</h3>
+              <h3 className="order-detail-section-title">Dispute Reason</h3>
               <div className="order-dispute-note" style={{ margin: 0 }}>
                 {order.dispute_reason}
               </div>
@@ -525,7 +505,7 @@ export default function OrderDetailPage() {
                     onClick={() => { setDisputeModal(true); setDisputeReason(''); }}
                     disabled={actionLoading}
                   >
-                    ⚠️ Open Dispute
+                    Open Dispute
                   </button>
                 </>
               )}
@@ -537,7 +517,7 @@ export default function OrderDetailPage() {
                   onClick={() => { setDeliverModal(true); setDeliveryNote(''); }}
                   disabled={actionLoading}
                 >
-                  📦 Deliver Order
+                  Deliver Order
                 </button>
               )}
               {isSeller && order.status !== 'cancelled' && (
@@ -546,7 +526,7 @@ export default function OrderDetailPage() {
                   onClick={handleRefund}
                   disabled={actionLoading}
                 >
-                  {actionLoading ? 'Processing...' : '💸 Refund Buyer'}
+                  {actionLoading ? 'Processing...' : 'Refund Buyer'}
                 </button>
               )}
 
@@ -558,7 +538,7 @@ export default function OrderDetailPage() {
               )}
               {order.status === 'cancelled' && (
                 <div style={{ color: 'var(--text-tertiary)', padding: '12px 0' }}>
-                  ❌ This order has been cancelled and the buyer was refunded.
+                  This order has been cancelled and the buyer was refunded.
                 </div>
               )}
             </div>
@@ -568,7 +548,7 @@ export default function OrderDetailPage() {
           {showReviewForm && (
             <div className="order-detail-actions">
               <h3 className="order-detail-section-title">
-                {editingReview ? '✏️ Edit Your Review' : '⭐ Leave a Review'}
+                {editingReview ? 'Edit Your Review' : 'Leave a Review'}
               </h3>
               <form onSubmit={handleReview} className="review-form">
                 <div className="review-stars-input">
@@ -658,7 +638,7 @@ export default function OrderDetailPage() {
           {/* Seller view of the review on this order */}
           {isSeller && hasReview && reviewData && (
             <div className="order-detail-actions">
-              <h3 className="order-detail-section-title">⭐ Buyer's Review</h3>
+              <h3 className="order-detail-section-title">Buyer's Review</h3>
               <div className="review-display-card">
                 <div className="review-card-stars">{renderStars(reviewData.rating)}</div>
                 {reviewData.comment && (
@@ -729,7 +709,6 @@ export default function OrderDetailPage() {
             />
           ) : (
             <div className="order-chat-placeholder">
-              <div className="empty-state-icon">💬</div>
               <p>Chat will be available once a conversation is started.</p>
             </div>
           )}
@@ -758,7 +737,7 @@ export default function OrderDetailPage() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
                 <button className="btn btn-outline" onClick={() => setDeliverModal(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={handleDeliver} disabled={actionLoading}>
-                  {actionLoading ? 'Delivering...' : '📦 Mark as Delivered'}
+                  {actionLoading ? 'Delivering...' : 'Mark as Delivered'}
                 </button>
               </div>
             </div>
@@ -871,7 +850,7 @@ export default function OrderDetailPage() {
                 {actionLoading ? (
                   <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> Processing...</>
                 ) : (
-                  '✅ Yes, Confirm Received'
+                  'Yes, Confirm Received'
                 )}
               </button>
             </div>

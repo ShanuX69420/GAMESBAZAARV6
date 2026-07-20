@@ -587,7 +587,7 @@ def _deliver(task, supplier_orders):
         player_name = _checkout_info(order).get('player_name', '')
         name_part = f' ({player_name})' if player_name else ''
         delivery_text = (
-            f'✅ Top-up delivered directly to your account'
+            f'Top-up delivered directly to your account'
             f'{f" — ID {id_bits}" if id_bits else ""}{name_part}. '
             'Please check in-game and press «Confirm order» on the order page.'
         )
@@ -595,7 +595,7 @@ def _deliver(task, supplier_orders):
         info = _checkout_info(order).get('fields') or {}
         invite = str(info.get('invite_url') or '').strip()
         delivery_text = (
-            '🎁 Your Steam gift has been sent to your account'
+            'Your Steam gift has been sent to your account'
             f'{f" ({invite})" if invite else ""}. '
             'Open Steam, accept the friend request if one is pending, and '
             'accept the gift — it stays in your library forever. Then please '
@@ -764,6 +764,16 @@ def _alert_owner(task, reason, *, low_balance=False):
 # direction; en-dash forms are canonical (what the templates generate), the
 # hyphen forms are one-way fallbacks that normalize to the same instant text.
 INSTANT_TEXT_PAIRS = [
+    # 2026-07-20 redemption-focused templates (keys + gift cards). These
+    # contain the short '— usually within…' pair below as a substring, so
+    # they must stay above it.
+    ('is sent to you in this chat after purchase — usually within '
+     '10–15 minutes',
+     'arrives automatically in this chat and on your order page as soon '
+     'as payment completes'),
+    ('is sent to you in the order chat after purchase — usually within '
+     '10–15 minutes',
+     'is delivered automatically in the order chat right after payment'),
     ('Average delivery: 10–15 minutes after purchase',
      'Average delivery: Instant — automatic delivery'),
     ('Usually delivered within 10–15 minutes',
