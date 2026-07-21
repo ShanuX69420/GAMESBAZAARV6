@@ -975,16 +975,17 @@ class UpdateListingSerializer(serializers.ModelSerializer):
 
             attrs['delivery_time'] = 'Instant'
         elif next_delivery_time == 'Instant':
-            # Platform-fulfilled listings (Fazer link) legitimately carry
-            # 'Instant' while auto-fulfillment is on; everyone else may not
-            # select it manually.
-            has_fazer_link = FazerProductLink.objects.filter(
-                listing_id=listing.pk, enabled=True,
-            ).exists()
-            if not has_fazer_link:
-                raise serializers.ValidationError({
-                    'delivery_time': 'Instant delivery is only available for automated delivery listings.',
-                })
+            # Offline-activation listings (linked shared account) and
+            # platform-fulfilled listings (Fazer link) legitimately carry
+            # 'Instant'; everyone else may not select it manually.
+            if listing.offline_account_id is None:
+                has_fazer_link = FazerProductLink.objects.filter(
+                    listing_id=listing.pk, enabled=True,
+                ).exists()
+                if not has_fazer_link:
+                    raise serializers.ValidationError({
+                        'delivery_time': 'Instant delivery is only available for automated delivery listings.',
+                    })
         elif next_status == 'active' and next_quantity is not None and next_quantity <= 0:
             raise serializers.ValidationError({
                 'status': 'Set stock above 0 or choose unlimited stock before activating this listing.',

@@ -42,9 +42,9 @@ from .admin import (
 from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
-    ItemRequest, Listing, Message, Notification, Order, Report, Review, SupportTicket,
-    PlatformLedgerEntry, SellerCommissionOverride, SocialAccount, TopUpRequest, UserProfile, Wallet,
-    WalletTransaction, WithdrawRequest,
+    ItemRequest, Listing, Message, Notification, OfflineAccount, Order, Report, Review,
+    SupportTicket, PlatformLedgerEntry, SellerCommissionOverride, SocialAccount, TopUpRequest,
+    UserProfile, Wallet, WalletTransaction, WithdrawRequest,
 )
 from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
@@ -1898,6 +1898,35 @@ class PurchaseFlowTests(TestCase):
         self.assertIn('delivery_time', response.data)
         listing.refresh_from_db()
         self.assertEqual(listing.delivery_time, '1-2 Hours')
+
+    def test_update_listing_allows_editing_offline_activation_listing(self):
+        account = OfflineAccount.objects.create(
+            label='Test Game — account 1',
+            login='steamuser1',
+            password='hunter2-plaintext',
+        )
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Offline activation item',
+            price=Decimal('300.00'),
+            quantity=None,
+            status='active',
+            delivery_time='Instant',
+            offline_account=account,
+        )
+        self.client.force_authenticate(user=self.seller)
+
+        response = self.client.put(
+            f'/api/listings/{listing.id}/',
+            {'delivery_instructions': 'Follow this video: https://example.com'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listing.refresh_from_db()
+        self.assertEqual(listing.delivery_instructions, 'Follow this video: https://example.com')
+        self.assertEqual(listing.delivery_time, 'Instant')
 
     def test_update_listing_rejects_reactivating_empty_auto_delivery_listing(self):
         listing = Listing.objects.create(
