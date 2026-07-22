@@ -3630,6 +3630,14 @@ def prepare_fazer_checkout(listing, raw_fields):
         value = str(raw_fields.get(key, '')).strip()[:100]
         if not value:
             return None, f'{label} is required for this item.'
+        # Dropdown fields (server/platform pickers) only accept the values the
+        # supplier listed — anything else would fail at fulfillment.
+        options = field.get('options') or []
+        if options:
+            allowed = {str(o.get('value', '')) for o in options
+                       if isinstance(o, dict)}
+            if value not in allowed:
+                return None, f'Please pick a valid {label} from the list.'
         fields[key] = value
 
     if link.kind == 'gift':
