@@ -4242,6 +4242,17 @@ html[data-auth-hint="1"] .navbar-guest-links {
   text-decoration: underline;
 }
 
+/* Bare URLs inside chat messages / seller instructions (<Linkified>) */
+.linkified-url {
+  color: var(--green-600);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.linkified-url:hover {
+  text-decoration: none;
+}
+
 /* ── Chat Input (FunPay-style) ──────────────────────────────────────────────── */
 
 

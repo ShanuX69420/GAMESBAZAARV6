@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview, updateReview, replyToReview, getGuardCode } from '@/lib/api';
 import { orderLabel } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
+import Linkified from '@/components/Linkified';
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -450,7 +451,7 @@ export default function OrderDetailPage() {
               <h3 className="order-detail-section-title">Seller Instructions</h3>
               <div className="order-delivery-note" style={{ margin: 0, background: 'var(--sky-50)', borderColor: 'var(--sky-200)', color: 'var(--sky-900)' }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
-                  {order.delivery_instructions}
+                  <Linkified text={order.delivery_instructions} />
                 </pre>
               </div>
             </div>

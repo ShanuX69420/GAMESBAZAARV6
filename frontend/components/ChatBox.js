@@ -14,6 +14,7 @@ import {
   isOnlineFromLastActive,
 } from '@/lib/api';
 import { resetMessageSoundCooldown } from '@/lib/messageAlerts';
+import Linkified from '@/components/Linkified';
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
@@ -546,7 +547,7 @@ export default function ChatBox({
               </span>
               <span className="chat-msg-time">{time}</span>
             </div>
-            <div className="chat-msg-content">{msg.content}</div>
+            <div className="chat-msg-content"><Linkified text={msg.content} /></div>
           </div>
         );
       }
@@ -576,7 +577,7 @@ export default function ChatBox({
             </span>
             <span className="chat-msg-time">{time}</span>
           </div>
-          <div className="chat-msg-content">{msg.content}</div>
+          <div className="chat-msg-content"><Linkified text={msg.content} /></div>
         </div>
       );
     }
@@ -590,7 +591,7 @@ export default function ChatBox({
           </span>
           <span className="chat-msg-time">{time}</span>
         </div>
-        <div className="chat-msg-content">{msg.content}</div>
+        <div className="chat-msg-content"><Linkified text={msg.content} /></div>
       </div>
     );
   }
@@ -661,7 +662,7 @@ export default function ChatBox({
               <span className="chat-msg-listing-ref-price">PKR {msg.listing_reference.price}</span>
             </div>
           )}
-          {msg.content && <div className="chat-msg-content">{msg.content}</div>}
+          {msg.content && <div className="chat-msg-content"><Linkified text={msg.content} /></div>}
         </div>
       );
 
