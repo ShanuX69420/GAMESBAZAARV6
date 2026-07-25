@@ -8,6 +8,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -233,6 +234,37 @@ class PurchaseHookTests(FazerTestBase):
         self.link.save(update_fields=['enabled'])
         order = self.buy()
         self.assertFalse(FazerFulfillmentTask.objects.filter(order=order).exists())
+
+    def test_paused_kind_means_no_task_for_that_kind_only(self):
+        gift = self.make_gift_listing()
+        set_platform_setting(fulfillment.PAUSED_KINDS_SETTING_KEY, 'gift')
+        gift_order = self.buy(
+            listing=gift,
+            checkout_info={'fields': {'invite_url': 'https://s.team/p/abc-defg'}},
+        )
+        self.assertFalse(
+            FazerFulfillmentTask.objects.filter(order=gift_order).exists())
+        # Every other product line keeps delivering automatically.
+        card_order = self.buy()
+        self.assertEqual(card_order.fazer_task.kind, 'giftcard')
+
+    def test_paused_kind_hides_its_checkout_fields(self):
+        gift = self.make_gift_listing()
+        url = f'/api/listings/{gift.pk}/'
+        self.assertTrue(self.client.get(url).data['required_checkout_fields'])
+        set_platform_setting(fulfillment.PAUSED_KINDS_SETTING_KEY, 'gift')
+        cache.clear()
+        self.assertEqual(self.client.get(url).data['required_checkout_fields'], [])
+
+    def test_paused_gift_purchase_needs_no_invite_link(self):
+        gift = self.make_gift_listing()
+        set_platform_setting(fulfillment.PAUSED_KINDS_SETTING_KEY, 'gift')
+        response = self.client.post('/api/orders/buy/', {
+            'listing_id': gift.pk, 'quantity': 1,
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(FazerFulfillmentTask.objects.filter(
+            order_id=response.data['id']).exists())
 
     def test_no_api_key_means_no_task(self):
         with override_settings(FAZER_API_KEY=''):
@@ -867,6 +899,42 @@ class AutofulfillCommandTests(FazerTestBase):
         self.assertEqual(self.listing.delivery_time, '10-15 Minutes')
         self.assertFalse(fulfillment.autofulfill_enabled())
 
+    def test_pause_one_kind_leaves_the_others_instant(self):
+        gift = self.make_gift_listing()
+        gift.description = GC_DESC
+        gift.save(update_fields=['description'])
+        call_command('fazer_autofulfill', 'on', verbosity=0)
+        call_command('fazer_autofulfill', 'pause', 'gift', verbosity=0)
+
+        gift.refresh_from_db()
+        self.listing.refresh_from_db()
+        self.assertEqual(gift.delivery_time, '10-15 Minutes')
+        self.assertEqual(gift.description, GC_DESC)
+        self.assertEqual(self.listing.delivery_time, 'Instant')
+        # The main toggle is untouched, only the one product line is paused.
+        self.assertTrue(fulfillment.autofulfill_enabled())
+        self.assertEqual(fulfillment.paused_kinds(), {'gift'})
+
+        call_command('fazer_autofulfill', 'resume', 'gift', verbosity=0)
+        gift.refresh_from_db()
+        self.assertEqual(gift.delivery_time, 'Instant')
+        self.assertEqual(fulfillment.paused_kinds(), set())
+
+    def test_pause_survives_off_on_cycle(self):
+        call_command('fazer_autofulfill', 'pause', 'gift', verbosity=0)
+        call_command('fazer_autofulfill', 'off', verbosity=0)
+        call_command('fazer_autofulfill', 'on', verbosity=0)
+        gift = self.make_gift_listing()
+        self.assertEqual(fulfillment.paused_kinds(), {'gift'})
+        self.assertIsNone(fulfillment.get_active_link(gift))
+
+    def test_pause_rejects_unknown_kind_and_missing_kind(self):
+        with self.assertRaises(CommandError):
+            call_command('fazer_autofulfill', 'pause', 'gifts', verbosity=0)
+        with self.assertRaises(CommandError):
+            call_command('fazer_autofulfill', 'pause', verbosity=0)
+        self.assertEqual(fulfillment.paused_kinds(), set())
+
 
 @override_settings(**FAZER_TEST_SETTINGS)
 class ApplyFazerLinksTests(FazerTestBase):
@@ -930,6 +998,27 @@ class ApplyFazerLinksTests(FazerTestBase):
         ])
         self.link.refresh_from_db()
         self.assertEqual(self.link.last_cost_usd, Decimal('8.5'))
+
+    def test_paused_kind_is_not_revived_by_a_link_push(self):
+        gift_listing = self.make_gift_listing()
+        gift_listing.delivery_time = 'Instant'
+        gift_listing.save(update_fields=['delivery_time'])
+        set_platform_setting(fulfillment.PAUSED_KINDS_SETTING_KEY, 'gift')
+        self._run([
+            {'listing_id': self.listing.pk, 'kind': 'giftcard',
+             'fazer_category_id': 'steam_wallet_in', 'offer_name': '10 USD'},
+            {'listing_id': gift_listing.pk, 'kind': 'gift',
+             'fazer_category_id': '1245620', 'offer_name': 'ELDEN RING',
+             'sku_id': '54029', 'cost_usd': '25.4', 'fazer_region': 'PK'},
+        ], '--prune')
+        gift_listing.refresh_from_db()
+        self.listing.refresh_from_db()
+        # Link row kept (one 'resume' brings it back) but the listing sells
+        # manually and creates no task.
+        self.assertTrue(FazerProductLink.objects.get(listing=gift_listing).enabled)
+        self.assertEqual(gift_listing.delivery_time, '10-15 Minutes')
+        self.assertIsNone(fulfillment.get_active_link(gift_listing))
+        self.assertEqual(self.listing.delivery_time, 'Instant')
 
     def test_gift_row_requires_region(self):
         gift_listing = Listing.objects.create(

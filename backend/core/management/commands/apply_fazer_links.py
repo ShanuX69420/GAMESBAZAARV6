@@ -38,10 +38,12 @@ class Command(BaseCommand):
             raise CommandError('Payload must be a list of link rows or {"links": [...]}.')
 
         toggle_on = get_platform_setting(fulfillment.AUTOFULFILL_SETTING_KEY) == '1'
+        paused = fulfillment.paused_kinds()
         now = timezone.now()
 
         created = updated = skipped = 0
         flip_on = []   # listings newly linked/re-enabled while the toggle is ON
+        flip_off = []  # linked listings whose product line is paused
         seen_listing_ids = set()
 
         for row in rows:
@@ -95,7 +97,12 @@ class Command(BaseCommand):
                 created += 1
             else:
                 updated += 1
-            if toggle_on and listing.delivery_time != 'Instant':
+            if kind in paused:
+                # Supplier line switched off: the link stays on record so it
+                # revives with one 'resume', but the listing sells manually.
+                if listing.delivery_time == 'Instant':
+                    flip_off.append(listing)
+            elif toggle_on and listing.delivery_time != 'Instant':
                 flip_on.append(listing)
 
         pruned_listings = []
@@ -116,7 +123,7 @@ class Command(BaseCommand):
         for listing in flip_on:
             if fulfillment.flip_listing_instant(listing, True):
                 changed.append(listing)
-        for listing in pruned_listings:
+        for listing in pruned_listings + flip_off:
             if fulfillment.flip_listing_instant(listing, False):
                 changed.append(listing)
         if not options['dry_run'] and changed:
@@ -129,8 +136,11 @@ class Command(BaseCommand):
             )
 
         prefix = '[DRY RUN] ' if options['dry_run'] else ''
+        state = 'ON' if toggle_on else 'OFF'
+        if paused:
+            state += f', paused: {", ".join(sorted(paused))}'
         self.stdout.write(self.style.SUCCESS(
             f'{prefix}Links: {created} created, {updated} updated, '
             f'{skipped} skipped, {len(pruned_listings)} pruned; '
-            f'{len(changed)} listings re-flipped (toggle {"ON" if toggle_on else "OFF"}).'
+            f'{len(changed)} listings re-flipped (toggle {state}).'
         ))

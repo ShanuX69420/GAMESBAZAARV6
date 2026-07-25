@@ -48,6 +48,11 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 AUTOFULFILL_SETTING_KEY = 'fazer_autofulfill_enabled'
+# Comma-separated FazerProductLink kinds that stay MANUAL even while the main
+# toggle is on — used when the supplier switches one product line off (Fazer
+# disabled Steam gifts after Steam's 2026-07 gifting change) but the rest of
+# the catalog still delivers automatically.
+PAUSED_KINDS_SETTING_KEY = 'fazer_autofulfill_paused_kinds'
 MANUAL_DELIVERY_TIME = '10-15 Minutes'
 
 # How long a task may sit in 'placing' before the timer assumes the worker
@@ -91,10 +96,26 @@ def autofulfill_enabled():
     return fazer.is_configured() and get_platform_setting(AUTOFULFILL_SETTING_KEY) == '1'
 
 
+def paused_kinds():
+    """Link kinds whose auto-delivery is paused (supplier outage). Cheap: the
+    setting is cached, and this is the ONE gate every caller goes through."""
+    raw = get_platform_setting(PAUSED_KINDS_SETTING_KEY) or ''
+    return {part.strip() for part in raw.split(',') if part.strip()}
+
+
+def kind_paused(kind):
+    return kind in paused_kinds()
+
+
 def get_active_link(listing):
     """The enabled Fazer link for a listing, fetched OUTSIDE any FOR UPDATE
-    join (a nullable reverse OneToOne cannot ride along in select_for_update)."""
-    return FazerProductLink.objects.filter(listing_id=listing.pk, enabled=True).first()
+    join (a nullable reverse OneToOne cannot ride along in select_for_update).
+    A link whose kind is paused reads as no link at all, so checkout stops
+    asking for supplier-specific info and purchases go down the manual path."""
+    link = FazerProductLink.objects.filter(listing_id=listing.pk, enabled=True).first()
+    if link is not None and kind_paused(link.kind):
+        return None
+    return link
 
 
 def build_task_for_order(order, link):
