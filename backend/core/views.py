@@ -3704,50 +3704,6 @@ class BuyListingView(APIView):
         return Response(OrderSerializer(order, context={'request': request}).data, status=201)
 
 
-class ValidateTopupIdView(ScopedPostThrottleMixin, APIView):
-    """POST /api/listings/<id>/validate-topup-id/ — Pre-checkout ID check.
-
-    Lets the buy modal verify a player/user ID against the supplier and show
-    the matched nickname before the buyer pays.
-    """
-    permission_classes = [HasCompletedProfile]
-    throttle_scope = 'validate_topup_id'
-
-    def post(self, request, pk):
-        listing = Listing.objects.filter(pk=pk, status='active').first()
-        if listing is None or not fulfillment.autofulfill_enabled():
-            raise Http404
-        link = fulfillment.get_active_link(listing)
-        if link is None or link.kind != 'topup':
-            raise Http404
-
-        spec = link.checkout_fields or DEFAULT_TOPUP_CHECKOUT_FIELDS
-        fields = {}
-        for field in spec:
-            key = str(field.get('key') or 'player_id')
-            label = str(field.get('label') or 'Player ID')
-            value = str((request.data or {}).get(key, '')).strip()[:100]
-            if not value:
-                return Response({'error': f'{label} is required.'}, status=400)
-            fields[key] = value
-
-        try:
-            # Short timeout for the same reason as prepare_fazer_checkout:
-            # this view shares daphne's single sync thread with the whole site.
-            result = fazer.validate_topup_id(link.fazer_category_id, fields,
-                                             timeout=(5, 10))
-        except fazer.FazerError:
-            # Supplier unreachable, or validation unsupported for this
-            # category (the common case) — don't block checkout on a soft
-            # check; the UI shows "couldn't verify, double-check the ID".
-            return Response({'valid': True, 'player_name': '', 'unverified': True})
-
-        return Response({
-            'valid': result.get('valid') is not False,
-            'player_name': str(result.get('player_name') or '')[:100],
-        })
-
-
 class MyOrdersView(APIView):
     """GET /api/orders/mine/ — Orders where I'm the buyer.
     Query params: status, search, date_from, date_to, limit, offset

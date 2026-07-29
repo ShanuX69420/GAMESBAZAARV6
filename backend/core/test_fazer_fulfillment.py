@@ -321,21 +321,6 @@ class PurchaseHookTests(FazerTestBase):
         self.assertEqual(payload['fields'], {'user_id': '12345678'})
         self.assertEqual(payload['player_name'], '')
 
-    def test_validate_endpoint_fails_open_when_unsupported(self):
-        listing = self.make_topup_listing()
-
-        def rejecting(method, path, **kwargs):
-            raise fazer.FazerRejected('HTTP 400: ID validation is not available.')
-
-        with patch('core.fazer._request', new=rejecting):
-            response = self.client.post(
-                f'/api/listings/{listing.pk}/validate-topup-id/',
-                {'user_id': '12345678'}, format='json',
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data['valid'])
-        self.assertTrue(response.data['unverified'])
-
     def test_topup_buy_api_stores_checkout_payload_and_chat_note(self):
         listing = self.make_topup_listing()
         response = self.client.post('/api/orders/buy/', {
@@ -350,22 +335,6 @@ class PurchaseHookTests(FazerTestBase):
         self.assertTrue(Message.objects.filter(
             order=order, content__contains='12345678',
         ).exists())
-
-    def test_validate_topup_id_endpoint(self):
-        listing = self.make_topup_listing()
-        response = self.client.post(
-            f'/api/listings/{listing.pk}/validate-topup-id/',
-            {'user_id': '12345678'}, format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data['valid'])
-        self.assertEqual(response.data['player_name'], 'Nick')
-        # Non-topup listings 404 (no checkout info needed).
-        response = self.client.post(
-            f'/api/listings/{self.listing.pk}/validate-topup-id/',
-            {'user_id': 'x'}, format='json',
-        )
-        self.assertEqual(response.status_code, 404)
 
     GIFT_INVITE = 'https://s.team/p/abcd-efg/HIJKLMNO'
 
@@ -413,13 +382,6 @@ class PurchaseHookTests(FazerTestBase):
         self.assertEqual(response.status_code, 200)
         fields = response.data['required_checkout_fields']
         self.assertEqual([f['key'] for f in fields], ['invite_url'])
-        self.assertIs(fields[0]['verify'], False)
-        # Gifts have no supplier-side ID validation endpoint.
-        response = self.client.post(
-            f'/api/listings/{listing.pk}/validate-topup-id/',
-            {'invite_url': self.GIFT_INVITE}, format='json',
-        )
-        self.assertEqual(response.status_code, 404)
 
     def test_listing_detail_exposes_checkout_fields_and_instant_flag(self):
         listing = self.make_topup_listing()

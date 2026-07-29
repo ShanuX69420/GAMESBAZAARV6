@@ -584,18 +584,6 @@ export async function buyListing(listingId, quantity = 1, checkoutFields) {
   return data;
 }
 
-// Pre-checkout verification of a player/user ID for auto-fulfilled top-ups.
-export async function validateTopupId(listingId, fields) {
-  const res = await authFetch(`${API_BASE}/api/listings/${listingId}/validate-topup-id/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(fields),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Could not verify the ID');
-  return data;
-}
-
 export async function getMyOrders({ limit, offset, beforeId, status, search, date_from, date_to, cursor } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));

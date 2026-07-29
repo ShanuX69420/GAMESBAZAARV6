@@ -84,7 +84,6 @@ GIFT_CHECKOUT_FIELDS = [{
     'placeholder': 'https://s.team/p/...',
     'hint': 'Steam → Friends → Add a Friend → copy your Invite Link. '
             'The gift is sent to this Steam account.',
-    'verify': False,
 }]
 # Friend INVITE links only (s.team/p/... or its long form
 # steamcommunity.com/user/...). A profile URL cannot receive a gift.

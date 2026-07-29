@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
   buyListing, getWallet, getSellerReviews,
-  initiateJazzCashPurchase, pollJazzCashPayment, validateTopupId,
+  initiateJazzCashPurchase, pollJazzCashPayment,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
@@ -47,7 +47,6 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [showConfirm, setShowConfirm] = useState(false);
   // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
   const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
-  const [idVerify, setIdVerify] = useState({ status: 'idle', name: '' });
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -182,26 +181,8 @@ export default function ListingDetailClient({ initialListing = null }) {
   function openConfirmModal() {
     setBuyError('');
     setBuySuccess('');
-    setIdVerify({ status: 'idle', name: '' });
     setShowConfirm(true);
     trackBeginCheckout(listing, quantity);
-  }
-
-  async function handleVerifyTopupId() {
-    setIdVerify({ status: 'checking', name: '' });
-    try {
-      const result = await validateTopupId(listing.id, checkoutFieldValues);
-      if (result.valid) {
-        setIdVerify({
-          status: result.unverified ? 'unverified' : 'ok',
-          name: result.player_name || '',
-        });
-      } else {
-        setIdVerify({ status: 'bad', name: '' });
-      }
-    } catch {
-      setIdVerify({ status: 'unverified', name: '' });
-    }
   }
 
   async function handleBuy() {
@@ -754,72 +735,35 @@ export default function ListingDetailClient({ initialListing = null }) {
               </div>
 
               {/* Auto-fulfilled top-ups / Steam gifts: buyer info the supplier
-                  needs (player ID, server, friend invite link). Verify only
-                  exists for top-ups — the field spec turns it off elsewhere —
-                  and checks ALL fields together, so one button on the last
-                  verifiable field. */}
+                  needs (player ID, server, friend invite link). */}
               {requiredCheckoutFields.map((field, idx) => {
                 const isSelect = field.type === 'select' && Array.isArray(field.options) && field.options.length > 0;
-                const verifiable = requiredCheckoutFields.filter((f) => f.verify !== false);
-                const showVerify = verifiable.length > 0 && field.key === verifiable[verifiable.length - 1].key;
                 return (
                   <div className="form-group" key={field.key} style={{ marginBottom: 0 }}>
                     <label className="form-label">{field.label} *</label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {isSelect ? (
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <Select
-                            value={checkoutFieldValues[field.key] || ''}
-                            onChange={(value) => {
-                              setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: value }));
-                              setIdVerify({ status: 'idle', name: '' });
-                            }}
-                            options={field.options.map((o) => ({ value: o.value, label: o.label }))}
-                            placeholder={`Select ${field.label}...`}
-                            ariaLabel={field.label}
-                            disabled={buying}
-                          />
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          className="form-input"
-                          value={checkoutFieldValues[field.key] || ''}
-                          onChange={(e) => {
-                            setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }));
-                            setIdVerify({ status: 'idle', name: '' });
-                          }}
-                          placeholder={field.placeholder || field.label}
-                          maxLength={100}
-                          disabled={buying}
-                        />
-                      )}
-                      {showVerify && (
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={handleVerifyTopupId}
-                          disabled={buying || !checkoutFieldsFilled || idVerify.status === 'checking'}
-                          style={{ whiteSpace: 'nowrap' }}
-                        >
-                          {idVerify.status === 'checking' ? 'Checking…' : 'Verify'}
-                        </button>
-                      )}
-                    </div>
-                    {showVerify && idVerify.status === 'ok' && (
-                      <span className="form-hint" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
-                        ✓ Found{idVerify.name ? `: ${idVerify.name}` : ''}
-                      </span>
-                    )}
-                    {showVerify && idVerify.status === 'bad' && (
-                      <span className="form-hint form-error-text">
-                        This ID was not found — please double-check it.
-                      </span>
-                    )}
-                    {showVerify && idVerify.status === 'unverified' && (
-                      <span className="form-hint">
-                        Couldn't verify right now — double-check the ID before paying.
-                      </span>
+                    {isSelect ? (
+                      <Select
+                        value={checkoutFieldValues[field.key] || ''}
+                        onChange={(value) => {
+                          setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: value }));
+                        }}
+                        options={field.options.map((o) => ({ value: o.value, label: o.label }))}
+                        placeholder={`Select ${field.label}...`}
+                        ariaLabel={field.label}
+                        disabled={buying}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={checkoutFieldValues[field.key] || ''}
+                        onChange={(e) => {
+                          setCheckoutFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }));
+                        }}
+                        placeholder={field.placeholder || field.label}
+                        maxLength={100}
+                        disabled={buying}
+                      />
                     )}
                     {(field.hint || idx === requiredCheckoutFields.length - 1) && (
                       <span className="form-hint">

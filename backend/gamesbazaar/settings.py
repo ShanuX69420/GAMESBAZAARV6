@@ -311,7 +311,6 @@ REST_FRAMEWORK = {
         'create_report': '10/hour',
         'create_support_ticket': '5/hour',
         'create_item_request': '5/hour',
-        'validate_topup_id': '20/min',
     },
 }
 
