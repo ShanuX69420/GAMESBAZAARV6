@@ -389,6 +389,11 @@ class ListingAdmin(admin.ModelAdmin):
     readonly_fields = ['seller', 'created_at', 'updated_at', 'auto_delivery_inventory']
     exclude = ['auto_delivery_data']
     raw_id_fields = ['offline_account']
+    # Never render game_category/option as plain <select>es: their __str__ walks
+    # game + category, so a dropdown of every row is an N+1 that took ~30s and
+    # ~14k queries per change form on prod (1k categories, 4k options).
+    autocomplete_fields = ['game_category', 'option']
+    list_select_related = ['seller', 'game_category__game', 'game_category__category']
 
     @admin.display(description='Auto-delivery inventory')
     def auto_delivery_inventory(self, obj):
@@ -1127,6 +1132,8 @@ class ConversationAdmin(HiddenModelAdmin):
 class MessageAdmin(HiddenModelAdmin):
     list_display = ['sender', 'content_preview', 'conversation', 'is_read', 'created_at']
     list_filter = ['is_read']
+    # Same trap as ListingAdmin: a <select> of all 8k listings.
+    autocomplete_fields = ['referenced_listing']
 
     @admin.display(description='Content')
     def content_preview(self, obj):
