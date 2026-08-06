@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { API_BASE } from '@/lib/config';
-import { requestLogout } from '@/lib/authRequests';
+import { formatApiError, requestLogout } from '@/lib/authRequests';
 
 const AuthContext = createContext(null);
 
@@ -121,9 +121,7 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      // Extract first error message
-      const errors = Object.values(data).flat();
-      throw new Error(errors[0] || 'Registration failed');
+      throw new Error(formatApiError(data, 'Registration failed'));
     }
     // Return verification token and message (user is inactive until verified)
     return data;
@@ -138,8 +136,7 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      const errors = Object.values(data).flat();
-      throw new Error(errors[0] || 'Profile setup failed');
+      throw new Error(formatApiError(data, 'Profile setup failed'));
     }
     // Refresh user data after completing profile
     return fetchUser();

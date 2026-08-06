@@ -3597,6 +3597,7 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'auth_login': '1/min',
         'auth_refresh': '1/min',
         'auth_register': '1/min',
+        'auth_register_attempts': '5/min',
         'chat_start': '1/min',
         'chat_ws_ticket': '1/min',
         'chat_message': '1/min',
@@ -3719,6 +3720,46 @@ class ApiThrottleBehaviorTests(TestCase):
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 429)
+
+    def register(self, **overrides):
+        payload = {
+            'username': 'buyer1',
+            'email': 'buyer1@example.com',
+            'password': 'S3cure!Passphrase42',
+            'password2': 'S3cure!Passphrase42',
+            'accepted_terms': True,
+        }
+        payload.update(overrides)
+        return self.client.post(
+            '/api/auth/register/', payload, format='json',
+            HTTP_ORIGIN='http://testserver',
+        )
+
+    def test_rejected_registrations_do_not_consume_the_rate_limit(self):
+        # auth_register is 1/min here; four rejected forms must still leave
+        # the allowance intact, or one mistyped password locks out the IP.
+        rejected = [
+            self.register(password='short', password2='short'),
+            self.register(password2='does-not-match'),
+            self.register(email='not-an-email'),
+            self.register(accepted_terms=False),
+        ]
+
+        for index, response in enumerate(rejected):
+            with self.subTest(attempt=index):
+                self.assertEqual(response.status_code, 400)
+
+        self.assertEqual(self.register().status_code, 201)
+
+    def test_attempt_ceiling_still_stops_a_flood_of_rejected_registrations(self):
+        # auth_register_attempts is 5/min here.
+        for index in range(5):
+            with self.subTest(attempt=index):
+                self.assertEqual(
+                    self.register(email='not-an-email').status_code, 400,
+                )
+
+        self.assertEqual(self.register().status_code, 429)
 
     def test_login_is_rate_limited(self):
         User.objects.create_user(

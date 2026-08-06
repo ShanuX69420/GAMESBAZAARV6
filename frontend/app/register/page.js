@@ -130,9 +130,16 @@ export default function RegisterPage() {
                 className="form-input"
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="Min. 6 characters"
+                placeholder="At least 8 characters"
+                minLength={8}
                 required
               />
+              {/* These three rules caused most rejected signups while the form
+                  only advertised a length, and the old 6 wasn't even true. */}
+              <span className="form-hint">
+                At least 8 characters, not all numbers, and not too close to
+                your display name or a common password.
+              </span>
             </div>
 
             <div className="form-group">

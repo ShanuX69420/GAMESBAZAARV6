@@ -25,6 +25,7 @@ from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
+from .throttling import AttemptScopedRateThrottle, SuccessScopedRateThrottle
 from .models import (
     Game, GameCategory, CategoryOption, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
@@ -216,6 +217,31 @@ class ScopedPostThrottleMixin:
         if self.request.method not in self.throttle_methods:
             return []
         return super().get_throttles()
+
+
+class SuccessCountedThrottleMixin(ScopedPostThrottleMixin):
+    """
+    Charge `throttle_scope` only for requests the view accepted.
+
+    Views using this must call `record_throttled_success()` at the point the
+    request is known to have succeeded; rejected forms then cost nothing.
+    `attempt_throttle_scope` still caps total attempts, so the endpoint is
+    protected from scripted floods.
+    """
+    throttle_classes = [SuccessScopedRateThrottle, AttemptScopedRateThrottle]
+
+    def get_throttles(self):
+        throttles = super().get_throttles()
+        # check_throttles() calls this once and primes each instance with the
+        # cache key and history, so keep them to write back to on success.
+        self._deferred_throttles = throttles
+        return throttles
+
+    def record_throttled_success(self):
+        for throttle in getattr(self, '_deferred_throttles', ()):
+            record = getattr(throttle, 'record', None)
+            if record is not None:
+                record()
 
 
 def has_valid_private_media_ticket(request, *, kind, object_id):
@@ -1179,18 +1205,20 @@ class LogoutView(APIView):
         return response
 
 
-class RegisterView(ScopedPostThrottleMixin, generics.CreateAPIView):
+class RegisterView(SuccessCountedThrottleMixin, generics.CreateAPIView):
     """POST /api/auth/register/ — Register a new user (inactive until email verified)."""
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
     throttle_scope = 'auth_register'
+    attempt_throttle_scope = 'auth_register_attempts'
 
     def create(self, request, *args, **kwargs):
         enforce_trusted_origin(request)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        self.record_throttled_success()
 
         # Server-side Meta CompleteRegistration (the pixel doesn't send one).
         meta_capi.queue_registration_event(
@@ -1540,10 +1568,11 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
         raise IntegrityError('Could not create a unique username for Google sign-in.')
 
 
-class CompleteProfileView(ScopedPostThrottleMixin, APIView):
+class CompleteProfileView(SuccessCountedThrottleMixin, APIView):
     """POST /api/auth/complete-profile/ — Set username and accept terms (Google sign-up)."""
     permission_classes = [permissions.IsAuthenticated]
     throttle_scope = 'complete_profile'
+    attempt_throttle_scope = 'complete_profile_attempts'
 
     def post(self, request):
         if not request.user.social_accounts.filter(
@@ -1583,6 +1612,8 @@ class CompleteProfileView(ScopedPostThrottleMixin, APIView):
                 {'username': ['This username is already taken.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        self.record_throttled_success()
 
         user = User.objects.select_related('profile').get(pk=request.user.pk)
         response = Response({

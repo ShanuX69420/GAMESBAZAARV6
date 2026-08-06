@@ -259,8 +259,10 @@ class GameCategoryDetailSerializer(serializers.Serializer):
 class RegisterSerializer(serializers.ModelSerializer):
     username = serializers.CharField(max_length=150, required=True)
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, min_length=6)
-    password2 = serializers.CharField(write_only=True, min_length=6)
+    # 8, not 6: AUTH_PASSWORD_VALIDATORS enforces 8 in validate() below, so a
+    # lower floor here only promised applicants something we then rejected.
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
     accepted_terms = serializers.BooleanField(write_only=True, required=True)
 
     class Meta:

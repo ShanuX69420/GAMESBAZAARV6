@@ -283,10 +283,17 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': '10/min',
         'auth_refresh': '30/min',
-        'auth_register': '5/hour',
+        # Signup limits are per client IP, and Pakistani carriers NAT thousands
+        # of subscribers behind one address, so these have to leave room for
+        # several unrelated people signing up in the same hour. The bare scopes
+        # count only accounts actually created; the *_attempts ceilings count
+        # every submission, including the ones the form rejected.
+        'auth_register': '10/hour',
+        'auth_register_attempts': '40/hour',
+        'complete_profile': '10/hour',
+        'complete_profile_attempts': '40/hour',
         'email_verify': '10/hour',
         'email_resend': '5/hour',
-        'complete_profile': '10/hour',
         'password_change': '10/hour',
         'password_reset_request': '5/hour',
         'password_reset_confirm': '10/hour',
