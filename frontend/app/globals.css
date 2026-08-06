@@ -5641,10 +5641,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
   font-weight: 600;
 }
 
-.orders-tab-icon {
-  font-size: 0.9rem;
-}
-
 .orders-tab-label {
   font-size: 0.82rem;
 }
@@ -5796,14 +5792,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
 @media (max-width: 640px) {
   .orders-status-tab {
     padding: 10px 12px;
-  }
-
-  .orders-tab-label {
-    display: none;
-  }
-
-  .orders-tab-icon {
-    font-size: 1.1rem;
   }
 
   .orders-filter-row {
@@ -6273,12 +6261,21 @@ html[data-auth-hint="1"] .navbar-guest-links {
   top: 80px;
   min-height: 500px;
   max-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
 }
 
-.order-detail-chat .chatbox-container {
-  height: 100%;
-  min-height: 500px;
-  max-height: calc(100vh - 100px);
+/* The chatbox must fill the panel and never overflow it — the messages area
+   flexes so the input row stays visible even when the textarea grows. */
+.order-detail-chat .chatbox {
+  flex: 1;
+  min-height: 0;
+}
+
+.order-detail-chat .chatbox-messages {
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }
 
 .order-chat-placeholder {
