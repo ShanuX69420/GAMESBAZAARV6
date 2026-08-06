@@ -63,6 +63,15 @@ export const metadata = {
   },
 };
 
+// resizes-content makes Android keyboards shrink the layout viewport, so the
+// fullscreen chat's pinned input stays visible above the keyboard (iOS ignores
+// this and scrolls the focused input into view itself).
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  interactiveWidget: 'resizes-content',
+};
+
 // Runs before paint so a saved dark preference never flashes white, and so
 // guest-only UI (navbar Login/Sign Up, home CTA) is hidden for returning
 // logged-in users before it can flash or shift the layout (gb_auth_hint is

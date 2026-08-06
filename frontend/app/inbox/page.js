@@ -34,6 +34,25 @@ export default function InboxPage() {
   const loadedLimitRef = useRef(CONVERSATION_PAGE_SIZE);
   const activeChatIdRef = useRef(null);
   activeChatIdRef.current = activeChatId;
+  const pushedChatHistoryRef = useRef(false);
+
+  // Mobile fullscreen chat: lock the page scroll behind the overlay.
+  useEffect(() => {
+    document.body.classList.toggle('gb-mobile-chat-open', mobileChatOpen);
+    return () => document.body.classList.remove('gb-mobile-chat-open');
+  }, [mobileChatOpen]);
+
+  // The phone's back button should close the fullscreen chat, not leave the
+  // inbox — opening a chat on mobile pushes a history entry, popping it (back
+  // button or our back arrow) closes the chat.
+  useEffect(() => {
+    function handlePopState() {
+      pushedChatHistoryRef.current = false;
+      setMobileChatOpen(false);
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -200,6 +219,10 @@ export default function InboxPage() {
   function selectConversation(convo) {
     setActiveChatId(convo.id);
     setMobileChatOpen(true);
+    if (window.matchMedia('(max-width: 768px)').matches && !pushedChatHistoryRef.current) {
+      window.history.pushState({ gbInboxChat: true }, '');
+      pushedChatHistoryRef.current = true;
+    }
     // ChatBox marks the conversation read once it connects; mirror that here
     // instead of waiting for the next server push.
     if (convo.unread_count > 0) {
@@ -210,7 +233,11 @@ export default function InboxPage() {
   }
 
   function handleBackToList() {
-    setMobileChatOpen(false);
+    if (pushedChatHistoryRef.current) {
+      window.history.back();
+    } else {
+      setMobileChatOpen(false);
+    }
   }
 
   if (authLoading || !user) {
