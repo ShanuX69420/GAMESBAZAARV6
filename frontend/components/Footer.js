@@ -48,7 +48,7 @@ export default function Footer() {
             <div className="footer-nav-title">Follow Us</div>
             <div className="footer-social-icons">
               <a
-                href="https://instagram.com"
+                href="https://www.instagram.com/gamesbazaar.pk/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="footer-social-link"
@@ -61,7 +61,7 @@ export default function Footer() {
                 </svg>
               </a>
               <a
-                href="https://facebook.com"
+                href="https://www.facebook.com/profile.php?id=61593041638198"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="footer-social-link"

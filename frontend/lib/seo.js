@@ -73,6 +73,10 @@ export function organizationJsonLd() {
     logo: absoluteUrl('/logo.png'),
     email: 'support@gamesbazaar.pk',
     telephone: '+92-371-2101998',
+    sameAs: [
+      'https://www.instagram.com/gamesbazaar.pk/',
+      'https://www.facebook.com/profile.php?id=61593041638198',
+    ],
     contactPoint: [{
       '@type': 'ContactPoint',
       contactType: 'customer support',
