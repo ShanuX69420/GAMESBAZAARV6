@@ -161,11 +161,12 @@ class GameCategorySerializer(serializers.ModelSerializer):
 class GameListSerializer(serializers.ModelSerializer):
     category_count = serializers.SerializerMethodField()
     listing_count = serializers.SerializerMethodField()
+    min_price = serializers.SerializerMethodField()
     icon_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
-        fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count', 'listing_count']
+        fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count', 'listing_count', 'min_price']
 
     def get_category_count(self, obj):
         # Use len() to leverage the prefetched cache instead of .count()
@@ -175,6 +176,11 @@ class GameListSerializer(serializers.ModelSerializer):
     def get_listing_count(self, obj):
         # Annotated by GameListView's queryset; 0 when used without it.
         return getattr(obj, 'active_listing_count', 0)
+
+    def get_min_price(self, obj):
+        # Annotated by GameListView's queryset; None when used without it.
+        value = getattr(obj, 'min_active_price', None)
+        return str(value) if value is not None else None
 
     def get_icon_url(self, obj):
         if obj.icon:

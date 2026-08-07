@@ -117,7 +117,10 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [activeFilters, setActiveFilters] = useState({});
+  // Ad landings arrive pre-filtered: the server already applied ?method=/
+  // ?region= and reports the concrete filter ids in applied_filters — seed
+  // the filter UI so it shows the same selection the listings reflect.
+  const [activeFilters, setActiveFilters] = useState(initialData?.applied_filters || {});
   const [instantDeliveryFilter, setInstantDeliveryFilter] = useState(false);
   const [onlineSellerFilter, setOnlineSellerFilter] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -181,7 +184,10 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   }, [slug, categorySlug, sellerFilter]);
 
   useEffect(() => {
-    setActiveFilters({});
+    // Same object reference on first mount, so this bails out without a
+    // re-render (and without a duplicate fetch — the SSR data already
+    // reflects applied_filters); on category switches it resets properly.
+    setActiveFilters(initialData?.applied_filters || {});
     setInstantDeliveryFilter(false);
     setOnlineSellerFilter(false);
     setSearchInput('');
@@ -307,7 +313,21 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     }
   }, [data, selectedCurrencyId]);
 
+  // Once the buyer touches the filters they own the selection: drop the ad
+  // landing's ?method=/?region= from the URL so a refresh or share doesn't
+  // silently re-apply them over what the buyer picked.
+  function clearLandingParams() {
+    const query = new URLSearchParams(window.location.search);
+    if (!query.has('method') && !query.has('region')) return;
+    query.delete('method');
+    query.delete('region');
+    const queryString = query.toString();
+    window.history.replaceState(null, '',
+      queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname);
+  }
+
   function handleFilterChange(filterId, value) {
+    clearLandingParams();
     // Pruning drops selections on dependent filters that the change just hid.
     setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
       ...prev,
@@ -316,6 +336,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   }
 
   function handleDropdownChange(filterId, value) {
+    clearLandingParams();
     setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
       ...prev,
       [filterId]: value || undefined,
@@ -489,7 +510,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           {hasActiveFilters && (
             <button
               className="btn btn-sm btn-outline"
-              onClick={() => { setActiveFilters({}); setInstantDeliveryFilter(false); setOnlineSellerFilter(false); setSearchInput(''); }}
+              onClick={() => { clearLandingParams(); setActiveFilters({}); setInstantDeliveryFilter(false); setOnlineSellerFilter(false); setSearchInput(''); }}
             >
               Clear All
             </button>

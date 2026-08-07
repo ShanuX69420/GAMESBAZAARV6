@@ -109,6 +109,7 @@ describe('SEO route metadata', () => {
     expect(entries.map((entry) => entry.url)).toEqual([
       'https://www.gamesbazaar.pk',
       'https://www.gamesbazaar.pk/games',
+      'https://www.gamesbazaar.pk/keys',
       'https://www.gamesbazaar.pk/accounts',
       'https://www.gamesbazaar.pk/top-ups',
       'https://www.gamesbazaar.pk/offline-activation',

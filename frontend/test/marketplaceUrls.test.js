@@ -27,6 +27,22 @@ describe('marketplace URL helpers', () => {
     );
   });
 
+  it('carries ad-landing method/region params onto listing API URLs', () => {
+    const url = buildGameCategoryListingUrl({
+      apiBase: 'https://api.example.test',
+      gameSlug: 'elden-ring',
+      categorySlug: 'keys',
+      limit: 48,
+      offset: 0,
+      method: 'as-a-gift',
+      region: 'pakistan',
+    });
+
+    expect(url).toBe(
+      'https://api.example.test/api/games/elden-ring/keys/?limit=48&offset=0&method=as-a-gift&region=pakistan'
+    );
+  });
+
   it('builds seller-filtered listing paths without leaking raw query characters', () => {
     expect(
       buildSellerListingsPath({

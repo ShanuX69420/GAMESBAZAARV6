@@ -25,21 +25,24 @@ from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
+from django.utils.text import slugify
 from .throttling import AttemptScopedRateThrottle, SuccessScopedRateThrottle
 from .models import (
-    Game, GameCategory, CategoryOption, UserProfile, Listing, Conversation, Message,
+    Game, GameCategory, CategoryOption, Filter, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment, SellerCommissionOverride,
     Review, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
 )
 
-GAME_LIST_CACHE_KEY = 'game-list:v2'
+GAME_LIST_CACHE_KEY = 'game-list:v3'
 GAME_LIST_CACHE_SECONDS = 60
 # Home page "Popular" panels: which categories get one and in what order.
 # A section is omitted from the response while its categories have no games.
 # category_slugs lists every slug the section accepts — the Top Ups category
 # kept its original "subscription" slug in production after a rename.
 HOME_POPULAR_SECTIONS = [
+    {'slug': 'keys', 'title': 'Popular Keys',
+     'category_slugs': ('keys',)},
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
@@ -50,13 +53,17 @@ HOME_POPULAR_SECTIONS = [
      'category_slugs': ('gift-cards',)},
 ]
 HOME_POPULAR_GAMES_PER_SECTION = 8
-HOME_POPULAR_CACHE_KEY = 'home-popular:v1'
+HOME_POPULAR_CACHE_KEY = 'home-popular:v2'
 HOME_POPULAR_CACHE_SECONDS = 60
 # "View All" pages behind the popular panels reuse the same section registry.
 CATEGORY_SECTION_BY_SLUG = {
     section['slug']: section for section in HOME_POPULAR_SECTIONS
 }
-CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v1'
+# Section listings with no Method value count as this method. The Steam Keys
+# page deliberately has no Method filter (2026-07-13 — everything on it IS a
+# digital key), so /keys must not drop Steam when "Digital Key" is picked.
+SECTION_METHOD_FALLBACKS = {'keys': 'digital-key'}
+CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v2'
 BROWSE_CACHE_SECONDS = 30
 # Shared-cache TTL for the public browse endpoints nginx caches (games/,
 # home/popular/, categories/). Browsers keep the short max-age values; s-maxage
@@ -586,7 +593,11 @@ class GameListView(generics.ListAPIView):
                 active_listing_count=Count(
                     'game_categories__listings',
                     filter=Q(game_categories__listings__status='active'),
-                )
+                ),
+                min_active_price=Min(
+                    'game_categories__listings__price',
+                    filter=Q(game_categories__listings__status='active'),
+                ),
             )
             .order_by('-active_listing_count', 'order', 'name')
         )
@@ -639,7 +650,10 @@ class HomePopularView(APIView):
             .annotate(
                 active_listing_count=Count(
                     'listings', filter=Q(listings__status='active'),
-                )
+                ),
+                min_active_price=Min(
+                    'listings__price', filter=Q(listings__status='active'),
+                ),
             )
             .order_by('-featured', '-active_listing_count', 'game__order', 'game__name')
         )
@@ -664,6 +678,10 @@ class HomePopularView(APIView):
                 'category_slug': row.effective_slug,
                 'icon_url': icon_url,
                 'listing_count': row.active_listing_count,
+                'min_price': (
+                    str(row.min_active_price)
+                    if row.min_active_price is not None else None
+                ),
             })
 
         return {
@@ -681,9 +699,14 @@ class HomePopularView(APIView):
 
 class CategorySectionGamesView(APIView):
     """GET /api/categories/{slug}/games/ — every game with active listings in
-    one home "Popular" section (accounts, top-ups, offline-activation,
+    one home "Popular" section (keys, accounts, top-ups, offline-activation,
     gift-cards), for that section's View All page. Same item shape as
     HomePopularView, uncapped; unlike the panels, stockless games are omitted.
+
+    Sections whose pages carry Method/Region filters (keys) also accept
+    ?method= and ?region= (option values): games, counts and from-prices then
+    reflect only matching listings, and the response lists the available
+    choices for both dropdowns, each narrowed by the other selection.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -691,19 +714,145 @@ class CategorySectionGamesView(APIView):
         section = CATEGORY_SECTION_BY_SLUG.get(slug)
         if section is None:
             raise Http404
+        method = slugify(request.query_params.get('method', ''))[:50]
+        region = slugify(request.query_params.get('region', ''))[:50]
         cache_key = (
-            f'{CATEGORY_SECTION_CACHE_KEY}:{slug}:'
+            f'{CATEGORY_SECTION_CACHE_KEY}:{slug}:{method}:{region}:'
             f'{request_origin_cache_scope(request)}'
         )
         data = cache.get(cache_key)
         if data is None:
-            data = self.build_payload(request, section)
+            data = self.build_payload(request, section, method, region)
             cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
         response = Response(data)
         response['Cache-Control'] = public_cache_header(HOME_POPULAR_CACHE_SECONDS)
         return response
 
-    def build_payload(self, request, section):
+    def facet_filters(self, section, name_fragment):
+        """Filters of one kind assigned to this section's pages, found by
+        name. Keys pages carry one shared Method filter and three Region
+        dropdowns (the shared Key Region + gift/login pair and Steam's
+        page-local one) — all named alike, distinguished only by admin_label."""
+        return list(
+            Filter.objects
+            .filter(
+                name__icontains=name_fragment,
+                game_category_assignments__game_category__category__slug__in=(
+                    section['category_slugs']),
+            )
+            .distinct()
+            .prefetch_related('options')
+        )
+
+    @staticmethod
+    def option_labels_and_positions(facet_filters):
+        labels, positions = {}, {}
+        for filter_index, facet_filter in enumerate(facet_filters):
+            for option in facet_filter.options.all():
+                labels.setdefault(option.value, option.label)
+                positions.setdefault(option.value, (filter_index, option.order))
+        return labels, positions
+
+    def facet_data(self, section, method_filters, region_filters,
+                   method, region):
+        """Validate the requested selections and build both dropdowns in one
+        pass over the section's active listings, so neither dropdown ever
+        offers a dead value. Each list is narrowed by the OTHER selection —
+        pick "As a Gift" and Region only shows regions with gift stock,
+        mirroring the dependent filters on the real pages."""
+        method_ids = [str(f.pk) for f in method_filters]
+        region_ids = [str(f.pk) for f in region_filters]
+        if not method_ids and not region_ids:
+            return '', '', [], []
+        fallback_method = (
+            SECTION_METHOD_FALLBACKS.get(section['slug'])
+            if method_ids else None
+        )
+        pairs = []
+        stocked_values = (
+            Listing.objects
+            .filter(
+                status='active',
+                game_category__category__slug__in=section['category_slugs'],
+                game_category__game__is_active=True,
+            )
+            .values_list('filter_values', flat=True)
+        )
+        for filter_values in stocked_values.iterator():
+            filter_values = filter_values or {}
+            listing_method = next(
+                (str(filter_values[filter_id]) for filter_id in method_ids
+                 if filter_values.get(filter_id)),
+                fallback_method)
+            listing_region = next(
+                (str(filter_values[filter_id]) for filter_id in region_ids
+                 if filter_values.get(filter_id)),
+                None)
+            pairs.append((listing_method, listing_region))
+
+        if method not in {m for m, _ in pairs if m}:
+            method = ''
+        if region not in {r for _, r in pairs if r}:
+            region = ''
+
+        method_values = {m for m, r in pairs
+                         if m and (not region or r == region)}
+        region_values = {r for m, r in pairs
+                         if r and (not method or m == method)}
+        # The active selection stays pickable even when the cross-narrowed
+        # list would drop it (a combination with no stock renders the empty
+        # state, not a blanked dropdown).
+        if method:
+            method_values.add(method)
+        if region:
+            region_values.add(region)
+
+        labels, positions = self.option_labels_and_positions(method_filters)
+        methods = [
+            {'value': value,
+             'label': labels.get(value, value.replace('-', ' ').title())}
+            for value in method_values
+        ]
+        methods.sort(key=lambda choice: (
+            *positions.get(choice['value'], (len(method_filters), 0)),
+            choice['label'].lower()))
+
+        labels, _ = self.option_labels_and_positions(region_filters)
+        regions = [
+            {'value': value,
+             'label': labels.get(value, value.replace('-', ' ').title())}
+            for value in region_values
+        ]
+        regions.sort(key=lambda choice: (choice['value'] != 'global',
+                                         choice['label'].lower()))
+        return method, region, methods, regions
+
+    def build_payload(self, request, section, method='', region=''):
+        method_filters = self.facet_filters(section, 'method')
+        region_filters = self.facet_filters(section, 'region')
+        method, region, methods, regions = self.facet_data(
+            section, method_filters, region_filters, method, region)
+
+        active_q = Q(listings__status='active')
+        if method:
+            method_q = Q()
+            for method_filter in method_filters:
+                method_q |= Q(listings__filter_values__contains={
+                    str(method_filter.pk): method})
+            if method == SECTION_METHOD_FALLBACKS.get(section['slug']):
+                # Listings with no Method value at all count as the fallback:
+                # the Steam Keys page has no Method filter by design
+                # (everything on it IS a digital key).
+                method_q |= ~Q(listings__filter_values__has_any_keys=[
+                    str(f.pk) for f in method_filters])
+            active_q &= method_q
+        if region:
+            region_q = Q()
+            for region_filter in region_filters:
+                region_q |= Q(listings__filter_values__contains={
+                    str(region_filter.pk): region})
+            active_q &= region_q
+
         rows = (
             GameCategory.objects
             .filter(
@@ -712,9 +861,8 @@ class CategorySectionGamesView(APIView):
             )
             .select_related('game', 'category')
             .annotate(
-                active_listing_count=Count(
-                    'listings', filter=Q(listings__status='active'),
-                )
+                active_listing_count=Count('listings', filter=active_q),
+                min_active_price=Min('listings__price', filter=active_q),
             )
             .filter(active_listing_count__gt=0)
             .order_by('-active_listing_count', 'game__order', 'game__name')
@@ -742,11 +890,19 @@ class CategorySectionGamesView(APIView):
                 'category_slug': row.effective_slug,
                 'icon_url': icon_url,
                 'listing_count': row.active_listing_count,
+                'min_price': (
+                    str(row.min_active_price)
+                    if row.min_active_price is not None else None
+                ),
             })
 
         return {
             'slug': section['slug'],
             'title': section['title'],
+            'method': method,
+            'methods': methods,
+            'region': region,
+            'regions': regions,
             'items': items,
         }
 
@@ -812,6 +968,42 @@ class GameCategoryDetailView(APIView):
         from .serializers import GameCategoryDetailSerializer
         cat_data = GameCategoryDetailSerializer(game_category).data
 
+        # Ad-landing semantic filters: /keys game links carry ?method= and
+        # ?region= (option VALUES, not filter ids) — map them onto this page's
+        # own filters so the page arrives pre-filtered. Method maps first so a
+        # dependent Region (visible_when Method=...) can accept the region;
+        # explicit ?filter_<id>= params always win over semantic ones. The
+        # response echoes the mapping in applied_filters so the client seeds
+        # its filter UI to match.
+        explicit_values = {
+            key.replace('filter_', ''): value
+            for key, value in request.query_params.items()
+            if key.startswith('filter_') and value
+        }
+        applied_filters = {}
+        current_values = dict(explicit_values)
+        for param in ('method', 'region'):
+            wanted = slugify(request.query_params.get(param, ''))[:50]
+            if not wanted:
+                continue
+            for filter_payload in cat_data['filters']:
+                if param not in filter_payload['name'].lower():
+                    continue
+                if str(filter_payload['id']) in explicit_values:
+                    continue
+                if wanted not in {opt['value']
+                                  for opt in filter_payload['options']}:
+                    continue
+                conditions = filter_payload.get('visible_when') or []
+                if conditions and not any(
+                        current_values.get(str(c['filter_id'])) == c['option_value']
+                        for c in conditions):
+                    continue
+                applied_filters[str(filter_payload['id'])] = wanted
+                current_values[str(filter_payload['id'])] = wanted
+                break
+        cat_data['applied_filters'] = applied_filters
+
         # Query listings with optional filters
         listings_qs = Listing.objects.filter(
             game_category=game_category,
@@ -829,6 +1021,8 @@ class GameCategoryDetailView(APIView):
                 if key.startswith('filter_') and value:
                     filter_id = key.replace('filter_', '')
                     offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
+            for filter_id, value in applied_filters.items():
+                offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
 
             # annotate() drops CategoryOption.Meta.ordering (Django strips
             # default ordering on aggregation) — re-apply it explicitly so
@@ -841,8 +1035,8 @@ class GameCategoryDetailView(APIView):
             )
             # Once the buyer applies a filter (e.g. gift-card Region), options
             # with no offers under it are just noise — show only what's buyable.
-            if any(k.startswith('filter_') and v
-                   for k, v in request.query_params.items()):
+            if applied_filters or any(k.startswith('filter_') and v
+                                      for k, v in request.query_params.items()):
                 options = [opt for opt in options if opt.offer_count]
 
             requested_option = request.query_params.get('option', '').strip()
@@ -911,6 +1105,10 @@ class GameCategoryDetailView(APIView):
                 listings_qs = listings_qs.filter(
                     filter_values__contains={filter_id: value}
                 )
+        for filter_id, value in applied_filters.items():
+            listings_qs = listings_qs.filter(
+                filter_values__contains={filter_id: value}
+            )
 
         # Instant delivery filter: pre-stocked auto-delivery listings plus
         # platform auto-fulfilled ones (delivery_time flipped to 'Instant').

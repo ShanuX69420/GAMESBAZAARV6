@@ -1528,6 +1528,44 @@ html[data-auth-hint="1"] .navbar-guest-links {
   }
 }
 
+/* ── Section View All filter bar (/keys Method + Region dropdowns) ─────────── */
+
+.section-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 14px;
+}
+
+.section-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-filter-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.section-filter-select {
+  width: 230px;
+  max-width: 100%;
+}
+
+@media (max-width: 480px) {
+  .section-filter-group {
+    width: 100%;
+  }
+  .section-filter-select {
+    flex: 1;
+  }
+}
+
 /* ── Alphabetical Inline Dividers ──────────────────────────────────────────── */
 
 .games-grid-alpha {

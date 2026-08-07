@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { GameIconFallback } from '@/lib/icons';
+import { formatStartingPrice } from '@/lib/price';
 
 export default function PopularPanel({ section }) {
   return (
@@ -32,11 +33,15 @@ export default function PopularPanel({ section }) {
                 )}
               </span>
               <span className="popular-panel-name">{item.game_name}</span>
-              {item.listing_count > 0 && (
+              {item.listing_count > 0 && formatStartingPrice(item.min_price) ? (
+                <span className="popular-panel-count">
+                  From {formatStartingPrice(item.min_price)}
+                </span>
+              ) : item.listing_count > 0 ? (
                 <span className="popular-panel-count">
                   {item.listing_count} {item.listing_count === 1 ? 'offer' : 'offers'}
                 </span>
-              )}
+              ) : null}
             </Link>
           </li>
         ))}

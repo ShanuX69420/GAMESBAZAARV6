@@ -55,8 +55,12 @@ export async function fetchHomePopular() {
   return res.json();
 }
 
-export async function fetchCategorySectionGames(slug) {
-  const res = await fetch(`${API_BASE}/api/categories/${pathSegment(slug)}/games/`, {
+export async function fetchCategorySectionGames(slug, { method, region } = {}) {
+  const params = new URLSearchParams();
+  if (method) params.set('method', method);
+  if (region) params.set('region', region);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}/api/categories/${pathSegment(slug)}/games/${query}`, {
     next: { revalidate: GAME_LIST_REVALIDATE_SECONDS },
   });
   updateServerTimeOffset(res);

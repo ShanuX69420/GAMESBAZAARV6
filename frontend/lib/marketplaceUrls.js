@@ -19,6 +19,8 @@ export function buildGameCategoryListingUrl({
   seller = '',
   ordering = '',
   option = '',
+  method = '',
+  region = '',
 }) {
   const query = new URLSearchParams();
 
@@ -30,6 +32,14 @@ export function buildGameCategoryListingUrl({
   }
   if (option) {
     query.set('option', String(option));
+  }
+  // Ad-landing semantic filters (/keys carries them onto game links); the
+  // backend maps them to this page's real filters and echoes applied_filters.
+  if (method) {
+    query.set('method', String(method));
+  }
+  if (region) {
+    query.set('region', String(region));
   }
 
   Object.entries(filters)

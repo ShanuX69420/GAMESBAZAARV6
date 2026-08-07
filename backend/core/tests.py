@@ -4407,12 +4407,12 @@ class HomePopularViewTests(TestCase):
             game=game, category=category, **game_category_kwargs)
         return game_category
 
-    def add_listing(self, game_category, status='active'):
+    def add_listing(self, game_category, status='active', price=Decimal('10.00')):
         return Listing.objects.create(
             seller=self.seller,
             game_category=game_category,
             title=f'{game_category.game.name} offer',
-            price=Decimal('10.00'),
+            price=price,
             quantity=1,
             status=status,
         )
@@ -4434,7 +4434,24 @@ class HomePopularViewTests(TestCase):
             'category_slug': 'accounts',
             'icon_url': None,
             'listing_count': 0,
+            'min_price': None,
         }])
+
+    def test_keys_section_ranks_first_with_min_price(self):
+        keys = Category.objects.create(name='Keys', slug='keys')
+        keys_page = self.add_game('Elden Ring', 'elden-ring', keys)
+        self.add_listing(keys_page, price=Decimal('49.50'))
+        self.add_listing(keys_page, price=Decimal('10.00'))
+        self.add_game('Valorant', 'valorant', self.accounts)
+
+        response = self.client.get('/api/home/popular/')
+
+        sections = response.data['sections']
+        self.assertEqual([s['slug'] for s in sections], ['keys', 'accounts'])
+        self.assertEqual(sections[0]['title'], 'Popular Keys')
+        self.assertEqual(sections[0]['items'][0]['min_price'], '10.00')
+        # Stockless game: no from-price to show.
+        self.assertIsNone(sections[1]['items'][0]['min_price'])
 
     def test_featured_then_stocked_games_rank_first(self):
         self.add_game('Alpha', 'alpha', self.accounts)
@@ -4527,18 +4544,31 @@ class CategorySectionGamesViewTests(TestCase):
             game=game, category=category, **game_category_kwargs)
         return game_category
 
-    def add_listing(self, game_category, status='active'):
+    def add_listing(self, game_category, status='active',
+                    price=Decimal('10.00'), filter_values=None):
         return Listing.objects.create(
             seller=self.seller,
             game_category=game_category,
             title=f'{game_category.game.name} offer',
-            price=Decimal('10.00'),
+            price=price,
             quantity=1,
             status=status,
+            filter_values=filter_values or {},
         )
 
+    def add_region_filter(self, admin_label, options, game_categories):
+        region_filter = Filter.objects.create(
+            name='Region', admin_label=admin_label, filter_type='dropdown')
+        for order, (value, label) in enumerate(options):
+            FilterOption.objects.create(
+                filter=region_filter, value=value, label=label, order=order)
+        for game_category in game_categories:
+            GameCategoryFilter.objects.create(
+                game_category=game_category, filter=region_filter)
+        return region_filter
+
     def test_unknown_section_returns_404(self):
-        response = self.client.get('/api/categories/keys/games/')
+        response = self.client.get('/api/categories/does-not-exist/games/')
         self.assertEqual(response.status_code, 404)
 
     def test_returns_every_stocked_game_uncapped(self):
@@ -4555,6 +4585,11 @@ class CategorySectionGamesViewTests(TestCase):
         self.assertEqual(response['Cache-Control'], 'public, max-age=60, s-maxage=300')
         self.assertEqual(response.data['slug'], 'accounts')
         self.assertEqual(len(response.data['items']), total)
+        # No Method/Region filters on accounts pages — no dropdowns.
+        self.assertEqual(response.data['methods'], [])
+        self.assertEqual(response.data['method'], '')
+        self.assertEqual(response.data['regions'], [])
+        self.assertEqual(response.data['region'], '')
 
     def test_games_without_active_listings_are_excluded(self):
         stocked = self.add_game('Stocked', 'stocked', self.accounts)
@@ -4583,6 +4618,7 @@ class CategorySectionGamesViewTests(TestCase):
             'category_slug': 'accounts',
             'icon_url': None,
             'listing_count': 1,
+            'min_price': '10.00',
         }])
 
     def test_top_ups_accepts_both_category_slug_spellings(self):
@@ -4612,13 +4648,184 @@ class CategorySectionGamesViewTests(TestCase):
         self.assertEqual(items[0]['category_slug'], 'top-up')
         self.assertEqual(items[0]['listing_count'], 1)
 
+    def test_keys_regions_merge_filters_and_only_list_stocked_values(self):
+        keys = Category.objects.create(name='Keys', slug='keys')
+        steam = self.add_game('Steam', 'steam', keys)
+        elden = self.add_game('Elden Ring', 'elden-ring', keys)
+        # Production keys pages carry several distinct Region dropdowns
+        # (Key Region, gift/login Region, Steam's page-local one) — the
+        # section endpoint merges them into one choice list.
+        key_region = self.add_region_filter(
+            'Key Region',
+            [('global', 'Global'), ('pakistan', 'Pakistan'), ('europe', 'Europe')],
+            [steam])
+        gift_region = self.add_region_filter(
+            'Gift and login',
+            [('pakistan', 'Pakistan'), ('russia', 'Russia'), ('china', 'China')],
+            [elden])
+        self.add_listing(steam, filter_values={str(key_region.pk): 'global'})
+        self.add_listing(elden, filter_values={str(gift_region.pk): 'russia'})
+        self.add_listing(elden, filter_values={str(gift_region.pk): 'pakistan'})
+
+        response = self.client.get('/api/categories/keys/games/')
+
+        self.assertEqual(response.status_code, 200)
+        # Global first, then alphabetical; europe/china have no stock so
+        # they never appear as dead dropdown entries.
+        self.assertEqual(response.data['regions'], [
+            {'value': 'global', 'label': 'Global'},
+            {'value': 'pakistan', 'label': 'Pakistan'},
+            {'value': 'russia', 'label': 'Russia'},
+        ])
+        self.assertEqual(response.data['region'], '')
+        self.assertEqual(len(response.data['items']), 2)
+
+    def test_keys_region_param_narrows_games_counts_and_prices(self):
+        keys = Category.objects.create(name='Keys', slug='keys')
+        steam = self.add_game('Steam', 'steam', keys)
+        elden = self.add_game('Elden Ring', 'elden-ring', keys)
+        key_region = self.add_region_filter(
+            'Key Region', [('global', 'Global'), ('pakistan', 'Pakistan')],
+            [steam, elden])
+        # A non-Region filter sharing an option value must not leak into
+        # region matching.
+        method = Filter.objects.create(
+            name='Method', admin_label='Method', filter_type='dropdown')
+        FilterOption.objects.create(
+            filter=method, value='pakistan', label='Pakistan', order=0)
+        GameCategoryFilter.objects.create(game_category=elden, filter=method)
+
+        self.add_listing(steam, price=Decimal('30.00'),
+                         filter_values={str(key_region.pk): 'pakistan'})
+        self.add_listing(steam, price=Decimal('10.00'),
+                         filter_values={str(key_region.pk): 'pakistan'})
+        self.add_listing(steam, price=Decimal('5.00'),
+                         filter_values={str(key_region.pk): 'global'})
+        self.add_listing(elden, price=Decimal('2.00'),
+                         filter_values={str(method.pk): 'pakistan'})
+
+        response = self.client.get('/api/categories/keys/games/?region=pakistan')
+
+        self.assertEqual(response.data['region'], 'pakistan')
+        items = response.data['items']
+        self.assertEqual([item['game_slug'] for item in items], ['steam'])
+        self.assertEqual(items[0]['listing_count'], 2)
+        self.assertEqual(items[0]['min_price'], '10.00')
+
+    def test_keys_region_param_with_unknown_value_is_ignored(self):
+        keys = Category.objects.create(name='Keys', slug='keys')
+        steam = self.add_game('Steam', 'steam', keys)
+        key_region = self.add_region_filter(
+            'Key Region', [('global', 'Global')], [steam])
+        self.add_listing(steam, filter_values={str(key_region.pk): 'global'})
+
+        response = self.client.get('/api/categories/keys/games/?region=mars')
+
+        self.assertEqual(response.data['region'], '')
+        self.assertEqual(len(response.data['items']), 1)
+
+    def make_prod_shaped_keys_pages(self):
+        """Two keys pages mirroring production: Steam with ONLY its page-local
+        Region dropdown (no Method — everything on it is a digital key), and a
+        normal page with the shared Method + Key Region + gift/login Region."""
+        keys = Category.objects.create(name='Keys', slug='keys')
+        steam = self.add_game('Steam', 'steam', keys)
+        elden = self.add_game('Elden Ring', 'elden-ring', keys)
+        steam_region = self.add_region_filter(
+            'Keys - Region (Steam Keys page)',
+            [('global', 'Global'), ('russia', 'Russia')], [steam])
+        key_region = self.add_region_filter(
+            'Key Region', [('global', 'Global'), ('pakistan', 'Pakistan')],
+            [elden])
+        gift_region = self.add_region_filter(
+            'Gift and login', [('pakistan', 'Pakistan'), ('russia', 'Russia')],
+            [elden])
+        method = Filter.objects.create(
+            name='Method', admin_label='Method', filter_type='dropdown')
+        for order, (value, label) in enumerate([
+                ('digital-key', 'Digital Key'),
+                ('as-a-gift', 'As a Gift'),
+                ('by-loggin-in-to-the-account', 'By logging in to the account')]):
+            FilterOption.objects.create(
+                filter=method, value=value, label=label, order=order)
+        GameCategoryFilter.objects.create(game_category=elden, filter=method)
+        return steam, elden, steam_region, key_region, gift_region, method
+
+    def seed_prod_shaped_keys_listings(self):
+        (steam, elden, steam_region, key_region,
+         gift_region, method) = self.make_prod_shaped_keys_pages()
+        self.add_listing(steam, price=Decimal('5.00'),
+                         filter_values={str(steam_region.pk): 'global'})
+        self.add_listing(elden, price=Decimal('20.00'),
+                         filter_values={str(method.pk): 'digital-key',
+                                        str(key_region.pk): 'global'})
+        self.add_listing(elden, price=Decimal('8.00'),
+                         filter_values={str(method.pk): 'as-a-gift',
+                                        str(gift_region.pk): 'russia'})
+
+    def test_keys_method_filter_counts_methodless_listings_as_digital_key(self):
+        self.seed_prod_shaped_keys_listings()
+
+        response = self.client.get(
+            '/api/categories/keys/games/?method=digital-key')
+
+        self.assertEqual(response.data['method'], 'digital-key')
+        # Choices follow the Method filter's option order; the by-login
+        # option has no stock so it never appears.
+        self.assertEqual(response.data['methods'], [
+            {'value': 'digital-key', 'label': 'Digital Key'},
+            {'value': 'as-a-gift', 'label': 'As a Gift'},
+        ])
+        by_slug = {item['game_slug']: item for item in response.data['items']}
+        self.assertEqual(sorted(by_slug), ['elden-ring', 'steam'])
+        # Steam's Method-less listing counts as a digital key.
+        self.assertEqual(by_slug['steam']['listing_count'], 1)
+        self.assertEqual(by_slug['elden-ring']['listing_count'], 1)
+        self.assertEqual(by_slug['elden-ring']['min_price'], '20.00')
+
+        gift = self.client.get('/api/categories/keys/games/?method=as-a-gift')
+        self.assertEqual(
+            [item['game_slug'] for item in gift.data['items']], ['elden-ring'])
+        self.assertEqual(gift.data['items'][0]['min_price'], '8.00')
+
+        unknown = self.client.get('/api/categories/keys/games/?method=mars')
+        self.assertEqual(unknown.data['method'], '')
+        self.assertEqual(len(unknown.data['items']), 2)
+
+    def test_keys_method_and_region_dropdowns_narrow_each_other(self):
+        self.seed_prod_shaped_keys_listings()
+
+        response = self.client.get(
+            '/api/categories/keys/games/?method=as-a-gift')
+        # Only regions with gift stock are offered once a method is picked.
+        self.assertEqual(response.data['regions'],
+                         [{'value': 'russia', 'label': 'Russia'}])
+
+        combo = self.client.get(
+            '/api/categories/keys/games/?method=as-a-gift&region=global')
+        # A region stocked elsewhere stays selected; the combination simply
+        # has no games (empty state), instead of a blanked dropdown.
+        self.assertEqual(combo.data['method'], 'as-a-gift')
+        self.assertEqual(combo.data['region'], 'global')
+        self.assertEqual(combo.data['items'], [])
+        self.assertIn({'value': 'global', 'label': 'Global'},
+                      combo.data['regions'])
+
+        by_region = self.client.get(
+            '/api/categories/keys/games/?region=russia')
+        # And the other way round: under a region, only methods with stock
+        # there are offered (Steam has no russia listing, Elden's gift does).
+        self.assertEqual(by_region.data['methods'], [
+            {'value': 'as-a-gift', 'label': 'As a Gift'},
+        ])
+
     def test_serves_cached_payload(self):
         from .views import CATEGORY_SECTION_CACHE_KEY, HOME_POPULAR_CACHE_SECONDS
 
         self.add_listing(self.add_game('Valorant', 'valorant', self.accounts))
         response = self.client.get('/api/categories/accounts/games/')
         cache_key = (
-            f'{CATEGORY_SECTION_CACHE_KEY}:accounts:'
+            f'{CATEGORY_SECTION_CACHE_KEY}:accounts:::'
             f'{response.wsgi_request.scheme}://{response.wsgi_request.get_host()}'
         )
         self.assertIsNotNone(cache.get(cache_key))
@@ -4628,6 +4835,130 @@ class CategorySectionGamesViewTests(TestCase):
         cached_response = self.client.get('/api/categories/accounts/games/')
 
         self.assertEqual(cached_response.data['items'], [])
+
+
+class GameCategoryLandingFilterTests(TestCase):
+    """Ad-landing semantic filters on the game category page: ?method= and
+    ?region= (option values carried over from /keys) map onto the page's own
+    filters, pre-filter the listings, and are echoed as applied_filters."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(
+            username='landing-seller', password='password123')
+        self.keys = Category.objects.create(name='Keys', slug='keys')
+        game = Game.objects.create(name='Elden Ring', slug='elden-ring')
+        self.page = GameCategory.objects.create(game=game, category=self.keys)
+
+        self.method = Filter.objects.create(name='Method', filter_type='button')
+        digital_key = FilterOption.objects.create(
+            filter=self.method, label='Digital Key', value='digital-key')
+        as_a_gift = FilterOption.objects.create(
+            filter=self.method, label='As a Gift', value='as-a-gift')
+        self.key_region = Filter.objects.create(
+            name='Region', admin_label='Key Region', filter_type='dropdown')
+        FilterOption.objects.create(
+            filter=self.key_region, label='Global', value='global')
+        self.gift_region = Filter.objects.create(
+            name='Region', admin_label='Gift and login', filter_type='dropdown')
+        FilterOption.objects.create(
+            filter=self.gift_region, label='Pakistan', value='pakistan')
+        FilterOption.objects.create(
+            filter=self.gift_region, label='Russia', value='russia')
+        GameCategoryFilter.objects.create(
+            game_category=self.page, filter=self.method)
+        key_gcf = GameCategoryFilter.objects.create(
+            game_category=self.page, filter=self.key_region)
+        key_gcf.visible_when_options.add(digital_key)
+        gift_gcf = GameCategoryFilter.objects.create(
+            game_category=self.page, filter=self.gift_region)
+        gift_gcf.visible_when_options.add(as_a_gift)
+
+        self.add_listing('Key global', {
+            str(self.method.pk): 'digital-key',
+            str(self.key_region.pk): 'global'})
+        self.add_listing('Gift pakistan', {
+            str(self.method.pk): 'as-a-gift',
+            str(self.gift_region.pk): 'pakistan'})
+        self.add_listing('Gift russia', {
+            str(self.method.pk): 'as-a-gift',
+            str(self.gift_region.pk): 'russia'})
+
+    def tearDown(self):
+        cache.clear()
+
+    def add_listing(self, title, filter_values, game_category=None):
+        return Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category or self.page,
+            title=title,
+            price=Decimal('10.00'),
+            quantity=1,
+            status='active',
+            filter_values=filter_values,
+        )
+
+    def titles(self, response):
+        return sorted(listing['title'] for listing in response.data['listings'])
+
+    def test_method_and_region_map_onto_dependent_filters(self):
+        response = self.client.get(
+            '/api/games/elden-ring/keys/?method=as-a-gift&region=pakistan')
+
+        self.assertEqual(response.status_code, 200)
+        # Region lands on the gift/login Region (visible under As a Gift),
+        # never the Key Region dropdown.
+        self.assertEqual(response.data['applied_filters'], {
+            str(self.method.pk): 'as-a-gift',
+            str(self.gift_region.pk): 'pakistan',
+        })
+        self.assertEqual(self.titles(response), ['Gift pakistan'])
+
+    def test_region_maps_to_page_local_filter_and_method_needs_a_filter(self):
+        # Steam-style page: only a page-local Region, no Method filter — the
+        # method param is ignored, the region still applies.
+        steam_game = Game.objects.create(name='Steam', slug='steam')
+        steam_page = GameCategory.objects.create(
+            game=steam_game, category=self.keys)
+        local_region = Filter.objects.create(
+            name='Region', admin_label='Keys - Region (Steam Keys page)',
+            filter_type='dropdown')
+        FilterOption.objects.create(
+            filter=local_region, label='Global', value='global')
+        FilterOption.objects.create(
+            filter=local_region, label='Russia', value='russia')
+        GameCategoryFilter.objects.create(
+            game_category=steam_page, filter=local_region)
+        self.add_listing('Steam global', {str(local_region.pk): 'global'},
+                         game_category=steam_page)
+        self.add_listing('Steam russia', {str(local_region.pk): 'russia'},
+                         game_category=steam_page)
+
+        response = self.client.get(
+            '/api/games/steam/keys/?method=digital-key&region=russia')
+
+        self.assertEqual(response.data['applied_filters'],
+                         {str(local_region.pk): 'russia'})
+        self.assertEqual(self.titles(response), ['Steam russia'])
+
+    def test_explicit_filter_params_beat_semantic_ones(self):
+        response = self.client.get(
+            f'/api/games/elden-ring/keys/?filter_{self.method.pk}=digital-key'
+            f'&method=as-a-gift&region=global')
+
+        # The explicit Method pin wins; region then lands on the Key Region
+        # dropdown (visible under Method = Digital Key), not the gift one.
+        self.assertEqual(response.data['applied_filters'],
+                         {str(self.key_region.pk): 'global'})
+        self.assertEqual(self.titles(response), ['Key global'])
+
+    def test_unknown_semantic_values_are_ignored(self):
+        response = self.client.get(
+            '/api/games/elden-ring/keys/?method=teleport&region=mars')
+
+        self.assertEqual(response.data['applied_filters'], {})
+        self.assertEqual(len(response.data['listings']), 3)
 
 
 class CategoryDisplayNameTests(TestCase):

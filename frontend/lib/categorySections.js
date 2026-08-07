@@ -1,7 +1,15 @@
-// The four home "Popular" panels and their View All pages. Slugs must match
+// The home "Popular" panels and their View All pages. Slugs must match
 // both the backend section registry (HOME_POPULAR_SECTIONS) and the app
-// routes: /accounts, /top-ups, /offline-activation, /gift-cards.
+// routes: /keys, /accounts, /top-ups, /offline-activation, /gift-cards.
 export const CATEGORY_SECTIONS = [
+  {
+    slug: 'keys',
+    name: 'Keys',
+    heading: 'All Game Keys',
+    title: 'Buy Game Keys',
+    description:
+      'Browse every game with keys for sale on GamesBazaar — Steam, PSN, Xbox and more. Buy game keys in PKR from verified sellers with fast delivery and buyer protection.',
+  },
   {
     slug: 'accounts',
     name: 'Accounts',

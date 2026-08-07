@@ -32,6 +32,7 @@ export default async function sitemap() {
   const staticPages = [
     { url: pageUrl(siteUrl, '/'), changeFrequency: 'daily', priority: 1.0 },
     { url: pageUrl(siteUrl, '/games'), changeFrequency: 'daily', priority: 0.9 },
+    { url: pageUrl(siteUrl, '/keys'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/accounts'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/top-ups'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/offline-activation'), changeFrequency: 'daily', priority: 0.8 },
