@@ -9,6 +9,13 @@ if (dsn) {
     environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
     sendDefaultPii: false,
     tracesSampleRate: 0,
+    // Android in-app browsers (Google/Facebook/Instagram WebViews) inject a
+    // Java-JS bridge into every page; it throws these when the host app is
+    // torn down mid-call. Third-party noise, not our code.
+    ignoreErrors: [
+      'Java object is gone',
+      'Java exception was raised during method invocation',
+    ],
   });
 }
 
