@@ -46,7 +46,8 @@ GAME_LIST_CACHE_SECONDS = 60
 # dropdowns on their View All pages.
 HOME_POPULAR_SECTIONS = [
     {'slug': 'keys', 'title': 'Popular Keys',
-     'category_slugs': ('keys',), 'facets': ('method', 'region')},
+     'category_slugs': ('keys',), 'facets': ('method', 'region'),
+     'sortable': True},
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
@@ -67,7 +68,17 @@ CATEGORY_SECTION_BY_SLUG = {
 # page deliberately has no Method filter (2026-07-13 — everything on it IS a
 # digital key), so /keys must not drop Steam when "Digital Key" is picked.
 SECTION_METHOD_FALLBACKS = {'keys': 'digital-key'}
-CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v3'
+# Sort options on a sortable section's View All page. The empty default is
+# name A-Z, which is what the page renders anyway (it groups games under
+# letter dividers); picking any other sort switches it to a flat list.
+SECTION_SORTS = [
+    {'value': '', 'label': 'Name (A-Z)'},
+    {'value': 'price_asc', 'label': 'Price: Low to High'},
+    {'value': 'price_desc', 'label': 'Price: High to Low'},
+    {'value': 'listings', 'label': 'Most Listings'},
+]
+SECTION_SORT_VALUES = {sort['value'] for sort in SECTION_SORTS}
+CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v4'
 BROWSE_CACHE_SECONDS = 30
 # Shared-cache TTL for the public browse endpoints nginx caches (games/,
 # home/popular/, categories/). Browsers keep the short max-age values; s-maxage
@@ -711,6 +722,7 @@ class CategorySectionGamesView(APIView):
     ?method= and ?region= (option values): games, counts and from-prices then
     reflect only matching listings, and the response lists the available
     choices for both dropdowns, each narrowed by the other selection.
+    Sortable sections additionally accept ?sort= (see SECTION_SORTS).
     """
     permission_classes = [permissions.AllowAny]
 
@@ -720,17 +732,42 @@ class CategorySectionGamesView(APIView):
             raise Http404
         method = slugify(request.query_params.get('method', ''))[:50]
         region = slugify(request.query_params.get('region', ''))[:50]
+        sort = request.query_params.get('sort', '').strip()[:20]
+        if not section.get('sortable') or sort not in SECTION_SORT_VALUES:
+            sort = ''
         cache_key = (
-            f'{CATEGORY_SECTION_CACHE_KEY}:{slug}:{method}:{region}:'
+            f'{CATEGORY_SECTION_CACHE_KEY}:{slug}:{method}:{region}:{sort}:'
             f'{request_origin_cache_scope(request)}'
         )
         data = cache.get(cache_key)
         if data is None:
-            data = self.build_payload(request, section, method, region)
+            data = self.build_payload(request, section, method, region, sort)
             cache.set(cache_key, data, HOME_POPULAR_CACHE_SECONDS)
         response = Response(data)
         response['Cache-Control'] = public_cache_header(HOME_POPULAR_CACHE_SECONDS)
         return response
+
+    @staticmethod
+    def sort_items(items, sort):
+        """Reorder the built items in place-ish. The default ('') keeps the
+        queryset's most-stocked-first order; the page groups those A-Z itself."""
+        if sort == 'listings':
+            return sorted(items, key=lambda item: (-item['listing_count'],
+                                                   item['game_name'].lower()))
+        if sort in ('price_asc', 'price_desc'):
+            # A game with no from-price can only happen if it lost its stock
+            # between the two aggregates — sort it last either way.
+            def price_key(item):
+                raw = item['min_price']
+                return Decimal(raw) if raw is not None else None
+            priced = [item for item in items if price_key(item) is not None]
+            unpriced = [item for item in items if price_key(item) is None]
+            # Negate rather than reverse= so equal prices stay A-Z both ways.
+            direction = -1 if sort == 'price_desc' else 1
+            priced.sort(key=lambda item: (direction * price_key(item),
+                                          item['game_name'].lower()))
+            return priced + unpriced
+        return items
 
     def facet_filters(self, section, name_fragment):
         """Filters of one kind assigned to this section's pages, found by
@@ -835,7 +872,7 @@ class CategorySectionGamesView(APIView):
                                          choice['label'].lower()))
         return method, region, methods, regions
 
-    def build_payload(self, request, section, method='', region=''):
+    def build_payload(self, request, section, method='', region='', sort=''):
         method_filters = self.facet_filters(section, 'method')
         region_filters = self.facet_filters(section, 'region')
         method, region, methods, regions = self.facet_data(
@@ -911,7 +948,9 @@ class CategorySectionGamesView(APIView):
             'methods': methods,
             'region': region,
             'regions': regions,
-            'items': items,
+            'sort': sort,
+            'sorts': SECTION_SORTS if section.get('sortable') else [],
+            'items': self.sort_items(items, sort),
         }
 
 

@@ -12,20 +12,28 @@ import { formatStartingPrice } from '@/lib/price';
 // Shared body for the category View All pages (/keys, /accounts, /top-ups,
 // /offline-activation, /gift-cards) — same layout as /games, but each game
 // links straight to its page for this category. Sections whose listings carry
-// Method/Region filters (keys) also get dropdowns driven by ?method=/?region=.
-export default async function CategorySectionPage({ section, method = '', region = '' }) {
+// Method/Region filters (keys) also get dropdowns driven by ?method=/?region=,
+// plus ?sort= — the default sort keeps the A-Z letter groups, any other sort
+// renders one flat list in the server's order.
+export default async function CategorySectionPage({
+  section, method = '', region = '', sort = '',
+}) {
   let items = [];
   let methods = [];
   let regions = [];
+  let sorts = [];
   let activeMethod = '';
   let activeRegion = '';
+  let activeSort = '';
   try {
-    const data = await fetchCategorySectionGames(section.slug, { method, region });
+    const data = await fetchCategorySectionGames(section.slug, { method, region, sort });
     items = data.items || [];
     methods = data.methods || [];
     regions = data.regions || [];
+    sorts = data.sorts || [];
     activeMethod = data.method || '';
     activeRegion = data.region || '';
+    activeSort = data.sort || '';
   } catch (error) {
     console.error(`Failed to fetch ${section.slug} games:`, error);
   }
@@ -38,11 +46,46 @@ export default async function CategorySectionPage({ section, method = '', region
   if (activeRegion) linkParams.set('region', activeRegion);
   const linkSuffix = linkParams.toString() ? `?${linkParams.toString()}` : '';
 
-  const grouped = groupGamesByAlphabet(
-    items.map((item) => ({ ...item, name: item.game_name }))
-  );
+  // A-Z letter groups only make sense in the default (name) order; any other
+  // sort would scatter the chosen order across the dividers.
+  const grouped = activeSort
+    ? []
+    : groupGamesByAlphabet(items.map((item) => ({ ...item, name: item.game_name })));
   const allLetters = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
   const activeLetters = new Set(grouped.map((g) => g.letter));
+
+  const gameRow = (item) => (
+    <Link
+      key={`${item.game_slug}-${item.category_slug}`}
+      href={`/games/${item.game_slug}/${item.category_slug}${linkSuffix}`}
+      className="game-item"
+    >
+      <div className="game-icon">
+        {item.icon_url ? (
+          <Image
+            src={item.icon_url}
+            alt={item.game_name}
+            width={40}
+            height={40}
+            loading="lazy"
+          />
+        ) : (
+          <GameIconFallback size={24} />
+        )}
+      </div>
+      <div className="game-info">
+        <div className="game-name">{item.game_name}</div>
+        <div className="game-meta">
+          {item.listing_count > 0 && formatStartingPrice(item.min_price)
+            ? `Starting from ${formatStartingPrice(item.min_price)}`
+            : item.listing_count > 0
+              ? `${item.listing_count} ${item.listing_count === 1 ? 'offer' : 'offers'}`
+              : 'No offers yet'}
+        </div>
+      </div>
+      <div className="game-arrow">›</div>
+    </Link>
+  );
 
   return (
     <div className="container">
@@ -68,17 +111,25 @@ export default async function CategorySectionPage({ section, method = '', region
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>{section.heading}</h1>
       </div>
 
-      {(methods.length > 0 || regions.length > 0) && (
+      {(methods.length > 0 || regions.length > 0 || sorts.length > 0) && (
         <SectionFilters
           basePath={`/${section.slug}`}
           methods={methods}
           regions={regions}
+          sorts={sorts}
           method={activeMethod}
           region={activeRegion}
+          sort={activeSort}
         />
       )}
 
       {items.length > 0 ? (
+        activeSort ? (
+          /* Sorted: one flat list, letter dividers would break the order */
+          <div className="games-grid">
+            {items.map((item) => gameRow(item))}
+          </div>
+        ) : (
         <>
           {/* Alphabet quick-jump nav */}
           <nav className="alpha-nav" aria-label="Jump to letter">
@@ -104,42 +155,12 @@ export default async function CategorySectionPage({ section, method = '', region
                 >
                   <span className="alpha-divider-letter">{letter}</span>
                 </div>
-                {sectionGames.map((item) => (
-                  <Link
-                    key={`${item.game_slug}-${item.category_slug}`}
-                    href={`/games/${item.game_slug}/${item.category_slug}${linkSuffix}`}
-                    className="game-item"
-                  >
-                    <div className="game-icon">
-                      {item.icon_url ? (
-                        <Image
-                          src={item.icon_url}
-                          alt={item.game_name}
-                          width={40}
-                          height={40}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <GameIconFallback size={24} />
-                      )}
-                    </div>
-                    <div className="game-info">
-                      <div className="game-name">{item.game_name}</div>
-                      <div className="game-meta">
-                        {item.listing_count > 0 && formatStartingPrice(item.min_price)
-                          ? `Starting from ${formatStartingPrice(item.min_price)}`
-                          : item.listing_count > 0
-                            ? `${item.listing_count} ${item.listing_count === 1 ? 'offer' : 'offers'}`
-                            : 'No offers yet'}
-                      </div>
-                    </div>
-                    <div className="game-arrow">›</div>
-                  </Link>
-                ))}
+                {sectionGames.map((item) => gameRow(item))}
               </Fragment>
             ))}
           </div>
         </>
+        )
       ) : (
         <div className="empty-state">
           <p>

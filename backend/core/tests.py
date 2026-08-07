@@ -4663,10 +4663,81 @@ class CategorySectionGamesViewTests(TestCase):
 
         self.assertEqual(response.data['regions'], [])
         self.assertEqual(response.data['methods'], [])
+        self.assertEqual(response.data['sorts'], [])
         # And the params are inert: no silent narrowing of the game list.
         self.assertEqual(response.data['region'], '')
         self.assertEqual(response.data['method'], '')
         self.assertEqual(len(response.data['items']), 1)
+
+    def test_non_sortable_section_ignores_sort_param(self):
+        cheap = self.add_game('Cheap', 'cheap', self.accounts)
+        self.add_listing(cheap, price=Decimal('5.00'))
+        pricey = self.add_game('Apex Priced', 'apex-priced', self.accounts)
+        self.add_listing(pricey, price=Decimal('900.00'))
+
+        response = self.client.get(
+            '/api/categories/accounts/games/?sort=price_desc')
+
+        self.assertEqual(response.data['sort'], '')
+        # Untouched default order: most-stocked first, then game order/name.
+        self.assertEqual([item['game_slug'] for item in response.data['items']],
+                         ['apex-priced', 'cheap'])
+
+    def test_keys_sort_options_reorder_games(self):
+        keys = Category.objects.create(name='Keys', slug='keys')
+        cheap = self.add_game('Zed Cheap', 'zed-cheap', keys)
+        self.add_listing(cheap, price=Decimal('50.00'))
+        mid = self.add_game('Mid', 'mid', keys)
+        self.add_listing(mid, price=Decimal('500.00'))
+        self.add_listing(mid, price=Decimal('900.00'))
+        pricey = self.add_game('Alpha Pricey', 'alpha-pricey', keys)
+        self.add_listing(pricey, price=Decimal('5000.00'))
+
+        default = self.client.get('/api/categories/keys/games/')
+        self.assertEqual(default.data['sort'], '')
+        self.assertEqual([s['value'] for s in default.data['sorts']],
+                         ['', 'price_asc', 'price_desc', 'listings'])
+
+        asc = self.client.get('/api/categories/keys/games/?sort=price_asc')
+        self.assertEqual(asc.data['sort'], 'price_asc')
+        self.assertEqual([item['game_slug'] for item in asc.data['items']],
+                         ['zed-cheap', 'mid', 'alpha-pricey'])
+
+        desc = self.client.get('/api/categories/keys/games/?sort=price_desc')
+        self.assertEqual([item['game_slug'] for item in desc.data['items']],
+                         ['alpha-pricey', 'mid', 'zed-cheap'])
+
+        # Equal prices stay A-Z whichever direction the price runs.
+        tie = self.add_game('Aaa Tie', 'aaa-tie', keys)
+        self.add_listing(tie, price=Decimal('50.00'))
+        cache.clear()  # the assertions above cached these URLs for 60s
+        for direction in ('price_asc', 'price_desc'):
+            ordered = [
+                item['game_slug'] for item
+                in self.client.get(
+                    f'/api/categories/keys/games/?sort={direction}').data['items']
+                if item['min_price'] == '50.00'
+            ]
+            self.assertEqual(ordered, ['aaa-tie', 'zed-cheap'], direction)
+
+        most = self.client.get('/api/categories/keys/games/?sort=listings')
+        self.assertEqual([item['game_slug'] for item in most.data['items']][0],
+                         'mid')
+
+        junk = self.client.get('/api/categories/keys/games/?sort=nonsense')
+        self.assertEqual(junk.data['sort'], '')
+
+    def test_keys_sort_combines_with_filters(self):
+        self.seed_prod_shaped_keys_listings()
+
+        response = self.client.get(
+            '/api/categories/keys/games/?method=digital-key&sort=price_asc')
+
+        self.assertEqual(response.data['sort'], 'price_asc')
+        self.assertEqual(response.data['method'], 'digital-key')
+        # Steam's methodless 5.00 key beats Elden Ring's 20.00 digital key.
+        self.assertEqual([item['game_slug'] for item in response.data['items']],
+                         ['steam', 'elden-ring'])
 
     def test_keys_regions_merge_filters_and_only_list_stocked_values(self):
         keys = Category.objects.create(name='Keys', slug='keys')
@@ -4845,7 +4916,7 @@ class CategorySectionGamesViewTests(TestCase):
         self.add_listing(self.add_game('Valorant', 'valorant', self.accounts))
         response = self.client.get('/api/categories/accounts/games/')
         cache_key = (
-            f'{CATEGORY_SECTION_CACHE_KEY}:accounts:::'
+            f'{CATEGORY_SECTION_CACHE_KEY}:accounts::::'
             f'{response.wsgi_request.scheme}://{response.wsgi_request.get_host()}'
         )
         self.assertIsNotNone(cache.get(cache_key))

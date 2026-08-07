@@ -16,5 +16,8 @@ export default async function AllKeysPage({ searchParams }) {
   const query = await searchParams;
   const method = typeof query?.method === 'string' ? query.method : '';
   const region = typeof query?.region === 'string' ? query.region : '';
-  return <CategorySectionPage section={section} method={method} region={region} />;
+  const sort = typeof query?.sort === 'string' ? query.sort : '';
+  return (
+    <CategorySectionPage section={section} method={method} region={region} sort={sort} />
+  );
 }
