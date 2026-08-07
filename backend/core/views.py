@@ -40,9 +40,13 @@ GAME_LIST_CACHE_SECONDS = 60
 # A section is omitted from the response while its categories have no games.
 # category_slugs lists every slug the section accepts — the Top Ups category
 # kept its original "subscription" slug in production after a rename.
+# facets = the View All page's filter dropdowns, OPT-IN per section. Only keys
+# gets them (Shayan 2026-08-08): top-ups/gift-cards/accounts pages also carry
+# Region filters, so detecting facets from the data alone put unwanted
+# dropdowns on their View All pages.
 HOME_POPULAR_SECTIONS = [
     {'slug': 'keys', 'title': 'Popular Keys',
-     'category_slugs': ('keys',)},
+     'category_slugs': ('keys',), 'facets': ('method', 'region')},
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
@@ -63,7 +67,7 @@ CATEGORY_SECTION_BY_SLUG = {
 # page deliberately has no Method filter (2026-07-13 — everything on it IS a
 # digital key), so /keys must not drop Steam when "Digital Key" is picked.
 SECTION_METHOD_FALLBACKS = {'keys': 'digital-key'}
-CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v2'
+CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v3'
 BROWSE_CACHE_SECONDS = 30
 # Shared-cache TTL for the public browse endpoints nginx caches (games/,
 # home/popular/, categories/). Browsers keep the short max-age values; s-maxage
@@ -732,7 +736,11 @@ class CategorySectionGamesView(APIView):
         """Filters of one kind assigned to this section's pages, found by
         name. Keys pages carry one shared Method filter and three Region
         dropdowns (the shared Key Region + gift/login pair and Steam's
-        page-local one) — all named alike, distinguished only by admin_label."""
+        page-local one) — all named alike, distinguished only by admin_label.
+
+        Sections that did not opt into this facet get no dropdown at all."""
+        if name_fragment not in section.get('facets', ()):
+            return []
         return list(
             Filter.objects
             .filter(

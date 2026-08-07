@@ -4648,6 +4648,26 @@ class CategorySectionGamesViewTests(TestCase):
         self.assertEqual(items[0]['category_slug'], 'top-up')
         self.assertEqual(items[0]['listing_count'], 1)
 
+    def test_non_keys_sections_get_no_filter_dropdowns(self):
+        # Gift-card/top-up/account pages carry their own Region filters, but
+        # only the keys section opted into facets — their View All pages must
+        # stay dropdown-free (Shayan 2026-08-08).
+        stocked = self.add_game('Steam Wallet', 'steam-wallet', self.accounts)
+        region = self.add_region_filter(
+            'Gift card regions',
+            [('global', 'Global'), ('pakistan', 'Pakistan')], [stocked])
+        self.add_listing(stocked, filter_values={str(region.pk): 'pakistan'})
+
+        response = self.client.get(
+            '/api/categories/accounts/games/?region=pakistan&method=as-a-gift')
+
+        self.assertEqual(response.data['regions'], [])
+        self.assertEqual(response.data['methods'], [])
+        # And the params are inert: no silent narrowing of the game list.
+        self.assertEqual(response.data['region'], '')
+        self.assertEqual(response.data['method'], '')
+        self.assertEqual(len(response.data['items']), 1)
+
     def test_keys_regions_merge_filters_and_only_list_stocked_values(self):
         keys = Category.objects.create(name='Keys', slug='keys')
         steam = self.add_game('Steam', 'steam', keys)
