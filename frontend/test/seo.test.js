@@ -114,8 +114,6 @@ describe('SEO route metadata', () => {
       'https://www.gamesbazaar.pk/top-ups',
       'https://www.gamesbazaar.pk/offline-activation',
       'https://www.gamesbazaar.pk/gift-cards',
-      'https://www.gamesbazaar.pk/login',
-      'https://www.gamesbazaar.pk/register',
       'https://www.gamesbazaar.pk/support',
       'https://www.gamesbazaar.pk/privacy-policy',
       'https://www.gamesbazaar.pk/terms-of-service',
@@ -453,6 +451,19 @@ describe('SEO route metadata', () => {
         noarchive: true,
         nosnippet: true,
       });
+    }
+  });
+
+  it('marks the auth entry pages as noindex but followable', async () => {
+    const authLayoutPaths = [
+      '../app/login/layout.js',
+      '../app/register/layout.js',
+      '../app/forgot-password/layout.js',
+    ];
+
+    for (const layoutPath of authLayoutPaths) {
+      const { metadata } = await importFresh(layoutPath);
+      expect(metadata.robots).toEqual({ index: false, follow: true });
     }
   });
 
