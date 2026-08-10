@@ -45,6 +45,13 @@ REFUND_PATH = '/api/Purchase/domwalletrefundtransaction'
 
 GATEWAY_DATETIME_FORMAT = '%Y%m%d%H%M%S'
 
+# JazzCash's edge/WAF drops connections from the default requests User-Agent
+# ("python-requests/x.y.z") without sending a response — the client sees
+# RemoteDisconnected and the payment never reaches the gateway. This took the
+# gateway down on 2026-08-09 with no change on our side; curl and every other
+# UA from the same server worked throughout. Always send an explicit UA.
+USER_AGENT = 'GamesBazaar/1.0'
+
 # '000' = successful operation on initiation; '121' = completed transaction
 # (IPN and Status Inquiry). Anything else is pending or failed.
 COMPLETED_RESPONSE_CODES = {'000', '121'}
@@ -150,7 +157,7 @@ def _post(path, payload, timeout=None):
         response = requests.post(
             url,
             json=payload,
-            headers={'Accept': 'application/json'},
+            headers={'Accept': 'application/json', 'User-Agent': USER_AGENT},
             timeout=timeout or settings.JAZZCASH_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:

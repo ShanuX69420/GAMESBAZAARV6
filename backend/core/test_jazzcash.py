@@ -103,6 +103,7 @@ class JazzCashInitiationRequestTests(TestCase):
         def fake_post(url, json=None, headers=None, timeout=None):
             captured['url'] = url
             captured['payload'] = json
+            captured['headers'] = headers
             raise requests.RequestException('captured')
 
         with patch('core.jazzcash.requests.post', side_effect=fake_post):
@@ -122,6 +123,20 @@ class JazzCashInitiationRequestTests(TestCase):
             'https://pgw.jazzcash.com.pk/api/payment/DoTransaction',
         )
 
+
+    def test_initiation_sends_an_explicit_non_python_user_agent(self):
+        """JazzCash's WAF silently drops the default requests User-Agent.
+
+        On 2026-08-09 every gateway call started failing with
+        RemoteDisconnected while curl from the same server worked — the only
+        difference was "python-requests/x.y.z" in the UA. Never let requests
+        fall back to its default here.
+        """
+        headers = self._capture_request()['headers']
+        user_agent = headers.get('User-Agent', '')
+        self.assertTrue(user_agent)
+        self.assertNotIn('python-requests', user_agent)
+        self.assertEqual(user_agent, jazzcash.USER_AGENT)
 
     def test_initiation_sends_exactly_the_documented_fields(self):
         payload = self._capture_request()['payload']
