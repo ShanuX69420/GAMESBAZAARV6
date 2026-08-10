@@ -36,18 +36,19 @@ from .models import (
 
 GAME_LIST_CACHE_KEY = 'game-list:v3'
 GAME_LIST_CACHE_SECONDS = 60
-# Home page "Popular" panels: which categories get one and in what order.
-# A section is omitted from the response while its categories have no games.
+# The category sections: each one has a "View All" page, and most also get a
+# "Popular" panel on the home page, in this order.
+# A section is omitted from the home response while its categories have no games.
 # category_slugs lists every slug the section accepts — the Top Ups category
 # kept its original "subscription" slug in production after a rename.
 # facets = the View All page's filter dropdowns, OPT-IN per section. Only keys
 # gets them (Shayan 2026-08-08): top-ups/gift-cards/accounts pages also carry
 # Region filters, so detecting facets from the data alone put unwanted
 # dropdowns on their View All pages.
+# home=False keeps a section's View All page but drops its home-page panel —
+# keys is off the home page (Shayan 2026-08-11) so Accounts leads; /keys itself
+# stays live and linked from the sitemap.
 HOME_POPULAR_SECTIONS = [
-    {'slug': 'keys', 'title': 'Popular Keys',
-     'category_slugs': ('keys',), 'facets': ('method', 'region'),
-     'sortable': True},
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
@@ -56,9 +57,16 @@ HOME_POPULAR_SECTIONS = [
      'category_slugs': ('offline-activation',)},
     {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
      'category_slugs': ('gift-cards',)},
+    {'slug': 'keys', 'title': 'Popular Keys',
+     'category_slugs': ('keys',), 'facets': ('method', 'region'),
+     'sortable': True, 'home': False},
+]
+# The subset the home page actually renders panels for.
+HOME_PANEL_SECTIONS = [
+    section for section in HOME_POPULAR_SECTIONS if section.get('home', True)
 ]
 HOME_POPULAR_GAMES_PER_SECTION = 8
-HOME_POPULAR_CACHE_KEY = 'home-popular:v2'
+HOME_POPULAR_CACHE_KEY = 'home-popular:v3'
 HOME_POPULAR_CACHE_SECONDS = 60
 # "View All" pages behind the popular panels reuse the same section registry.
 CATEGORY_SECTION_BY_SLUG = {
@@ -632,7 +640,7 @@ class GameListView(generics.ListAPIView):
 class HomePopularView(APIView):
     """GET /api/home/popular/ — Curated "Popular" panels for the home page.
 
-    One section per HOME_POPULAR_SECTIONS category, each listing the top games
+    One section per HOME_PANEL_SECTIONS category, each listing the top games
     in that category: featured (admin-pinned) first, then by active listing
     count, then the game's manual order. Categories without games are omitted
     so the home page never shows an empty panel.
@@ -652,7 +660,7 @@ class HomePopularView(APIView):
     def build_sections(self, request):
         section_by_category_slug = {
             category_slug: section['slug']
-            for section in HOME_POPULAR_SECTIONS
+            for section in HOME_PANEL_SECTIONS
             for category_slug in section['category_slugs']
         }
         rows = (
@@ -706,7 +714,7 @@ class HomePopularView(APIView):
                     'title': section['title'],
                     'items': games_by_section[section['slug']],
                 }
-                for section in HOME_POPULAR_SECTIONS
+                for section in HOME_PANEL_SECTIONS
                 if games_by_section.get(section['slug'])
             ],
         }

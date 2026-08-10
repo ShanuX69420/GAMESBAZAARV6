@@ -30,6 +30,9 @@ export default function Footer() {
             <ul className="footer-links">
               <li><Link href="/">Home</Link></li>
               <li><Link href="/games">Games</Link></li>
+              {/* /keys lost its home-page panel (2026-08-11) — this is now its
+                  only internal link, so don't drop it. */}
+              <li><Link href="/keys">Game Keys</Link></li>
               <li><Link href="/support">Support</Link></li>
             </ul>
           </div>

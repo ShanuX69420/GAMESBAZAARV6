@@ -4437,21 +4437,25 @@ class HomePopularViewTests(TestCase):
             'min_price': None,
         }])
 
-    def test_keys_section_ranks_first_with_min_price(self):
+    def test_accounts_section_ranks_first_and_keys_is_not_on_the_home_page(self):
+        # Keys keeps its /keys View All page but gets no home panel
+        # (Shayan 2026-08-11) — Accounts leads the home page instead.
         keys = Category.objects.create(name='Keys', slug='keys')
         keys_page = self.add_game('Elden Ring', 'elden-ring', keys)
         self.add_listing(keys_page, price=Decimal('49.50'))
-        self.add_listing(keys_page, price=Decimal('10.00'))
-        self.add_game('Valorant', 'valorant', self.accounts)
+        accounts_page = self.add_game('Valorant', 'valorant', self.accounts)
+        self.add_listing(accounts_page, price=Decimal('30.00'))
+        self.add_listing(accounts_page, price=Decimal('10.00'))
+        self.add_game('Stockless', 'stockless', self.accounts)
 
         response = self.client.get('/api/home/popular/')
 
         sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['keys', 'accounts'])
-        self.assertEqual(sections[0]['title'], 'Popular Keys')
+        self.assertEqual([s['slug'] for s in sections], ['accounts'])
+        self.assertEqual(sections[0]['title'], 'Popular Accounts')
         self.assertEqual(sections[0]['items'][0]['min_price'], '10.00')
         # Stockless game: no from-price to show.
-        self.assertIsNone(sections[1]['items'][0]['min_price'])
+        self.assertIsNone(sections[0]['items'][1]['min_price'])
 
     def test_featured_then_stocked_games_rank_first(self):
         self.add_game('Alpha', 'alpha', self.accounts)
