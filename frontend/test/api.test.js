@@ -42,6 +42,7 @@ import {
   uploadAvatar,
   isOnlineFromLastActive,
   formatLastActive,
+  heartbeatGateOpen,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -640,5 +641,30 @@ describe('API client helpers', () => {
     // Synced functions should return true and 'Online' because serverTimeOffset corrects it!
     expect(isOnlineFromLastActive(lastActiveIso, now)).toBe(true);
     expect(formatLastActive(lastActiveIso)).toBe('Online');
+  });
+
+  describe('heartbeatGateOpen', () => {
+    const now = Date.now();
+
+    it('sends when nothing has been stored yet', () => {
+      expect(heartbeatGateOpen(0, now)).toBe(true);
+      expect(heartbeatGateOpen(null, now)).toBe(true);
+      expect(heartbeatGateOpen('not-a-number', now)).toBe(true);
+    });
+
+    it('holds the gate shut until the minimum gap has passed', () => {
+      expect(heartbeatGateOpen(now - 59000, now)).toBe(false);
+      expect(heartbeatGateOpen(now - 60000, now)).toBe(true);
+      expect(heartbeatGateOpen(now - 65000, now)).toBe(true);
+    });
+
+    // Regression: a motherboard swap left the clock 3h12m fast, both browsers
+    // stamped a future time, then the correction stepped time backwards and
+    // presence stayed latched off site-wide until real time caught up.
+    it('ignores a stored time left in the future by a backwards clock step', () => {
+      const clockWasFastBy = 3 * 60 * 60 * 1000 + 12 * 60 * 1000;
+      expect(heartbeatGateOpen(now + clockWasFastBy, now)).toBe(true);
+      expect(heartbeatGateOpen(now + 1000, now)).toBe(true);
+    });
   });
 });

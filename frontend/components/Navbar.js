@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getUnreadCount, sendHeartbeat, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount, getInboxWebSocketTicket } from '@/lib/api';
+import { getUnreadCount, sendHeartbeat, heartbeatGateOpen, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount, getInboxWebSocketTicket } from '@/lib/api';
 import { notificationOrderPath } from '@/lib/orderNumbers';
 import { WS_BASE } from '@/lib/config';
 import { buildTicketSubprotocols } from '@/lib/inbox';
@@ -18,7 +18,6 @@ const UNREAD_POLL_INTERVAL_MS = 60000;
 const SEARCH_DEBOUNCE_MS = 300;
 const NOTIF_POLL_INTERVAL_MS = 120000;
 const HEARTBEAT_INTERVAL_MS = 65000;
-const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
 const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
 const SETUP_ALLOWED_PATHS = new Set(['/complete-profile', '/terms-of-service', '/privacy-policy']);
 
@@ -159,13 +158,10 @@ export default function Navbar() {
       }
     };
 
-    const canHeartbeat = () => {
-      const now = Date.now();
-      return (
-        now - readLastHeartbeatAt() >= HEARTBEAT_MIN_SEND_GAP_MS &&
-        !heartbeatInFlightRef.current
-      );
-    };
+    const canHeartbeat = () => (
+      heartbeatGateOpen(readLastHeartbeatAt()) &&
+      !heartbeatInFlightRef.current
+    );
 
     const sendActiveHeartbeat = async () => {
       if (!canHeartbeat()) return;

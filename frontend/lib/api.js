@@ -380,12 +380,37 @@ export async function sendImageMessage(conversationId, imageFile, content = '') 
 
 // ── Presence API ────────────────────────────────────────────────────────────
 
+// Presence latches off while a heartbeat is in flight, so a request that never
+// settles (a connection dropped mid-flight, sleep/resume) would stop presence
+// for good. Bound it, so the caller always gets something to unlatch on.
+const HEARTBEAT_TIMEOUT_MS = 20000;
+export const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
+
 export async function sendHeartbeat() {
-  const res = await authFetch(`${API_BASE}/api/heartbeat/`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  return res.ok;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS);
+  try {
+    const res = await authFetch(`${API_BASE}/api/heartbeat/`, {
+      method: 'POST',
+      headers: authHeaders(),
+      signal: controller.signal,
+    });
+    return res.ok;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Whether enough time has passed since the last heartbeat to send another.
+// `storedAt` is a reading of the client's own clock, so it cannot be assumed to
+// sit in the past: a backwards clock step (a wrong RTC after a hardware change,
+// an NTP correction) strands a future timestamp in storage, and a plain
+// elapsed-time check then stays negative until real time catches up — latching
+// presence off for hours, across every tab at once. Treat a future stored time
+// as "never sent" rather than trusting it.
+export function heartbeatGateOpen(storedAt, nowMs = Date.now()) {
+  const stored = Number(storedAt) || 0;
+  return nowMs - (stored > nowMs ? 0 : stored) >= HEARTBEAT_MIN_SEND_GAP_MS;
 }
 
 const ONLINE_WINDOW_MS = 120000;
