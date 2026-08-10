@@ -828,6 +828,12 @@ export default function ChatBox({
               handleSend(e);
             }
           }}
+          onFocus={() => {
+            // A phone keyboard swallows half the chat — once it has settled,
+            // put the newest message back in view (no-op if the user had
+            // scrolled up to read history).
+            setTimeout(() => scrollToBottom(), 350);
+          }}
           placeholder="Message..."
           maxLength={MAX_CHAT_MESSAGE_LENGTH}
           disabled={sending}

@@ -4748,13 +4748,20 @@ html[data-auth-hint="1"] .navbar-guest-links {
     display: none;
   }
 
+  /* Pinned to the *visual* viewport, whose size and offset the inbox page
+     publishes as these two variables. iOS never shrinks the layout viewport
+     when the keyboard opens — it scrolls the visible area instead, which
+     would slide the input up and expose the conversation list beneath the
+     panel. The 100dvh fallback covers browsers without visualViewport. */
   .inbox-split.mobile-chat-open .inbox-chatpanel {
     display: flex;
     position: fixed;
-    inset: 0;
+    left: 0;
+    right: 0;
+    top: var(--gb-chat-vv-top, 0px);
     z-index: 500;
     height: 100vh;
-    height: 100dvh;
+    height: var(--gb-chat-vv-height, 100dvh);
     background: var(--bg-primary);
   }
 
@@ -11966,4 +11973,23 @@ html[data-auth-hint="1"] .navbar-guest-links {
     width: 24px;
     height: 24px;
   }
+}
+
+/* ── Touch Keyboard Zoom Guard ─────────────────────────────────────────────── */
+/* iOS Safari zooms the whole page in whenever a focused field renders text
+   smaller than 16px, and it never zooms back out — the user has to pinch out
+   by hand after every search or chat message. So on touch screens every
+   text-entry control gets exactly 16px. Boxes, padding and layout are
+   untouched; only the typed text grows a hair. Fields that are deliberately
+   bigger than 16px already opt back out below. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .verify-code-input { font-size: 1.5rem !important; }
+  .settings-code-input { font-size: 1.2rem !important; }
+  .currency-qty-input { font-size: 1.05rem !important; }
 }

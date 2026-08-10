@@ -42,6 +42,39 @@ export default function InboxPage() {
     return () => document.body.classList.remove('gb-mobile-chat-open');
   }, [mobileChatOpen]);
 
+  // iOS never shrinks the layout viewport when the on-screen keyboard opens —
+  // it scrolls the visible area instead, which slides the fullscreen chat's
+  // pinned input upwards and exposes the conversation list underneath it.
+  // Publish the visual viewport's size and offset so the overlay can sit
+  // exactly on the visible rectangle. (On Android interactiveWidget:
+  // 'resizes-content' already shrinks the layout viewport, so these values
+  // simply match it and nothing changes.)
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!mobileChatOpen || !vv) return;
+    const root = document.documentElement;
+    let frame = 0;
+
+    function sync() {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        root.style.setProperty('--gb-chat-vv-height', `${vv.height}px`);
+        root.style.setProperty('--gb-chat-vv-top', `${vv.offsetTop}px`);
+      });
+    }
+
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => {
+      cancelAnimationFrame(frame);
+      vv.removeEventListener('resize', sync);
+      vv.removeEventListener('scroll', sync);
+      root.style.removeProperty('--gb-chat-vv-height');
+      root.style.removeProperty('--gb-chat-vv-top');
+    };
+  }, [mobileChatOpen]);
+
   // The phone's back button should close the fullscreen chat, not leave the
   // inbox — opening a chat on mobile pushes a history entry, popping it (back
   // button or our back arrow) closes the chat.
