@@ -32,16 +32,18 @@ export default function PopularPanel({ section }) {
                   <GameIconFallback size={20} />
                 )}
               </span>
-              <span className="popular-panel-name">{item.game_name}</span>
-              {item.listing_count > 0 && formatStartingPrice(item.min_price) ? (
-                <span className="popular-panel-count">
-                  From {formatStartingPrice(item.min_price)}
-                </span>
-              ) : item.listing_count > 0 ? (
-                <span className="popular-panel-count">
-                  {item.listing_count} {item.listing_count === 1 ? 'offer' : 'offers'}
-                </span>
-              ) : null}
+              <span className="popular-panel-text">
+                <span className="popular-panel-name">{item.game_name}</span>
+                {item.listing_count > 0 && formatStartingPrice(item.min_price) ? (
+                  <span className="popular-panel-count">
+                    From {formatStartingPrice(item.min_price)}
+                  </span>
+                ) : item.listing_count > 0 ? (
+                  <span className="popular-panel-count">
+                    {item.listing_count} {item.listing_count === 1 ? 'offer' : 'offers'}
+                  </span>
+                ) : null}
+              </span>
             </Link>
           </li>
         ))}

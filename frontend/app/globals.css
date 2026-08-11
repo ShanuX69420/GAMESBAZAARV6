@@ -1743,7 +1743,12 @@ html[data-auth-hint="1"] .navbar-guest-links {
   }
 }
 
+.popular-panel-list > li {
+  display: flex;
+}
+
 .popular-panel-item {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1775,15 +1780,20 @@ html[data-auth-hint="1"] .navbar-guest-links {
   object-fit: cover;
 }
 
-.popular-panel-name {
+.popular-panel-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.popular-panel-name {
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .popular-panel-item:hover .popular-panel-name {
@@ -1792,8 +1802,8 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 .popular-panel-count {
   font-size: 0.74rem;
+  line-height: 1.25;
   color: var(--text-tertiary);
-  flex-shrink: 0;
 }
 
 /* ── Category Cards ────────────────────────────────────────────────────────── */
