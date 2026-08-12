@@ -4824,6 +4824,29 @@ html[data-auth-hint="1"] .navbar-guest-links {
     display: none;
   }
 
+  /* Opaque full-screen backdrop behind the panel. The panel itself is sized to
+     the *visual* viewport, which stops at the browser's collapsed toolbar when
+     the keyboard is open — and iOS keeps painting the document in that strip
+     behind its translucent chrome, which showed the conversation list under
+     the message input. 100lvh spans the whole screen regardless of chrome, so
+     that strip (and any transient viewport mismatch) shows plain background
+     instead of other conversations. */
+  .inbox-split.mobile-chat-open::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    height: 100vh;
+    height: 100lvh;
+    background: var(--bg-primary);
+    z-index: 499;
+  }
+
+  /* Belt and braces: the list stays in flow (so its scroll position survives
+     going back) but paints nothing while the chat is open. */
+  .inbox-split.mobile-chat-open .inbox-sidebar {
+    visibility: hidden;
+  }
+
   /* Pinned to the *visual* viewport, whose size and offset the inbox page
      publishes as these two variables. iOS never shrinks the layout viewport
      when the keyboard opens — it scrolls the visible area instead, which
