@@ -1,0 +1,9 @@
+# Every text file in this repo is stored LF. Without this, an editor that writes
+# CRLF turns a two-line edit into a whole-file diff on Windows. text=auto lets git
+# detect and skip binaries (icons, mp3), so only real text gets normalized.
+* text=auto eol=lf
+
+# Windows-only launchers must keep CRLF on disk.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
