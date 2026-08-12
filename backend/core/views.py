@@ -2357,6 +2357,17 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
         listings_qs = Listing.objects.select_related(
             'seller', 'seller__profile', 'option',
             'game_category__game', 'game_category__category'
+        ).annotate(
+            # Seller rating shown on the detail page's seller card (category
+            # pages annotate the same fields for listing cards).
+            seller_avg_rating=Subquery(
+                Review.objects.filter(seller=OuterRef('seller'))
+                .values('seller').annotate(avg=Avg('rating')).values('avg')[:1]
+            ),
+            seller_review_count=Subquery(
+                Review.objects.filter(seller=OuterRef('seller'))
+                .values('seller').annotate(cnt=Count('id')).values('cnt')[:1]
+            ),
         )
         if request.user.is_authenticated:
             if not request.user.is_staff:

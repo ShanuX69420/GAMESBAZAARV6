@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import {
   buyListing, getWallet, getSellerReviews,
   initiateJazzCashPurchase, pollJazzCashPayment,
+  formatLastActive, isOnlineFromLastActive,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
@@ -16,6 +17,7 @@ import ReportModal from '@/components/ReportModal';
 import Select from '@/components/Select';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
+const PRESENCE_TICK_MS = 30000;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 // Keep in sync with JAZZCASH_MIN_PAYMENT_PKR (backend settings).
 const MIN_JAZZCASH_PAYMENT = 20;
@@ -47,6 +49,9 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [showConfirm, setShowConfirm] = useState(false);
   // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
   const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
+  // Seller presence — left null until mount so the server-rendered markup and
+  // the first client render agree (the clock only exists on the client).
+  const [presenceNow, setPresenceNow] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -73,6 +78,12 @@ export default function ListingDetailClient({ initialListing = null }) {
         .finally(() => setWalletFetched(true));
     }
   }, [user]);
+
+  useEffect(() => {
+    setPresenceNow(Date.now());
+    const timer = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   // Ads funnel: one view_item / ViewContent per listing viewed.
   useEffect(() => {
@@ -307,6 +318,11 @@ export default function ListingDetailClient({ initialListing = null }) {
   const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
   const isInstant = listing.is_auto_delivery || listing.instant_delivery;
+  const sellerOnline = presenceNow !== null
+    && isOnlineFromLastActive(listing.seller_last_active, presenceNow);
+  const sellerRating = listing.seller_avg_rating ?? null;
+  // The reviews panel below already knows the true total; prefer it once loaded.
+  const sellerReviewCount = reviewPagination?.count ?? listing.seller_review_count ?? 0;
   const requiredCheckoutFields = listing.required_checkout_fields || [];
   const checkoutFieldsFilled = requiredCheckoutFields.every(
     (f) => (checkoutFieldValues[f.key] || '').trim()
@@ -351,6 +367,76 @@ export default function ListingDetailClient({ initialListing = null }) {
             </div>
           )}
 
+          {/* Who you are buying from + when it arrives — the two facts a buyer
+              checks before price, so they sit above the fold on the left. */}
+          <div className="listing-seller-card">
+            <div className="listing-seller-row">
+              <div className="listing-card-avatar-wrap">
+                <div className="listing-seller-avatar">
+                  <img
+                    src={listing.seller_avatar_url || '/avatar-default.svg'}
+                    alt={listing.seller_name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                  />
+                </div>
+                <span className={`listing-card-status-dot ${sellerOnline ? 'online' : 'offline'}`} />
+              </div>
+              <div className="listing-seller-info">
+                <Link href={`/seller/${listing.seller_name}`} className="listing-seller-name">
+                  {listing.seller_name}
+                </Link>
+                <div className="listing-seller-meta">
+                  {sellerRating !== null && sellerRating !== undefined ? (
+                    <span className="listing-seller-rating">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#F59E0B' }}>
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                      </svg>
+                      <strong>{sellerRating.toFixed(1)}</strong>
+                      {sellerReviewCount > 0 && (
+                        <span className="listing-seller-rating-count">
+                          ({formatAmount(sellerReviewCount)} review{sellerReviewCount === 1 ? '' : 's'})
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="listing-seller-rating-count">No reviews yet</span>
+                  )}
+                  {presenceNow !== null && listing.seller_last_active && (
+                    <>
+                      <span className="listing-seller-sep">·</span>
+                      <span className={`presence-text ${sellerOnline ? 'is-online' : ''}`}>
+                        {formatLastActive(listing.seller_last_active)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="listing-seller-delivery">
+              {isInstant ? (
+                <>
+                  <svg className="instant-delivery-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                  </svg>
+                  <span><strong>Instant delivery</strong> — sent automatically right after payment</span>
+                </>
+              ) : (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  <span>
+                    {listing.delivery_time
+                      ? <>Delivery time — <strong>{listing.delivery_time}</strong></>
+                      : 'The seller delivers through chat after your order'}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
           {listing.description && (
             <div className="listing-detail-desc">
               <h2>Description</h2>
@@ -372,49 +458,11 @@ export default function ListingDetailClient({ initialListing = null }) {
         {/* Right side: price card + buy */}
         <div className="listing-detail-sidebar">
           <div className="listing-detail-sidebar-sticky">
-            {/* Buyer Protection Badge */}
-            {listing.buyer_protection_enabled && (
-              <div className="buyer-protection-badge">
-                <div className="buyer-protection-badge-left">
-                  <svg className="buyer-protection-badge-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    <polyline points="9 12 11 14 15 10"/>
-                  </svg>
-                  <span>Buyer Protection</span>
-                </div>
-                <span className="buyer-protection-badge-days">14 Day</span>
-              </div>
-            )}
-
             <div className="listing-detail-price-card">
               <div className="listing-detail-price">
                 PKR {isCurrency ? formatUnitPrice(listing.price) : listing.price}
                 {isCurrency && unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
               </div>
-              <div className="listing-detail-seller">
-                Sold by <Link href={`/seller/${listing.seller_name}`} style={{ color: 'var(--green-600)', fontWeight: 600 }}>{listing.seller_name}</Link>
-              </div>
-              <div className="listing-detail-date">
-                Listed {new Date(listing.created_at).toLocaleDateString()}
-              </div>
-
-              {/* Delivery Time */}
-              {isInstant ? (
-                <div className="instant-delivery-badge">
-                  <svg className="instant-delivery-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
-                  </svg>
-                  Instant Delivery
-                </div>
-              ) : listing.delivery_time && (
-                <div className="listing-delivery-time">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                  {listing.delivery_time}
-                </div>
-              )}
 
               {/* Stock */}
               {listing.quantity !== null && listing.quantity > 0 && (
@@ -425,11 +473,6 @@ export default function ListingDetailClient({ initialListing = null }) {
               {isCurrency && (
                 <div className="listing-stock">
                   Min. purchase: {formatAmount(minQty)} {unitName}
-                </div>
-              )}
-              {listing.quantity === null && listing.status === 'active' && (
-                <div className="listing-stock">
-                  Available
                 </div>
               )}
               {listing.status === 'sold' && (
@@ -543,6 +586,55 @@ export default function ListingDetailClient({ initialListing = null }) {
                   )}
                 </div>
               )}
+
+              {/* What the buyer is protected by — inside the buy box, right
+                  under the button, where "is this safe?" gets asked. */}
+              <div className="trust-signals">
+                <div className="trust-signal">
+                  <svg className="trust-signal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <polyline points="9 12 11 14 15 10"/>
+                  </svg>
+                  <div className="trust-signal-body">
+                    <div className="trust-signal-title">Secure Payment</div>
+                    <div className="trust-signal-text">
+                      We hold your money — the seller is only paid after you confirm delivery.
+                    </div>
+                  </div>
+                </div>
+
+                {isInstant && (
+                  <div className="trust-signal">
+                    <svg className="trust-signal-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+                    </svg>
+                    <div className="trust-signal-body">
+                      <div className="trust-signal-title">Instant Delivery</div>
+                      <div className="trust-signal-text">
+                        Delivered automatically the moment your payment goes through.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {listing.buyer_protection_enabled && (
+                  <div className="trust-signal">
+                    <svg className="trust-signal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      <polyline points="9 12 11 14 15 10"/>
+                    </svg>
+                    <div className="trust-signal-body">
+                      {/* Scoped to this listing on purpose — buyer protection is
+                          a per-category flag, so never imply sitewide cover. */}
+                      <div className="trust-signal-title">14-Day Money-Back Guarantee</div>
+                      <div className="trust-signal-text">
+                        Item not as described or stops working? Report it within
+                        14 days for a full refund.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

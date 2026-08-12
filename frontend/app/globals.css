@@ -3509,6 +3509,127 @@ html[data-auth-hint="1"] .navbar-guest-links {
   }
 }
 
+/* ── Listing Detail: seller + delivery card (left column) ─────────────────── */
+
+.listing-seller-card {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.listing-seller-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.listing-seller-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--green-100);
+  overflow: hidden;
+}
+
+.listing-seller-card .listing-card-status-dot {
+  width: 12px;
+  height: 12px;
+  border-color: var(--bg-secondary);
+}
+
+.listing-seller-info {
+  min-width: 0;
+}
+
+.listing-seller-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.listing-seller-name:hover {
+  color: var(--green-600);
+}
+
+.listing-seller-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.listing-seller-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.listing-seller-rating-count {
+  color: var(--text-tertiary);
+}
+
+.listing-seller-sep {
+  color: var(--text-tertiary);
+}
+
+.listing-seller-delivery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ── Listing Detail: trust signals (inside the buy box) ───────────────────── */
+
+.trust-signals {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+
+.trust-signal {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.trust-signal-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green-600);
+}
+
+.trust-signal-body {
+  min-width: 0;
+}
+
+.trust-signal-title {
+  font-size: 0.87rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.trust-signal-text {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 /* ── Buyer Protection Badge ────────────────────────────────────────────────── */
 
 .buyer-protection-badge {
@@ -3577,17 +3698,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
   font-weight: 700;
   color: var(--green-600);
   margin-bottom: 8px;
-}
-
-.listing-detail-seller {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-
-.listing-detail-date {
-  font-size: 0.82rem;
-  color: var(--text-tertiary);
 }
 
 /* ── Order Auto-Confirm Banner ────────────────────────────────────────────── */
