@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getSellerProfile, getSellerReviews, formatLastActive, isOnlineFromLastActive, startConversation, replyToReview } from '@/lib/api';
+import { getSellerProfile, getSellerReviews, formatLastActive, startConversation, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
+import { useLivePresence } from '@/lib/presence';
 import { useAuth } from '@/lib/auth';
 import ReportModal from '@/components/ReportModal';
 
 const REVIEW_PAGE_SIZE = 20;
-const PRESENCE_TICK_MS = 30000;
 
 export default function SellerProfileClient({
   initialProfile = null,
@@ -33,7 +33,14 @@ export default function SellerProfileClient({
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState('');
-  const [presenceNow, setPresenceNow] = useState(() => Date.now());
+  // The server-rendered profile is up to 2 minutes stale (revalidate window),
+  // which is longer than the 120s online window — so the dot reads presence
+  // from the live endpoint rather than from profile.last_active.
+  const sellerPresenceIds = useMemo(
+    () => (profile?.user_id ? [profile.user_id] : []),
+    [profile?.user_id],
+  );
+  const { lastActiveFor, isOnline } = useLivePresence(sellerPresenceIds);
 
   useEffect(() => {
     if (initialProfile) {
@@ -45,54 +52,6 @@ export default function SellerProfileClient({
     }
     loadData();
   }, [username, initialProfile, initialReviews, initialReviewPagination]);
-
-  useEffect(() => {
-    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!username || loading) return;
-    let inFlight = false;
-    let cancelled = false;
-    let controller = null;
-
-    const pollProfile = async () => {
-      if (document.visibilityState !== 'visible') return;
-      if (inFlight) return;
-      inFlight = true;
-      controller = new AbortController();
-      try {
-        const profileData = await getSellerProfile(username, { signal: controller.signal });
-        if (!cancelled) setProfile(profileData);
-      } catch (err) {
-        if (err?.name !== 'AbortError') {
-          // Silently ignore background polling errors
-        }
-      } finally {
-        inFlight = false;
-        controller = null;
-      }
-    };
-
-    // The server-rendered profile can be up to 2 minutes stale (revalidate
-    // window), which is longer than the online window — refresh immediately.
-    pollProfile();
-    const pollInterval = setInterval(pollProfile, PRESENCE_TICK_MS);
-
-    return () => {
-      cancelled = true;
-      if (controller) controller.abort();
-      clearInterval(pollInterval);
-    };
-  }, [username, loading]);
 
 
   async function loadData() {
@@ -162,7 +121,8 @@ export default function SellerProfileClient({
   }
 
   const isOwnProfile = user && user.username === username;
-  const sellerIsOnline = isOnlineFromLastActive(profile?.last_active, presenceNow);
+  const sellerLastActive = lastActiveFor(profile?.user_id, profile?.last_active);
+  const sellerIsOnline = isOnline(profile?.user_id, profile?.last_active);
 
   if (loading) {
     return (
@@ -219,7 +179,7 @@ export default function SellerProfileClient({
               {sellerIsOnline ? (
                 <span className="sp-online-badge">● Online</span>
               ) : (
-                <span className="sp-offline-text">{formatLastActive(profile.last_active)}</span>
+                <span className="sp-offline-text">{formatLastActive(sellerLastActive)}</span>
               )}
             </div>
           </div>

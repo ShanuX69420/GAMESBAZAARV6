@@ -57,6 +57,7 @@ urlpatterns = [
 
     # Presence
     path('heartbeat/', views.HeartbeatView.as_view(), name='heartbeat'),
+    path('presence/', views.PresenceView.as_view(), name='presence'),
 
     # Wallet
     path('wallet/', views.WalletView.as_view(), name='wallet'),

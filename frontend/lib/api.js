@@ -401,6 +401,24 @@ export async function sendHeartbeat() {
   }
 }
 
+// Live presence for seller dots. The seller_last_active baked into catalog
+// payloads is only as fresh as the caches those payloads pass through (Django
+// browse cache, nginx, Next.js revalidate) — all longer than the 120s online
+// window — so the dot reads its timestamps from this uncached endpoint instead.
+export async function getPresence(userIds, options = {}) {
+  const ids = [...new Set((userIds || []).filter((id) => id !== null && id !== undefined))];
+  if (!ids.length) return {};
+  const params = new URLSearchParams({ user_ids: ids.join(',') });
+  const res = await fetch(`${API_BASE}/api/presence/?${params.toString()}`, {
+    cache: 'no-store',
+    ...options,
+  });
+  updateServerTimeOffset(res);
+  if (!res.ok) throw new Error('Failed to get presence');
+  const data = await res.json();
+  return data.users || {};
+}
+
 // Whether enough time has passed since the last heartbeat to send another.
 // `storedAt` is a reading of the client's own clock, so it cannot be assumed to
 // sit in the past: a backwards clock step (a wrong RTC after a hardware change,

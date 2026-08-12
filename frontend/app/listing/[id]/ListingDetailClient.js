@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
   buyListing, getWallet, getSellerReviews,
   initiateJazzCashPurchase, pollJazzCashPayment,
-  isOnlineFromLastActive,
 } from '@/lib/api';
+import { useLivePresence } from '@/lib/presence';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
@@ -17,7 +17,6 @@ import ReportModal from '@/components/ReportModal';
 import Select from '@/components/Select';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
-const PRESENCE_TICK_MS = 30000;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 // Keep in sync with JAZZCASH_MIN_PAYMENT_PKR (backend settings).
 const MIN_JAZZCASH_PAYMENT = 20;
@@ -49,9 +48,15 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [showConfirm, setShowConfirm] = useState(false);
   // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
   const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
-  // Seller presence — left null until mount so the server-rendered markup and
-  // the first client render agree (the clock only exists on the client).
-  const [presenceNow, setPresenceNow] = useState(null);
+  // Seller presence. The listing payload is server-rendered with a 120s
+  // revalidate — longer than the 120s online window — so its seller_last_active
+  // cannot be trusted for the dot, and nothing on this page ever re-fetched the
+  // listing. Poll the live presence endpoint instead.
+  const sellerPresenceIds = useMemo(
+    () => (listing?.seller_id ? [listing.seller_id] : []),
+    [listing?.seller_id],
+  );
+  const { lastActiveFor, isOnline } = useLivePresence(sellerPresenceIds);
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -78,12 +83,6 @@ export default function ListingDetailClient({ initialListing = null }) {
         .finally(() => setWalletFetched(true));
     }
   }, [user]);
-
-  useEffect(() => {
-    setPresenceNow(Date.now());
-    const timer = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
-    return () => clearInterval(timer);
-  }, []);
 
   // Ads funnel: one view_item / ViewContent per listing viewed.
   useEffect(() => {
@@ -318,8 +317,8 @@ export default function ListingDetailClient({ initialListing = null }) {
   const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
   const isInstant = listing.is_auto_delivery || listing.instant_delivery;
-  const sellerOnline = presenceNow !== null
-    && isOnlineFromLastActive(listing.seller_last_active, presenceNow);
+  const sellerLastActive = lastActiveFor(listing.seller_id, listing.seller_last_active);
+  const sellerOnline = isOnline(listing.seller_id, listing.seller_last_active);
   const sellerRating = listing.seller_avg_rating ?? null;
   // The reviews panel below already knows the true total; prefer it once loaded.
   const sellerReviewCount = reviewPagination?.count ?? listing.seller_review_count ?? 0;
@@ -642,7 +641,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                 sellerId={listing.seller_id}
                 sellerName={listing.seller_name}
                 sellerAvatarUrl={listing.seller_avatar_url}
-                sellerLastActive={listing.seller_last_active}
+                sellerLastActive={sellerLastActive}
                 listingId={listing.id}
                 listingTitle={listing.title}
                 listingPrice={listing.price}

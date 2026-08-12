@@ -25,6 +25,7 @@ from django.test import RequestFactory, TestCase, TransactionTestCase, override_
 from django.test.utils import CaptureQueriesContext
 from django.urls import resolve
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import permissions
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APIClient
@@ -3881,6 +3882,96 @@ class HeartbeatUpdateTests(TestCase):
         self.assertTrue(first.data['updated'])
         self.assertFalse(second.data['updated'])
         self.assertEqual(self.user.profile.last_active, first_last_active)
+
+
+class PresenceLookupTests(TestCase):
+    """The seller dot's live source — must stay readable anonymously and must
+    never be storable by a cache (the whole point of splitting it out of the
+    cached catalog payloads)."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.online = User.objects.create_user(username='onlineseller', password='password123')
+        self.offline = User.objects.create_user(username='offlineseller', password='password123')
+        self.never = User.objects.create_user(username='neverseen', password='password123')
+        now = timezone.now()
+        UserProfile.objects.filter(user=self.online).update(last_active=now)
+        UserProfile.objects.filter(user=self.offline).update(last_active=now - timedelta(minutes=10))
+        UserProfile.objects.filter(user=self.never).update(last_active=None)
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_anonymous_lookup_returns_requested_users_only(self):
+        response = self.client.get(
+            f'/api/presence/?user_ids={self.online.pk},{self.never.pk}'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        users = response.data['users']
+        self.assertIn(str(self.online.pk), users)
+        # No last_active at all: absent rather than reported as some old time.
+        self.assertNotIn(str(self.never.pk), users)
+        self.assertNotIn(str(self.offline.pk), users)
+
+    def test_response_is_never_cacheable(self):
+        response = self.client.get(f'/api/presence/?user_ids={self.online.pk}')
+
+        self.assertEqual(response['Cache-Control'], 'no-store')
+
+    def test_reflects_a_heartbeat_immediately(self):
+        stale = timezone.now() - timedelta(minutes=10)
+        UserProfile.objects.filter(user=self.offline).update(last_active=stale)
+
+        self.client.force_authenticate(user=self.offline)
+        self.client.post('/api/heartbeat/', {}, format='json')
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(f'/api/presence/?user_ids={self.offline.pk}')
+        returned = parse_datetime(response.data['users'][str(self.offline.pk)])
+
+        self.assertGreater(returned, stale)
+        self.assertTrue(User.objects.get(pk=self.offline.pk).profile.is_online)
+
+    def test_junk_and_oversized_id_lists_are_ignored(self):
+        response = self.client.get('/api/presence/?user_ids=abc,,-4,%20')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['users'], {})
+
+    def test_online_seller_filter_response_is_not_cached(self):
+        """The filtered set is a live presence query — serving a 30s-old copy
+        lists sellers who have since gone offline."""
+        game = Game.objects.create(name='Presence Game', slug='presence-game')
+        category = Category.objects.create(name='Presence Accounts', slug='presence-accounts')
+        game_category = GameCategory.objects.create(game=game, category=category)
+        UserProfile.objects.filter(user=self.online).update(
+            seller_status='approved', last_active=timezone.now(),
+        )
+        listing = Listing.objects.create(
+            seller=self.online,
+            game_category=game_category,
+            title='Live seller listing',
+            description='x',
+            price='100.00',
+            quantity=1,
+            status='active',
+        )
+
+        url = f'/api/games/{game.slug}/{category.slug}/?online_only=true'
+        first = self.client.get(url)
+        self.assertEqual(
+            [row['id'] for row in first.data['listings']], [listing.pk],
+        )
+        self.assertEqual(first['Cache-Control'], 'private, no-store')
+
+        UserProfile.objects.filter(user=self.online).update(
+            last_active=timezone.now() - timedelta(minutes=10),
+        )
+        second = self.client.get(url)
+
+        self.assertEqual(second.data['listings'], [])
 
 
 class RegistrationPasswordValidationTests(TestCase):

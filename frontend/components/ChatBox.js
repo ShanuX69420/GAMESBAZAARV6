@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { WS_BASE } from '@/lib/config';
 import {
@@ -11,15 +11,14 @@ import {
   sendMessage,
   sendImageMessage,
   formatLastActive,
-  isOnlineFromLastActive,
 } from '@/lib/api';
+import { useLivePresence } from '@/lib/presence';
 import { resetMessageSoundCooldown } from '@/lib/messageAlerts';
 import Linkified from '@/components/Linkified';
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const CHAT_SUBPROTOCOL = 'gb.chat';
-const PRESENCE_TICK_MS = 30000;
 
 // Turn the order number and participant usernames inside a system notice
 // into links (order page / seller profiles).
@@ -85,7 +84,6 @@ export default function ChatBox({
   const [imageUploading, setImageUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [chatError, setChatError] = useState('');
-  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -103,6 +101,13 @@ export default function ChatBox({
   const [listingContextSent, setListingContextSent] = useState(false);
   const onOrderEventRef = useRef(onOrderEvent);
   onOrderEventRef.current = onOrderEvent;
+
+  const chatPartnerId = convo?.other_user?.id || sellerId || null;
+  const chatPresenceIds = useMemo(
+    () => (chatPartnerId ? [chatPartnerId] : []),
+    [chatPartnerId],
+  );
+  const { lastActiveFor, isOnline } = useLivePresence(chatPresenceIds);
 
   // Auto-grow the message box as lines are added (Shift+Enter), reset after send.
   useEffect(() => {
@@ -122,18 +127,6 @@ export default function ChatBox({
       loadOlderMessages();
     }
   }
-
-  useEffect(() => {
-    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   function scrollToBottom(instant = false) {
     const el = messagesContainerRef.current;
@@ -386,7 +379,6 @@ export default function ChatBox({
               if (!prev?.other_user || prev.other_user.id !== data.user_id) return prev;
               return { ...prev, other_user: { ...prev.other_user, last_active: data.last_active } };
             });
-            setPresenceNow(Date.now());
           } else if (data.type === 'error') {
             showChatError(data.error || 'Message could not be sent.');
           }
@@ -674,8 +666,17 @@ export default function ChatBox({
 
   const chatHeaderName = convo?.other_user?.username || sellerName || 'Seller';
   const chatHeaderAvatarUrl = convo?.other_user?.avatar_url || sellerAvatarUrl;
-  const chatHeaderLastActive = convo?.other_user?.last_active || sellerLastActive;
-  const chatHeaderIsOnline = isOnlineFromLastActive(chatHeaderLastActive, presenceNow);
+  // The socket push is the fast path; the presence poll is the safety net for
+  // the window before the first push and for a socket that dropped (the order
+  // page shows the seller's dot here and nowhere else).
+  const chatHeaderLastActive = lastActiveFor(
+    chatPartnerId,
+    convo?.other_user?.last_active || sellerLastActive,
+  );
+  const chatHeaderIsOnline = isOnline(
+    chatPartnerId,
+    convo?.other_user?.last_active || sellerLastActive,
+  );
 
   if (!user) {
     return (

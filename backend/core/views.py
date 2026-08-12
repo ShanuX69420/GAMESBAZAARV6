@@ -992,8 +992,12 @@ class GameCategoryDetailView(APIView):
     def get(self, request, game_slug, category_slug):
         # Only anonymous responses are cached: authenticated payloads can
         # include owner-only fields (e.g., a seller's delivery instructions).
+        # "Online sellers" is also left uncached — the set it returns is a live
+        # presence query, and a 30s/300s-old copy of it lists sellers who have
+        # since gone offline (and hides ones who just came back).
         browse_cache_key = None
-        if not request.user.is_authenticated:
+        online_only = request.query_params.get('online_only') == 'true'
+        if not request.user.is_authenticated and not online_only:
             param_signature = '&'.join(
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
@@ -1173,7 +1177,7 @@ class GameCategoryDetailView(APIView):
             )
 
         # Online seller filter: only show listings from sellers who are currently online
-        if request.query_params.get('online_only') == 'true':
+        if online_only:
             online_threshold = timezone.now() - timedelta(seconds=120)
             listings_qs = listings_qs.filter(seller__profile__last_active__gte=online_threshold)
 
@@ -1271,6 +1275,9 @@ class GameCategoryDetailView(APIView):
         if browse_cache_key is not None:
             cache.set(browse_cache_key, cat_data, BROWSE_CACHE_SECONDS)
             response['Cache-Control'] = public_cache_header(BROWSE_CACHE_SECONDS)
+        elif online_only:
+            # Keep nginx and the browser off it too, not just the Django cache.
+            response['Cache-Control'] = 'private, no-store'
         else:
             response['Cache-Control'] = 'private'
         return response
@@ -3045,6 +3052,42 @@ class HeartbeatView(ScopedPostThrottleMixin, APIView):
             profile.save(update_fields=['last_active'])
             broadcast_presence_update(request.user.id, now)
         return Response({'status': 'ok', 'updated': should_update})
+
+
+class PresenceView(APIView):
+    """GET /api/presence/?user_ids=1,2,3 — live last_active for seller dots.
+
+    Presence must never travel inside a cached payload. The catalog responses
+    that carry seller_last_active are cached at three layers (Django browse
+    cache 30s, nginx s-maxage 300s, Next.js revalidate 120s) and every one of
+    those windows is longer than the 120s online window, so a seller who
+    heartbeats every 65s still reads as offline until the cache turns over.
+    This endpoint is deliberately tiny and uncacheable so the dot has one live
+    source on every page outside chat (chat gets the socket push instead).
+    """
+    permission_classes = [permissions.AllowAny]
+    MAX_IDS = 100
+
+    def get(self, request):
+        user_ids = set()
+        for chunk in request.query_params.get('user_ids', '').split(','):
+            chunk = chunk.strip()
+            if chunk.isdigit():
+                user_ids.add(int(chunk))
+            if len(user_ids) >= self.MAX_IDS:
+                break
+
+        users = {}
+        if user_ids:
+            rows = UserProfile.objects.filter(
+                user_id__in=user_ids,
+                last_active__isnull=False,
+            ).values_list('user_id', 'last_active')
+            users = {str(user_id): last_active.isoformat() for user_id, last_active in rows}
+
+        response = Response({'users': users, 'now': timezone.now().isoformat()})
+        response['Cache-Control'] = 'no-store'
+        return response
 
 
 # ── Wallet views ──────────────────────────────────────────────────────────────

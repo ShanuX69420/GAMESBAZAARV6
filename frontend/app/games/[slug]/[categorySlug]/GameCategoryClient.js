@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
-import { isOnlineFromLastActive } from '@/lib/api';
+import { useLivePresence } from '@/lib/presence';
 import {
   buildGameCategoryListingUrl,
   buildSellerListingsPath,
@@ -15,7 +15,12 @@ import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
 
 const LISTING_PAGE_SIZE = 48;
-const PRESENCE_TICK_MS = 30000;
+// The listing list re-polls to refresh price/stock/rating on the cards already
+// on screen — it never adds or removes cards, so this is not how a new listing
+// surfaces. It used to run every 30s only because seller presence rode along in
+// the payload; presence now has its own live endpoint (lib/presence.js), so this
+// can be far lazier and stop re-sending the whole listing payload every 30s.
+const LISTING_POLL_MS = 90000;
 
 const SORT_OPTIONS = [
   { value: '', label: 'Recommended' },
@@ -127,7 +132,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [selectedOption, setSelectedOption] = useState(initialData?.selected_option_id ?? null);
   const [buyboxInstructionsOpen, setBuyboxInstructionsOpen] = useState(false);
   const [expandedInstructions, setExpandedInstructions] = useState(() => new Set());
@@ -204,19 +208,18 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     fetchData({}, 0, false, false, false, '', '');
   }, [fetchData, initialData]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
+  // Seller dots read presence from the live endpoint, not from the listing
+  // payload: this page is server-rendered with a 120s revalidate and the browse
+  // API is cached (30s in Django, up to 300s in nginx for anonymous visitors),
+  // all longer than the 120s online window — so the timestamps that arrive with
+  // the listings routinely show an online seller as offline.
+  const sellerPresenceIds = useMemo(
+    () => (data?.listings || []).map((listing) => listing.seller_id),
+    [data?.listings],
+  );
+  const { isOnline } = useLivePresence(sellerPresenceIds);
 
-  // Background polling for listing updates (specifically seller presence)
+  // Background polling for listing price/stock updates
   useEffect(() => {
     if (!hasListingData) return;
 
@@ -284,7 +287,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       }
     };
 
-    const interval = setInterval(poll, PRESENCE_TICK_MS);
+    const interval = setInterval(poll, LISTING_POLL_MS);
     return () => {
       cancelled = true;
       if (controller) controller.abort();
@@ -792,7 +795,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <div className="listing-card-avatar">
                         <img src={bestOffer.seller_avatar_url || '/avatar-default.svg'} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
-                      <span className={`listing-card-status-dot ${isOnlineFromLastActive(bestOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                      <span className={`listing-card-status-dot ${isOnline(bestOffer.seller_id, bestOffer.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="offer-buybox-seller-info">
                       <Link href={buildSellerProfilePath(bestOffer.seller_name)} className="offer-seller-name">
@@ -848,7 +851,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <div className="listing-card-avatar">
                               <img src={offer.seller_avatar_url || '/avatar-default.svg'} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
-                            <span className={`listing-card-status-dot ${isOnlineFromLastActive(offer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                            <span className={`listing-card-status-dot ${isOnline(offer.seller_id, offer.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
                             <Link href={buildSellerProfilePath(offer.seller_name)} className="offer-seller-name">
@@ -937,7 +940,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     <div className="listing-card-avatar currency-hero-avatar">
                       <img src={currentOffer.seller_avatar_url || '/avatar-default.svg'} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     </div>
-                    <span className={`listing-card-status-dot ${isOnlineFromLastActive(currentOffer.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                    <span className={`listing-card-status-dot ${isOnline(currentOffer.seller_id, currentOffer.seller_last_active) ? 'online' : 'offline'}`} />
                   </div>
                   <div className="currency-hero-seller-info">
                     <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="offer-seller-name">
@@ -1098,7 +1101,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <div className="listing-card-avatar">
                               <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
-                            <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                            <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
                             <Link
@@ -1205,7 +1208,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <div className="listing-card-avatar">
                         <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
-                      <span className={`listing-card-status-dot ${isOnlineFromLastActive(listing.seller_last_active, presenceNow) ? 'online' : 'offline'}`} />
+                      <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="listing-card-seller-info">
                       <span
