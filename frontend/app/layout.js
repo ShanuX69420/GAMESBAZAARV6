@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import Analytics from '@/components/Analytics';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import SiteReviews from '@/components/SiteReviews';
 import WhatsAppFloat from '@/components/WhatsAppFloat';
 import JsonLd from '@/components/JsonLd';
 import { AuthProvider } from '@/lib/auth';
@@ -90,6 +91,7 @@ export default function RootLayout({ children }) {
         <AuthProvider>
           <Navbar />
           <main>{children}</main>
+          <SiteReviews />
           <Footer />
           <WhatsAppFloat />
         </AuthProvider>

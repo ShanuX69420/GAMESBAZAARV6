@@ -11030,3 +11030,156 @@ class SitemapListingsFeedTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('max-age', response['Cache-Control'])
         self.assertIn('public', response['Cache-Control'])
+
+
+class SiteReviewsStripTests(TestCase):
+    """The sitewide review strip that renders above the footer on every page."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='strip_buyer', password='password123')
+        self.seller = User.objects.create_user(username='strip_seller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        game = Game.objects.create(name='Strip Game', slug='strip-game')
+        category = Category.objects.create(
+            name='Strip Accounts', slug='strip-accounts', commission_rate=Decimal('10.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Strip Listing',
+            price=Decimal('50.00'),
+            quantity=50,
+            status='active',
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def make_review(self, rating, comment, listing_title='Strip Listing'):
+        order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=listing_title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='completed',
+        )
+        return Review.objects.create(
+            order=order, reviewer=self.buyer, seller=self.seller,
+            rating=rating, comment=comment,
+        )
+
+    def test_returns_positive_reviews_with_real_comments(self):
+        self.make_review(5, 'Received the game within minutes, excellent service.')
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['reviews']), 1)
+        card = response.data['reviews'][0]
+        self.assertEqual(card['rating'], 5)
+        self.assertEqual(card['listing_title'], 'Strip Listing')
+
+    def test_never_exposes_the_reviewer_username(self):
+        """Public review cards are attributed to an anonymous buyer everywhere
+        else on the site; this strip must not be the leak."""
+        self.make_review(5, 'Received the game within minutes, excellent service.')
+
+        response = self.client.get('/api/reviews/site/')
+
+        card = response.data['reviews'][0]
+        self.assertNotIn('reviewer_name', card)
+        self.assertNotIn('strip_buyer', json.dumps(response.data, default=str))
+
+    def test_excludes_low_ratings_and_contentless_comments(self):
+        self.make_review(5, 'A genuinely useful and complete review comment.')
+        self.make_review(2, 'Took far too long to arrive and the key failed.')
+        self.make_review(5, '.')
+        self.make_review(5, '')
+
+        response = self.client.get('/api/reviews/site/')
+
+        comments = [card['comment'] for card in response.data['reviews']]
+        self.assertEqual(comments, ['A genuinely useful and complete review comment.'])
+
+    def test_whitespace_only_comments_are_not_cards(self):
+        self.make_review(5, '   .   ')
+        self.make_review(5, '            ')
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(response.data['reviews'], [])
+
+    def test_summary_averages_every_review_not_just_the_shown_ones(self):
+        """The cards are cherry-picked; the headline average must not be."""
+        self.make_review(5, 'A genuinely useful and complete review comment.')
+        self.make_review(1, 'x')  # too short and too low to be shown
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(len(response.data['reviews']), 1)
+        self.assertEqual(response.data['summary']['count'], 2)
+        self.assertEqual(response.data['summary']['average'], 3.0)
+
+    def test_long_comments_are_truncated(self):
+        self.make_review(5, 'word ' * 200)
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertLessEqual(len(response.data['reviews'][0]['comment']), 201)
+
+    def test_newest_first(self):
+        self.make_review(5, 'The older review, still perfectly readable.')
+        newest = self.make_review(5, 'The newest review, also perfectly readable.')
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(response.data['reviews'][0]['id'], newest.id)
+
+    def test_empty_when_there_is_nothing_worth_showing(self):
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['reviews'], [])
+        self.assertEqual(response.data['summary']['count'], 0)
+        self.assertIsNone(response.data['summary']['average'])
+
+    def test_is_public_and_cacheable(self):
+        """It renders on every page, so nginx has to be allowed to hold it."""
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('public', response['Cache-Control'])
+        self.assertIn('s-maxage', response['Cache-Control'])
+
+    def test_new_review_is_not_stuck_behind_the_cache(self):
+        self.make_review(5, 'The first review, long enough to be shown.')
+        self.client.get('/api/reviews/site/')  # warm the cache
+
+        self.client.force_authenticate(user=self.buyer)
+        order = Order.objects.create(
+            buyer=self.buyer, seller=self.seller, listing=self.listing,
+            listing_title='Strip Listing', quantity=1,
+            unit_price=Decimal('50.00'), total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'), commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'), status='completed',
+        )
+        self.client.post(
+            '/api/reviews/',
+            {'order_id': order.id, 'rating': 5, 'comment': 'Posted just now, long enough to show.'},
+            format='json',
+        )
+
+        response = self.client.get('/api/reviews/site/')
+
+        self.assertEqual(len(response.data['reviews']), 2)

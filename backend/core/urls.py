@@ -92,6 +92,7 @@ urlpatterns = [
     path('reviews/<int:pk>/', views.UpdateReviewView.as_view(), name='update-review'),
     path('reviews/<int:pk>/reply/', views.ReplyToReviewView.as_view(), name='reply-to-review'),
     path('reviews/seller/<str:username>/', views.SellerReviewsView.as_view(), name='seller-reviews'),
+    path('reviews/site/', views.SiteReviewsView.as_view(), name='site-reviews'),
 
     # Seller Profile
     path('seller/profile/<str:username>/', views.SellerProfileView.as_view(), name='seller-profile'),

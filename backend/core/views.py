@@ -20,12 +20,12 @@ from django.db.models import (
     Avg, Case, Count, ExpressionWrapper, F, IntegerField, Min, OuterRef,
     Prefetch, Q, Subquery, Sum, Value, When,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Length, Trim
 from django.db import IntegrityError, transaction as db_transaction
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
-from django.utils.text import slugify
+from django.utils.text import Truncator, slugify
 from .throttling import AttemptScopedRateThrottle, SuccessScopedRateThrottle
 from .models import (
     Game, GameCategory, CategoryOption, Filter, UserProfile, Listing, Conversation, Message,
@@ -228,6 +228,16 @@ DEFAULT_ORDER_PAGE_SIZE = 20
 MAX_ORDER_PAGE_SIZE = 100
 DEFAULT_REVIEW_PAGE_SIZE = 20
 MAX_REVIEW_PAGE_SIZE = 100
+# Sitewide review strip (the marquee above the footer). It renders on every
+# page, so it is cached hard and kept small. Only 4-5 star reviews with a real
+# sentence in them qualify — a bare "." or a one-word rating is not a
+# testimonial. MAX_COMMENT_LENGTH keeps every card the same rough size.
+SITE_REVIEWS_CACHE_KEY = 'site-reviews:v1'
+SITE_REVIEWS_CACHE_SECONDS = 300
+SITE_REVIEWS_LIMIT = 20
+SITE_REVIEWS_MIN_RATING = 4
+SITE_REVIEWS_MIN_COMMENT_LENGTH = 12
+SITE_REVIEWS_MAX_COMMENT_LENGTH = 200
 HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS = 30
 MAX_SEARCH_QUERY_LENGTH = 80
 SEARCH_CACHE_SECONDS = 60
@@ -4663,6 +4673,10 @@ class CreateReviewView(APIView):
         except IntegrityError:
             return Response({'error': 'You have already reviewed this order.'}, status=400)
 
+        # The sitewide strip shows the newest reviews — let it pick this one up
+        # now instead of at the end of its 5-minute window.
+        cache.delete(SITE_REVIEWS_CACHE_KEY)
+
         return Response(ReviewSerializer(review).data, status=201)
 
 
@@ -4698,6 +4712,7 @@ class UpdateReviewView(APIView):
 
         # Invalidate seller profile cache
         cache.delete(f'seller-profile:v1:{review.seller_id}')
+        cache.delete(SITE_REVIEWS_CACHE_KEY)
 
         return Response(ReviewSerializer(review).data)
 
@@ -4749,6 +4764,65 @@ class SellerReviewsView(APIView):
             'reviews': ReviewSerializer(reviews, many=True).data,
             'pagination': get_pagination_payload(total_count, limit, offset),
         })
+
+
+class SiteReviewsView(APIView):
+    """GET /api/reviews/site/ — recent buyer reviews for the sitewide strip.
+
+    Feeds the marquee that sits above the footer on every page, so it is a
+    showcase, not a full feed: only reviews that are positive AND actually say
+    something make it in (a lone "." reads as filler). The summary counts are
+    computed over EVERY review though — the average shown must be the real
+    sitewide average, not the average of the cherry-picked cards.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        data = cache.get(SITE_REVIEWS_CACHE_KEY)
+        if data is None:
+            data = self.build_payload()
+            cache.set(SITE_REVIEWS_CACHE_KEY, data, SITE_REVIEWS_CACHE_SECONDS)
+        response = Response(data)
+        response['Cache-Control'] = public_cache_header(SITE_REVIEWS_CACHE_SECONDS)
+        return response
+
+    @staticmethod
+    def build_payload():
+        summary = Review.objects.aggregate(count=Count('id'), average=Avg('rating'))
+        reviews = (
+            Review.objects
+            # Trim first: "   .   " is 7 characters of nothing.
+            .annotate(comment_length=Length(Trim('comment')))
+            .filter(
+                rating__gte=SITE_REVIEWS_MIN_RATING,
+                comment_length__gte=SITE_REVIEWS_MIN_COMMENT_LENGTH,
+            )
+            .select_related('order')
+            .order_by('-created_at')[:SITE_REVIEWS_LIMIT]
+        )
+        average = summary['average']
+        return {
+            'reviews': [
+                {
+                    # No reviewer name on purpose: every public review card on
+                    # the site is attributed to an anonymous "Buyer" (seller
+                    # profile, listing page), so this strip must not be the one
+                    # place a buyer's username shows up next to what they bought.
+                    'id': review.id,
+                    'rating': review.rating,
+                    'comment': Truncator(review.comment.strip()).chars(
+                        SITE_REVIEWS_MAX_COMMENT_LENGTH
+                    ),
+                    'listing_title': review.order.listing_title,
+                    'created_at': review.created_at,
+                }
+                for review in reviews
+            ],
+            'summary': {
+                'count': summary['count'] or 0,
+                'average': round(float(average), 1) if average is not None else None,
+            },
+        }
 
 
 class SellerProfileView(APIView):

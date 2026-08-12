@@ -2,6 +2,7 @@ import { API_BASE } from '@/lib/config';
 let refreshAuthPromise = null;
 const GAME_LIST_REVALIDATE_SECONDS = 60;
 const PUBLIC_CATALOG_REVALIDATE_SECONDS = 120;
+const SITE_REVIEWS_REVALIDATE_SECONDS = 300;
 
 let serverTimeOffset = 0;
 
@@ -52,6 +53,18 @@ export async function fetchHomePopular() {
   });
   updateServerTimeOffset(res);
   if (!res.ok) throw new Error('Failed to fetch popular sections');
+  return res.json();
+}
+
+// Feeds the review marquee above the footer. It renders on EVERY page, so the
+// revalidate window is long — the strip showing a new review five minutes late
+// is fine, re-fetching it on every page render is not.
+export async function fetchSiteReviews() {
+  const res = await fetch(`${API_BASE}/api/reviews/site/`, {
+    next: { revalidate: SITE_REVIEWS_REVALIDATE_SECONDS },
+  });
+  updateServerTimeOffset(res);
+  if (!res.ok) throw new Error('Failed to fetch site reviews');
   return res.json();
 }
 

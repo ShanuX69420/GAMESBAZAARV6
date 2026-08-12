@@ -10,6 +10,7 @@ import {
   fetchGames,
   fetchGame,
   fetchGameCategory,
+  fetchSiteReviews,
   getAutoDeliveryStock,
   getAutoDeliveryStockItem,
   getConversations,
@@ -206,6 +207,19 @@ describe('API client helpers', () => {
       `${API_BASE}/api/games/pubg%20mobile/accounts%20%26%20boosts/?filter_1=Gold+Rank`,
       {
         next: { revalidate: 120 },
+      }
+    );
+  });
+
+  it('caches the sitewide review strip for five minutes', async () => {
+    // The strip renders inside the root layout, so this fetch is on the path of
+    // every single page render — it must never go out uncached.
+    await fetchSiteReviews();
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/reviews/site/`,
+      {
+        next: { revalidate: 300 },
       }
     );
   });

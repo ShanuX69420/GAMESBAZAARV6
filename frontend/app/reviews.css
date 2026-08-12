@@ -723,3 +723,181 @@
     padding: 18px;
   }
 }
+
+/* ── Sitewide Review Strip (above the footer, every page) ──────────────────── */
+
+.site-reviews {
+  --site-reviews-gap: 16px;
+  margin-top: 56px;
+  padding: 32px 0 36px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+/* The footer supplies its own top spacing; the strip already ends in padding,
+   so drop the double gap when they sit together. */
+.site-reviews + .footer {
+  margin-top: 0;
+}
+
+.site-reviews-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.site-reviews-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.site-reviews-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.site-reviews-summary-stars {
+  color: #F59E0B;
+  letter-spacing: 1px;
+}
+
+/* Two identical tracks side by side. Track one slides its full width plus the
+   gap to the left, by which point track two occupies exactly where track one
+   started — so the reset is invisible. The gap has to be in the transform or
+   the loop stutters by one gap width every cycle. */
+.site-reviews-viewport {
+  display: flex;
+  gap: var(--site-reviews-gap);
+  overflow: hidden;
+  /* Fade the cards into the section background at both edges instead of
+     slicing them off mid-word. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+
+.site-reviews-track {
+  display: flex;
+  gap: var(--site-reviews-gap);
+  flex-shrink: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  animation: site-reviews-marquee var(--site-reviews-duration, 90s) linear infinite;
+}
+
+@keyframes site-reviews-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100% - var(--site-reviews-gap))); }
+}
+
+/* Let people stop the strip to actually read a review. */
+.site-reviews-viewport:hover .site-reviews-track,
+.site-reviews-viewport:focus-within .site-reviews-track {
+  animation-play-state: paused;
+}
+
+.site-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  flex-shrink: 0;
+  padding: 16px 18px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.site-review-stars {
+  color: #F59E0B;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.site-review-comment {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  /* Cards must stay the same height or the track visibly wobbles. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(0.88rem * 1.5 * 3);
+}
+
+.site-review-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  font-size: 0.76rem;
+  color: var(--text-tertiary);
+  min-width: 0;
+}
+
+.site-review-author {
+  font-weight: 600;
+  color: var(--green-600);
+  white-space: nowrap;
+}
+
+.site-review-sep {
+  flex-shrink: 0;
+}
+
+.site-review-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Motion off: no animation, no duplicate cards, and the row becomes a normal
+   horizontal scroller so every review is still reachable. */
+@media (prefers-reduced-motion: reduce) {
+  .site-reviews-viewport {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+
+  .site-reviews-track {
+    animation: none;
+  }
+
+  .site-reviews-track-clone {
+    display: none;
+  }
+
+  .site-review-card {
+    scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .site-reviews {
+    margin-top: 40px;
+    padding: 26px 0 30px;
+  }
+
+  .site-reviews-title {
+    font-size: 1.02rem;
+  }
+
+  .site-review-card {
+    width: 260px;
+    padding: 14px 16px;
+  }
+}
