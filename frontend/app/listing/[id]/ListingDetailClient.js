@@ -337,6 +337,19 @@ export default function ListingDetailClient({ initialListing = null }) {
   // buyer approves on their phone, so the prompt has to show for the whole
   // buying window — initiation and polling both.
   const jazzCashInFlight = payWithJazzCash && buying;
+  // A failed JazzCash attempt usually means the buyer has no JazzCash wallet,
+  // not that they mistyped — so the error has to name the other rails we
+  // actually accept. Without this they just retry the same number.
+  const paymentFallback = (
+    <div className="alert alert-info" style={{ marginTop: '8px', marginBottom: 0 }}>
+      <strong>No JazzCash account?</strong>
+      <div style={{ marginTop: '4px', fontWeight: 400 }}>
+        You can also pay by Easypaisa or bank transfer.{' '}
+        <Link href="/wallet" className="buy-topup-link">Add funds to your wallet</Link>{' '}
+        and come back to finish this order.
+      </div>
+    </div>
+  );
 
   return (
     <div className="container">
@@ -558,7 +571,8 @@ export default function ListingDetailClient({ initialListing = null }) {
                         </div>
                       )}
 
-                      {buyError && <div className="alert alert-error" style={{ marginTop: '8px' }}>{buyError}</div>}
+                      {buyError && <div className="alert alert-error" style={{ marginTop: '8px', marginBottom: 0 }}>{buyError}</div>}
+                      {buyError && payWithJazzCash && paymentFallback}
                       {buySuccess && <div className="alert alert-success" style={{ marginTop: '8px' }}>{buySuccess}</div>}
 
                       <button
@@ -920,7 +934,8 @@ export default function ListingDetailClient({ initialListing = null }) {
                     PKR {formatPKR(jazzCashCharge)} will be charged to this JazzCash account.
                   </span>
                   <div className="form-hint" style={{ marginTop: '8px' }}>
-                    Prefer a bank transfer? <Link href="/wallet" className="buy-topup-link">Add funds to your wallet</Link> and
+                    No JazzCash? Pay by Easypaisa or bank transfer instead —{' '}
+                    <Link href="/wallet" className="buy-topup-link">add funds to your wallet</Link> and
                     come back to complete the purchase.
                   </div>
                   {jazzCashInFlight && (
@@ -952,6 +967,7 @@ export default function ListingDetailClient({ initialListing = null }) {
               </div>
 
               {buyError && <div className="alert alert-error" style={{ margin: '0' }}>{buyError}</div>}
+              {buyError && payWithJazzCash && paymentFallback}
             </div>
 
             <div className="confirm-order-actions">

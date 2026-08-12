@@ -3110,6 +3110,12 @@ html[data-auth-hint="1"] .navbar-guest-links {
   border: 1px solid var(--green-200);
 }
 
+.alert-info {
+  background: var(--blue-50);
+  color: var(--blue-700);
+  border: 1px solid var(--blue-200);
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────────────────── */
 
 .page-title {

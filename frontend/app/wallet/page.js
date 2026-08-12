@@ -33,6 +33,9 @@ export default function WalletPage() {
   const [withdrawRequests, setWithdrawRequests] = useState([]);
   const [withdrawPagination, setWithdrawPagination] = useState(null);
   const [showTopUp, setShowTopUp] = useState(false);
+  // Only a real gateway failure points at the other rails — form validation
+  // errors ("minimum is X") must not trigger the Easypaisa nudge.
+  const [jazzCashFailed, setJazzCashFailed] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMethod, setTopUpMethod] = useState('jazzcash');
@@ -155,6 +158,7 @@ export default function WalletPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setJazzCashFailed(false);
     if (Number(topUpAmount) < MIN_TOP_UP_AMOUNT) {
       setError(MIN_TOP_UP_MESSAGE);
       return;
@@ -182,6 +186,7 @@ export default function WalletPage() {
         await loadData();
       } else if (payment?.status === 'failed') {
         setError(payment.user_message || 'JazzCash payment failed. Please try again.');
+        setJazzCashFailed(true);
       } else {
         setSuccess('Your JazzCash payment is still processing. Your wallet will be credited automatically once JazzCash confirms it.');
         setShowTopUp(false);
@@ -189,6 +194,7 @@ export default function WalletPage() {
       }
     } catch (err) {
       setError(err.message);
+      setJazzCashFailed(true);
     } finally {
       setSubmitting(false);
     }
@@ -282,13 +288,13 @@ export default function WalletPage() {
         <div className="wallet-actions">
           <button
             className="btn btn-primary"
-            onClick={() => { setShowTopUp(!showTopUp); setShowWithdraw(false); setError(''); setSuccess(''); }}
+            onClick={() => { setShowTopUp(!showTopUp); setShowWithdraw(false); setError(''); setSuccess(''); setJazzCashFailed(false); }}
           >
             {showTopUp ? 'Cancel' : '+ Add Funds'}
           </button>
           <button
             className="btn btn-withdraw"
-            onClick={() => { setShowWithdraw(!showWithdraw); setShowTopUp(false); setError(''); setSuccess(''); }}
+            onClick={() => { setShowWithdraw(!showWithdraw); setShowTopUp(false); setError(''); setSuccess(''); setJazzCashFailed(false); }}
           >
             {showWithdraw ? 'Cancel' : '↗ Withdraw'}
           </button>
@@ -298,6 +304,16 @@ export default function WalletPage() {
       {/* Success/Error */}
       {success && <div className="alert alert-success">{success}</div>}
       {error && <div className="alert alert-error">{error}</div>}
+      {jazzCashFailed && (
+        <div className="alert alert-info">
+          <strong>No JazzCash account?</strong>
+          <div style={{ marginTop: '4px', fontWeight: 400 }}>
+            You can top up by Easypaisa or bank transfer instead — choose{' '}
+            <strong>Easypaisa / Bank</strong> below and we&apos;ll credit your
+            wallet within minutes.
+          </div>
+        </div>
+      )}
 
       {/* Top-Up Form */}
       {showTopUp && (
@@ -310,7 +326,7 @@ export default function WalletPage() {
               <button
                 type="button"
                 className={activeTopUpMethod === 'jazzcash' ? 'btn btn-primary' : 'btn btn-outline'}
-                onClick={() => { setTopUpMethod('jazzcash'); setError(''); setSuccess(''); }}
+                onClick={() => { setTopUpMethod('jazzcash'); setError(''); setSuccess(''); setJazzCashFailed(false); }}
                 disabled={submitting}
               >
                 JazzCash — Instant
@@ -318,10 +334,10 @@ export default function WalletPage() {
               <button
                 type="button"
                 className={activeTopUpMethod === 'manual' ? 'btn btn-primary' : 'btn btn-outline'}
-                onClick={() => { setTopUpMethod('manual'); setError(''); setSuccess(''); }}
+                onClick={() => { setTopUpMethod('manual'); setError(''); setSuccess(''); setJazzCashFailed(false); }}
                 disabled={submitting}
               >
-                WhatsApp
+                Easypaisa / Bank
               </button>
             </div>
           )}
@@ -385,14 +401,16 @@ export default function WalletPage() {
           {activeTopUpMethod === 'manual' && (
           <>
           <p className="card-text">
-            Message us on WhatsApp with the amount you want to add. We&apos;ll
-            confirm the payment with you and credit your wallet within minutes.
+            No JazzCash account? Pay by <strong>Easypaisa</strong> or{' '}
+            <strong>bank transfer</strong> instead. Message us on WhatsApp with the
+            amount you want to add — we&apos;ll share the account details, confirm
+            your payment and credit your wallet within minutes.
           </p>
 
           {/* WhatsApp Details Card */}
           <div className="topup-payment-details">
             <div className="topup-payment-details-header">
-              <strong>Top Up via WhatsApp</strong>
+              <strong>Pay by Easypaisa or Bank Transfer</strong>
             </div>
             <div className="topup-payment-details-body">
               <div className="topup-detail-row">
