@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import {
   buyListing, getWallet, getSellerReviews,
   initiateJazzCashPurchase, pollJazzCashPayment,
-  formatLastActive, isOnlineFromLastActive,
+  isOnlineFromLastActive,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
@@ -351,9 +351,11 @@ export default function ListingDetailClient({ initialListing = null }) {
         </div>
       </div>
 
-      <div className="listing-detail">
-        {/* Left side: listing info */}
-        <div className="listing-detail-main">
+      <div className="listing-detail-layout">
+        {/* The title spans both columns, so the buy box on the right and the
+            seller card on the left always start on the same line no matter how
+            many lines the title wraps to. */}
+        <div className="listing-detail-header">
           <h1 className="listing-detail-title">{listing.title}</h1>
 
           {/* Filter badges */}
@@ -366,7 +368,10 @@ export default function ListingDetailClient({ initialListing = null }) {
               ))}
             </div>
           )}
+        </div>
 
+        {/* Left column: who you're buying from, then the details */}
+        <div className="listing-detail-main">
           {/* Who you are buying from + when it arrives — the two facts a buyer
               checks before price, so they sit above the fold on the left. */}
           <div className="listing-seller-card">
@@ -401,14 +406,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                   ) : (
                     <span className="listing-seller-rating-count">No reviews yet</span>
                   )}
-                  {presenceNow !== null && listing.seller_last_active && (
-                    <>
-                      <span className="listing-seller-sep">·</span>
-                      <span className={`presence-text ${sellerOnline ? 'is-online' : ''}`}>
-                        {formatLastActive(listing.seller_last_active)}
-                      </span>
-                    </>
-                  )}
+                  {/* No presence text at all — the avatar dot carries it. */}
                 </div>
               </div>
             </div>
@@ -455,10 +453,10 @@ export default function ListingDetailClient({ initialListing = null }) {
 
         </div>
 
-        {/* Right side: price card + buy */}
-        <div className="listing-detail-sidebar">
-          <div className="listing-detail-sidebar-sticky">
-            <div className="listing-detail-price-card">
+        {/* Right column: buy box, then the seller chat directly under it —
+            one continuous panel, no floating and no gap between the two. */}
+        <div className="listing-detail-side">
+          <div className="listing-detail-price-card">
               <div className="listing-detail-price">
                 PKR {isCurrency ? formatUnitPrice(listing.price) : listing.price}
                 {isCurrency && unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
@@ -636,13 +634,40 @@ export default function ListingDetailClient({ initialListing = null }) {
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Bottom Section: Reviews + Chat ──────────────────────────────── */}
-      <div className="listing-detail-bottom">
-        {/* Left: Seller Reviews */}
+          {/* Chat sits in the same column, right below the buy box */}
+          {!isOwnListing && (
+            <div className="listing-detail-chat-wrap">
+              <ChatBox
+                sellerId={listing.seller_id}
+                sellerName={listing.seller_name}
+                sellerAvatarUrl={listing.seller_avatar_url}
+                sellerLastActive={listing.seller_last_active}
+                listingId={listing.id}
+                listingTitle={listing.title}
+                listingPrice={listing.price}
+              />
+
+              {user && (
+                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    className="report-flag-btn"
+                    onClick={() => setShowReport(true)}
+                    title="Report this listing"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                      <line x1="4" y1="22" x2="4" y2="15"/>
+                    </svg>
+                    Report
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Left column, under the description: seller reviews */}
         <div className="listing-detail-reviews">
           <div className="listing-detail-reviews-header">
             <h2 className="listing-detail-reviews-title">
@@ -724,40 +749,6 @@ export default function ListingDetailClient({ initialListing = null }) {
               )}
             </>
           )}
-        </div>
-
-        {/* Right: Chat + Report */}
-        <div className="listing-detail-chat-col">
-          <div className="listing-detail-chat-sticky">
-            {!isOwnListing && (
-              <ChatBox
-                sellerId={listing.seller_id}
-                sellerName={listing.seller_name}
-                sellerAvatarUrl={listing.seller_avatar_url}
-                sellerLastActive={listing.seller_last_active}
-                listingId={listing.id}
-                listingTitle={listing.title}
-                listingPrice={listing.price}
-              />
-            )}
-
-            {/* Report button */}
-            {!isOwnListing && user && (
-              <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-                <button
-                  className="report-flag-btn"
-                  onClick={() => setShowReport(true)}
-                  title="Report this listing"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                    <line x1="4" y1="22" x2="4" y2="15"/>
-                  </svg>
-                  Report
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

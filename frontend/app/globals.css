@@ -3321,36 +3321,57 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 /* ── Listing Detail ────────────────────────────────────────────────────────── */
 
-.listing-detail {
+/* Mobile is a plain stack in source order: header, seller+description, buy box
+   + chat, reviews. Desktop turns it into two columns — see the grid below. */
+.listing-detail-layout {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding-bottom: 0;
+  padding-bottom: 48px;
 }
 
 @media (min-width: 768px) {
-  .listing-detail {
-    flex-direction: row;
-    gap: 32px;
+  .listing-detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    column-gap: 32px;
+    row-gap: 24px;
+    align-items: start;
   }
+
+  /* Full-width title keeps the two columns starting on the same line, so the
+     buy box lines up with the seller card however long the title is. */
+  .listing-detail-header  { grid-column: 1 / -1; grid-row: 1; }
+  .listing-detail-main    { grid-column: 1; grid-row: 2; }
+  .listing-detail-reviews { grid-column: 1; grid-row: 3; }
+  /* Buy box + chat span both content rows as one uninterrupted column. */
+  .listing-detail-side    { grid-column: 2; grid-row: 2 / span 2; }
 }
 
 .listing-detail-main {
-  flex: 1;
   min-width: 0;
+}
+
+.listing-detail-side {
+  min-width: 0;
+}
+
+.listing-detail-chat-wrap {
+  margin-top: 20px;
 }
 
 .listing-detail-title {
   font-size: 1.4rem;
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .listing-detail-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-top: 12px;
+  margin-bottom: 0;
 }
 
 .listing-tag {
@@ -3378,41 +3399,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: var(--text-secondary);
   line-height: 1.7;
   white-space: pre-wrap;
-}
-
-.listing-detail-sidebar {
-  width: 100%;
-}
-
-@media (min-width: 768px) {
-  .listing-detail-sidebar {
-    width: 400px;
-    flex-shrink: 0;
-  }
-}
-
-.listing-detail-sidebar-sticky {
-  position: sticky;
-  top: 80px;
-}
-
-/* ── Listing Detail Bottom Section (Reviews + Chat) ───────────────────────── */
-
-.listing-detail-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  padding-bottom: 48px;
-  margin-top: 8px;
-}
-
-@media (min-width: 768px) {
-  .listing-detail-bottom {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
 }
 
 .listing-detail-reviews {
@@ -3483,32 +3469,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
   margin: 0;
 }
 
-.listing-detail-chat-col {
-  width: 100%;
-}
-
-.listing-detail-chat-sticky {
-  position: sticky;
-  top: 80px;
-}
-
-@media (max-width: 767px) {
-  .listing-detail-bottom {
-    /* On mobile, show chat first, then reviews */
-    display: flex;
-    flex-direction: column-reverse;
-    gap: 24px;
-  }
-
-  .listing-detail-chat-sticky {
-    position: static;
-  }
-
-  .listing-detail-sidebar-sticky {
-    position: static;
-  }
-}
-
 /* ── Listing Detail: seller + delivery card (left column) ─────────────────── */
 
 .listing-seller-card {
@@ -3572,10 +3532,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
 }
 
 .listing-seller-rating-count {
-  color: var(--text-tertiary);
-}
-
-.listing-seller-sep {
   color: var(--text-tertiary);
 }
 
