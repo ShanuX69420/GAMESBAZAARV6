@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
 import { CheckCircleIcon } from '@/lib/icons';
+import { safeNextPath, withNext } from '@/lib/loginRedirect';
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -12,6 +13,8 @@ function VerifyEmailContent() {
 
   const [token, setToken] = useState(searchParams.get('token') || '');
   const [email] = useState(searchParams.get('email') || '');
+  // Where the visitor was headed before they were asked to sign up.
+  const nextPath = safeNextPath(searchParams.get('next'));
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -91,7 +94,7 @@ function VerifyEmailContent() {
           <div className="auth-card" style={{ textAlign: 'center' }}>
             <h1 className="auth-title">Invalid Link</h1>
             <p className="auth-subtitle">This verification link is invalid or has expired.</p>
-            <Link href="/register" className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
+            <Link href={withNext('/register', nextPath)} className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
               Create New Account
             </Link>
           </div>
@@ -110,7 +113,7 @@ function VerifyEmailContent() {
             <p className="auth-subtitle">
               Your email has been verified successfully. You can now sign in to your account.
             </p>
-            <Link href="/login" className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
+            <Link href={withNext('/login', nextPath)} className="btn btn-primary btn-full" style={{ marginTop: '16px' }}>
               Sign In
             </Link>
           </div>
@@ -181,7 +184,7 @@ function VerifyEmailContent() {
           </div>
 
           <p className="auth-footer">
-            Wrong email? <Link href="/register">Create New Account</Link>
+            Wrong email? <Link href={withNext('/register', nextPath)}>Create New Account</Link>
           </p>
         </div>
       </div>

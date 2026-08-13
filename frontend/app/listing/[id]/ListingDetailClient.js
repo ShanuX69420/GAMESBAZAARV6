@@ -11,6 +11,7 @@ import {
 import { useLivePresence } from '@/lib/presence';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
+import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
@@ -90,13 +91,16 @@ export default function ListingDetailClient({ initialListing = null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing?.id]);
 
-  // Currency listings: start at the seller's minimum (or the amount picked on
-  // the browse page via ?qty=), clamped to the available stock.
+  // Start at the amount already chosen elsewhere (?qty= from the browse page,
+  // or from the login round-trip); currency listings otherwise open at the
+  // seller's minimum. Always clamped to the available stock.
   useEffect(() => {
-    if (!listing || listing.listing_mode !== 'currency') return;
-    const minQ = listing.min_quantity || 1;
+    if (!listing) return;
+    const isCurrencyListing = listing.listing_mode === 'currency';
+    const minQ = isCurrencyListing ? (listing.min_quantity || 1) : 1;
     const stock = listing.quantity ?? null;
     const fromUrl = parseInt(searchParams.get('qty') || '', 10);
+    if (!isCurrencyListing && !Number.isFinite(fromUrl)) return;
     let q = Number.isFinite(fromUrl) ? fromUrl : minQ;
     q = Math.max(minQ, q);
     if (stock !== null) q = Math.min(q, stock);
@@ -303,6 +307,15 @@ export default function ListingDetailClient({ initialListing = null }) {
     }
   }
 
+  // Guests see the real Buy button. Pressing it sends them to login and back
+  // to this listing with the same amount and the confirmation step waiting.
+  function goToLoginToBuy() {
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    params.set('buy', '1');
+    if (isCurrency || quantity > 1) params.set('qty', String(quantity));
+    router.push(loginHref(`/listing/${listing.id}?${params.toString()}`));
+  }
+
   function stepCurrencyQty(delta) {
     let next = quantity + delta;
     next = Math.max(minQty, next);
@@ -492,108 +505,104 @@ export default function ListingDetailClient({ initialListing = null }) {
               {/* Buy section */}
               {!isOwnListing && listing.status === 'active' && (
                 <div className="buy-section">
-                  {user ? (
-                    <>
-                      {/* Quantity selector — currency mode gets a free-amount
-                          input; other listings step within finite stock */}
-                      {isCurrency ? (
-                        <div className="form-group" style={{ marginBottom: '12px' }}>
-                          <label className="form-label">Amount{unitName ? ` (${unitName})` : ''}</label>
-                          <div className="currency-qty-box">
-                            <button
-                              type="button"
-                              className="currency-qty-btn"
-                              aria-label="Decrease amount"
-                              onClick={() => stepCurrencyQty(-1)}
-                              disabled={quantity <= minQty}
-                            >−</button>
-                            <div className="currency-qty-input-wrap">
-                              <input
-                                type="number"
-                                className="currency-qty-input"
-                                inputMode="numeric"
-                                min={minQty}
-                                max={stock ?? undefined}
-                                value={qtyInput}
-                                onChange={(e) => handleCurrencyQtyChange(e.target.value)}
-                                aria-label={`Amount${unitName ? ` in ${unitName}` : ''}`}
-                              />
-                              {unitName && <span className="currency-qty-unit">{unitName}</span>}
-                            </div>
-                            <button
-                              type="button"
-                              className="currency-qty-btn"
-                              aria-label="Increase amount"
-                              onClick={() => stepCurrencyQty(1)}
-                              disabled={stock !== null && quantity >= stock}
-                            >+</button>
-                          </div>
-                          {!currencyQtyValid && qtyInput !== '' && (
-                            <span className="currency-qty-error" style={{ marginTop: '6px', display: 'block' }}>
-                              {!Number.isFinite(parsedQtyInput) || parsedQtyInput < minQty
-                                ? `Minimum purchase is ${formatAmount(minQty)} ${unitName}.`
-                                : `Only ${formatAmount(stock)} ${unitName} in stock.`}
-                            </span>
-                          )}
-                        </div>
-                      ) : listing.quantity !== null && listing.quantity > 1 && (
-                        <div className="form-group" style={{ marginBottom: '12px' }}>
-                          <label className="form-label">Quantity</label>
-                          <div className="qty-selector">
-                            <button
-                              className="qty-btn"
-                              onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                              disabled={quantity <= 1}
-                            >−</button>
-                            <span className="qty-value">{quantity}</span>
-                            <button
-                              className="qty-btn"
-                              onClick={() => setQuantity(Math.min(listing.quantity, quantity + 1))}
-                              disabled={quantity >= listing.quantity}
-                            >+</button>
-                          </div>
-                        </div>
-                      )}
+                  {/* Logged out visitors get the same box — only the button's
+                      destination changes, so nobody is asked to sign in before
+                      they know what they are buying. */}
 
-                      {(quantity > 1 || isCurrency) && (
-                        <div className="buy-total">
-                          Total: <strong>PKR {formatPKR(totalPrice)}</strong>
+                  {/* Quantity selector — currency mode gets a free-amount
+                      input; other listings step within finite stock */}
+                  {isCurrency ? (
+                    <div className="form-group" style={{ marginBottom: '12px' }}>
+                      <label className="form-label">Amount{unitName ? ` (${unitName})` : ''}</label>
+                      <div className="currency-qty-box">
+                        <button
+                          type="button"
+                          className="currency-qty-btn"
+                          aria-label="Decrease amount"
+                          onClick={() => stepCurrencyQty(-1)}
+                          disabled={quantity <= minQty}
+                        >−</button>
+                        <div className="currency-qty-input-wrap">
+                          <input
+                            type="number"
+                            className="currency-qty-input"
+                            inputMode="numeric"
+                            min={minQty}
+                            max={stock ?? undefined}
+                            value={qtyInput}
+                            onChange={(e) => handleCurrencyQtyChange(e.target.value)}
+                            aria-label={`Amount${unitName ? ` in ${unitName}` : ''}`}
+                          />
+                          {unitName && <span className="currency-qty-unit">{unitName}</span>}
                         </div>
+                        <button
+                          type="button"
+                          className="currency-qty-btn"
+                          aria-label="Increase amount"
+                          onClick={() => stepCurrencyQty(1)}
+                          disabled={stock !== null && quantity >= stock}
+                        >+</button>
+                      </div>
+                      {!currencyQtyValid && qtyInput !== '' && (
+                        <span className="currency-qty-error" style={{ marginTop: '6px', display: 'block' }}>
+                          {!Number.isFinite(parsedQtyInput) || parsedQtyInput < minQty
+                            ? `Minimum purchase is ${formatAmount(minQty)} ${unitName}.`
+                            : `Only ${formatAmount(stock)} ${unitName} in stock.`}
+                        </span>
                       )}
+                    </div>
+                  ) : listing.quantity !== null && listing.quantity > 1 && (
+                    <div className="form-group" style={{ marginBottom: '12px' }}>
+                      <label className="form-label">Quantity</label>
+                      <div className="qty-selector">
+                        <button
+                          className="qty-btn"
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          disabled={quantity <= 1}
+                        >−</button>
+                        <span className="qty-value">{quantity}</span>
+                        <button
+                          className="qty-btn"
+                          onClick={() => setQuantity(Math.min(listing.quantity, quantity + 1))}
+                          disabled={quantity >= listing.quantity}
+                        >+</button>
+                      </div>
+                    </div>
+                  )}
 
-                      {/* Wallet balance */}
-                      {wallet && (
-                        <div className="buy-wallet-info">
-                          Wallet: <strong>PKR {Number(wallet.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
-                          {!hasBalance && (
-                            <Link href="/wallet" className="buy-topup-link">Add Funds →</Link>
-                          )}
-                        </div>
+                  {(quantity > 1 || isCurrency) && (
+                    <div className="buy-total">
+                      Total: <strong>PKR {formatPKR(totalPrice)}</strong>
+                    </div>
+                  )}
+
+                  {/* Wallet balance (logged-in only — guests have no wallet) */}
+                  {wallet && (
+                    <div className="buy-wallet-info">
+                      Wallet: <strong>PKR {Number(wallet.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
+                      {!hasBalance && (
+                        <Link href="/wallet" className="buy-topup-link">Add Funds →</Link>
                       )}
+                    </div>
+                  )}
 
-                      {buyError && <div className="alert alert-error" style={{ marginTop: '8px', marginBottom: 0 }}>{buyError}</div>}
-                      {buyError && payWithJazzCash && paymentFallback}
-                      {buySuccess && <div className="alert alert-success" style={{ marginTop: '8px' }}>{buySuccess}</div>}
+                  {buyError && <div className="alert alert-error" style={{ marginTop: '8px', marginBottom: 0 }}>{buyError}</div>}
+                  {buyError && payWithJazzCash && paymentFallback}
+                  {buySuccess && <div className="alert alert-success" style={{ marginTop: '8px' }}>{buySuccess}</div>}
 
-                      <button
-                        className="btn btn-primary btn-full buy-now-btn"
-                        onClick={openConfirmModal}
-                        disabled={buying || !canBuy || !currencyQtyValid}
-                      >
-                        {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(totalPrice)}`}
-                      </button>
-                      {payWithJazzCash && (
-                        <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
-                          {walletApplied > 0
-                            ? `Pay PKR ${formatPKR(walletApplied)} from your wallet + PKR ${formatPKR(jazzCashCharge)} via JazzCash`
-                            : 'Pay directly with JazzCash — no wallet balance needed'}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <Link href="/login" className="btn btn-primary btn-full buy-now-btn">
-                      Log in to Buy
-                    </Link>
+                  <button
+                    className="btn btn-primary btn-full buy-now-btn"
+                    onClick={user ? openConfirmModal : goToLoginToBuy}
+                    disabled={buying || !currencyQtyValid || (Boolean(user) && !canBuy)}
+                  >
+                    {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(totalPrice)}`}
+                  </button>
+                  {payWithJazzCash && (
+                    <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
+                      {walletApplied > 0
+                        ? `Pay PKR ${formatPKR(walletApplied)} from your wallet + PKR ${formatPKR(jazzCashCharge)} via JazzCash`
+                        : 'Pay directly with JazzCash — no wallet balance needed'}
+                    </div>
                   )}
                 </div>
               )}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { trackSignUp } from '@/lib/analytics';
+import { postLoginPath, readNextParam, withNext } from '@/lib/loginRedirect';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export default function RegisterPage() {
@@ -17,15 +18,22 @@ export default function RegisterPage() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Read after mount, not with useSearchParams — see lib/loginRedirect.js.
+  const [nextPath, setNextPath] = useState(null);
   const { user, loading, register } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    setNextPath(readNextParam());
+  }, []);
+
+  useEffect(() => {
     if (!loading && user) {
+      const next = readNextParam();
       if (user.needs_setup) {
-        router.replace('/complete-profile');
+        router.replace(withNext('/complete-profile', next));
       } else {
-        router.replace('/');
+        router.replace(next || '/');
       }
     }
   }, [user, loading, router]);
@@ -52,7 +60,7 @@ export default function RegisterPage() {
         token: data.verification_token,
         email: formData.email,
       });
-      router.push(`/verify-email?${params.toString()}`);
+      router.push(withNext(`/verify-email?${params.toString()}`, nextPath));
     } catch (err) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -64,9 +72,9 @@ export default function RegisterPage() {
     if (userData?.needs_setup) {
       // needs_setup marks accounts that haven't finished onboarding — i.e. new.
       trackSignUp('google');
-      router.push('/complete-profile');
+      router.push(withNext('/complete-profile', nextPath));
     } else {
-      router.push(userData?.is_seller ? '/dashboard' : '/');
+      router.push(postLoginPath(nextPath, userData));
     }
   }
 
@@ -182,7 +190,7 @@ export default function RegisterPage() {
           />
 
           <p className="auth-footer">
-            Already have an account? <Link href="/login">Sign In</Link>
+            Already have an account? <Link href={withNext('/login', nextPath)}>Sign In</Link>
           </p>
         </div>
       </div>

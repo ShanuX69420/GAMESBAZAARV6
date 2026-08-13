@@ -4032,13 +4032,6 @@ html[data-auth-hint="1"] .navbar-guest-links {
   padding: 8px 16px;
 }
 
-.chatbox-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 120px;
-}
-
 .chatbox-empty-msg {
   text-align: center;
   color: var(--text-tertiary);

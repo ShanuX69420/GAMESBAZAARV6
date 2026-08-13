@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { WS_BASE } from '@/lib/config';
+import { currentPath, loginHref } from '@/lib/loginRedirect';
 import {
   getChatWebSocketTicket,
   getConversation,
@@ -19,6 +21,28 @@ import Linkified from '@/components/Linkified';
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const CHAT_SUBPROTOCOL = 'gb.chat';
+const DRAFT_KEY_PREFIX = 'gb_chat_draft:';
+
+// A guest's half-written message is parked here while they sign in, so the
+// login trip doesn't cost them what they typed.
+function takeDraft(sellerId) {
+  if (!sellerId || typeof window === 'undefined') return '';
+  try {
+    const key = `${DRAFT_KEY_PREFIX}${sellerId}`;
+    const draft = sessionStorage.getItem(key);
+    if (draft) sessionStorage.removeItem(key);
+    return draft || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveDraft(sellerId, text) {
+  if (!sellerId || typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(`${DRAFT_KEY_PREFIX}${sellerId}`, text);
+  } catch { }
+}
 
 // Turn the order number and participant usernames inside a system notice
 // into links (order page / seller profiles).
@@ -71,6 +95,7 @@ export default function ChatBox({
   onOrderEvent,
 }) {
   const { user } = useAuth();
+  const router = useRouter();
   const [convo, setConvo] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagePagination, setMessagePagination] = useState(null);
@@ -102,12 +127,21 @@ export default function ChatBox({
   const onOrderEventRef = useRef(onOrderEvent);
   onOrderEventRef.current = onOrderEvent;
 
+  // Logged out visitors see the whole chat box; only sending is gated.
+  const isGuest = !user;
   const chatPartnerId = convo?.other_user?.id || sellerId || null;
   const chatPresenceIds = useMemo(
     () => (chatPartnerId ? [chatPartnerId] : []),
     [chatPartnerId],
   );
   const { lastActiveFor, isOnline } = useLivePresence(chatPresenceIds);
+
+  // Coming back from the login trip: put the guest's message back in the box.
+  useEffect(() => {
+    if (isGuest || !sellerId) return;
+    const draft = takeDraft(sellerId);
+    if (draft) setInput(draft);
+  }, [isGuest, sellerId]);
 
   // Auto-grow the message box as lines are added (Shift+Enter), reset after send.
   useEffect(() => {
@@ -420,6 +454,7 @@ export default function ChatBox({
 
   // Handle paste for images
   function handlePaste(e) {
+    if (isGuest) return;
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of items) {
@@ -472,9 +507,22 @@ export default function ChatBox({
     }
   }
 
+  // Nothing leaves the browser for a logged out visitor — the message waits
+  // in session storage while they sign in and land back on this page.
+  function sendAsGuest(e) {
+    if (e) e.preventDefault();
+    const draft = input.trim();
+    if (draft) saveDraft(sellerId, draft);
+    router.push(loginHref(currentPath()));
+  }
+
   async function handleSend(e) {
     e.preventDefault();
     if (!input.trim()) return;
+    if (isGuest) {
+      sendAsGuest();
+      return;
+    }
 
     const rawText = input.trim();
     const messageListingId = listingId && !listingContextSent ? listingId : null;
@@ -678,19 +726,6 @@ export default function ChatBox({
     convo?.other_user?.last_active || sellerLastActive,
   );
 
-  if (!user) {
-    return (
-      <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
-        <div className="chatbox-header">
-          <span>Chat with {sellerName || 'Seller'}</span>
-        </div>
-        <div className="chatbox-empty">
-          <a href="/login" className="btn btn-primary btn-sm">Login to chat</a>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
       {!compact && (
@@ -724,7 +759,7 @@ export default function ChatBox({
             Loading older messages...
           </div>
         )}
-        {loadingMessages ? (
+        {loadingMessages && !isGuest ? (
           <div className="chat-skeleton-loader">
             <div className="chat-skeleton-row">
               <div className="chat-skeleton-avatar"></div>
@@ -843,7 +878,7 @@ export default function ChatBox({
         <button
           type="button"
           className="chatbox-attach-btn"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={isGuest ? sendAsGuest : () => fileInputRef.current?.click()}
           title="Attach image"
           aria-label="Attach image"
         >

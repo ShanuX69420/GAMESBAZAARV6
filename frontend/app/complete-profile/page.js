@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
+import { postLoginPath, readNextParam, withNext } from '@/lib/loginRedirect';
 
 export default function CompleteProfilePage() {
   const { user, loading, completeProfile } = useAuth();
@@ -13,14 +14,21 @@ export default function CompleteProfilePage() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Read after mount, not with useSearchParams — see lib/loginRedirect.js.
+  const [nextPath, setNextPath] = useState(null);
+
+  useEffect(() => {
+    setNextPath(readNextParam());
+  }, []);
 
   // Redirect if not logged in or setup already done
   useEffect(() => {
     if (!loading) {
+      const next = readNextParam();
       if (!user) {
-        router.replace('/login');
+        router.replace(withNext('/login', next));
       } else if (!user.needs_setup) {
-        router.replace('/');
+        router.replace(next || '/');
       }
     }
   }, [user, loading, router]);
@@ -41,7 +49,7 @@ export default function CompleteProfilePage() {
     setSubmitting(true);
     try {
       const userData = await completeProfile(username.trim(), acceptedTerms);
-      router.push(userData?.is_seller ? '/dashboard' : '/');
+      router.push(postLoginPath(nextPath, userData));
     } catch (err) {
       setError(err.message || 'Failed to complete setup');
     } finally {

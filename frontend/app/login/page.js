@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { trackSignUp } from '@/lib/analytics';
+import { postLoginPath, readNextParam, withNext } from '@/lib/loginRedirect';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export default function LoginPage() {
@@ -13,15 +14,22 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [emailUnverified, setEmailUnverified] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Read after mount, not with useSearchParams — see lib/loginRedirect.js.
+  const [nextPath, setNextPath] = useState(null);
   const { user, loading, login } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    setNextPath(readNextParam());
+  }, []);
+
+  useEffect(() => {
     if (!loading && user) {
+      const next = readNextParam();
       if (user.needs_setup) {
-        router.replace('/complete-profile');
+        router.replace(withNext('/complete-profile', next));
       } else {
-        router.replace(user.is_seller ? '/dashboard' : '/');
+        router.replace(postLoginPath(next, user));
       }
     }
   }, [user, loading, router]);
@@ -33,7 +41,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const userData = await login(email, password);
-      router.push(userData?.is_seller ? '/dashboard' : '/');
+      router.push(postLoginPath(nextPath, userData));
     } catch (err) {
       if (err.emailUnverified) {
         setEmailUnverified(true);
@@ -50,9 +58,9 @@ export default function LoginPage() {
     if (userData?.needs_setup) {
       // needs_setup marks accounts that haven't finished onboarding — i.e. new.
       trackSignUp('google');
-      router.push('/complete-profile');
+      router.push(withNext('/complete-profile', nextPath));
     } else {
-      router.push(userData?.is_seller ? '/dashboard' : '/');
+      router.push(postLoginPath(nextPath, userData));
     }
   }
 
@@ -85,7 +93,7 @@ export default function LoginPage() {
               {emailUnverified && (
                 <>
                   {' '}
-                  <Link href={`/verify-email?email=${encodeURIComponent(email)}`} style={{ fontWeight: 600 }}>
+                  <Link href={withNext(`/verify-email?email=${encodeURIComponent(email)}`, nextPath)} style={{ fontWeight: 600 }}>
                     Verify now →
                   </Link>
                 </>
@@ -133,7 +141,7 @@ export default function LoginPage() {
           />
 
           <p className="auth-footer">
-            Don&apos;t have an account? <Link href="/register">Sign Up</Link>
+            Don&apos;t have an account? <Link href={withNext('/register', nextPath)}>Sign Up</Link>
           </p>
         </div>
       </div>
