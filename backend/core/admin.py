@@ -288,9 +288,9 @@ class FilterAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'seller_status', 'wallet_balance', 'created_at',
-                    'seller_reviewed_at', 'message_user_link']
-    list_filter = ['seller_status']
+    list_display = ['user', 'seller_status', 'is_official_store', 'wallet_balance',
+                    'created_at', 'seller_reviewed_at', 'message_user_link']
+    list_filter = ['seller_status', 'is_official_store']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'seller_application_note', 'created_at']
     actions = ['approve_sellers', 'reject_sellers', 'send_admin_message']

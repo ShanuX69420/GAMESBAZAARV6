@@ -12091,3 +12091,47 @@ html[data-auth-hint="1"] .navbar-guest-links {
   .settings-code-input { font-size: 1.2rem !important; }
   .currency-qty-input { font-size: 1.05rem !important; }
 }
+
+/* ── Official Store Badge ──────────────────────────────────────────────────── */
+/* Shown only for sellers flagged is_official_store — see components/
+   OfficialStoreBadge.js. Sits inline next to a seller name; the pill variant
+   carries the words and is used where there is room for them (profile header). */
+/* Wraps a seller name + its badge so the badge never gets clipped by the
+   ellipsis the name itself carries in card layouts. */
+.seller-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.official-store-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.official-store-badge svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.official-store-badge-pill {
+  gap: 5px;
+  padding: 3px 9px 3px 6px;
+  border-radius: 999px;
+  background: var(--green-50);
+  border: 1px solid var(--green-200);
+}
+
+.official-store-badge-text {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--green-600);
+  white-space: nowrap;
+}

@@ -16,6 +16,7 @@ import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
 import Select from '@/components/Select';
+import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
@@ -412,9 +413,12 @@ export default function ListingDetailClient({ initialListing = null }) {
                 <span className={`listing-card-status-dot ${sellerOnline ? 'online' : 'offline'}`} />
               </div>
               <div className="listing-seller-info">
-                <Link href={`/seller/${listing.seller_name}`} className="listing-seller-name">
-                  {listing.seller_name}
-                </Link>
+                <span className="seller-name-row">
+                  <Link href={`/seller/${listing.seller_name}`} className="listing-seller-name">
+                    {listing.seller_name}
+                  </Link>
+                  {listing.seller_is_official_store && <OfficialStoreBadge />}
+                </span>
                 <div className="listing-seller-meta">
                   {sellerRating !== null && sellerRating !== undefined ? (
                     <span className="listing-seller-rating">

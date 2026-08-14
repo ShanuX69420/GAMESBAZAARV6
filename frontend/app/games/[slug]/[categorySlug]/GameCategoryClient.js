@@ -13,6 +13,7 @@ import {
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
 import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
+import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 
 const LISTING_PAGE_SIZE = 48;
 // The listing list re-polls to refresh price/stock/rating on the cards already
@@ -798,9 +799,12 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <span className={`listing-card-status-dot ${isOnline(bestOffer.seller_id, bestOffer.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="offer-buybox-seller-info">
-                      <Link href={buildSellerProfilePath(bestOffer.seller_name)} className="offer-seller-name">
-                        {bestOffer.seller_name}
-                      </Link>
+                      <span className="seller-name-row">
+                        <Link href={buildSellerProfilePath(bestOffer.seller_name)} className="offer-seller-name">
+                          {bestOffer.seller_name}
+                        </Link>
+                        {bestOffer.seller_is_official_store && <OfficialStoreBadge />}
+                      </span>
                       <StarRating rating={bestOffer.seller_avg_rating} count={bestOffer.seller_review_count} />
                     </div>
                   </div>
@@ -854,9 +858,12 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <span className={`listing-card-status-dot ${isOnline(offer.seller_id, offer.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
-                            <Link href={buildSellerProfilePath(offer.seller_name)} className="offer-seller-name">
-                              {offer.seller_name}
-                            </Link>
+                            <span className="seller-name-row">
+                              <Link href={buildSellerProfilePath(offer.seller_name)} className="offer-seller-name">
+                                {offer.seller_name}
+                              </Link>
+                              {offer.seller_is_official_store && <OfficialStoreBadge />}
+                            </span>
                             <StarRating rating={offer.seller_avg_rating} count={offer.seller_review_count} />
                           </div>
                         </div>
@@ -943,9 +950,12 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     <span className={`listing-card-status-dot ${isOnline(currentOffer.seller_id, currentOffer.seller_last_active) ? 'online' : 'offline'}`} />
                   </div>
                   <div className="currency-hero-seller-info">
-                    <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="offer-seller-name">
-                      {currentOffer.seller_name}
-                    </Link>
+                    <span className="seller-name-row">
+                      <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="offer-seller-name">
+                        {currentOffer.seller_name}
+                      </Link>
+                      {currentOffer.seller_is_official_store && <OfficialStoreBadge />}
+                    </span>
                     <span className="currency-hero-rating">
                       <StarRating rating={currentOffer.seller_avg_rating} count={0} />
                       {currentOffer.seller_review_count > 0 && (
@@ -1104,13 +1114,16 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
-                            <Link
-                              href={buildSellerProfilePath(listing.seller_name)}
-                              className="offer-seller-name"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {listing.seller_name}
-                            </Link>
+                            <span className="seller-name-row">
+                              <Link
+                                href={buildSellerProfilePath(listing.seller_name)}
+                                className="offer-seller-name"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {listing.seller_name}
+                              </Link>
+                              {listing.seller_is_official_store && <OfficialStoreBadge />}
+                            </span>
                             <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
                           </div>
                         </div>
@@ -1211,11 +1224,14 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="listing-card-seller-info">
-                      <span
-                        className="listing-card-seller-name"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = buildSellerProfilePath(listing.seller_name); }}
-                      >
-                        {listing.seller_name}
+                      <span className="seller-name-row">
+                        <span
+                          className="listing-card-seller-name"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = buildSellerProfilePath(listing.seller_name); }}
+                        >
+                          {listing.seller_name}
+                        </span>
+                        {listing.seller_is_official_store && <OfficialStoreBadge />}
                       </span>
                       <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
                     </div>

@@ -9394,6 +9394,31 @@ class ReviewTests(TestCase):
         self.assertIn('is_online', response.data)
         self.assertIn('active_listings', response.data)
 
+    def test_seller_profile_official_store_flag_defaults_off(self):
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['is_official_store'])
+
+    def test_seller_profile_reports_official_store(self):
+        UserProfile.objects.filter(user=self.seller).update(is_official_store=True)
+
+        response = self.client.get('/api/seller/profile/seller/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['is_official_store'])
+
+    def test_listing_payload_carries_official_store_flag(self):
+        response = self.client.get(f'/api/listings/{self.listing.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['seller_is_official_store'])
+
+        UserProfile.objects.filter(user=self.seller).update(is_official_store=True)
+
+        response = self.client.get(f'/api/listings/{self.listing.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['seller_is_official_store'])
+
     def test_seller_profile_avg_rating_with_multiple_reviews(self):
         # Create a second completed order for a second review
         second_order = Order.objects.create(

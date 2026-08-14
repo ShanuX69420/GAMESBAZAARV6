@@ -509,6 +509,7 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_avatar_url = serializers.SerializerMethodField()
     seller_avg_rating = serializers.SerializerMethodField()
     seller_review_count = serializers.SerializerMethodField()
+    seller_is_official_store = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.effective_name', read_only=True)
     listing_mode = serializers.CharField(source='game_category.listing_mode', read_only=True)
@@ -530,6 +531,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'price', 'quantity', 'min_quantity', 'status',
             'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
+            'seller_is_official_store',
             'game_name', 'category_name', 'listing_mode', 'unit_name',
             'buyer_protection_enabled',
             'option_id', 'option_name',
@@ -623,6 +625,10 @@ class ListingSerializer(serializers.ModelSerializer):
                 cache_scope='private',
             )
         return None
+
+    def get_seller_is_official_store(self, obj):
+        profile = getattr(obj.seller, 'profile', None)
+        return bool(profile and profile.is_official_store)
 
     def get_seller_avg_rating(self, obj):
         """Return seller avg rating from annotation, or None."""

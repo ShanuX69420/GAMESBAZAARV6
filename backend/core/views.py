@@ -4840,7 +4840,7 @@ class SellerProfileView(APIView):
             return Response({'error': 'Seller not found.'}, status=404)
 
         # Check cache for expensive aggregate queries
-        cache_key = f'seller-profile:v1:{seller.pk}'
+        cache_key = f'seller-profile:v2:{seller.pk}'
         cached = cache.get(cache_key)
         if cached is not None:
             # Online status and avatar must be fresh
@@ -4940,6 +4940,7 @@ class SellerProfileView(APIView):
             'username': seller.username,
             'user_id': seller.pk,
             'member_since': seller.date_joined,
+            'is_official_store': profile.is_official_store,
             'is_online': profile.is_online,
             'last_active': profile.last_active,
             'avg_rating': avg_rating,

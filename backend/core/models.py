@@ -354,6 +354,12 @@ class UserProfile(models.Model):
     username_changed_at = models.DateTimeField(null=True, blank=True,
                                                help_text='Last time the username was changed')
     seller_status = models.CharField(max_length=20, choices=SELLER_STATUS_CHOICES, default='none')
+    is_official_store = models.BooleanField(
+        default=False,
+        help_text='Show the "Official Store" check mark next to this seller\'s '
+                  'name everywhere buyers see it. Reserve it for in-house shops '
+                  '— it only means something while few sellers carry it.',
+    )
     seller_application_note = models.TextField(blank=True, default='',
                                                 help_text='Why do you want to become a seller?')
     seller_reviewed_at = models.DateTimeField(null=True, blank=True)
