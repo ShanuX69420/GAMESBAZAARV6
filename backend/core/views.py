@@ -46,27 +46,27 @@ GAME_LIST_CACHE_SECONDS = 60
 # Region filters, so detecting facets from the data alone put unwanted
 # dropdowns on their View All pages.
 # home=False keeps a section's View All page but drops its home-page panel —
-# keys is off the home page (Shayan 2026-08-11) so Accounts leads; /keys itself
-# stays live and linked from the sitemap.
+# Offline Activation is off the home page (Shayan 2026-08-15) and Keys took its
+# slot; /offline-activation itself stays live, in the sitemap and in the footer.
 HOME_POPULAR_SECTIONS = [
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
     {'slug': 'top-ups', 'title': 'Popular Top Ups',
      'category_slugs': ('top-up', 'top-ups', 'subscription')},
-    {'slug': 'offline-activation', 'title': 'Popular Offline Activation',
-     'category_slugs': ('offline-activation',)},
-    {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
-     'category_slugs': ('gift-cards',)},
     {'slug': 'keys', 'title': 'Popular Keys',
      'category_slugs': ('keys',), 'facets': ('method', 'region'),
-     'sortable': True, 'home': False},
+     'sortable': True},
+    {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
+     'category_slugs': ('gift-cards',)},
+    {'slug': 'offline-activation', 'title': 'Popular Offline Activation',
+     'category_slugs': ('offline-activation',), 'home': False},
 ]
 # The subset the home page actually renders panels for.
 HOME_PANEL_SECTIONS = [
     section for section in HOME_POPULAR_SECTIONS if section.get('home', True)
 ]
 HOME_POPULAR_GAMES_PER_SECTION = 8
-HOME_POPULAR_CACHE_KEY = 'home-popular:v3'
+HOME_POPULAR_CACHE_KEY = 'home-popular:v4'
 HOME_POPULAR_CACHE_SECONDS = 60
 # "View All" pages behind the popular panels reuse the same section registry.
 CATEGORY_SECTION_BY_SLUG = {

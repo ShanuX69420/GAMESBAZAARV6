@@ -4528,9 +4528,9 @@ class HomePopularViewTests(TestCase):
             'min_price': None,
         }])
 
-    def test_accounts_section_ranks_first_and_keys_is_not_on_the_home_page(self):
-        # Keys keeps its /keys View All page but gets no home panel
-        # (Shayan 2026-08-11) — Accounts leads the home page instead.
+    def test_accounts_leads_and_keys_follows_on_the_home_page(self):
+        # Accounts still leads (Shayan 2026-08-11); Keys is back on the home
+        # page (Shayan 2026-08-15), in the slot Offline Activation had.
         keys = Category.objects.create(name='Keys', slug='keys')
         keys_page = self.add_game('Elden Ring', 'elden-ring', keys)
         self.add_listing(keys_page, price=Decimal('49.50'))
@@ -4542,11 +4542,27 @@ class HomePopularViewTests(TestCase):
         response = self.client.get('/api/home/popular/')
 
         sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['accounts'])
+        self.assertEqual([s['slug'] for s in sections], ['accounts', 'keys'])
         self.assertEqual(sections[0]['title'], 'Popular Accounts')
+        self.assertEqual(sections[1]['title'], 'Popular Keys')
         self.assertEqual(sections[0]['items'][0]['min_price'], '10.00')
         # Stockless game: no from-price to show.
         self.assertIsNone(sections[0]['items'][1]['min_price'])
+
+    def test_offline_activation_is_not_on_the_home_page(self):
+        # Offline Activation keeps its View All page but gets no home panel
+        # (Shayan 2026-08-15).
+        offline = Category.objects.create(
+            name='Offline Activation', slug='offline-activation')
+        offline_page = self.add_game('Hogwarts Legacy', 'hogwarts-legacy', offline)
+        self.add_listing(offline_page)
+        accounts_page = self.add_game('Valorant', 'valorant', self.accounts)
+        self.add_listing(accounts_page)
+
+        response = self.client.get('/api/home/popular/')
+
+        sections = response.data['sections']
+        self.assertEqual([s['slug'] for s in sections], ['accounts'])
 
     def test_featured_then_stocked_games_rank_first(self):
         self.add_game('Alpha', 'alpha', self.accounts)
