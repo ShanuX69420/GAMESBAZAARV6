@@ -6,14 +6,13 @@ import GameCategoryClient from './GameCategoryClient';
 const LISTING_PAGE_SIZE = 48;
 const PUBLIC_CATEGORY_REVALIDATE_SECONDS = 120;
 
-async function fetchInitialCategoryData({ slug, categorySlug, seller, option, method, region }) {
+async function fetchInitialCategoryData({ slug, categorySlug, option, method, region }) {
   const url = buildGameCategoryListingUrl({
     apiBase: API_BASE,
     gameSlug: slug,
     categorySlug,
     limit: LISTING_PAGE_SIZE,
     offset: 0,
-    seller,
     option,
     method,
     region,
@@ -52,14 +51,13 @@ function CategorySeoText({ text }) {
 export default async function GameCategoryPage({ params, searchParams }) {
   const { slug, categorySlug } = await params;
   const query = await searchParams;
-  const seller = String(query?.seller || '');
   const option = String(query?.option || '');
   const method = String(query?.method || '');
   const region = String(query?.region || '');
   let initialData = null;
 
   try {
-    initialData = await fetchInitialCategoryData({ slug, categorySlug, seller, option, method, region });
+    initialData = await fetchInitialCategoryData({ slug, categorySlug, option, method, region });
   } catch (error) {
     if (error?.digest?.startsWith?.('NEXT_HTTP_ERROR_FALLBACK;404')) {
       throw error;
@@ -69,7 +67,7 @@ export default async function GameCategoryPage({ params, searchParams }) {
 
   return (
     <>
-      <GameCategoryClient initialData={initialData} initialSeller={seller} />
+      <GameCategoryClient initialData={initialData} />
       <CategorySeoText text={initialData?.seo_body} />
     </>
   );

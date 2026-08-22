@@ -15,7 +15,6 @@ export function buildGameCategoryListingUrl({
   filters = {},
   instantOnly = false,
   search = '',
-  seller = '',
   ordering = '',
   option = '',
   method = '',
@@ -51,9 +50,6 @@ export function buildGameCategoryListingUrl({
   if (search) {
     query.set('search', search);
   }
-  if (seller) {
-    query.set('seller', seller);
-  }
   if (ordering) {
     query.set('ordering', ordering);
   }
@@ -63,9 +59,8 @@ export function buildGameCategoryListingUrl({
   return queryString ? `${path}?${queryString}` : path;
 }
 
-export function buildSellerListingsPath({ gameSlug, categorySlug, seller = '' }) {
-  const query = seller ? `?${new URLSearchParams({ seller }).toString()}` : '';
-  return `/games/${encodePathSegment(gameSlug)}/${encodePathSegment(categorySlug)}${query}`;
+export function buildSellerListingsPath({ gameSlug, categorySlug }) {
+  return `/games/${encodePathSegment(gameSlug)}/${encodePathSegment(categorySlug)}`;
 }
 
 export function buildSellerProfilePath(username) {

@@ -214,7 +214,6 @@ export default function SellerProfileClient({
                   href={buildSellerListingsPath({
                     gameSlug: game.game_slug,
                     categorySlug: game.categories[0]?.slug || '',
-                    seller: profile.username,
                   })}
                   className="sp-game-tile"
                 >

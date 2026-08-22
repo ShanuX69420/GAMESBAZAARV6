@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
@@ -110,12 +110,11 @@ function StarRating({ rating, count }) {
   );
 }
 
-export default function GameCategoryClient({ initialData = null, initialSeller = '' }) {
+export default function GameCategoryClient({ initialData = null }) {
   const params = useParams();
   const router = useRouter();
   const { slug, categorySlug } = params;
   const searchParams = useSearchParams();
-  const sellerFilter = searchParams.get('seller') || initialSeller;
   const filterEffectReadyRef = useRef(false);
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(!initialData);
@@ -155,7 +154,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         filters,
         instantOnly,
         search,
-        seller: sellerFilter,
         ordering,
         option: option || '',
       });
@@ -181,7 +179,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [slug, categorySlug, sellerFilter]);
+  }, [slug, categorySlug]);
 
   useEffect(() => {
     // Same object reference on first mount, so this bails out without a
@@ -226,7 +224,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           filters: activeFilters,
           instantOnly: instantDeliveryFilter,
           search: searchQuery,
-          seller: sellerFilter,
           ordering: sortBy,
           option: selectedOption || '',
         });
@@ -274,7 +271,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       if (controller) controller.abort();
       clearInterval(interval);
     };
-  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, searchQuery, sellerFilter, sortBy, selectedOption]);
+  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, searchQuery, sortBy, selectedOption]);
 
   // Debounce search input
   useEffect(() => {
@@ -341,7 +338,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
 
   function handleCategorySwitch(catSlug) {
     if (catSlug !== categorySlug) {
-      router.push(buildSellerListingsPath({ gameSlug: slug, categorySlug: catSlug, seller: sellerFilter }));
+      router.push(buildSellerListingsPath({ gameSlug: slug, categorySlug: catSlug }));
     }
   }
 
@@ -428,14 +425,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
 
   return (
     <div className="container">
-      {/* Seller Filter Banner */}
-      {sellerFilter && (
-        <div className="seller-filter-banner">
-          <span>Showing listings by <Link href={buildSellerProfilePath(sellerFilter)} className="seller-filter-link">{sellerFilter}</Link></span>
-          <Link href={buildSellerListingsPath({ gameSlug: slug, categorySlug })} className="seller-filter-clear">× Clear filter</Link>
-        </div>
-      )}
-
       {/* Page Header */}
       <div className="page-header">
         <div className="breadcrumb">
@@ -756,17 +745,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   )}
 
                   <div className="offer-buybox-seller">
-                    <div className="listing-card-avatar-wrap">
-                      <div className="listing-card-avatar">
-                        <img src={bestOffer.seller_avatar_url || '/avatar-default.svg'} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                      </div>
-                    </div>
                     <div className="offer-buybox-seller-info">
                       <span className="seller-name-row">
-                        <Link href={buildSellerProfilePath(bestOffer.seller_name)} className="offer-seller-name">
-                          {bestOffer.seller_name}
-                        </Link>
-                        {bestOffer.seller_is_official_store && <OfficialStoreBadge />}
+                        {bestOffer.seller_is_official_store && <OfficialStoreBadge showLabel />}
                       </span>
                       <StarRating rating={bestOffer.seller_avg_rating} count={bestOffer.seller_review_count} />
                     </div>
@@ -775,17 +756,17 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               ) : (
                 <div className="offer-buybox">
                   <div className="empty-state" style={{ padding: '24px 12px' }}>
-                    <p>No sellers are offering {selectedOptionData ? selectedOptionData.name : 'this option'} right now.</p>
+                    <p>{selectedOptionData ? selectedOptionData.name : 'This option'} is out of stock right now.</p>
                   </div>
                 </div>
               )}
             </aside>
 
-            {/* Competing seller offers */}
+            {/* Alternative offers for this option */}
             <div className="offer-sellers">
               <div className="section-header">
                 <h2 className="section-title">
-                  {gateSatisfied ? `Other sellers (${otherSellerCount})` : 'Other sellers'}
+                  {gateSatisfied ? `More offers (${otherSellerCount})` : 'More offers'}
                 </h2>
                 <div className="listing-sort-wrap" id="listing-sort">
                   <svg className="listing-sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -806,29 +787,13 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
 
               {!gateSatisfied ? (
                 <p className="offer-no-others">
-                  Select {missingGateFilters.map((f) => f.name).join(' and ')} above to compare seller offers.
+                  Select {missingGateFilters.map((f) => f.name).join(' and ')} above to see available offers.
                 </p>
               ) : otherOffers.length > 0 ? (
                 <div className="offer-seller-list">
                   {otherOffers.map((offer) => (
                     <div key={offer.id} className="offer-seller-row">
                       <div className="offer-seller-row-main">
-                        <div className="offer-seller-row-seller">
-                          <div className="listing-card-avatar-wrap">
-                            <div className="listing-card-avatar">
-                              <img src={offer.seller_avatar_url || '/avatar-default.svg'} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                            </div>
-                          </div>
-                          <div className="offer-seller-row-info">
-                            <span className="seller-name-row">
-                              <Link href={buildSellerProfilePath(offer.seller_name)} className="offer-seller-name">
-                                {offer.seller_name}
-                              </Link>
-                              {offer.seller_is_official_store && <OfficialStoreBadge />}
-                            </span>
-                            <StarRating rating={offer.seller_avg_rating} count={offer.seller_review_count} />
-                          </div>
-                        </div>
                         <div className="offer-seller-row-delivery">
                           <span className="offer-seller-row-label">Delivery time</span>
                           <DeliveryTimeBadge listing={offer} />
@@ -888,9 +853,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         {currencyListings.length === 0 ? (
           <>
             <div className="empty-state">
-              <p>No sellers are offering {game.name} {category.name} right now{hasActiveFilters ? ' with these filters' : ''}.</p>
+              <p>{game.name} {category.name} {hasActiveFilters ? 'has nothing in stock with these filters' : 'is out of stock right now'}.</p>
             </div>
-            {!hasActiveFilters && !sellerFilter && (
+            {!hasActiveFilters && (
               <ItemRequestForm
                 gameSlug={slug}
                 categorySlug={categorySlug}
@@ -905,17 +870,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               {/* Current offer: seller card */}
               <div className="currency-hero-card">
                 <div className="currency-hero-seller">
-                  <div className="listing-card-avatar-wrap">
-                    <div className="listing-card-avatar currency-hero-avatar">
-                      <img src={currentOffer.seller_avatar_url || '/avatar-default.svg'} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                    </div>
-                  </div>
                   <div className="currency-hero-seller-info">
                     <span className="seller-name-row">
-                      <Link href={buildSellerProfilePath(currentOffer.seller_name)} className="offer-seller-name">
-                        {currentOffer.seller_name}
-                      </Link>
-                      {currentOffer.seller_is_official_store && <OfficialStoreBadge />}
+                      {currentOffer.seller_is_official_store && <OfficialStoreBadge showLabel />}
                     </span>
                     <span className="currency-hero-rating">
                       <StarRating rating={currentOffer.seller_avg_rating} count={0} />
@@ -1032,7 +989,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
             {/* All competing sellers */}
             <div className="currency-sellers">
               <div className="section-header">
-                <h2 className="section-title">Other sellers ({Math.max(listingCount - 1, 0)})</h2>
+                <h2 className="section-title">More offers ({Math.max(listingCount - 1, 0)})</h2>
               </div>
 
               <div className="currency-sort-chips">
@@ -1067,26 +1024,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     >
                       {isCurrent && <span className="currency-current-badge">Current offer</span>}
                       <div className="currency-seller-row-main">
-                        <div className="offer-seller-row-seller">
-                          <div className="listing-card-avatar-wrap">
-                            <div className="listing-card-avatar">
-                              <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                            </div>
-                          </div>
-                          <div className="offer-seller-row-info">
-                            <span className="seller-name-row">
-                              <Link
-                                href={buildSellerProfilePath(listing.seller_name)}
-                                className="offer-seller-name"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {listing.seller_name}
-                              </Link>
-                              {listing.seller_is_official_store && <OfficialStoreBadge />}
-                            </span>
-                            <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
-                          </div>
-                        </div>
                         <div className="currency-seller-row-stat">
                           <span className="offer-seller-row-label">In stock</span>
                           <span className="currency-seller-row-value">
@@ -1174,7 +1111,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   </div>
                 )}
 
-                {/* Card Footer - Seller Info & Delivery */}
+                {/* Card Footer - Store Info & Delivery */}
                 <div className="listing-card-footer">
                   <div className="listing-card-seller">
                     <div className="listing-card-avatar-wrap">
@@ -1184,12 +1121,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     </div>
                     <div className="listing-card-seller-info">
                       <span className="seller-name-row">
-                        <span
-                          className="listing-card-seller-name"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = buildSellerProfilePath(listing.seller_name); }}
-                        >
-                          {listing.seller_name}
-                        </span>
+                        <span className="listing-card-seller-name">{listing.seller_name}</span>
                         {listing.seller_is_official_store && <OfficialStoreBadge />}
                       </span>
                       <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
@@ -1231,9 +1163,9 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         ) : (
           <>
             <div className="empty-state">
-              <p>No listings found{hasActiveFilters || sellerFilter ? ' with these filters' : ' here yet'}.</p>
+              <p>No listings found{hasActiveFilters ? ' with these filters' : ' here yet'}.</p>
             </div>
-            {!hasActiveFilters && !sellerFilter && (
+            {!hasActiveFilters && (
               <ItemRequestForm
                 gameSlug={slug}
                 categorySlug={categorySlug}
