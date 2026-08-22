@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'GamesBazaar digital gaming marketplace';
+export const alt = 'GamesBazaar digital gaming store';
 export const size = {
   width: 1200,
   height: 630,
@@ -61,7 +61,7 @@ export default function Image() {
             textAlign: 'center',
           }}
         >
-          Pakistan's Digital Gaming Marketplace
+          Pakistan's Digital Gaming Store
         </div>
         <div
           style={{
@@ -73,7 +73,7 @@ export default function Image() {
             textAlign: 'center',
           }}
         >
-          Buy and sell game accounts, top-ups, items, and boosting services with secure checkout.
+          Game keys, accounts, top-ups, and gift cards with secure checkout in PKR.
         </div>
       </div>
     ),

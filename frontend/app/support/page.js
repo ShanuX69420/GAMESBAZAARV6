@@ -17,28 +17,11 @@ const FAQ_ITEMS = [
       },
       {
         q: 'What if I don\'t receive my order?',
-        a: 'If the seller hasn\'t delivered within the expected time, you can open a dispute from your order page. For protected orders, you can even dispute within 14 days after confirming delivery if something goes wrong (like account recovery by the original owner). Our team will investigate and resolve the issue — including a full refund if necessary.',
+        a: 'If your order isn\'t delivered within the expected time, you can open a dispute from your order page. For protected orders, you can even dispute within 14 days after confirming delivery if something goes wrong (like account recovery by the original owner). Our team will investigate and resolve the issue — including a full refund if necessary.',
       },
       {
         q: 'Can I get a refund?',
-        a: 'Yes! If the seller hasn\'t delivered or the item doesn\'t match the description, you can dispute the order. For orders with 14-Day Buyer Protection, you can still raise a dispute even after confirming delivery — the seller\'s payout is held for 14 days. If no protection applies, funds are released to the seller immediately upon confirmation.',
-      },
-    ],
-  },
-  {
-    category: 'Selling',
-    questions: [
-      {
-        q: 'How do I become a seller?',
-        a: 'Go to your Settings page and apply for a seller account. Tell us a bit about what you want to sell, and our team will review your application — usually within 24 hours.',
-      },
-      {
-        q: 'How do I get paid?',
-        a: 'When a buyer confirms an order, the payment (minus a small commission) is credited to your GamesBazaar wallet. You can then withdraw to your bank account, JazzCash, or EasyPaisa.',
-      },
-      {
-        q: 'What commission does GamesBazaar charge?',
-        a: 'Commission varies by category (typically 5-10%). You can see the exact rate for each category when creating a listing. The commission is automatically deducted when an order is completed.',
+        a: 'Yes! If your order isn\'t delivered or the item doesn\'t match the description, you can dispute it from the order page. For orders with 14-Day Buyer Protection, you can still raise a dispute within 14 days even after confirming delivery. Refunds are credited back instantly as wallet balance.',
       },
     ],
   },
@@ -47,15 +30,15 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I add funds to my wallet?',
-        a: 'Go to your Wallet page, click "Add Funds", and message us on WhatsApp (0371 2101998) with the amount you want to add. We\'ll confirm the payment with you and credit your wallet within minutes.',
+        a: 'Go to your Wallet page and click "Add Funds" — pay instantly with JazzCash, or message us on WhatsApp (0371 2101998) to pay via Easypaisa or bank transfer. Your wallet is credited within minutes.',
       },
       {
-        q: 'How do I withdraw my earnings?',
+        q: 'How do I withdraw money from my wallet?',
         a: 'Go to your Wallet page and request a withdrawal (minimum PKR 500). Provide your account details and we\'ll process it within 1-2 business days.',
       },
       {
         q: 'Are my payments secure?',
-        a: 'Absolutely. All payments are held securely until the buyer confirms delivery. For eligible categories, our 14-Day Buyer Protection adds another layer: funds remain held for 14 days after delivery confirmation. Neither the buyer nor the seller can access the funds during this period. After 14 days with no dispute, the funds are automatically released to the seller.',
+        a: 'Absolutely. Your payment stays protected until you confirm delivery. For eligible categories, our 14-Day Buyer Protection adds another layer: you can still dispute the order for a full 14 days after confirming delivery, and refunds are credited back instantly.',
       },
     ],
   },
@@ -95,7 +78,6 @@ const CATEGORY_OPTIONS = [
   { value: 'account', label: 'Account Issue' },
   { value: 'order', label: 'Order Problem' },
   { value: 'payment', label: 'Payment / Wallet' },
-  { value: 'seller', label: 'Seller Application' },
   { value: 'report', label: 'Report / Safety' },
   { value: 'feedback', label: 'Feedback / Suggestion' },
   { value: 'other', label: 'Other' },

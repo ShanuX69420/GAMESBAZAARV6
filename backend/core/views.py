@@ -112,7 +112,7 @@ SELLER_PROFILE_CACHE_SECONDS = 30
 UNREAD_COUNT_CACHE_SECONDS = 5
 from .serializers import (
     GameListSerializer, GameDetailSerializer, GameCategoryDetailSerializer,
-    RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer, SellerApplicationSerializer,
+    RegisterSerializer, EmailTokenObtainPairSerializer, UserSerializer,
     UpdateProfileSerializer, ChangePasswordSerializer, CompleteProfileSerializer,
     build_listing_filter_display_map, get_auto_delivery_inventory_lines,
     ListingSerializer, CreateListingSerializer,
@@ -2185,45 +2185,6 @@ class AvatarUploadView(ScopedPostThrottleMixin, APIView):
             profile.avatar = None
             profile.save(update_fields=['avatar'])
         return Response({'message': 'Avatar removed.', 'user': UserSerializer(request.user, context={'request': request}).data})
-
-
-# ── Seller views ─────────────────────────────────────────────────────────────
-
-class SellerApplyView(ScopedPostThrottleMixin, APIView):
-    """POST /api/seller/apply/ — Submit a seller application."""
-    permission_classes = [HasCompletedProfile]
-    throttle_scope = 'seller_apply'
-
-    def post(self, request):
-        profile = request.user.profile
-        if profile.seller_status == 'approved':
-            return Response({'error': 'You are already an approved seller.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-        if profile.seller_status == 'pending':
-            return Response({'error': 'Your application is already pending.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = SellerApplicationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        profile.seller_status = 'pending'
-        profile.seller_application_note = serializer.validated_data['note']
-        profile.save()
-
-        return Response({'message': 'Seller application submitted.'})
-
-
-class SellerStatusView(APIView):
-    """GET /api/seller/status/ — Check seller application status."""
-    permission_classes = [HasCompletedProfile]
-
-    def get(self, request):
-        profile = request.user.profile
-        return Response({
-            'seller_status': profile.seller_status,
-            'is_seller': profile.is_seller,
-            'application_note': profile.seller_application_note,
-        })
 
 
 # ── Listing views ────────────────────────────────────────────────────────────

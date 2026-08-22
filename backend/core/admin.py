@@ -293,7 +293,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ['seller_status', 'is_official_store']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'seller_application_note', 'created_at']
-    actions = ['approve_sellers', 'reject_sellers', 'send_admin_message']
+    actions = ['send_admin_message']
 
     @admin.display(description='Wallet Balance')
     def wallet_balance(self, obj):
@@ -309,46 +309,6 @@ class UserProfileAdmin(admin.ModelAdmin):
             '<a href="{}" style="white-space:nowrap">💬 Message</a>',
             url,
         )
-
-    def _review_sellers(self, queryset, new_status):
-        """Move pending applications to new_status, notifying each applicant."""
-        count = 0
-        for profile in queryset.filter(seller_status='pending').select_related('user'):
-            with transaction.atomic():
-                updated = UserProfile.objects.filter(
-                    pk=profile.pk, seller_status='pending',
-                ).update(seller_status=new_status, seller_reviewed_at=timezone.now())
-                if not updated:
-                    continue
-                if new_status == 'approved':
-                    create_notification(
-                        recipient=profile.user,
-                        notification_type='seller_approved',
-                        title='Seller application approved 🎉',
-                        message='Congratulations! You can now create listings '
-                                'and start selling on GamesBazaar.',
-                    )
-                else:
-                    create_notification(
-                        recipient=profile.user,
-                        notification_type='seller_rejected',
-                        title='Seller application not approved',
-                        message='Unfortunately your seller application was not '
-                                'approved this time. You can apply again with '
-                                'more details.',
-                    )
-                count += 1
-        return count
-
-    @admin.action(description='✅ Approve selected sellers')
-    def approve_sellers(self, request, queryset):
-        count = self._review_sellers(queryset, 'approved')
-        self.message_user(request, f'{count} seller(s) approved and notified.')
-
-    @admin.action(description='❌ Reject selected sellers')
-    def reject_sellers(self, request, queryset):
-        count = self._review_sellers(queryset, 'rejected')
-        self.message_user(request, f'{count} seller(s) rejected and notified.')
 
     @admin.action(description='💬 Send admin message to selected users')
     def send_admin_message(self, request, queryset):

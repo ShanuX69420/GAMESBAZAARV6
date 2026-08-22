@@ -53,7 +53,7 @@ function fallbackTitle(slug, categorySlug) {
 function fallbackDescription(slug, categorySlug) {
   const gameName = titleFromSlug(slug, 'Game');
   const categoryName = titleFromSlug(categorySlug, 'Listings');
-  return `Browse ${gameName} ${categoryName} listings on GamesBazaar. Compare prices from verified sellers with buyer protection.`;
+  return `Browse ${gameName} ${categoryName} on GamesBazaar. Instant delivery, buyer protection, and prices in PKR.`;
 }
 
 export async function generateMetadata({ params }) {

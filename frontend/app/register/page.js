@@ -99,7 +99,7 @@ export default function RegisterPage() {
       <div className="auth-page">
         <div className="auth-card">
           <h1 className="auth-title">Create Account</h1>
-          <p className="auth-subtitle">Join Pakistan&apos;s gaming marketplace</p>
+          <p className="auth-subtitle">Join Pakistan&apos;s gaming store</p>
 
           {error && <div className="alert alert-error">{error}</div>}
 

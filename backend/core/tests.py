@@ -3561,7 +3561,7 @@ class GoogleAuthTests(TestCase):
             )['needs_setup']
         )
 
-        for path in ['/api/wallet/', '/api/orders/mine/', '/api/chat/', '/api/seller/status/']:
+        for path in ['/api/wallet/', '/api/orders/mine/', '/api/chat/', '/api/seller/dashboard/']:
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 403)
@@ -3608,7 +3608,6 @@ THROTTLE_TEST_REST_FRAMEWORK = {
         'heartbeat': '1/min',
         'search': '1/min',
         'avatar_upload': '1/min',
-        'seller_apply': '1/min',
         'listing_create': '1/min',
         'listing_mutation': '1/min',
         'listing_restock': '1/min',
@@ -3633,7 +3632,6 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/heartbeat/': 'heartbeat',
             '/api/search/': 'search',
             '/api/auth/avatar/': 'avatar_upload',
-            '/api/seller/apply/': 'seller_apply',
             '/api/listings/': 'listing_create',
             '/api/listings/1/': 'listing_mutation',
             '/api/listings/1/restock/': 'listing_restock',
@@ -7858,93 +7856,6 @@ class AdminDashboardStatsTests(TestCase):
         self.assertEqual(payload['top_sellers'][0]['seller__username'], self.seller.username)
         self.assertEqual(payload['top_sellers'][0]['total_earned'], 90.0)
         self.assertEqual(payload['recent_orders'][0]['listing_title'], listing.title)
-
-
-@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-class SellerReviewNotificationTests(TestCase):
-    """Approving/rejecting seller applications notifies and emails the applicant."""
-
-    def setUp(self):
-        mail.outbox = []
-        self.applicant = User.objects.create_user(
-            username='seller_applicant',
-            email='applicant@example.com',
-            password='password123',
-        )
-        profile = self.applicant.profile
-        profile.seller_status = 'pending'
-        profile.seller_application_note = 'I want to sell game keys.'
-        profile.save(update_fields=['seller_status', 'seller_application_note'])
-
-        self.site = AdminSite()
-        self.request = RequestFactory().post('/admin/')
-        self.request.user = User.objects.create_superuser(
-            username='seller_review_admin',
-            email='seller-admin@example.com',
-            password='password123',
-        )
-        self.admin_obj = UserProfileAdmin(UserProfile, self.site)
-
-    def test_approve_action_notifies_and_emails_applicant(self):
-        with patch.object(self.admin_obj, 'message_user'), \
-                self.captureOnCommitCallbacks(execute=True):
-            self.admin_obj.approve_sellers(
-                self.request, UserProfile.objects.filter(user=self.applicant),
-            )
-
-        profile = UserProfile.objects.get(user=self.applicant)
-        self.assertEqual(profile.seller_status, 'approved')
-        self.assertIsNotNone(profile.seller_reviewed_at)
-
-        notification = Notification.objects.get(
-            recipient=self.applicant, notification_type='seller_approved',
-        )
-        self.assertIn('approved', notification.title.lower())
-
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['applicant@example.com'])
-        self.assertIn('Seller Application Approved', mail.outbox[0].subject)
-        self.assertIn('start selling', mail.outbox[0].body)
-
-    def test_reject_action_notifies_and_emails_applicant(self):
-        with patch.object(self.admin_obj, 'message_user'), \
-                self.captureOnCommitCallbacks(execute=True):
-            self.admin_obj.reject_sellers(
-                self.request, UserProfile.objects.filter(user=self.applicant),
-            )
-
-        profile = UserProfile.objects.get(user=self.applicant)
-        self.assertEqual(profile.seller_status, 'rejected')
-        self.assertIsNotNone(profile.seller_reviewed_at)
-
-        notification = Notification.objects.get(
-            recipient=self.applicant, notification_type='seller_rejected',
-        )
-        self.assertIn('not approved', notification.title.lower())
-
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['applicant@example.com'])
-        self.assertIn('Seller Application Update', mail.outbox[0].subject)
-        self.assertIn('apply again', mail.outbox[0].body)
-
-    def test_actions_skip_non_pending_profiles(self):
-        profile = UserProfile.objects.get(user=self.applicant)
-        profile.seller_status = 'approved'
-        profile.save(update_fields=['seller_status'])
-
-        with patch.object(self.admin_obj, 'message_user') as message_user, \
-                self.captureOnCommitCallbacks(execute=True):
-            self.admin_obj.reject_sellers(
-                self.request, UserProfile.objects.filter(user=self.applicant),
-            )
-
-        profile.refresh_from_db()
-        self.assertEqual(profile.seller_status, 'approved')
-        self.assertFalse(Notification.objects.filter(recipient=self.applicant).exists())
-        self.assertEqual(mail.outbox, [])
-        message_user.assert_called_once_with(
-            self.request, '0 seller(s) rejected and notified.',
-        )
 
 
 class AdminChatProtectionTests(TestCase):

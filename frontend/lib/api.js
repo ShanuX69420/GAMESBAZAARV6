@@ -147,25 +147,6 @@ async function authFetch(url, options = {}, retry = true) {
   return retryRes;
 }
 
-export async function applyAsSeller(note) {
-  const res = await authFetch(`${API_BASE}/api/seller/apply/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ note }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Application failed');
-  return data;
-}
-
-export async function getSellerStatus() {
-  const res = await authFetch(`${API_BASE}/api/seller/status/`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error('Failed to get seller status');
-  return res.json();
-}
-
 export async function getSellerDashboard() {
   const res = await authFetch(`${API_BASE}/api/seller/dashboard/`, {
     headers: authHeaders(),

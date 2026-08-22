@@ -24,7 +24,7 @@ export default function PrivacyPolicyPage() {
         <section className="legal-section" id="privacy-intro">
           <h2>Welcome</h2>
           <p>
-            GamesBazaar (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is Pakistan&rsquo;s digital gaming marketplace where you can buy and sell game accounts, top-ups, in-game items, and boosting services. This Privacy Policy explains what information we collect, why we collect it, and how we keep it safe.
+            GamesBazaar (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is Pakistan&rsquo;s digital gaming store where you can buy game keys, accounts, top-ups, and gift cards. This Privacy Policy explains what information we collect, why we collect it, and how we keep it safe.
           </p>
           <p>
             By using GamesBazaar, you agree to the practices described in this policy. If you have any questions, feel free to reach out to us anytime.
@@ -40,7 +40,6 @@ export default function PrivacyPolicyPage() {
             <ul>
               <li><strong>Account details:</strong> Your username, email address, and password when you sign up.</li>
               <li><strong>Profile info:</strong> Your profile picture and any other details you choose to share.</li>
-              <li><strong>Seller info:</strong> If you apply to become a seller, we collect your WhatsApp number and any information you provide in your application.</li>
               <li><strong>Payment details:</strong> Bank account title, account number, and bank name when you request withdrawals.</li>
               <li><strong>Transaction &amp; protection data:</strong> Order details, confirmation timestamps, and buyer protection hold status. For orders covered by our 14-Day Buyer Protection, we retain transaction records for at least 14 days after delivery confirmation to facilitate dispute resolution.</li>
               <li><strong>Messages:</strong> The conversations you have with other users through our built-in chat system.</li>
@@ -199,7 +198,7 @@ export default function PrivacyPolicyPage() {
               <span>support@gamesbazaar.pk</span>
             </div>
             <div className="legal-contact-row">
-              <span>GamesBazaar — Pakistan&rsquo;s First Gaming Marketplace</span>
+              <span>GamesBazaar — Pakistan&rsquo;s Gaming Store</span>
             </div>
           </div>
         </section>

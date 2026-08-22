@@ -495,10 +495,6 @@ class CompleteProfileSerializer(UpdateProfileSerializer):
         return value
 
 
-class SellerApplicationSerializer(serializers.Serializer):
-    note = serializers.CharField(max_length=1000, required=True)
-
-
 # ── Listing Serializers ──────────────────────────────────────────────────────
 
 class ListingSerializer(serializers.ModelSerializer):

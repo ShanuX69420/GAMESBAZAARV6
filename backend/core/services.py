@@ -325,34 +325,6 @@ def _build_account_notification_email(notification):
             cta_label='Open Inbox & Reply',
         )
 
-    if notification_type == 'seller_approved':
-        return dict(
-            subject='GamesBazaar — Seller Application Approved',
-            message_body=(
-                'Congratulations! Your seller application has been approved. '
-                'You can now create listings and start selling on GamesBazaar.'
-            ),
-            status_text='Approved',
-            status_class='success',
-            cta_url=f'{settings.PUBLIC_SITE_URL}/dashboard',
-            cta_label='Open Seller Dashboard',
-        )
-
-    if notification_type == 'seller_rejected':
-        return dict(
-            subject='GamesBazaar — Seller Application Update',
-            message_body=(
-                'Unfortunately your seller application was not approved this time. '
-                'You are welcome to apply again with more details about what you '
-                'plan to sell. If our team messaged you on the site, replying '
-                'there is the fastest way to sort things out.'
-            ),
-            status_text='Not Approved',
-            status_class='danger',
-            cta_url=f'{settings.PUBLIC_SITE_URL}/seller/apply',
-            cta_label='Re-apply as Seller',
-        )
-
     return None
 
 

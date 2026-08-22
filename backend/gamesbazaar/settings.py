@@ -311,7 +311,6 @@ REST_FRAMEWORK = {
         'heartbeat': '120/hour',
         'search': '120/min',
         'avatar_upload': '20/hour',
-        'seller_apply': '5/hour',
         'listing_create': '30/hour',
         'listing_mutation': '120/hour',
         'listing_restock': '60/hour',

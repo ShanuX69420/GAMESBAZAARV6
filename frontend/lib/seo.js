@@ -1,13 +1,13 @@
 export const SITE_NAME = 'GamesBazaar';
 export const DEFAULT_SITE_URL = 'http://localhost:3000';
-export const DEFAULT_TITLE = "GamesBazaar - Pakistan's First Digital Gaming Marketplace";
-export const DEFAULT_DESCRIPTION = "Buy & sell game accounts, top-ups, items, and boosting services. Pakistan's trusted gaming marketplace with secure payments and verified sellers.";
+export const DEFAULT_TITLE = "GamesBazaar - Pakistan's Digital Gaming Store";
+export const DEFAULT_DESCRIPTION = "Game keys, accounts, top-ups, and gift cards at Pakistani prices. Secure local payments, instant delivery, and buyer protection.";
 
 export const DEFAULT_OG_IMAGE = {
   url: '/opengraph-image',
   width: 1200,
   height: 630,
-  alt: 'GamesBazaar digital gaming marketplace',
+  alt: 'GamesBazaar digital gaming store',
 };
 
 export function getSiteUrl() {

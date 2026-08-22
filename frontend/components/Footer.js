@@ -20,7 +20,7 @@ export default function Footer() {
               <span>Games<span className="footer-brand-accent">Bazaar</span></span>
             </div>
             <p className="footer-brand-tagline">
-              Pakistan&apos;s trusted marketplace for buying &amp; selling game accounts, items, and services.
+              Pakistan&apos;s trusted store for game keys, accounts, top-ups, and gift cards.
             </p>
           </div>
 

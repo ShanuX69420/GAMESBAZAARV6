@@ -414,7 +414,6 @@ describe('SEO route metadata', () => {
       'app/register/layout.js',
       'app/forgot-password/layout.js',
       'app/support/layout.js',
-      'app/seller/apply/layout.js',
       'app/dashboard/layout.js',
       'app/inbox/layout.js',
       'app/my-listings/layout.js',
@@ -502,7 +501,7 @@ describe('SEO route metadata', () => {
     );
     expect(metadata).toMatchObject({
       title: 'Pubg Mobile Accounts & Boosts Listings',
-      description: 'Browse Pubg Mobile Accounts & Boosts listings on GamesBazaar. Compare prices from verified sellers with buyer protection.',
+      description: 'Browse Pubg Mobile Accounts & Boosts on GamesBazaar. Instant delivery, buyer protection, and prices in PKR.',
       openGraph: {
         title: metadata.title,
         type: 'website',

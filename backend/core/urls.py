@@ -33,8 +33,6 @@ urlpatterns = [
     path('auth/email/confirm-change/', views.ConfirmEmailChangeView.as_view(), name='confirm-email-change'),
 
     # Seller
-    path('seller/apply/', views.SellerApplyView.as_view(), name='seller-apply'),
-    path('seller/status/', views.SellerStatusView.as_view(), name='seller-status'),
     path('seller/dashboard/', views.SellerDashboardView.as_view(), name='seller-dashboard'),
 
     # Listings

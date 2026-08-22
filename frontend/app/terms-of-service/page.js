@@ -3,7 +3,7 @@ import { createPublicMetadata } from '@/lib/seo';
 export const metadata = {
   ...createPublicMetadata({
     title: 'Terms of Service',
-    description: 'Read the Terms of Service for GamesBazaar, Pakistan\'s trusted digital gaming marketplace. Know your rights and responsibilities.',
+    description: 'Read the Terms of Service for GamesBazaar, Pakistan\'s trusted digital gaming store. Know your rights and responsibilities.',
     path: '/terms-of-service',
   }),
 };
@@ -14,9 +14,9 @@ export default function TermsOfServicePage() {
       <div className="legal-header">
         <h1>Terms of Service</h1>
         <p className="legal-subtitle">
-          These are the rules of our marketplace. We&rsquo;ve kept them as straightforward as possible &mdash; no 50-page legalese.
+          These are the rules of our store. We&rsquo;ve kept them as straightforward as possible &mdash; no 50-page legalese.
         </p>
-        <div className="legal-updated">Last updated: May 14, 2026</div>
+        <div className="legal-updated">Last updated: August 22, 2026</div>
       </div>
 
       <div className="legal-content">
@@ -24,7 +24,7 @@ export default function TermsOfServicePage() {
         <section className="legal-section" id="tos-overview">
           <h2>What is GamesBazaar?</h2>
           <p>
-            GamesBazaar is Pakistan&rsquo;s digital gaming marketplace. We connect buyers and sellers of game accounts, top-ups, in-game items, and boosting services. Think of us as the bridge between gamers who want to buy and gamers who want to sell.
+            GamesBazaar is Pakistan&rsquo;s digital gaming store. We sell game keys, accounts, top-ups, gift cards, and in-game items &mdash; delivered fast and priced in Pakistani Rupees.
           </p>
           <p>
             By creating an account or using our platform, you agree to these Terms of Service. If you don&rsquo;t agree, please don&rsquo;t use the platform.
@@ -72,21 +72,21 @@ export default function TermsOfServicePage() {
             <div className="legal-step">
               <div className="legal-step-number">2</div>
               <div>
-                <strong>Seller delivers</strong>
-                <p>The seller will deliver what you ordered (account credentials, top-up, items, etc.).</p>
+                <strong>We deliver</strong>
+                <p>We deliver what you ordered (game key, account credentials, top-up, etc.) &mdash; instantly for many items.</p>
               </div>
             </div>
             <div className="legal-step">
               <div className="legal-step-number">3</div>
               <div>
                 <strong>You confirm</strong>
-                <p>Once you&rsquo;ve received and verified everything, confirm the order. For categories with Buyer Protection, seller funds are held for an additional 14 days after confirmation &mdash; giving you a safety net to report any issues.</p>
+                <p>Once you&rsquo;ve received and verified everything, confirm the order. For categories with Buyer Protection, you keep a safety net for an additional 14 days after confirmation to report any issues.</p>
               </div>
             </div>
           </div>
           <div className="legal-callout">
             <div>
-              <strong>Important:</strong> Always verify what you&rsquo;ve received before confirming. For orders <strong>without</strong> Buyer Protection, payment is released to the seller immediately upon confirmation and cannot be reversed.
+              <strong>Important:</strong> Always verify what you&rsquo;ve received before confirming. For orders <strong>without</strong> Buyer Protection, the sale is final once you confirm delivery.
             </div>
           </div>
         </section>
@@ -100,9 +100,9 @@ export default function TermsOfServicePage() {
           <div className="legal-card">
             <h3>How It Works</h3>
             <ul>
-              <li><strong>Held funds:</strong> When a buyer confirms delivery on a protected order, the seller&rsquo;s payout is held securely by GamesBazaar for <strong>14 calendar days</strong>. Neither the buyer nor the seller can access these funds during the hold period.</li>
-              <li><strong>Dispute window:</strong> During the 14-day hold, buyers can raise a dispute if they discover issues with the delivered item (e.g., incorrect credentials, account recovery by original owner, or items not matching the description).</li>
-              <li><strong>Automatic release:</strong> If no dispute is raised within 14 days, the funds are automatically released to the seller&rsquo;s wallet and become available for withdrawal.</li>
+              <li><strong>Protection hold:</strong> When you confirm delivery on a protected order, your purchase stays covered by GamesBazaar for <strong>14 calendar days</strong>.</li>
+              <li><strong>Dispute window:</strong> During those 14 days, you can raise a dispute if you discover issues with the delivered item (e.g., incorrect credentials, account recovery by original owner, or items not matching the description).</li>
+              <li><strong>Window closes:</strong> If no dispute is raised within 14 days, the protection window closes and the order is final.</li>
               <li><strong>Category-based:</strong> Buyer Protection is enabled on a per-category basis. Whether a listing is covered is clearly indicated on the listing page with a Buyer Protection badge.</li>
             </ul>
           </div>
@@ -132,15 +132,14 @@ export default function TermsOfServicePage() {
         </section>
 
         {/* Section 5 */}
-        <section className="legal-section" id="tos-selling">
-          <h2>Selling on GamesBazaar</h2>
-          <p>To sell on GamesBazaar, you must first apply and be approved as a seller. As a seller, you agree to:</p>
+        <section className="legal-section" id="tos-our-promise">
+          <h2>Our Promise to You</h2>
+          <p>When you buy from GamesBazaar, we commit to:</p>
           <ul>
-            <li><strong>Be honest:</strong> Only list items or services you can actually deliver. Misleading descriptions will result in action against your account.</li>
-            <li><strong>Deliver promptly:</strong> Deliver what was ordered within a reasonable time. Delays hurt your reputation and may lead to disputes.</li>
-            <li><strong>Set fair prices:</strong> All prices are in Pakistani Rupees (PKR). Price manipulation or deceptive pricing is not allowed.</li>
-            <li><strong>Respond to buyers:</strong> Keep communication open through our chat system. Ignoring buyers after they place an order is not acceptable.</li>
-            <li><strong>Follow the rules:</strong> Don&rsquo;t try to take transactions outside the platform. All orders must go through GamesBazaar.</li>
+            <li><strong>Honest listings:</strong> We only list items we can actually deliver, described accurately.</li>
+            <li><strong>Prompt delivery:</strong> Every listing shows its delivery time up front, and many items are delivered instantly.</li>
+            <li><strong>Fair prices:</strong> All prices are in Pakistani Rupees (PKR) with no hidden charges at checkout.</li>
+            <li><strong>Responsive support:</strong> If something goes wrong with your order, reach us through the order page, support, or WhatsApp &mdash; we&rsquo;ll make it right.</li>
           </ul>
         </section>
 
@@ -149,9 +148,8 @@ export default function TermsOfServicePage() {
           <h2>Wallet &amp; Withdrawals</h2>
           <ul>
             <li>All transactions on GamesBazaar use our internal wallet system in <strong>Pakistani Rupees (PKR)</strong>.</li>
-            <li>When a buyer confirms an order, the payment is released to the seller&rsquo;s wallet &mdash; <strong>unless</strong> the order is covered by 14-Day Buyer Protection, in which case the funds are held for 14 days before being released.</li>
-            <li>Sellers can view the status and release schedule of held funds in the <strong>Held Balance</strong> section of their Wallet page.</li>
-            <li>The <strong>minimum withdrawal amount is PKR 500</strong>. Only released (available) funds can be withdrawn.</li>
+            <li>When you place an order, the amount is paid from your wallet balance. Approved refunds are credited straight back to your wallet.</li>
+            <li>The <strong>minimum withdrawal amount is PKR 500</strong>.</li>
             <li>Withdrawals are processed to Pakistani bank accounts. You must provide accurate bank details (account title, account number, and bank name).</li>
             <li>Withdrawal requests are reviewed and processed by our team. Processing times may vary.</li>
             <li>GamesBazaar is not responsible for delays caused by your bank.</li>
@@ -166,7 +164,7 @@ export default function TermsOfServicePage() {
             <ul>
               <li>If there&rsquo;s a problem with your order, you can raise a dispute through the order page.</li>
               <li>For orders covered by <strong>14-Day Buyer Protection</strong>, you can raise a dispute even after confirming delivery &mdash; as long as it falls within the 14-day protection window.</li>
-              <li>Our team will review the dispute and may ask both parties for evidence.</li>
+              <li>Our team will review the dispute and may ask you for evidence.</li>
               <li>We aim to resolve disputes fairly, but our decision is final.</li>
               <li>Refunds, when approved, are credited back to the buyer&rsquo;s GamesBazaar wallet.</li>
               <li>If a dispute is raised during the protection period, the held funds will remain frozen until the dispute is resolved.</li>
@@ -175,7 +173,7 @@ export default function TermsOfServicePage() {
           </div>
           <div className="legal-callout">
             <div>
-              <strong>Pro tip:</strong> Use the in-app chat to try resolving issues with the other party before raising a formal dispute. Most problems can be sorted out through good communication.
+              <strong>Pro tip:</strong> Message us from your order page before raising a formal dispute. Most problems can be sorted out through good communication.
             </div>
           </div>
         </section>
@@ -188,7 +186,7 @@ export default function TermsOfServicePage() {
             <div className="legal-grid-item legal-grid-item-danger">
               <div>
                 <strong>Scamming or fraud</strong>
-                <p>Attempting to cheat buyers or sellers in any way.</p>
+                <p>Attempting to cheat GamesBazaar or other users in any way.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
@@ -199,8 +197,8 @@ export default function TermsOfServicePage() {
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
               <div>
-                <strong>Fake listings</strong>
-                <p>Listing items or services you don&rsquo;t actually have or can&rsquo;t deliver.</p>
+                <strong>Payment abuse</strong>
+                <p>Using stolen payment methods or filing false payment reversals.</p>
               </div>
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
@@ -217,8 +215,8 @@ export default function TermsOfServicePage() {
             </div>
             <div className="legal-grid-item legal-grid-item-danger">
               <div>
-                <strong>Illegal content</strong>
-                <p>Selling stolen accounts, using stolen payment methods, or any activity that violates Pakistani law.</p>
+                <strong>Illegal activity</strong>
+                <p>Reselling stolen accounts or any activity that violates Pakistani law.</p>
               </div>
             </div>
           </div>
@@ -234,7 +232,7 @@ export default function TermsOfServicePage() {
             <li>After completing an order, buyers can leave a review with a star rating and comment.</li>
             <li>Reviews should be <strong>honest and based on your actual experience</strong>.</li>
             <li>You can edit your review if you change your mind.</li>
-            <li>Sellers can reply once to each review.</li>
+            <li>We may reply once to each review.</li>
             <li>Fake reviews, review manipulation, or threatening someone over a review is not allowed and will result in action against your account.</li>
           </ul>
         </section>
@@ -256,7 +254,7 @@ export default function TermsOfServicePage() {
           <div className="legal-card">
             <h3>What we do</h3>
             <ul>
-              <li>Provide a secure marketplace for digital gaming transactions.</li>
+              <li>Provide a secure store for digital gaming purchases.</li>
               <li>Hold payments safely until buyers confirm delivery.</li>
               <li>Enforce the 14-Day Buyer Protection hold on eligible categories to give buyers a post-delivery safety net.</li>
               <li>Investigate and resolve disputes between users.</li>
@@ -266,7 +264,6 @@ export default function TermsOfServicePage() {
           <div className="legal-card" style={{ marginTop: '16px' }}>
             <h3>What we&rsquo;re not responsible for</h3>
             <ul>
-              <li>The quality or authenticity of items sold by third-party sellers &mdash; we facilitate, but sellers are responsible for what they sell.</li>
               <li>Issues with game accounts after the transaction is confirmed (e.g., account bans by the game publisher).</li>
               <li>Losses from sharing your account credentials with others.</li>
               <li>Service interruptions due to technical issues, maintenance, or events beyond our control.</li>
@@ -301,7 +298,7 @@ export default function TermsOfServicePage() {
               <span>support@gamesbazaar.pk</span>
             </div>
             <div className="legal-contact-row">
-              <span>GamesBazaar — Pakistan&rsquo;s First Gaming Marketplace</span>
+              <span>GamesBazaar — Pakistan&rsquo;s Gaming Store</span>
             </div>
           </div>
         </section>

@@ -39,23 +39,23 @@ export default async function HomePage() {
       <section className="hero">
         <div className="hero-badge">
           <span className="hero-badge-dot"></span>
-          Now Live — Start Trading Today
+          Now Live — Instant Digital Delivery
         </div>
         <h1>
-          Pakistan&apos;s First <span className="hero-accent">Gaming</span>
-          <br />Marketplace
+          Pakistan&apos;s <span className="hero-accent">Gaming</span>
+          <br />Store
         </h1>
         <p>
-          Buy &amp; sell game accounts, items, top-ups, and services.
-          Safe payments, verified sellers, and fast delivery.
+          Game keys, accounts, top-ups, and gift cards — priced in PKR
+          with safe local payments and fast delivery.
         </p>
         <div className="hero-actions">
           <Link href="/games" className="hero-btn-primary">
             Browse Games
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </Link>
-          <Link href="/register" className="hero-btn-outline">
-            Start Selling
+          <Link href="/top-ups" className="hero-btn-outline">
+            Top Up a Game
           </Link>
         </div>
       </section>
@@ -85,8 +85,8 @@ export default async function HomePage() {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76"/><path d="m9 12 2 2 4-4"/></svg>
           </span>
           <div className="trust-text">
-            <strong>Verified Sellers</strong>
-            <span>Reviewed &amp; rated by real buyers</span>
+            <strong>Trusted by Gamers</strong>
+            <span>Rated &amp; reviewed by real buyers</span>
           </div>
         </div>
       </section>
@@ -128,7 +128,7 @@ export default async function HomePage() {
           <div className="step-card">
             <div className="step-number">1</div>
             <h3>Browse &amp; Choose</h3>
-            <p>Find the game item, account, or service you need from our verified sellers.</p>
+            <p>Find the game key, account, or top-up you need — all at Pakistani prices.</p>
           </div>
           <div className="step-connector" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
