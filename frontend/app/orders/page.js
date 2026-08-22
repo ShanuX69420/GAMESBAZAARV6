@@ -12,9 +12,7 @@ const ORDER_PAGE_SIZE = 20;
 const STATUS_TABS = [
   { key: '', label: 'All Orders' },
   { key: 'pending', label: 'Awaiting Delivery' },
-  { key: 'delivered', label: 'Delivered' },
   { key: 'completed', label: 'Completed' },
-  { key: 'disputed', label: 'Disputed' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
 
@@ -132,7 +130,7 @@ export default function OrdersPage() {
               onClick={() => setStatusFilter(tab.key)}
             >
               <span className="orders-tab-label">{tab.label}</span>
-              {['pending', 'delivered', 'disputed'].includes(tab.key) && statusCounts[tab.key] > 0 && (
+              {tab.key === 'pending' && statusCounts[tab.key] > 0 && (
                 <span className="orders-tab-count">{statusCounts[tab.key]}</span>
               )}
             </button>
@@ -233,7 +231,10 @@ export default function OrdersPage() {
                   </div>
                 </div>
                 <div className="order-card-price">
-                  <div className="order-total">PKR {order.total_amount}</div>
+                  {/* What the buyer actually paid — item total + service fee. */}
+                  <div className="order-total">
+                    PKR {(Number(order.total_amount) + Number(order.service_fee || 0)).toFixed(2)}
+                  </div>
                 </div>
               </div>
 

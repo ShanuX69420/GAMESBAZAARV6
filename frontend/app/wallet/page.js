@@ -251,7 +251,6 @@ export default function WalletPage() {
   const activeTopUpMethod = jazzCashEnabled ? topUpMethod : 'manual';
   const withdrawBelowMin = withdrawAmount !== '' && Number(withdrawAmount) < MIN_WITHDRAW_AMOUNT;
   const currentBalance = walletData ? Number(walletData.balance) : 0;
-  const heldBalance = walletData ? Number(walletData.held_balance || 0) : 0;
   const withdrawExceedsBalance = withdrawAmount !== '' && Number(withdrawAmount) > currentBalance;
   const whatsappMessage = `Hi! I want to top up my GamesBazaar wallet.\nUsername: ${user?.username || ''}${topUpAmount ? `\nAmount: Rs ${topUpAmount}` : ''}`;
   const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -277,14 +276,6 @@ export default function WalletPage() {
         <div className="wallet-balance-amount">
           PKR {walletData ? Number(walletData.balance).toLocaleString('en-PK', { minimumFractionDigits: 2 }) : '0.00'}
         </div>
-        {heldBalance > 0 && (
-          <div className="wallet-balance-label" style={{ marginTop: '8px' }}>
-            <Link href="/wallet/held-balance" className="held-balance-link">
-              Pending balance: PKR {heldBalance.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
-              <span className="held-arrow">→</span>
-            </Link>
-          </div>
-        )}
         <div className="wallet-actions">
           <button
             className="btn btn-primary"
@@ -319,6 +310,11 @@ export default function WalletPage() {
       {showTopUp && (
         <div className="wallet-topup-card">
           <h2 className="card-title">Add Funds</h2>
+          <p className="card-text">
+            You don&apos;t need a balance to buy — checkout can charge your
+            JazzCash account directly. Add funds if you prefer keeping a
+            balance, or to pay by Easypaisa or bank transfer.
+          </p>
 
           {/* Method selector */}
           {jazzCashEnabled && (

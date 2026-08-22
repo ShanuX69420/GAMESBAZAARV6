@@ -124,7 +124,7 @@ from .serializers import (
     JazzCashTopUpInitiateSerializer, JazzCashBuyInitiateSerializer,
     JazzCashPaymentSerializer,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
-    OrderSerializer, BuyListingSerializer, DeliverOrderSerializer, DisputeOrderSerializer,
+    OrderSerializer, BuyListingSerializer, DeliverOrderSerializer,
     ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
     NotificationSerializer,
     CreateReportSerializer, ReportSerializer,
@@ -139,10 +139,8 @@ from .services import (
     create_notification as create_user_notification,
     decode_private_media_ticket,
     apply_wallet_delta_once,
-    complete_order_with_seller_payout,
-    get_seller_held_payout_summary,
+    complete_order_now,
     get_or_create_locked_wallet,
-    is_order_in_buyer_protection_dispute_window,
     order_seller_payout_has_been_released,
     record_platform_ledger_once,
     revoke_user_refresh_tokens,
@@ -423,30 +421,6 @@ def get_cursor_page(queryset, limit, before_id=None):
         'next_before_id': page[-1].id if has_more and page else None,
         'has_more': has_more,
     }
-
-
-def get_released_seller_payout_order_refs(orders):
-    order_refs = []
-    seller_ids = set()
-    for order in orders:
-        if (
-            order.status == 'completed'
-            and order.buyer_protection_enabled
-            and not order.seller_payout_released_at
-        ):
-            order_refs.append(f'order_{order.pk}')
-            seller_ids.add(order.seller_id)
-
-    if not order_refs:
-        return set()
-
-    return set(
-        WalletTransaction.objects.filter(
-            wallet__user_id__in=seller_ids,
-            transaction_type='sale',
-            reference_id__in=order_refs,
-        ).values_list('reference_id', flat=True)
-    )
 
 
 def parse_query_date(value):
@@ -2911,13 +2885,10 @@ class WalletView(APIView):
         transactions_qs = wallet.transactions.all()
         total_count = transactions_qs.count()
         transactions = transactions_qs[offset:offset + limit]
-        held_summary = get_seller_held_payout_summary(request.user)
         return Response({
             'balance': str(wallet.balance),
-            'held_balance': str(held_summary['held_balance']),
-            'held_order_count': held_summary['held_order_count'],
-            'next_payout_release_at': held_summary['next_release_at'],
             'jazzcash_enabled': settings.JAZZCASH_ENABLED,
+            'checkout_service_fee': str(settings.CHECKOUT_SERVICE_FEE_PKR),
             'transactions': WalletTransactionSerializer(transactions, many=True).data,
             'transaction_pagination': get_pagination_payload(total_count, limit, offset),
         })
@@ -2942,59 +2913,6 @@ class WalletTransactionsView(APIView):
             'pagination': get_pagination_payload(total_count, limit, offset),
         })
 
-
-class HeldOrdersView(APIView):
-    """GET /api/wallet/held-orders/ — List orders with buyer protection holds."""
-    permission_classes = [HasCompletedProfile]
-
-    def get(self, request):
-        held_orders_qs = Order.objects.filter(
-            seller=request.user,
-            status='completed',
-            buyer_protection_enabled=True,
-            seller_payout_released_at__isnull=True,
-        ).select_related('buyer').order_by('-created_at')
-
-        limit, offset = get_pagination_params(
-            request,
-            default_limit=DEFAULT_ORDER_PAGE_SIZE,
-            max_limit=MAX_ORDER_PAGE_SIZE,
-        )
-        total_count = held_orders_qs.count()
-        held_orders = held_orders_qs[offset:offset + limit]
-
-        now = timezone.now()
-        orders_data = []
-        total_held = Decimal('0.00')
-        for order in held_orders:
-            days_until_release = None
-            if order.seller_payout_available_at:
-                delta = order.seller_payout_available_at - now
-                days_until_release = max(0, delta.days + (1 if delta.seconds > 0 else 0))
-
-            total_held += order.seller_amount or Decimal('0.00')
-            orders_data.append({
-                'id': order.id,
-                'order_number': order.order_number,
-                'listing_title': order.listing_title,
-                'buyer_name': order.buyer.username,
-                'quantity': order.quantity,
-                'total_amount': str(order.total_amount),
-                'seller_amount': str(order.seller_amount),
-                'commission_amount': str(order.commission_amount),
-                'seller_payout_available_at': order.seller_payout_available_at,
-                'days_until_release': days_until_release,
-                'created_at': order.created_at,
-            })
-
-        held_summary = get_seller_held_payout_summary(request.user)
-        return Response({
-            'held_balance': str(held_summary['held_balance']),
-            'held_order_count': held_summary['held_order_count'],
-            'next_release_at': held_summary['next_release_at'],
-            'orders': orders_data,
-            'pagination': get_pagination_payload(total_count, limit, offset),
-        })
 
 
 class TopUpRequestView(ScopedPostThrottleMixin, APIView):
@@ -3309,14 +3227,17 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
                 {'error': 'Order total is too large — please buy a smaller amount.'},
                 status=400,
             )
+        # The purchase that executes once the payment confirms charges the
+        # wallet the fee-inclusive amount, so the shortfall must cover it too.
+        buyer_charge = total + settings.CHECKOUT_SERVICE_FEE_PKR
 
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
-        if wallet.balance >= total:
+        if wallet.balance >= buyer_charge:
             return Response(
                 {'error': 'You have enough wallet balance for this order — pay with your wallet.'},
                 status=400,
             )
-        charge = max(total - wallet.balance, settings.JAZZCASH_MIN_PAYMENT_PKR)
+        charge = max(buyer_charge - wallet.balance, settings.JAZZCASH_MIN_PAYMENT_PKR)
         if charge > settings.JAZZCASH_MAX_PAYMENT_PKR:
             return Response(
                 {'error': f'JazzCash payments are limited to PKR {settings.JAZZCASH_MAX_PAYMENT_PKR:,.0f} '
@@ -3525,6 +3446,12 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         # Order money fields hold 10 digits (max 99,999,999.99 PKR).
         if total > Decimal('99999999.99'):
             return None, 'Order total is too large — please buy a smaller amount.'
+        # Flat checkout service fee — charged on top of the item total on
+        # every payment method, refunded with the total if the order is
+        # cancelled. Snapshotted on the order so a later fee change never
+        # alters what an old order refunds.
+        service_fee = settings.CHECKOUT_SERVICE_FEE_PKR
+        buyer_charge = total + service_fee
 
         is_auto = listing.is_auto_delivery
         if is_auto:
@@ -3567,7 +3494,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
 
         wallet = get_or_create_locked_wallet(buyer)
 
-        if wallet.balance < total:
+        if wallet.balance < buyer_charge:
             return None, 'Insufficient wallet balance.'
 
         category = listing.game_category.category
@@ -3576,7 +3503,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         seller_receives = total - commission
 
         # Deduct from buyer only after all purchase validations have passed.
-        wallet.balance -= total
+        wallet.balance -= buyer_charge
         wallet.save(update_fields=['balance', 'updated_at'])
 
         if is_auto:
@@ -3611,23 +3538,37 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             commission_rate=rate,
             commission_amount=commission,
             seller_amount=seller_receives,
+            service_fee=service_fee,
             status=initial_status,
             was_auto_delivery=delivered_instantly,
             delivery_note=delivery_note,
             delivered_at=delivered_at,
-            buyer_protection_enabled=category.buyer_protection_enabled,
             delivery_instructions_snapshot=listing.delivery_instructions.strip(),
         )
 
         # Log transaction
+        fee_note = f' incl. PKR {service_fee} service fee' if service_fee > 0 else ''
         WalletTransaction.objects.create(
             wallet=wallet,
             transaction_type='purchase',
-            amount=total,
+            amount=buyer_charge,
             balance_after=wallet.balance,
-            description=f'Purchase: {listing.title} (x{qty}{unit_suffix})',
+            description=f'Purchase: {listing.title} (x{qty}{unit_suffix}){fee_note}',
             reference_id=f'order_{order.pk}',
         )
+        if service_fee > 0:
+            record_platform_ledger_once(
+                entry_type='service_fee_collected',
+                amount=service_fee,
+                description=f'Service fee: {listing.title} (x{qty}{unit_suffix})',
+                reference_id=f'order_{order.pk}',
+            )
+
+        # Shop flow: a delivered order IS a complete order — no confirmation
+        # step, no payout hold. Credit the house seller in the same
+        # transaction so a crash can never strand a paid-but-uncredited sale.
+        if delivered_instantly:
+            complete_order_now(order)
 
         conversation, _ = get_or_create_private_conversation(buyer, listing.seller)
 
@@ -3655,8 +3596,8 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. The order was delivered automatically. '
-                f'{buyer.username}, please check the delivery details and press the '
-                f'«Confirm order» button on the order page once everything works.'
+                f'{buyer.username}, please check the delivery details — if anything '
+                f'is wrong, message us right here and we will sort it out.'
             )
         elif fazer_task is not None:
             if fazer_task.kind == 'gift':
@@ -3670,15 +3611,15 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. This order is delivered automatically — '
                 f'{arrival}. '
-                f'{buyer.username}, press the «Confirm order» button on the order '
-                f'page once you receive everything.'
+                f'{buyer.username}, if it does not arrive or anything is wrong, '
+                f'message us right here and we will sort it out.'
             )
         else:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. {listing.seller.username}, please deliver '
-                f'the order. {buyer.username}, press the «Confirm order» button on the '
-                f'order page once you receive everything.'
+                f'the order. {buyer.username}, your delivery will arrive in this chat — '
+                f'message us any time if you have questions.'
             )
         post_order_chat_message(order, event='order_paid', content=paid_content, sender=buyer)
 
@@ -3903,7 +3844,6 @@ class MyOrdersView(APIView):
             total_count = orders_qs.count()
             orders = list(orders_qs[offset:offset + limit])
             pagination = get_pagination_payload(total_count, limit, offset)
-        released_payout_refs = get_released_seller_payout_order_refs(orders)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(buyer=request.user).values('status').annotate(
             count=Count('id')
@@ -3914,10 +3854,7 @@ class MyOrdersView(APIView):
             'orders': OrderSerializer(
                 orders,
                 many=True,
-                context={
-                    'request': request,
-                    'released_seller_payout_order_refs': released_payout_refs,
-                },
+                context={'request': request},
             ).data,
             'pagination': pagination,
             'status_counts': counts,
@@ -3980,7 +3917,6 @@ class MySalesView(APIView):
             total_count = orders_qs.count()
             orders = list(orders_qs[offset:offset + limit])
             pagination = get_pagination_payload(total_count, limit, offset)
-        released_payout_refs = get_released_seller_payout_order_refs(orders)
         # Status counts (unfiltered) for tab badges
         status_counts = Order.objects.filter(seller=request.user).values('status').annotate(
             count=Count('id')
@@ -3997,10 +3933,7 @@ class MySalesView(APIView):
             'sales': OrderSerializer(
                 orders,
                 many=True,
-                context={
-                    'request': request,
-                    'released_seller_payout_order_refs': released_payout_refs,
-                },
+                context={'request': request},
             ).data,
             'pagination': pagination,
             'summary': summary,
@@ -4077,19 +4010,21 @@ class DeliverOrderView(APIView):
                 return Response({'error': 'Order can only be delivered when pending.'}, status=400)
 
             delivery_note = serializer.validated_data.get('delivery_note', '')
-            order.status = 'delivered'
             order.delivery_note = encrypt_sensitive_text(delivery_note)
             order.delivered_at = timezone.now()
-            order.save(update_fields=['status', 'delivery_note', 'delivered_at', 'updated_at'])
+            order.save(update_fields=['delivery_note', 'delivered_at', 'updated_at'])
+            # Shop flow: delivered means done — complete and credit the
+            # house seller immediately.
+            complete_order_now(order)
 
             post_order_chat_message(
                 order,
                 event='order_delivered',
                 sender=request.user,
                 content=(
-                    f'{request.user.username} has marked order #{order.order_number} as '
-                    f'delivered. {order.buyer.username}, please make sure everything works '
-                    f'and press the «Confirm order» button on the order page.'
+                    f'{request.user.username} has delivered order #{order.order_number}. '
+                    f'{order.buyer.username}, please check the delivery details — if '
+                    f'anything is wrong, message us right here and we will sort it out.'
                 ),
             )
             if delivery_note:
@@ -4111,212 +4046,6 @@ class DeliverOrderView(APIView):
 
         return Response(OrderSerializer(order, context={'request': request}).data)
 
-
-class ConfirmOrderView(APIView):
-    """POST /api/orders/<id>/confirm/ — Buyer confirms delivery. Releases funds to seller."""
-    permission_classes = [HasCompletedProfile]
-
-    def post(self, request, order_ref):
-        with db_transaction.atomic():
-            order = get_order_by_reference_or_404(
-                Order.objects.select_for_update().select_related('seller'),
-                order_ref,
-                buyer=request.user,
-            )
-
-            if order.status == 'completed':
-                return Response(OrderSerializer(order, context={'request': request}).data)
-
-            if order.status != 'delivered':
-                return Response({'error': 'Order cannot be confirmed in current state.'}, status=400)
-
-            payout = complete_order_with_seller_payout(
-                order,
-                sale_description=f'Sale completed: {order.listing_title} (x{order.quantity})',
-                commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
-                ledger_description=f'Commission collected: {order.listing_title} (x{order.quantity})',
-            )
-
-            if payout['held']:
-                payment_part = f"{order.seller.username}'s payment is on its way."
-            else:
-                payment_part = f'The payment has been credited to {order.seller.username}.'
-            post_order_chat_message(
-                order,
-                event='order_confirmed',
-                sender=request.user,
-                content=(
-                    f'{request.user.username} has confirmed that order '
-                    f'#{order.order_number} was fulfilled. The order is now complete. '
-                    f'{payment_part}'
-                ),
-            )
-
-            # Notify seller that buyer confirmed
-            create_notification(
-                recipient=order.seller,
-                notification_type='order_confirmed',
-                title='Order confirmed',
-                message=f'Order "{order.listing_title}" has been confirmed.',
-                order=order,
-            )
-
-        return Response(OrderSerializer(order, context={'request': request}).data)
-
-
-class DisputeOrderView(APIView):
-    """POST /api/orders/<id>/dispute/ — Buyer opens a dispute."""
-    permission_classes = [HasCompletedProfile]
-
-    def post(self, request, order_ref):
-        serializer = DisputeOrderSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reason = serializer.validated_data['reason']
-
-        with db_transaction.atomic():
-            order = get_order_by_reference_or_404(
-                Order.objects.select_for_update(),
-                order_ref,
-                buyer=request.user,
-            )
-
-            can_dispute_completed_hold = is_order_in_buyer_protection_dispute_window(order)
-            if order.status not in ('pending', 'delivered') and not can_dispute_completed_hold:
-                return Response({'error': 'Cannot dispute in current state.'}, status=400)
-
-            order.status = 'disputed'
-            order.dispute_reason = reason
-            order.save(update_fields=['status', 'dispute_reason', 'updated_at'])
-
-            post_order_chat_message(
-                order,
-                event='order_disputed',
-                sender=request.user,
-                content=(
-                    f'{request.user.username} has opened a dispute on order '
-                    f'#{order.order_number}. A GamesBazaar moderator will review it '
-                    f'and may contact both of you here.'
-                ),
-            )
-
-            # Notify seller about dispute
-            create_notification(
-                recipient=order.seller,
-                notification_type='order_disputed',
-                title='Order disputed by buyer',
-                message=f'{request.user.username} has disputed order "{order.listing_title}". Reason: {reason}',
-                order=order,
-            )
-
-        return Response(OrderSerializer(order, context={'request': request}).data)
-
-
-class ResolveDisputeView(APIView):
-    """POST /api/admin/orders/<id>/resolve-dispute/ - Staff resolves a disputed order."""
-    permission_classes = [permissions.IsAdminUser]
-
-    def post(self, request, pk):
-        resolution_action = request.data.get('resolution_action')
-        if resolution_action not in ('refund_buyer', 'pay_seller'):
-            return Response({
-                'error': 'resolution_action must be refund_buyer or pay_seller.',
-            }, status=400)
-
-        with db_transaction.atomic():
-            order = get_object_or_404(
-                Order.objects.select_for_update().select_related('buyer', 'seller'),
-                pk=pk,
-            )
-
-            if order.status != 'disputed':
-                return Response({'error': 'Only disputed orders can be resolved.'}, status=400)
-
-            if resolution_action == 'refund_buyer':
-                apply_wallet_delta_once(
-                    order.buyer,
-                    delta=order.total_amount,
-                    transaction_type='refund',
-                    amount=order.total_amount,
-                    description=f'Dispute resolved (buyer): {order.listing_title}',
-                    reference_id=f'order_{order.pk}',
-                )
-
-                if order.listing_id:
-                    listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
-                    if listing and listing.quantity is not None and not listing.is_auto_delivery:
-                        listing.quantity += order.quantity
-                        if listing.status == 'sold':
-                            listing.status = 'active'
-                        listing.save(update_fields=['quantity', 'status'])
-
-                order.status = 'cancelled'
-
-                post_order_chat_message(
-                    order,
-                    event='order_refunded',
-                    content=(
-                        f'The dispute on order #{order.order_number} has been resolved '
-                        f'in favour of {order.buyer.username}. The order was refunded and '
-                        f'the full amount is back in their wallet.'
-                    ),
-                )
-
-                # Notify both parties
-                create_notification(
-                    recipient=order.buyer,
-                    notification_type='order_cancelled',
-                    title='Dispute resolved — refund issued',
-                    message=f'Your dispute for "{order.listing_title}" has been resolved. The order has been refunded.',
-                    order=order,
-                )
-                create_notification(
-                    recipient=order.seller,
-                    notification_type='order_cancelled',
-                    title='Dispute resolved — order cancelled',
-                    message=f'The dispute for "{order.listing_title}" has been resolved in favour of the buyer. The order has been cancelled.',
-                    order=order,
-                )
-            else:
-                complete_order_with_seller_payout(
-                    order,
-                    sale_description=f'Dispute resolved (seller): {order.listing_title}',
-                    commission_description=f'Commission ({order.commission_rate}%): {order.listing_title}',
-                    ledger_description=f'Commission collected: {order.listing_title}',
-                )
-                post_order_chat_message(
-                    order,
-                    event='order_confirmed',
-                    content=(
-                        f'The dispute on order #{order.order_number} has been resolved '
-                        f'in favour of {order.seller.username}. The order is now complete.'
-                    ),
-                )
-
-                seller_title = 'Dispute resolved - order completed'
-                seller_message = (
-                    f'The dispute for "{order.listing_title}" has been resolved in your favour. '
-                    'The order is now marked as completed.'
-                )
-
-                # Notify both parties
-                create_notification(
-                    recipient=order.seller,
-                    notification_type='order_confirmed',
-                    title=seller_title,
-                    message=seller_message,
-                    order=order,
-                )
-                create_notification(
-                    recipient=order.buyer,
-                    notification_type='order_confirmed',
-                    title='Dispute resolved — order completed',
-                    message=f'The dispute for "{order.listing_title}" has been resolved. The order is now marked as completed.',
-                    order=order,
-                )
-
-            order.save(update_fields=['status', 'updated_at'])
-
-        return Response(OrderSerializer(order, context={'request': request}).data)
 
 
 class RefundOrderView(APIView):
@@ -4365,19 +4094,27 @@ class RefundOrderView(APIView):
                         reference_id=f'order_{order.pk}',
                     )
 
-            # Refund buyer the full amount
+            # Refund buyer the full amount, service fee included.
+            refund_total = order.total_amount + order.service_fee
             buyer_wallet = get_or_create_locked_wallet(order.buyer)
-            buyer_wallet.balance += order.total_amount
+            buyer_wallet.balance += refund_total
             buyer_wallet.save(update_fields=['balance', 'updated_at'])
 
             WalletTransaction.objects.create(
                 wallet=buyer_wallet,
                 transaction_type='refund',
-                amount=order.total_amount,
+                amount=refund_total,
                 balance_after=buyer_wallet.balance,
                 description=f'Refund: {order.listing_title} (x{order.quantity})',
                 reference_id=f'order_{order.pk}',
             )
+            if order.service_fee > 0:
+                record_platform_ledger_once(
+                    entry_type='service_fee_reversed',
+                    amount=-order.service_fee,
+                    description=f'Service fee reversed: {order.listing_title} (x{order.quantity})',
+                    reference_id=f'order_{order.pk}',
+                )
 
             # Restore stock if listing exists and has finite stock
             if listing:
@@ -5023,7 +4760,6 @@ class SellerDashboardView(APIView):
             wallet_balance = str(request.user.wallet.balance)
         except Wallet.DoesNotExist:
             wallet_balance = '0.00'
-        held_payout_summary = get_seller_held_payout_summary(request.user)
 
         payload = {
             'orders': {
@@ -5053,9 +4789,6 @@ class SellerDashboardView(APIView):
             'recent_sales': recent_sales_data,
             'top_categories': top_categories_data,
             'wallet_balance': wallet_balance,
-            'wallet_held_balance': str(held_payout_summary['held_balance']),
-            'wallet_held_order_count': held_payout_summary['held_order_count'],
-            'next_payout_release_at': held_payout_summary['next_release_at'],
         }
         if not settings.DEBUG:
             cache.set(cache_key, payload, timeout=60)

@@ -12,9 +12,7 @@ const SALES_PAGE_SIZE = 20;
 const STATUS_TABS = [
   { key: '', label: 'All Sales' },
   { key: 'pending', label: 'Awaiting Delivery' },
-  { key: 'delivered', label: 'Delivered' },
   { key: 'completed', label: 'Completed' },
-  { key: 'disputed', label: 'Disputed' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
 
@@ -135,7 +133,7 @@ export default function SalesPage() {
               onClick={() => setStatusFilter(tab.key)}
             >
               <span className="orders-tab-label">{tab.label}</span>
-              {['pending', 'delivered', 'disputed'].includes(tab.key) && statusCounts[tab.key] > 0 && (
+              {tab.key === 'pending' && statusCounts[tab.key] > 0 && (
                 <span className="orders-tab-count">{statusCounts[tab.key]}</span>
               )}
             </button>
@@ -247,11 +245,6 @@ export default function SalesPage() {
                 <Link href={orderPath(sale)} className="btn btn-outline btn-sm">
                   View Order
                 </Link>
-                {sale.status === 'delivered' && (
-                  <span className="order-completed-msg" style={{ color: 'var(--text-tertiary)' }}>
-                    Waiting for buyer to confirm
-                  </span>
-                )}
               </div>
             </div>
           ))}

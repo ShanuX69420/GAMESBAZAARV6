@@ -241,7 +241,6 @@ describe('SEO route metadata', () => {
         game_name: 'Valorant',
         category_name: 'Accounts',
         seller_name: 'sellerpk',
-        buyer_protection_enabled: true,
         filter_display: {
           Platform: 'PC',
         },
@@ -501,7 +500,7 @@ describe('SEO route metadata', () => {
     );
     expect(metadata).toMatchObject({
       title: 'Pubg Mobile Accounts & Boosts Listings',
-      description: 'Browse Pubg Mobile Accounts & Boosts on GamesBazaar. Instant delivery, buyer protection, and prices in PKR.',
+      description: 'Browse Pubg Mobile Accounts & Boosts on GamesBazaar. Instant delivery, easy refunds, and prices in PKR.',
       openGraph: {
         title: metadata.title,
         type: 'website',

@@ -209,7 +209,7 @@ class OfflineAccountModelTests(OfflineAccountTestBase):
 class OfflinePurchaseTests(OfflineAccountTestBase):
     def test_purchase_delivers_credentials_instantly(self):
         order = self.buy()
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         self.assertTrue(order.was_auto_delivery)
         self.assertIsNotNone(order.delivered_at)
 
@@ -449,7 +449,7 @@ class EmailGuardTests(OfflineAccountTestBase):
 
     def test_purchase_still_delivers_credentials(self):
         order = self.buy()
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
 
     @patch('core.guardmail.fetch_latest_code', return_value='H7K2M')
     def test_code_fetched_from_mailbox(self, fetch):
@@ -708,7 +708,7 @@ class UbisoftEaAccountTests(OfflineAccountTestBase):
 
     def test_purchase_delivers_platform_wording(self):
         order = self.buy(self.ea_listing)
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('eauser1', note)
         self.assertIn('EA security code', note)
@@ -779,7 +779,7 @@ class EpicAccountTests(OfflineAccountTestBase):
 
     def test_purchase_delivers_platform_wording(self):
         order = self.buy(self.epic_listing)
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('epicuser1', note)
         self.assertIn('Epic Games security code', note)

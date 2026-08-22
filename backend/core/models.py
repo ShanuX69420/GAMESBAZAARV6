@@ -720,6 +720,8 @@ class PlatformLedgerEntry(models.Model):
     ENTRY_TYPE_CHOICES = [
         ('commission_collected', 'Commission Collected'),
         ('commission_reversed', 'Commission Reversed'),
+        ('service_fee_collected', 'Service Fee Collected'),
+        ('service_fee_reversed', 'Service Fee Reversed'),
     ]
 
     entry_type = models.CharField(max_length=40, choices=ENTRY_TYPE_CHOICES)
@@ -992,6 +994,11 @@ class Order(models.Model):
                                             help_text='Platform commission deducted')
     seller_amount = models.DecimalField(max_digits=12, decimal_places=2,
                                          help_text='Amount seller receives after commission')
+    service_fee = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+        help_text='Flat checkout service fee the buyer paid on top of '
+                  'total_amount. Platform revenue; returned on refund.',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     was_auto_delivery = models.BooleanField(
         default=False,

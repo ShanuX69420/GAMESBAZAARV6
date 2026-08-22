@@ -45,8 +45,9 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   since the 2026-08 shop conversion retired daphne/Channels) and
   `gamesbazaar-frontend`. Restart `gamesbazaar-web` after a backend deploy.
   Redis stays: it backs the Django cache (CACHE_REDIS_URL/CHANNEL_REDIS_URL env).
-  Timers: auto-confirm + reconcile-jazzcash (10 min), release-holds (30 min),
-  db-backup (nightly 21:30 UTC → R2 `db-backups/`).
+  Timers: reconcile-jazzcash (10 min), fazer-fulfill (1 min),
+  db-backup (nightly 21:30 UTC → R2 `db-backups/`). The auto-confirm and
+  release-holds timers were retired with escrow (2026-08 shop conversion).
 - Deploy order matters: **frontend build BEFORE migrate, restart backend right after
   migrate** — otherwise old code hits the new schema for minutes.
 - `NEXT_PUBLIC_*` vars are baked in at build time — changing one on the server
@@ -129,8 +130,14 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 - Three paths can resolve a payment: IPN callback, user-return status check, and
   the reconcile timer — all feed `apply_gateway_result`.
 - Merchant fee: 1.16% incl. FED (mobile wallets), deducted from settlement.
-- Roadmap (decided, NOT started): direct checkout + flat buyer service fee, add
-  cards + Easypaisa, retire mandatory top-ups but keep the wallet for seller
-  earnings and instant refund credit. No flow changes while JazzCash approval is
-  pending.
+- Direct checkout is the primary flow (shop-conversion Phase 4, 2026-08-22):
+  buyers pay at the Buy button — wallet balance if it covers the total,
+  otherwise JazzCash charges the shortfall. Top-ups stay as the Easypaisa/bank
+  path (WhatsApp) and for keeping a balance; never required before buying.
+- Flat buyer **service fee** is plumbed end-to-end but OFF (`CHECKOUT_SERVICE_FEE_PKR`
+  env, whole PKR, default 0). Backend-only var: set it + restart gamesbazaar-web —
+  no rebuild (frontend reads it from `/api/wallet/`). Applies to every payment
+  method, snapshotted per order (`Order.service_fee`), refunded with the order,
+  tracked in PlatformLedgerEntry (`service_fee_collected`/`_reversed`).
+- Still future: cards + Easypaisa gateway integrations.
 - Go-live day: follow `docs/jazzcash-golive-runbook.md`.

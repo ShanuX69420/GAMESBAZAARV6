@@ -23,10 +23,8 @@ from .models import (
     Report, SupportTicket, ItemRequest,
 )
 from .services import (
-    get_order_auto_confirm_at,
     get_order_guard_account,
     guard_code_window_open,
-    order_seller_payout_has_been_released,
     create_private_media_ticket,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -44,7 +42,6 @@ MAX_AUTO_DELIVERY_LINES = 1_000
 MAX_AUTO_DELIVERY_LINE_LENGTH = 2_000
 MAX_DELIVERY_INSTRUCTIONS_LENGTH = 2_000
 MAX_DELIVERY_NOTE_LENGTH = 5_000
-MAX_DISPUTE_REASON_LENGTH = 3_000
 DUMMY_PASSWORD_HASH = make_password('not-the-password')
 
 
@@ -130,7 +127,7 @@ class FilterSerializer(serializers.ModelSerializer):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'description', 'icon', 'buyer_protection_enabled']
+        fields = ['id', 'name', 'slug', 'description', 'icon']
 
 
 class GameCategorySerializer(serializers.ModelSerializer):
@@ -508,9 +505,6 @@ class ListingSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='game_category.effective_name', read_only=True)
     listing_mode = serializers.CharField(source='game_category.listing_mode', read_only=True)
     unit_name = serializers.CharField(source='game_category.unit_name', read_only=True)
-    buyer_protection_enabled = serializers.BooleanField(
-        source='game_category.category.buyer_protection_enabled', read_only=True,
-    )
     filter_display = serializers.SerializerMethodField()
     option_id = serializers.IntegerField(read_only=True)
     option_name = serializers.SerializerMethodField()
@@ -527,7 +521,6 @@ class ListingSerializer(serializers.ModelSerializer):
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'seller_is_official_store',
             'game_name', 'category_name', 'listing_mode', 'unit_name',
-            'buyer_protection_enabled',
             'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'instant_delivery',
@@ -1456,9 +1449,6 @@ class OrderSerializer(serializers.ModelSerializer):
     is_auto_delivery = serializers.SerializerMethodField()
     auto_delivery_data = serializers.SerializerMethodField()
     delivery_instructions = serializers.SerializerMethodField()
-    auto_confirm_at = serializers.SerializerMethodField()
-    seller_payout_status = serializers.SerializerMethodField()
-    can_dispute = serializers.SerializerMethodField()
     guard_code_available = serializers.SerializerMethodField()
     guard_code_used = serializers.SerializerMethodField()
     guard_code_label = serializers.SerializerMethodField()
@@ -1468,16 +1458,14 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'order_number', 'buyer_id', 'buyer_name', 'seller_id', 'seller_name',
             'listing_id', 'listing_title', 'quantity',
-            'unit_price', 'total_amount',
+            'unit_price', 'total_amount', 'service_fee',
             'commission_rate', 'commission_amount', 'seller_amount',
             'status', 'status_display',
-            'delivery_note', 'dispute_reason',
+            'delivery_note',
             'conversation_id', 'has_review', 'review_data',
             'is_auto_delivery', 'auto_delivery_data',
-            'delivery_instructions', 'delivered_at', 'auto_confirm_at',
-            'buyer_protection_enabled', 'seller_payout_status', 'can_dispute',
+            'delivery_instructions', 'delivered_at',
             'guard_code_available', 'guard_code_used', 'guard_code_label',
-            'seller_payout_available_at', 'seller_payout_released_at',
             'created_at', 'updated_at',
         ]
 
@@ -1529,10 +1517,6 @@ class OrderSerializer(serializers.ModelSerializer):
             return obj.delivery_instructions_snapshot
         return None
 
-    def get_auto_confirm_at(self, obj):
-        """Return the deadline when delivered orders auto-complete."""
-        return get_order_auto_confirm_at(obj)
-
     def get_guard_code_available(self, obj):
         """Whether the buyer can request their one Steam Guard code right now.
         Computed only on the order-detail view (context flag) — order lists
@@ -1574,48 +1558,6 @@ class OrderSerializer(serializers.ModelSerializer):
         account = get_order_guard_account(obj)
         return account.code_label() if account else ''
 
-    def _seller_payout_has_been_released(self, obj):
-        cache = getattr(self, '_seller_payout_released_cache', None)
-        if cache is None:
-            cache = {}
-            self._seller_payout_released_cache = cache
-        if obj.pk in cache:
-            return cache[obj.pk]
-
-        if obj.seller_payout_released_at:
-            cache[obj.pk] = True
-            return cache[obj.pk]
-
-        released_refs = self.context.get('released_seller_payout_order_refs')
-        if released_refs is not None:
-            cache[obj.pk] = f'order_{obj.pk}' in released_refs
-            return cache[obj.pk]
-
-        cache[obj.pk] = order_seller_payout_has_been_released(obj)
-        return cache[obj.pk]
-
-    def get_seller_payout_status(self, obj):
-        if obj.status == 'cancelled':
-            return 'cancelled'
-        if obj.status != 'completed':
-            return 'pending'
-        if self._seller_payout_has_been_released(obj):
-            return 'released'
-        if obj.buyer_protection_enabled:
-            return 'held'
-        return 'released'
-
-    def get_can_dispute(self, obj):
-        if obj.status in ('pending', 'delivered'):
-            return True
-        if obj.status != 'completed':
-            return False
-        if not obj.buyer_protection_enabled or not obj.seller_payout_available_at:
-            return False
-        if self._seller_payout_has_been_released(obj):
-            return False
-        return timezone.now() < obj.seller_payout_available_at
-
 
 class BuyListingSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
@@ -1638,13 +1580,6 @@ class DeliverOrderSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         max_length=MAX_DELIVERY_NOTE_LENGTH,
-        trim_whitespace=True,
-    )
-
-
-class DisputeOrderSerializer(serializers.Serializer):
-    reason = serializers.CharField(
-        max_length=MAX_DISPUTE_REASON_LENGTH,
         trim_whitespace=True,
     )
 

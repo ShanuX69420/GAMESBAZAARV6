@@ -53,7 +53,6 @@ urlpatterns = [
     # Wallet
     path('wallet/', views.WalletView.as_view(), name='wallet'),
     path('wallet/transactions/', views.WalletTransactionsView.as_view(), name='wallet-transactions'),
-    path('wallet/held-orders/', views.HeldOrdersView.as_view(), name='wallet-held-orders'),
     path('wallet/top-up/', views.TopUpRequestView.as_view(), name='topup-request'),
     path('wallet/top-up/<int:pk>/proof/', views.TopUpProofView.as_view(), name='topup-proof'),
     path('wallet/withdraw/', views.WithdrawRequestView.as_view(), name='withdraw-request'),
@@ -71,12 +70,8 @@ urlpatterns = [
     path('orders/sales/', views.MySalesView.as_view(), name='my-sales'),
     path('orders/<str:order_ref>/', views.OrderDetailView.as_view(), name='order-detail'),
     path('orders/<str:order_ref>/deliver/', views.DeliverOrderView.as_view(), name='deliver-order'),
-    path('orders/<str:order_ref>/confirm/', views.ConfirmOrderView.as_view(), name='confirm-order'),
-    path('orders/<str:order_ref>/dispute/', views.DisputeOrderView.as_view(), name='dispute-order'),
     path('orders/<str:order_ref>/refund/', views.RefundOrderView.as_view(), name='refund-order'),
     path('orders/<str:order_ref>/guard-code/', views.OrderGuardCodeView.as_view(), name='order-guard-code'),
-    path('admin/orders/<int:pk>/resolve-dispute/',
-         views.ResolveDisputeView.as_view(), name='admin-resolve-dispute'),
 
     # Reviews
     path('reviews/', views.CreateReviewView.as_view(), name='create-review'),

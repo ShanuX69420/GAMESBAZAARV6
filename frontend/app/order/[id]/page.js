@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { getOrderDetail, confirmOrder, disputeOrder, deliverOrder, refundOrder, createReview, updateReview, replyToReview, getGuardCode } from '@/lib/api';
+import { getOrderDetail, deliverOrder, refundOrder, createReview, updateReview, replyToReview, getGuardCode } from '@/lib/api';
 import { orderLabel } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import Linkified from '@/components/Linkified';
@@ -21,9 +21,6 @@ export default function OrderDetailPage() {
   const [success, setSuccess] = useState('');
   const [deliverModal, setDeliverModal] = useState(false);
   const [deliveryNote, setDeliveryNote] = useState('');
-  const [disputeModal, setDisputeModal] = useState(false);
-  const [disputeReason, setDisputeReason] = useState('');
-  const [confirmModal, setConfirmModal] = useState(false);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
@@ -158,30 +155,12 @@ export default function OrderDetailPage() {
     }
   }
 
-  function handleConfirm() {
-    setConfirmModal(false);
-    doAction(async () => {
-      await confirmOrder(id);
-      setSuccess('Order confirmed!');
-    });
-  }
-
   function handleDeliver() {
     doAction(async () => {
       await deliverOrder(id, deliveryNote);
-      setSuccess('Order marked as delivered!');
+      setSuccess('Order delivered — it is now complete.');
       setDeliverModal(false);
       setDeliveryNote('');
-    });
-  }
-
-  function handleDispute() {
-    if (!disputeReason.trim()) return;
-    doAction(async () => {
-      await disputeOrder(id, disputeReason);
-      setSuccess('Dispute opened. Admin will review your case.');
-      setDisputeModal(false);
-      setDisputeReason('');
     });
   }
 
@@ -273,8 +252,11 @@ export default function OrderDetailPage() {
   const hasReview = order.has_review || reviewSubmitted;
   const reviewData = order.review_data;
   const showReviewForm = isBuyer && order.status === 'completed' && (!hasReview || editingReview);
-  const canOpenDispute = isBuyer && order.can_dispute;
   const displayOrderNumber = orderLabel(order);
+  // Buyers paid item total + flat service fee (0 on fee-free orders); the
+  // seller's economics stay on the item total.
+  const serviceFee = Number(order.service_fee || 0);
+  const buyerPaidTotal = Number(order.total_amount) + serviceFee;
 
   function getStatusColor(status) {
     switch (status) {
@@ -317,29 +299,6 @@ export default function OrderDetailPage() {
               {order.status_display}
             </span>
           </div>
-
-          {/* Auto-confirm banner for delivered orders (buyer view) */}
-          {isBuyer && order.status === 'delivered' && (
-            <div className="order-autoconfirm-banner">
-              <div className="order-autoconfirm-content">
-                <svg className="order-autoconfirm-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                <div className="order-autoconfirm-text">
-                  <strong>Awaiting your confirmation</strong>
-                  <p>The seller has completed the delivery. If you received the wrong / incomplete / invalid items, please file a report or the order will auto-confirm after 3 days.</p>
-                </div>
-              </div>
-              <button
-                className="order-autoconfirm-btn"
-                onClick={() => setConfirmModal(true)}
-                disabled={actionLoading}
-              >
-                Confirm order
-              </button>
-            </div>
-          )}
 
           {/* Order info grid */}
           <div className="order-info-grid">
@@ -457,16 +416,6 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Dispute reason */}
-          {order.dispute_reason && (
-            <div className="order-detail-section">
-              <h3 className="order-detail-section-title">Dispute Reason</h3>
-              <div className="order-dispute-note" style={{ margin: 0 }}>
-                {order.dispute_reason}
-              </div>
-            </div>
-          )}
-
           {/* Order footer info */}
           <div className="order-detail-footer">
             <div className="order-detail-date">
@@ -477,8 +426,13 @@ export default function OrderDetailPage() {
               })}</span>
             </div>
             <div className="order-detail-total">
-              <span className="order-info-label">TOTAL</span>
-              <span className="order-total-amount">PKR {Number(order.total_amount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              <span className="order-info-label">{isBuyer && serviceFee > 0 ? 'TOTAL PAID' : 'TOTAL'}</span>
+              <span className="order-total-amount">
+                PKR {(isBuyer ? buyerPaidTotal : Number(order.total_amount)).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+              </span>
+              {isBuyer && serviceFee > 0 && (
+                <span className="form-hint">incl. PKR {serviceFee.toLocaleString('en-PK', { minimumFractionDigits: 2 })} service fee</span>
+              )}
             </div>
           </div>
 
@@ -498,17 +452,12 @@ export default function OrderDetailPage() {
           <div className="order-detail-actions">
             <h3 className="order-detail-section-title">Actions</h3>
             <div className="order-action-buttons">
-              {/* Buyer actions */}
-              {canOpenDispute && (
-                <>
-                  <button
-                    className="btn btn-outline"
-                    onClick={() => { setDisputeModal(true); setDisputeReason(''); }}
-                    disabled={actionLoading}
-                  >
-                    Open Dispute
-                  </button>
-                </>
+              {/* Buyer help nudge — problems are handled in the order chat */}
+              {isBuyer && order.status !== 'cancelled' && (
+                <div style={{ color: 'var(--text-tertiary)', padding: '4px 0' }}>
+                  Problem with this order? Message us in the chat — we reply fast
+                  and refund to your wallet when something is wrong.
+                </div>
               )}
 
               {/* Seller actions */}
@@ -746,118 +695,6 @@ export default function OrderDetailPage() {
         </div>
       )}
 
-      {/* Dispute Modal */}
-      {disputeModal && (
-        <div className="image-preview-overlay" onClick={() => setDisputeModal(false)}>
-          <div className="image-preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="image-preview-header">
-              <span>Open Dispute</span>
-              <button className="image-preview-close" onClick={() => setDisputeModal(false)}>✕</button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div className="form-group">
-                <label className="form-label">Reason for dispute *</label>
-                <textarea
-                  className="form-textarea"
-                  value={disputeReason}
-                  onChange={(e) => setDisputeReason(e.target.value)}
-                  placeholder="Describe the issue..."
-                  rows={4}
-                  required
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                <button className="btn btn-outline" onClick={() => setDisputeModal(false)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleDispute}
-                  disabled={!disputeReason.trim() || actionLoading}
-                >
-                  {actionLoading ? 'Submitting...' : 'Submit Dispute'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Received Modal */}
-      {confirmModal && (
-        <div className="confirm-order-overlay" onClick={() => !actionLoading && setConfirmModal(false)}>
-          <div className="confirm-order-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-order-header">
-              <div className="confirm-order-header-left">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                <h3>Confirm Order Received</h3>
-              </div>
-              <button className="confirm-order-close" onClick={() => !actionLoading && setConfirmModal(false)}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-
-            <div className="confirm-order-body">
-              {/* Item info */}
-              <div className="confirm-order-item">
-                <div className="confirm-order-item-name">{order.listing_title}</div>
-                <div className="confirm-order-item-meta">
-                  Order {displayOrderNumber} &middot; from {order.seller_name}
-                </div>
-              </div>
-
-              {/* Order summary */}
-              <div className="confirm-order-summary">
-                <div className="confirm-order-row">
-                  <span className="confirm-order-label">Quantity</span>
-                  <span className="confirm-order-value">{order.quantity}</span>
-                </div>
-                <div className="confirm-order-row">
-                  <span className="confirm-order-label">Unit Price</span>
-                  <span className="confirm-order-value">PKR {Number(order.unit_price).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div className="confirm-order-row confirm-order-row-total">
-                  <span className="confirm-order-label">Total Paid</span>
-                  <span className="confirm-order-value confirm-order-total">PKR {Number(order.total_amount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-
-              {/* Warning notice */}
-              <div className="confirm-order-notice confirm-order-notice-warning">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                This action is irreversible. Confirm only after you have reviewed the delivery.
-              </div>
-
-              <div className="confirm-order-notice">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
-                </svg>
-                Only confirm if you have received and verified the delivered item.
-              </div>
-            </div>
-
-            <div className="confirm-order-actions">
-              <button className="btn btn-outline" onClick={() => setConfirmModal(false)} disabled={actionLoading}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleConfirm} disabled={actionLoading}>
-                {actionLoading ? (
-                  <><div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> Processing...</>
-                ) : (
-                  'Yes, Confirm Received'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

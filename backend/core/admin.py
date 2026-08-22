@@ -26,6 +26,7 @@ from .services import (
     create_notification,
     decrypt_sensitive_text,
     notify_requester_item_fulfilled,
+    record_platform_ledger_once,
     record_withdrawal_approval_once,
     send_topup_status_email,
     send_withdraw_status_email,
@@ -736,7 +737,7 @@ class OrderAdmin(admin.ModelAdmin):
     # status is read-only: editing it directly would skip the refund/payout
     # logic — use the refund_and_cancel / release_to_seller actions instead.
     readonly_fields = ['order_number', 'buyer', 'seller', 'listing', 'listing_title', 'quantity',
-                       'unit_price', 'total_amount', 'commission_rate',
+                       'unit_price', 'total_amount', 'service_fee', 'commission_rate',
                        'commission_amount', 'seller_amount', 'status', 'delivery_note_status',
                        'delivered_at', 'buyer_protection_enabled',
                        'seller_payout_available_at', 'seller_payout_released_at',
@@ -802,14 +803,22 @@ class OrderAdmin(admin.ModelAdmin):
                     continue
                 was_disputed = order.status == 'disputed'
 
+                refund_total = order.total_amount + order.service_fee
                 apply_wallet_delta_once(
                     order.buyer,
-                    delta=order.total_amount,
+                    delta=refund_total,
                     transaction_type='refund',
-                    amount=order.total_amount,
+                    amount=refund_total,
                     description=f'Refund: {order.listing_title}',
                     reference_id=f'order_{order.pk}',
                 )
+                if order.service_fee > 0:
+                    record_platform_ledger_once(
+                        entry_type='service_fee_reversed',
+                        amount=-order.service_fee,
+                        description=f'Service fee reversed: {order.listing_title}',
+                        reference_id=f'order_{order.pk}',
+                    )
 
                 # Restore stock if listing still exists and has finite stock.
                 if order.listing_id:

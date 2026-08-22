@@ -475,6 +475,12 @@ JAZZCASH_ENABLED = bool(
     and JAZZCASH_INTEGRITY_SALT and JAZZCASH_RETURN_URL
 )
 
+# Flat buyer-side service fee (PKR) added to every order at checkout,
+# regardless of payment method — so topping up first never dodges it. Shown
+# as its own line before the buyer pays; refunds return it with the order
+# total. 0 disables the fee (no line shown anywhere).
+CHECKOUT_SERVICE_FEE_PKR = Decimal(str(env_int('CHECKOUT_SERVICE_FEE_PKR', 0)))
+
 # Meta (Facebook) Conversions API — server-side Purchase/CompleteRegistration
 # events, deduplicated against the browser pixel via shared event IDs
 # (core/meta_capi.py). Stays disabled until both values are configured.

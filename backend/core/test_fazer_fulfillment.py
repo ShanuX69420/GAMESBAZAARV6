@@ -277,7 +277,7 @@ class PurchaseHookTests(FazerTestBase):
         self.listing.quantity = 1
         self.listing.save()
         order = self.buy()
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         self.assertFalse(FazerFulfillmentTask.objects.filter(order=order).exists())
 
     def test_topup_buy_api_requires_player_id(self):
@@ -406,7 +406,7 @@ class EngineTests(FazerTestBase):
         order.refresh_from_db()
 
         self.assertEqual(task.status, 'delivered')
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         self.assertTrue(order.was_auto_delivery)
         self.assertIsNotNone(order.delivered_at)
         self.assertEqual(decrypt_sensitive_text(order.delivery_note), 'CODE-AAA-111')
@@ -506,7 +506,7 @@ class EngineTests(FazerTestBase):
         task = self.process(order.fazer_task)
         order.refresh_from_db()
         self.assertEqual(task.status, 'delivered')
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('Top-up delivered', note)
         self.assertIn('12345678', note)
@@ -553,7 +553,7 @@ class EngineTests(FazerTestBase):
         task = self.process(task)
         order.refresh_from_db()
         self.assertEqual(task.status, 'delivered')
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         self.assertEqual(self.fake.created[-1][2], f'gb-{order.pk}')
 
     def test_dispute_before_placement_goes_quietly_manual(self):
@@ -640,7 +640,7 @@ class GiftEngineTests(FazerTestBase):
         order.refresh_from_db()
 
         self.assertEqual(task.status, 'delivered')
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         note = decrypt_sensitive_text(order.delivery_note)
         self.assertIn('Steam gift has been sent', note)
         self.assertIn(self.INVITE, note)
@@ -1013,7 +1013,7 @@ class ProcessTimerCommandTests(FazerTestBase):
         )
         call_command('process_fazer_fulfillments', verbosity=0)
         order.refresh_from_db()
-        self.assertEqual(order.status, 'delivered')
+        self.assertEqual(order.status, 'completed')
         self.assertEqual(order.fazer_task.status, 'delivered')
 
     def test_fresh_queued_task_left_for_the_worker_thread(self):

@@ -37,6 +37,7 @@ from django.utils import timezone
 from . import fazer
 from .models import FazerFulfillmentTask, FazerProductLink, Order
 from .services import (
+    complete_order_now,
     create_notification,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -609,7 +610,7 @@ def _deliver(task, supplier_orders):
         delivery_text = (
             f'Top-up delivered directly to your account'
             f'{f" — ID {id_bits}" if id_bits else ""}{name_part}. '
-            'Please check in-game and press «Confirm order» on the order page.'
+            'Please check in-game — if anything is missing, message us here.'
         )
     elif task.kind == 'gift':
         info = _checkout_info(order).get('fields') or {}
@@ -618,8 +619,8 @@ def _deliver(task, supplier_orders):
             'Your Steam gift has been sent to your account'
             f'{f" ({invite})" if invite else ""}. '
             'Open Steam, accept the friend request if one is pending, and '
-            'accept the gift — it stays in your library forever. Then please '
-            'press «Confirm order» on the order page.'
+            'accept the gift — it stays in your library forever. If anything '
+            'goes wrong, message us here.'
         )
     else:
         codes = []
@@ -647,11 +648,13 @@ def _deliver(task, supplier_orders):
             )
             return
         locked.delivery_note = encrypted_note
-        locked.status = 'delivered'
         locked.delivered_at = now
         locked.was_auto_delivery = True
-        locked.save(update_fields=['delivery_note', 'status', 'delivered_at',
+        locked.save(update_fields=['delivery_note', 'delivered_at',
                                    'was_auto_delivery', 'updated_at'])
+        # Shop flow: delivered means done — complete and credit the house
+        # seller in the same transaction.
+        complete_order_now(locked)
 
         post_order_chat_message(
             locked,
@@ -665,9 +668,9 @@ def _deliver(task, supplier_orders):
             sender=locked.seller,
             content=(
                 f'Order #{locked.order_number} was delivered automatically. '
-                f'{locked.buyer.username}, please check the delivery details and '
-                'press the «Confirm order» button on the order page once '
-                'everything works.'
+                f'{locked.buyer.username}, please check the delivery details — '
+                'if anything is wrong, message us right here and we will sort '
+                'it out.'
             ),
         )
         create_notification(

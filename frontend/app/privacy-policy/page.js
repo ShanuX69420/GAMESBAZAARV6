@@ -41,7 +41,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Account details:</strong> Your username, email address, and password when you sign up.</li>
               <li><strong>Profile info:</strong> Your profile picture and any other details you choose to share.</li>
               <li><strong>Payment details:</strong> Bank account title, account number, and bank name when you request withdrawals.</li>
-              <li><strong>Transaction &amp; protection data:</strong> Order details, confirmation timestamps, and buyer protection hold status. For orders covered by our 14-Day Buyer Protection, we retain transaction records for at least 14 days after delivery confirmation to facilitate dispute resolution.</li>
+              <li><strong>Transaction data:</strong> Order details, delivery timestamps, and payment records &mdash; retained so we can trace and resolve any problem with your order.</li>
               <li><strong>Messages:</strong> The conversations you have with other users through our built-in chat system.</li>
               <li><strong>Reviews &amp; reports:</strong> Any reviews you write or reports you submit.</li>
             </ul>
@@ -83,14 +83,8 @@ export default function PrivacyPolicyPage() {
             </div>
             <div className="legal-grid-item">
               <div>
-                <strong>Enforce Buyer Protection</strong>
-                <p>Manage the 14-day fund hold, track protection windows, and process post-delivery disputes.</p>
-              </div>
-            </div>
-            <div className="legal-grid-item">
-              <div>
                 <strong>Send notifications</strong>
-                <p>Keep you updated about orders, messages, protection hold releases, and important account activity.</p>
+                <p>Keep you updated about orders, messages, and important account activity.</p>
               </div>
             </div>
             <div className="legal-grid-item">
@@ -107,8 +101,8 @@ export default function PrivacyPolicyPage() {
             </div>
             <div className="legal-grid-item">
               <div>
-                <strong>Resolve disputes</strong>
-                <p>Investigate issues between buyers and sellers and enforce our rules fairly, including during the 14-day protection window.</p>
+                <strong>Resolve problems</strong>
+                <p>Investigate order issues and enforce our rules fairly.</p>
               </div>
             </div>
           </div>

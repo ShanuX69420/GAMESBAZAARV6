@@ -51,13 +51,10 @@ from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
     MAX_AUTO_DELIVERY_LINES,
     MAX_DELIVERY_NOTE_LENGTH,
-    MAX_DISPUTE_REASON_LENGTH,
     RegisterSerializer,
     WalletTransactionSerializer,
 )
 from .services import (
-    AUTO_CONFIRM_ORDER_AFTER,
-    BUYER_PROTECTION_HOLD,
     create_email_verification_token,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -789,39 +786,6 @@ class PurchaseFlowTests(TestCase):
 
         self.client.force_authenticate(user=self.buyer)
 
-    def create_confirmed_protected_order(self, *, release_at=None):
-        self.category.commission_rate = Decimal('10.00')
-        self.category.buyer_protection_enabled = True
-        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Protected dispute item',
-            price=Decimal('50.00'),
-            quantity=1,
-            status='active',
-        )
-        buy_response = self.client.post(
-            '/api/orders/buy/',
-            {'listing_id': listing.id, 'quantity': 1},
-            format='json',
-        )
-        self.assertEqual(buy_response.status_code, 201)
-        order = Order.objects.get(pk=buy_response.data['id'])
-        order.status = 'delivered'
-        order.delivered_at = timezone.now()
-        order.save(update_fields=['status', 'delivered_at'])
-        confirm_response = self.client.post(
-            f'/api/orders/{order.pk}/confirm/',
-            {},
-            format='json',
-        )
-        self.assertEqual(confirm_response.status_code, 200)
-        order.refresh_from_db()
-        if release_at is not None:
-            order.seller_payout_available_at = release_at
-            order.save(update_fields=['seller_payout_available_at'])
-        return order
 
     def test_cannot_buy_more_than_available_stock(self):
         listing = Listing.objects.create(
@@ -881,7 +845,7 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(detail_response.data['id'], buy_response.data['id'])
         self.assertEqual(detail_response.data['order_number'], order_number)
 
-    def test_delivery_and_confirm_accept_public_order_number_reference(self):
+    def test_delivery_accepts_public_order_number_and_completes(self):
         listing = Listing.objects.create(
             seller=self.seller,
             game_category=self.game_category,
@@ -903,18 +867,12 @@ class PurchaseFlowTests(TestCase):
             {'delivery_note': 'Delivered by public reference.'},
             format='json',
         )
-        self.client.force_authenticate(user=self.buyer)
-        confirm_response = self.client.post(
-            f'/api/orders/{order_number}/confirm/',
-            {},
-            format='json',
-        )
 
         self.assertEqual(deliver_response.status_code, 200)
-        self.assertEqual(confirm_response.status_code, 200)
-        self.assertEqual(confirm_response.data['status'], 'completed')
+        # Shop flow: delivering completes the order — no confirm step.
+        self.assertEqual(deliver_response.data['status'], 'completed')
 
-    def test_dispute_and_refund_accept_public_order_number_reference(self):
+    def test_refund_accepts_public_order_number_reference(self):
         listing = Listing.objects.create(
             seller=self.seller,
             game_category=self.game_category,
@@ -930,11 +888,6 @@ class PurchaseFlowTests(TestCase):
         )
         order_number = buy_response.data['order_number']
 
-        dispute_response = self.client.post(
-            f'/api/orders/{order_number}/dispute/',
-            {'reason': 'Something went wrong.'},
-            format='json',
-        )
         self.client.force_authenticate(user=self.seller)
         refund_response = self.client.post(
             f'/api/orders/{order_number}/refund/',
@@ -942,7 +895,6 @@ class PurchaseFlowTests(TestCase):
             format='json',
         )
 
-        self.assertEqual(dispute_response.status_code, 200)
         self.assertEqual(refund_response.status_code, 200)
         self.assertEqual(refund_response.data['status'], 'cancelled')
 
@@ -1075,7 +1027,7 @@ class PurchaseFlowTests(TestCase):
             format='json',
         )
         self.assertEqual(buy_response.status_code, 201)
-        self.assertEqual(buy_response.data['status'], 'delivered')
+        self.assertEqual(buy_response.data['status'], 'completed')
 
         listing.refresh_from_db()
         self.assertEqual(listing.quantity, 0)
@@ -1276,7 +1228,7 @@ class PurchaseFlowTests(TestCase):
         self.assertIn('auto_delivery_data', too_many_response.data)
         self.assertIn('auto_delivery_data', long_line_response.data)
 
-    def test_confirm_order_records_platform_commission_ledger(self):
+    def test_delivering_order_records_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
         self.category.save(update_fields=['commission_rate'])
         listing = Listing.objects.create(
@@ -1294,19 +1246,18 @@ class PurchaseFlowTests(TestCase):
             format='json',
         )
         self.assertEqual(buy_response.status_code, 201)
-
         order_id = buy_response.data['id']
-        order = Order.objects.get(pk=order_id)
-        order.status = 'delivered'
-        order.save(update_fields=['status'])
 
-        confirm_response = self.client.post(
-            f'/api/orders/{order_id}/confirm/',
-            {},
+        # Shop flow: delivering completes the order and credits the seller.
+        self.client.force_authenticate(user=self.seller)
+        deliver_response = self.client.post(
+            f'/api/orders/{order_id}/deliver/',
+            {'delivery_note': 'Here you go.'},
             format='json',
         )
 
-        self.assertEqual(confirm_response.status_code, 200)
+        self.assertEqual(deliver_response.status_code, 200)
+        self.assertEqual(deliver_response.data['status'], 'completed')
         entry = PlatformLedgerEntry.objects.get(
             entry_type='commission_collected',
             reference_id=f'order_{order_id}',
@@ -1330,192 +1281,6 @@ class PurchaseFlowTests(TestCase):
         self.assertEqual(commission_tx.amount, Decimal('5.00'))
         self.assertEqual(commission_tx.balance_after, Decimal('45.00'))
 
-    def test_buyer_protected_category_holds_payout_after_confirm_until_release(self):
-        self.category.commission_rate = Decimal('10.00')
-        self.category.buyer_protection_enabled = True
-        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Protected payout item',
-            price=Decimal('50.00'),
-            quantity=1,
-            status='active',
-        )
-
-        buy_response = self.client.post(
-            '/api/orders/buy/',
-            {'listing_id': listing.id, 'quantity': 1},
-            format='json',
-        )
-        self.assertEqual(buy_response.status_code, 201)
-        order = Order.objects.get(pk=buy_response.data['id'])
-        order.status = 'delivered'
-        order.delivered_at = timezone.now()
-        order.save(update_fields=['status', 'delivered_at'])
-
-        confirm_response = self.client.post(
-            f'/api/orders/{order.pk}/confirm/',
-            {},
-            format='json',
-        )
-
-        self.assertEqual(confirm_response.status_code, 200)
-        order.refresh_from_db()
-        seller_wallet = Wallet.objects.get(user=self.seller)
-        self.assertEqual(order.status, 'completed')
-        self.assertTrue(order.buyer_protection_enabled)
-        self.assertEqual(confirm_response.data['seller_payout_status'], 'held')
-        self.assertIsNotNone(order.seller_payout_available_at)
-        self.assertIsNone(order.seller_payout_released_at)
-        self.assertGreaterEqual(
-            order.seller_payout_available_at,
-            timezone.now() + BUYER_PROTECTION_HOLD - timedelta(seconds=10),
-        )
-        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-
-        wallet_response = self.client.get('/api/wallet/')
-        self.assertEqual(wallet_response.data['held_balance'], '0.00')
-        self.client.force_authenticate(user=self.seller)
-        wallet_response = self.client.get('/api/wallet/')
-        self.assertEqual(wallet_response.data['held_balance'], '45.00')
-        self.assertEqual(wallet_response.data['held_order_count'], 1)
-
-        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
-        order.save(update_fields=['seller_payout_available_at'])
-        output = StringIO()
-        call_command('release_held_order_funds', stdout=output)
-        call_command('release_held_order_funds', stdout=StringIO())
-
-        order.refresh_from_db()
-        seller_wallet.refresh_from_db()
-        self.assertIsNotNone(order.seller_payout_released_at)
-        self.assertEqual(seller_wallet.balance, Decimal('45.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
-        )
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=seller_wallet,
-                transaction_type='commission',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
-        )
-        entry = PlatformLedgerEntry.objects.get(
-            entry_type='commission_collected',
-            reference_id=f'order_{order.pk}',
-        )
-        self.assertEqual(entry.amount, Decimal('5.00'))
-        self.assertIn('Released 1 held payout(s)', output.getvalue())
-
-    def test_refund_completed_protected_order_before_release_skips_seller_debit(self):
-        self.category.commission_rate = Decimal('10.00')
-        self.category.buyer_protection_enabled = True
-        self.category.save(update_fields=['commission_rate', 'buyer_protection_enabled'])
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Protected refund item',
-            price=Decimal('50.00'),
-            quantity=1,
-            status='active',
-        )
-
-        buy_response = self.client.post(
-            '/api/orders/buy/',
-            {'listing_id': listing.id, 'quantity': 1},
-            format='json',
-        )
-        self.assertEqual(buy_response.status_code, 201)
-        order = Order.objects.get(pk=buy_response.data['id'])
-        order.status = 'delivered'
-        order.delivered_at = timezone.now()
-        order.save(update_fields=['status', 'delivered_at'])
-        confirm_response = self.client.post(
-            f'/api/orders/{order.pk}/confirm/',
-            {},
-            format='json',
-        )
-        self.assertEqual(confirm_response.status_code, 200)
-
-        self.client.force_authenticate(user=self.seller)
-        refund_response = self.client.post(
-            f'/api/orders/{order.pk}/refund/',
-            {},
-            format='json',
-        )
-
-        self.assertEqual(refund_response.status_code, 200)
-        order.refresh_from_db()
-        self.buyer_wallet.refresh_from_db()
-        seller_wallet = Wallet.objects.get(user=self.seller)
-        self.assertEqual(order.status, 'cancelled')
-        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
-        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=seller_wallet,
-                transaction_type='refund',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-        self.assertFalse(
-            PlatformLedgerEntry.objects.filter(
-                entry_type='commission_reversed',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-
-    def test_buyer_can_dispute_completed_protected_order_during_hold(self):
-        order = self.create_confirmed_protected_order()
-
-        detail_response = self.client.get(f'/api/orders/{order.pk}/')
-        dispute_response = self.client.post(
-            f'/api/orders/{order.pk}/dispute/',
-            {'reason': 'The delivered account details do not work.'},
-            format='json',
-        )
-
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertTrue(detail_response.data['can_dispute'])
-        self.assertEqual(dispute_response.status_code, 200)
-        order.refresh_from_db()
-        self.assertEqual(order.status, 'disputed')
-        self.assertEqual(order.dispute_reason, 'The delivered account details do not work.')
-        self.assertIsNone(order.seller_payout_released_at)
-        seller_wallet = Wallet.objects.get(user=self.seller)
-        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
-
-    def test_buyer_cannot_dispute_protected_order_after_hold_expires(self):
-        order = self.create_confirmed_protected_order(
-            release_at=timezone.now() - timedelta(minutes=1),
-        )
-
-        detail_response = self.client.get(f'/api/orders/{order.pk}/')
-        dispute_response = self.client.post(
-            f'/api/orders/{order.pk}/dispute/',
-            {'reason': 'Too late dispute.'},
-            format='json',
-        )
-
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertFalse(detail_response.data['can_dispute'])
-        self.assertEqual(dispute_response.status_code, 400)
-        order.refresh_from_db()
-        self.assertEqual(order.status, 'completed')
 
     def test_completed_order_refund_reverses_platform_commission_ledger(self):
         self.category.commission_rate = Decimal('10.00')
@@ -1536,18 +1301,15 @@ class PurchaseFlowTests(TestCase):
         )
         self.assertEqual(buy_response.status_code, 201)
         order_id = buy_response.data['id']
-        order = Order.objects.get(pk=order_id)
-        order.status = 'delivered'
-        order.save(update_fields=['status'])
-
-        confirm_response = self.client.post(
-            f'/api/orders/{order_id}/confirm/',
-            {},
-            format='json',
-        )
-        self.assertEqual(confirm_response.status_code, 200)
 
         self.client.force_authenticate(user=self.seller)
+        deliver_response = self.client.post(
+            f'/api/orders/{order_id}/deliver/',
+            {'delivery_note': 'Here you go.'},
+            format='json',
+        )
+        self.assertEqual(deliver_response.status_code, 200)
+
         refund_response = self.client.post(
             f'/api/orders/{order_id}/refund/',
             {},
@@ -5601,7 +5363,7 @@ class AccessControlTests(TestCase):
         staff_response = self.client.get(f'/api/listings/{self.listing.id}/')
         self.assertEqual(staff_response.status_code, 200)
 
-    def test_order_delivery_note_and_dispute_reason_have_length_limits(self):
+    def test_order_delivery_note_has_length_limit(self):
         self.client.force_authenticate(user=self.seller)
         deliver_response = self.client.post(
             f'/api/orders/{self.order.id}/deliver/',
@@ -5609,14 +5371,6 @@ class AccessControlTests(TestCase):
             format='json',
         )
         self.assertEqual(deliver_response.status_code, 400)
-
-        self.client.force_authenticate(user=self.buyer)
-        dispute_response = self.client.post(
-            f'/api/orders/{self.order.id}/dispute/',
-            {'reason': 'x' * (MAX_DISPUTE_REASON_LENGTH + 1)},
-            format='json',
-        )
-        self.assertEqual(dispute_response.status_code, 400)
 
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
@@ -5630,16 +5384,6 @@ class AccessControlTests(TestCase):
             {'delivery_note': 'not yours'},
             format='json',
         )
-        confirm_response = self.client.post(
-            f'/api/orders/{self.order.id}/confirm/',
-            {},
-            format='json',
-        )
-        dispute_response = self.client.post(
-            f'/api/orders/{self.order.id}/dispute/',
-            {'reason': 'not yours'},
-            format='json',
-        )
         refund_response = self.client.post(
             f'/api/orders/{self.order.id}/refund/',
             {},
@@ -5648,14 +5392,12 @@ class AccessControlTests(TestCase):
 
         self.assertEqual(detail_response.status_code, 403)
         self.assertEqual(deliver_response.status_code, 404)
-        self.assertEqual(confirm_response.status_code, 404)
-        self.assertEqual(dispute_response.status_code, 404)
         self.assertEqual(refund_response.status_code, 404)
 
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
 
-    def test_buyer_and_seller_cannot_use_wrong_order_actions(self):
+    def test_buyer_cannot_use_seller_order_actions(self):
         self.client.force_authenticate(user=self.buyer)
         buyer_deliver_response = self.client.post(
             f'/api/orders/{self.order.id}/deliver/',
@@ -5668,40 +5410,12 @@ class AccessControlTests(TestCase):
             format='json',
         )
 
-        self.client.force_authenticate(user=self.seller)
-        seller_confirm_response = self.client.post(
-            f'/api/orders/{self.order.id}/confirm/',
-            {},
-            format='json',
-        )
-        seller_dispute_response = self.client.post(
-            f'/api/orders/{self.order.id}/dispute/',
-            {'reason': 'seller cannot dispute as buyer'},
-            format='json',
-        )
-
         self.assertEqual(buyer_deliver_response.status_code, 404)
         self.assertEqual(buyer_refund_response.status_code, 404)
-        self.assertEqual(seller_confirm_response.status_code, 404)
-        self.assertEqual(seller_dispute_response.status_code, 404)
 
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
 
-    def test_buyer_cannot_confirm_pending_order(self):
-        self.client.force_authenticate(user=self.buyer)
-
-        response = self.client.post(
-            f'/api/orders/{self.order.id}/confirm/',
-            {},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.order.refresh_from_db()
-        self.assertEqual(self.order.status, 'pending')
-        seller_wallet = Wallet.objects.get(user=self.seller)
-        self.assertEqual(seller_wallet.balance, Decimal('0.00'))
 
     def test_chat_non_participant_cannot_read_or_send(self):
         self.client.force_authenticate(user=self.intruder)
@@ -6187,264 +5901,8 @@ class HistoryPaginationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['pagination']['count'], 1)
 
-    def test_held_orders_returns_only_current_seller_unreleased_holds(self):
-        other_seller = User.objects.create_user(username='other_seller', password='password123')
-        release_at = timezone.now() + timedelta(days=3, hours=2)
-        held_order = self.create_order(1, status='completed', seller_amount=Decimal('25.00'))
-        held_order.buyer_protection_enabled = True
-        held_order.seller_payout_available_at = release_at
-        held_order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
-
-        released_order = self.create_order(2, status='completed', seller_amount=Decimal('10.00'))
-        released_order.buyer_protection_enabled = True
-        released_order.seller_payout_available_at = timezone.now() - timedelta(days=1)
-        released_order.seller_payout_released_at = timezone.now()
-        released_order.save(update_fields=[
-            'buyer_protection_enabled',
-            'seller_payout_available_at',
-            'seller_payout_released_at',
-        ])
-        self.create_order(3, status='completed', seller_amount=Decimal('10.00'))
-        Order.objects.create(
-            buyer=self.buyer,
-            seller=other_seller,
-            listing_title='Other seller hold',
-            quantity=1,
-            unit_price=Decimal('30.00'),
-            total_amount=Decimal('30.00'),
-            commission_rate=Decimal('0.00'),
-            commission_amount=Decimal('0.00'),
-            seller_amount=Decimal('30.00'),
-            status='completed',
-            buyer_protection_enabled=True,
-            seller_payout_available_at=release_at,
-        )
-
-        self.client.force_authenticate(user=self.seller)
-        response = self.client.get('/api/wallet/held-orders/?limit=10')
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['held_balance'], '25.00')
-        self.assertEqual(response.data['held_order_count'], 1)
-        self.assertEqual(response.data['pagination']['count'], 1)
-        self.assertEqual(len(response.data['orders']), 1)
-        self.assertEqual(response.data['orders'][0]['id'], held_order.id)
-        self.assertEqual(response.data['orders'][0]['order_number'], held_order.order_number)
-        self.assertGreater(response.data['orders'][0]['days_until_release'], 0)
 
 
-class DisputeResolutionApiTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.staff = User.objects.create_superuser(
-            username='admin',
-            email='admin@example.com',
-            password='password123',
-        )
-        self.buyer = User.objects.create_user(username='buyer', password='password123')
-        self.seller = User.objects.create_user(username='seller', password='password123')
-        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
-        self.seller_wallet = Wallet.objects.get(user=self.seller)
-
-        game = Game.objects.create(name='Test Game', slug='test-game')
-        category = Category.objects.create(
-            name='Accounts',
-            slug='accounts',
-            commission_rate=Decimal('10.00'),
-        )
-        self.game_category = GameCategory.objects.create(game=game, category=category)
-
-    def create_order(self, status='disputed'):
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Disputed item',
-            price=Decimal('100.00'),
-            quantity=0,
-            status='sold',
-        )
-        return Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=listing,
-            listing_title=listing.title,
-            quantity=1,
-            unit_price=Decimal('100.00'),
-            total_amount=Decimal('100.00'),
-            commission_rate=Decimal('10.00'),
-            commission_amount=Decimal('10.00'),
-            seller_amount=Decimal('90.00'),
-            status=status,
-        )
-
-    def test_non_staff_cannot_resolve_dispute(self):
-        order = self.create_order()
-        self.client.force_authenticate(user=self.buyer)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 403)
-        order.refresh_from_db()
-        self.assertEqual(order.status, 'disputed')
-
-    def test_resolve_dispute_rejects_invalid_action(self):
-        order = self.create_order()
-        self.client.force_authenticate(user=self.staff)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'invalid'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('resolution_action', response.data['error'])
-
-    def test_resolve_dispute_refunds_buyer_and_restores_stock(self):
-        order = self.create_order()
-        self.client.force_authenticate(user=self.staff)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        order.refresh_from_db()
-        order.listing.refresh_from_db()
-        self.buyer_wallet.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-
-        self.assertEqual(order.status, 'cancelled')
-        self.assertEqual(order.listing.quantity, 1)
-        self.assertEqual(order.listing.status, 'active')
-        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
-        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.buyer_wallet,
-                transaction_type='refund',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
-        )
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_resolve_dispute_refund_emails_dispute_result_to_both_parties(self):
-        self.buyer.email = 'dispute-buyer@example.com'
-        self.buyer.save(update_fields=['email'])
-        self.seller.email = 'dispute-seller@example.com'
-        self.seller.save(update_fields=['email'])
-        order = self.create_order()
-        self.client.force_authenticate(user=self.staff)
-        mail.outbox = []
-
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(
-                f'/api/admin/orders/{order.pk}/resolve-dispute/',
-                {'resolution_action': 'refund_buyer'},
-                format='json',
-            )
-
-        self.assertEqual(response.status_code, 200)
-        recipients = {message.to[0] for message in mail.outbox}
-        self.assertEqual(recipients, {'dispute-buyer@example.com', 'dispute-seller@example.com'})
-        self.assertTrue(all('Dispute Result' in message.subject for message in mail.outbox))
-
-    def test_resolve_dispute_refund_does_not_restore_auto_delivery_stock(self):
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Disputed auto delivery item',
-            price=Decimal('100.00'),
-            quantity=0,
-            status='sold',
-            is_auto_delivery=True,
-            auto_delivery_data='',
-        )
-        order = Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=listing,
-            listing_title=listing.title,
-            quantity=1,
-            unit_price=Decimal('100.00'),
-            total_amount=Decimal('100.00'),
-            commission_rate=Decimal('10.00'),
-            commission_amount=Decimal('10.00'),
-            seller_amount=Decimal('90.00'),
-            status='disputed',
-            delivery_note='code-one',
-        )
-        self.client.force_authenticate(user=self.staff)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        listing.refresh_from_db()
-        self.assertEqual(listing.quantity, 0)
-        self.assertEqual(listing.status, 'sold')
-        self.assertEqual(listing.auto_delivery_data, '')
-
-    def test_resolve_dispute_pays_seller_and_records_commission(self):
-        order = self.create_order()
-        self.client.force_authenticate(user=self.staff)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'pay_seller'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        order.refresh_from_db()
-        self.buyer_wallet.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-
-        self.assertEqual(order.status, 'completed')
-        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
-        self.assertEqual(self.seller_wallet.balance, Decimal('90.00'))
-        sale_tx = WalletTransaction.objects.get(
-            wallet=self.seller_wallet,
-            transaction_type='sale',
-            reference_id=f'order_{order.pk}',
-        )
-        commission_tx = WalletTransaction.objects.get(
-            wallet=self.seller_wallet,
-            transaction_type='commission',
-            reference_id=f'order_{order.pk}',
-        )
-        self.assertEqual(sale_tx.amount, Decimal('100.00'))
-        self.assertEqual(sale_tx.balance_after, Decimal('100.00'))
-        self.assertEqual(commission_tx.amount, Decimal('10.00'))
-        self.assertEqual(commission_tx.balance_after, Decimal('90.00'))
-        entry = PlatformLedgerEntry.objects.get(
-            entry_type='commission_collected',
-            reference_id=f'order_{order.pk}',
-        )
-        self.assertEqual(entry.amount, Decimal('10.00'))
-
-    def test_resolve_dispute_rejects_non_disputed_order(self):
-        order = self.create_order(status='pending')
-        self.client.force_authenticate(user=self.staff)
-
-        response = self.client.post(
-            f'/api/admin/orders/{order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'Only disputed orders can be resolved.')
 
 
 class AdminMoneyActionTests(TestCase):
@@ -7284,96 +6742,6 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
             thread.join(timeout=10)
         return results
 
-    def test_concurrent_confirm_releases_seller_funds_once(self):
-        order = self.create_order(status='delivered')
-
-        results = self.post_concurrently(
-            self.buyer,
-            f'/api/orders/{order.id}/confirm/',
-        )
-
-        self.assertEqual(results.count(200), 2, results)
-
-        order.refresh_from_db()
-        self.assertEqual(order.status, 'completed')
-
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.id}',
-            ).count(),
-            1,
-        )
-
-    def test_concurrent_deliver_and_confirm_never_confirms_before_delivery(self):
-        order = self.create_order(status='pending')
-
-        results = self.post_pairs_concurrently([
-            (
-                self.seller,
-                f'/api/orders/{order.id}/deliver/',
-                {'delivery_note': 'delivered'},
-            ),
-            (
-                self.buyer,
-                f'/api/orders/{order.id}/confirm/',
-                {},
-            ),
-        ])
-
-        self.assertIn(results[0], (200, 400), results)
-        self.assertIn(results[1], (200, 400), results)
-        self.assertIn(200, results)
-
-        order.refresh_from_db()
-        sale_count = WalletTransaction.objects.filter(
-            wallet=self.seller_wallet,
-            transaction_type='sale',
-            reference_id=f'order_{order.id}',
-        ).count()
-
-        self.seller_wallet.refresh_from_db()
-        if sale_count:
-            self.assertEqual(order.status, 'completed')
-            self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-        else:
-            self.assertEqual(order.status, 'delivered')
-            self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertLessEqual(sale_count, 1)
-
-    def test_concurrent_dispute_and_confirm_cannot_dispute_paid_order(self):
-        order = self.create_order(status='pending')
-
-        results = self.post_pairs_concurrently([
-            (
-                self.buyer,
-                f'/api/orders/{order.id}/dispute/',
-                {'reason': 'not delivered'},
-            ),
-            (
-                self.buyer,
-                f'/api/orders/{order.id}/confirm/',
-                {},
-            ),
-        ])
-
-        self.assertEqual(results.count(200), 1, results)
-        self.assertEqual(results.count(400), 1, results)
-
-        order.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(order.status, 'disputed')
-        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.id}',
-            ).exists()
-        )
 
     def test_concurrent_refund_reverses_completed_order_once(self):
         order = self.create_order(status='completed')
@@ -7417,285 +6785,6 @@ class ConcurrentOrderStateTransitionTests(TransactionTestCase):
         )
 
 
-class AutoConfirmOrderTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.buyer = User.objects.create_user(username='auto_buyer', password='password123')
-        self.seller = User.objects.create_user(username='auto_seller', password='password123')
-        self.seller.profile.seller_status = 'approved'
-        self.seller.profile.save(update_fields=['seller_status'])
-
-        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
-        self.buyer_wallet.balance = Decimal('500.00')
-        self.buyer_wallet.save(update_fields=['balance'])
-
-        self.seller_wallet = Wallet.objects.get(user=self.seller)
-        self.seller_wallet.balance = Decimal('0.00')
-        self.seller_wallet.save(update_fields=['balance'])
-
-        game = Game.objects.create(name='Auto Confirm Game', slug='auto-confirm-game')
-        category = Category.objects.create(
-            name='Accounts',
-            slug='auto-accounts',
-            commission_rate=Decimal('0.00'),
-        )
-        self.game_category = GameCategory.objects.create(game=game, category=category)
-
-    def create_order(self, *, status='delivered', delivered_at=None, title='Auto item'):
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title=title,
-            price=Decimal('50.00'),
-            quantity=0,
-            status='sold',
-        )
-        return Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=listing,
-            listing_title=listing.title,
-            quantity=1,
-            unit_price=Decimal('50.00'),
-            total_amount=Decimal('50.00'),
-            commission_rate=Decimal('0.00'),
-            commission_amount=Decimal('0.00'),
-            seller_amount=Decimal('50.00'),
-            status=status,
-            delivered_at=delivered_at,
-        )
-
-    def test_deliver_sets_auto_confirm_deadline(self):
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Manual delivery item',
-            price=Decimal('50.00'),
-            quantity=1,
-            status='active',
-        )
-
-        self.client.force_authenticate(user=self.buyer)
-        buy_response = self.client.post(
-            '/api/orders/buy/',
-            {'listing_id': listing.id, 'quantity': 1},
-            format='json',
-        )
-        self.assertEqual(buy_response.status_code, 201)
-
-        self.client.force_authenticate(user=self.seller)
-        deliver_response = self.client.post(
-            f'/api/orders/{buy_response.data["id"]}/deliver/',
-            {'delivery_note': 'delivered'},
-            format='json',
-        )
-        self.assertEqual(deliver_response.status_code, 200)
-
-        order = Order.objects.get(pk=buy_response.data['id'])
-        self.assertIsNotNone(order.delivered_at)
-        self.assertEqual(deliver_response.data['status'], 'delivered')
-        self.assertIsNotNone(deliver_response.data['auto_confirm_at'])
-
-    def test_auto_delivery_purchase_sets_auto_confirm_deadline(self):
-        self.game_category.allow_auto_delivery = True
-        self.game_category.save(update_fields=['allow_auto_delivery'])
-        listing = Listing.objects.create(
-            seller=self.seller,
-            game_category=self.game_category,
-            title='Instant delivery item',
-            price=Decimal('50.00'),
-            quantity=1,
-            status='active',
-            is_auto_delivery=True,
-            auto_delivery_data=encrypt_sensitive_text('code-one'),
-        )
-
-        self.client.force_authenticate(user=self.buyer)
-        response = self.client.post(
-            '/api/orders/buy/',
-            {'listing_id': listing.id, 'quantity': 1},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 201)
-        order = Order.objects.get(pk=response.data['id'])
-        self.assertEqual(order.status, 'delivered')
-        self.assertIsNotNone(order.delivered_at)
-        self.assertIsNotNone(response.data['auto_confirm_at'])
-
-    def test_auto_confirm_command_completes_due_delivered_order_once(self):
-        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
-        order = self.create_order(delivered_at=delivered_at)
-
-        first_output = StringIO()
-        call_command('auto_confirm_orders', stdout=first_output)
-        second_output = StringIO()
-        call_command('auto_confirm_orders', stdout=second_output)
-
-        order.refresh_from_db()
-        self.assertEqual(order.status, 'completed')
-
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-        self.assertEqual(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).count(),
-            1,
-        )
-        self.assertEqual(
-            Notification.objects.filter(
-                recipient=self.seller,
-                notification_type='order_confirmed',
-                order=order,
-            ).count(),
-            1,
-        )
-        self.assertIn('Auto-confirmed 1 order(s)', first_output.getvalue())
-        self.assertIn('Auto-confirmed 0 order(s)', second_output.getvalue())
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_auto_confirm_command_sends_seller_completed_email(self):
-        self.buyer.email = 'auto-buyer@example.com'
-        self.buyer.save(update_fields=['email'])
-        self.seller.email = 'auto-seller@example.com'
-        self.seller.save(update_fields=['email'])
-        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
-        self.create_order(delivered_at=delivered_at)
-        mail.outbox = []
-
-        with self.captureOnCommitCallbacks(execute=True):
-            call_command('auto_confirm_orders', stdout=StringIO())
-
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['auto-seller@example.com'])
-        self.assertIn('Order Completed', mail.outbox[0].subject)
-        self.assertNotIn('auto_buyer', mail.outbox[0].body)
-
-    def test_auto_confirm_command_dry_run_does_not_complete_due_order(self):
-        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
-        order = self.create_order(delivered_at=delivered_at)
-
-        output = StringIO()
-        call_command('auto_confirm_orders', '--dry-run', stdout=output)
-
-        order.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(order.status, 'delivered')
-        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-        self.assertIn('1 delivered order(s) are due for auto-confirmation', output.getvalue())
-
-    def test_auto_confirm_holds_protected_category_payout_until_release_command(self):
-        self.game_category.category.buyer_protection_enabled = True
-        self.game_category.category.save(update_fields=['buyer_protection_enabled'])
-        delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
-        order = self.create_order(delivered_at=delivered_at)
-        order.buyer_protection_enabled = True
-        order.save(update_fields=['buyer_protection_enabled'])
-
-        call_command('auto_confirm_orders', stdout=StringIO())
-
-        order.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(order.status, 'completed')
-        self.assertIsNotNone(order.seller_payout_available_at)
-        self.assertIsNone(order.seller_payout_released_at)
-        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-
-        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
-        order.save(update_fields=['seller_payout_available_at'])
-        call_command('release_held_order_funds', stdout=StringIO())
-
-        order.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-        self.assertIsNotNone(order.seller_payout_released_at)
-        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_release_held_order_funds_sends_seller_email(self):
-        self.seller.email = 'protected-seller@example.com'
-        self.seller.save(update_fields=['email'])
-        order = self.create_order(status='completed', delivered_at=timezone.now())
-        order.buyer_protection_enabled = True
-        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
-        order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
-        mail.outbox = []
-
-        with self.captureOnCommitCallbacks(execute=True):
-            call_command('release_held_order_funds', stdout=StringIO())
-
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['protected-seller@example.com'])
-        self.assertIn('Order Completed', mail.outbox[0].subject)
-        self.assertNotIn('buyer protection', mail.outbox[0].body.lower())
-        self.assertNotIn('buyer protection', mail.outbox[0].subject.lower())
-
-    def test_release_held_order_funds_dry_run_does_not_release_due_hold(self):
-        order = self.create_order(status='completed', delivered_at=timezone.now())
-        order.buyer_protection_enabled = True
-        order.seller_payout_available_at = timezone.now() - timedelta(minutes=1)
-        order.save(update_fields=['buyer_protection_enabled', 'seller_payout_available_at'])
-
-        output = StringIO()
-        call_command('release_held_order_funds', '--dry-run', stdout=output)
-
-        order.refresh_from_db()
-        self.seller_wallet.refresh_from_db()
-        self.assertIsNone(order.seller_payout_released_at)
-        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
-        self.assertFalse(
-            WalletTransaction.objects.filter(
-                wallet=self.seller_wallet,
-                transaction_type='sale',
-                reference_id=f'order_{order.pk}',
-            ).exists()
-        )
-        self.assertIn('1 held payout(s) are due for release', output.getvalue())
-
-    def test_payout_maintenance_commands_reject_invalid_batch_size(self):
-        with self.assertRaises(CommandError):
-            call_command('auto_confirm_orders', '--batch-size', '0', stdout=StringIO())
-        with self.assertRaises(CommandError):
-            call_command('release_held_order_funds', '--batch-size', '0', stdout=StringIO())
-
-    def test_auto_confirm_command_skips_fresh_and_disputed_orders(self):
-        old_delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(minutes=1)
-        fresh_delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER + timedelta(minutes=1)
-        due_order = self.create_order(delivered_at=old_delivered_at, title='Due item')
-        fresh_order = self.create_order(delivered_at=fresh_delivered_at, title='Fresh item')
-        disputed_order = self.create_order(
-            status='disputed',
-            delivered_at=old_delivered_at,
-            title='Disputed item',
-        )
-
-        call_command('auto_confirm_orders', stdout=StringIO())
-
-        due_order.refresh_from_db()
-        fresh_order.refresh_from_db()
-        disputed_order.refresh_from_db()
-        self.assertEqual(due_order.status, 'completed')
-        self.assertEqual(fresh_order.status, 'delivered')
-        self.assertEqual(disputed_order.status, 'disputed')
-
-        self.seller_wallet.refresh_from_db()
-        self.assertEqual(self.seller_wallet.balance, Decimal('50.00'))
 
 
 class ReviewTests(TestCase):
@@ -8651,83 +7740,6 @@ class NotificationTests(TestCase):
         self.assertIn('Order Delivered', mail.outbox[0].subject)
         self.assertNotIn('notif_buyer', mail.outbox[0].body)
 
-    def test_confirm_creates_notification_for_seller(self):
-        """Confirming an order should create an order_confirmed notification for the seller."""
-        self.client.force_authenticate(user=self.buyer)
-        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
-        order_id = resp.data['id']
-
-        self.client.force_authenticate(user=self.seller)
-        self.client.post(f'/api/orders/{order_id}/deliver/')
-
-        self.client.force_authenticate(user=self.buyer)
-        self.client.post(f'/api/orders/{order_id}/confirm/')
-
-        notif = Notification.objects.filter(recipient=self.seller, notification_type='order_confirmed').first()
-        self.assertIsNotNone(notif)
-        self.assertIn('confirmed', notif.title.lower())
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_confirm_sends_funds_released_email_to_seller(self):
-        """Buyer confirmation should email the seller when normal-order funds release."""
-        self.buyer.email = 'confirm-buyer@example.com'
-        self.buyer.save(update_fields=['email'])
-        self.seller.email = 'confirm-seller@example.com'
-        self.seller.save(update_fields=['email'])
-
-        self.client.force_authenticate(user=self.buyer)
-        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
-        order_id = resp.data['id']
-
-        self.client.force_authenticate(user=self.seller)
-        self.client.post(f'/api/orders/{order_id}/deliver/')
-
-        mail.outbox.clear()
-        self.client.force_authenticate(user=self.buyer)
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/orders/{order_id}/confirm/')
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['confirm-seller@example.com'])
-        self.assertIn('Order Completed', mail.outbox[0].subject)
-        self.assertNotIn('confirm_buyer', mail.outbox[0].body)
-
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-    def test_protected_confirm_waits_to_email_seller_until_payout_release(self):
-        """Protected orders should not email completion until seller funds are credited."""
-        self.seller.email = 'protected-confirm-seller@example.com'
-        self.seller.save(update_fields=['email'])
-        category = self.listing.game_category.category
-        category.buyer_protection_enabled = True
-        category.save(update_fields=['buyer_protection_enabled'])
-
-        self.client.force_authenticate(user=self.buyer)
-        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
-        order_id = resp.data['id']
-
-        self.client.force_authenticate(user=self.seller)
-        self.client.post(f'/api/orders/{order_id}/deliver/')
-
-        mail.outbox.clear()
-        self.client.force_authenticate(user=self.buyer)
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/orders/{order_id}/confirm/')
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(mail.outbox, [])
-
-    def test_dispute_creates_notification_for_seller(self):
-        """Disputing an order should create an order_disputed notification for the seller."""
-        self.client.force_authenticate(user=self.buyer)
-        resp = self.client.post('/api/orders/buy/', {'listing_id': self.listing.id, 'quantity': 1})
-        order_id = resp.data['id']
-
-        self.client.post(f'/api/orders/{order_id}/dispute/', {'reason': 'Scam'})
-
-        notif = Notification.objects.filter(recipient=self.seller, notification_type='order_disputed').first()
-        self.assertIsNotNone(notif)
-        self.assertIn('disputed', notif.title.lower())
 
     def test_review_creates_notification_for_seller(self):
         """Leaving a review should create a new_review notification for the seller."""
@@ -8739,8 +7751,6 @@ class NotificationTests(TestCase):
         self.client.post(f'/api/orders/{order_id}/deliver/')
 
         self.client.force_authenticate(user=self.buyer)
-        self.client.post(f'/api/orders/{order_id}/confirm/')
-
         self.client.post('/api/reviews/', {'order_id': order_id, 'rating': 5, 'comment': 'Great!'})
 
         notif = Notification.objects.filter(recipient=self.seller, notification_type='new_review').first()
@@ -9539,38 +8549,6 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(delivery.sender, self.seller)
         self.assertEqual(decrypt_sensitive_text(delivery.content), 'Account: foo / Pass: bar')
 
-    def test_confirm_posts_completion_notice(self):
-        listing = self._create_listing()
-        order = self._buy(listing)
-        order.status = 'delivered'
-        order.delivered_at = timezone.now()
-        order.save(update_fields=['status', 'delivered_at'])
-
-        response = self.client.post(f'/api/orders/{order.pk}/confirm/', {}, format='json')
-        self.assertEqual(response.status_code, 200)
-
-        notice = order.conversation.messages.get(system_event='order_confirmed')
-        self.assertEqual(notice.sender, self.buyer)
-        self.assertIn(f'#{order.order_number}', notice.content)
-        self.assertIn('confirmed', notice.content)
-
-    def test_auto_confirm_posts_completion_notice(self):
-        from .services import auto_confirm_due_orders
-
-        listing = self._create_listing()
-        order = self._buy(listing)
-        order.status = 'delivered'
-        order.delivered_at = timezone.now() - AUTO_CONFIRM_ORDER_AFTER - timedelta(hours=1)
-        order.save(update_fields=['status', 'delivered_at'])
-
-        result = auto_confirm_due_orders()
-        self.assertIn(order.pk, result['order_ids'])
-
-        notice = order.conversation.messages.get(system_event='order_confirmed')
-        # No participant actor — the auto-confirm notice badges both parties
-        self.assertIsNone(notice.sender)
-        self.assertIn('automatically', notice.content)
-        self.assertIn(f'#{order.order_number}', notice.content)
 
     def test_seller_refund_posts_refund_notice(self):
         listing = self._create_listing()
@@ -9585,20 +8563,6 @@ class OrderChatMessageTests(TestCase):
         self.assertIn(f'#{order.order_number}', notice.content)
         self.assertIn('refund', notice.content.lower())
 
-    def test_dispute_posts_dispute_notice(self):
-        listing = self._create_listing()
-        order = self._buy(listing)
-
-        response = self.client.post(
-            f'/api/orders/{order.pk}/dispute/',
-            {'reason': 'Item was never delivered to me.'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-
-        notice = order.conversation.messages.get(system_event='order_disputed')
-        self.assertEqual(notice.sender, self.buyer)
-        self.assertIn(f'#{order.order_number}', notice.content)
 
     def test_review_posts_feedback_notice(self):
         listing = self._create_listing()
@@ -9681,50 +8645,6 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(convo['last_message']['sender_name'], 'chatseller')
         self.assertNotIn('SECRET-KEY-123', str(response.data))
 
-    def test_dispute_resolution_posts_outcome_notice(self):
-        admin = User.objects.create_superuser(username='chatadmin', password='password123')
-        listing = self._create_listing(quantity=2)
-
-        refunded_order = self._buy(listing)
-        self.client.post(
-            f'/api/orders/{refunded_order.pk}/dispute/',
-            {'reason': 'Item was never delivered to me.'},
-            format='json',
-        )
-        self.client.force_authenticate(user=admin)
-        response = self.client.post(
-            f'/api/admin/orders/{refunded_order.pk}/resolve-dispute/',
-            {'resolution_action': 'refund_buyer'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        notice = refunded_order.conversation.messages.filter(
-            system_event='order_refunded'
-        ).latest('pk')
-        # Admin decisions have no participant actor — badge both parties
-        self.assertIsNone(notice.sender)
-        self.assertIn('dispute', notice.content.lower())
-        self.assertIn('chatbuyer', notice.content)
-
-        self.client.force_authenticate(user=self.buyer)
-        completed_order = self._buy(listing)
-        self.client.post(
-            f'/api/orders/{completed_order.pk}/dispute/',
-            {'reason': 'Second thoughts about this one.'},
-            format='json',
-        )
-        self.client.force_authenticate(user=admin)
-        response = self.client.post(
-            f'/api/admin/orders/{completed_order.pk}/resolve-dispute/',
-            {'resolution_action': 'pay_seller'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200)
-        notice = completed_order.conversation.messages.filter(
-            system_event='order_confirmed'
-        ).latest('pk')
-        self.assertIn('dispute', notice.content.lower())
-        self.assertIn('chatseller', notice.content)
 
 
 class AdminDirectTopUpCreditTests(TestCase):
@@ -10040,3 +8960,277 @@ class SiteReviewsStripTests(TestCase):
         response = self.client.get('/api/reviews/site/')
 
         self.assertEqual(len(response.data['reviews']), 2)
+
+
+@override_settings(CHECKOUT_SERVICE_FEE_PKR=Decimal('25.00'))
+class CheckoutServiceFeeTests(TestCase):
+    """The flat checkout service fee: charged with every order, refunded with it."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='feebuyer', password='password123')
+        self.seller = User.objects.create_user(username='feeseller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
+        self.buyer_wallet.balance = Decimal('100.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        game = Game.objects.create(name='Fee Game', slug='fee-game')
+        self.category = Category.objects.create(name='Fee Accounts', slug='fee-accounts')
+        self.game_category = GameCategory.objects.create(game=game, category=self.category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Fee item',
+            price=Decimal('50.00'),
+            quantity=5,
+            status='active',
+        )
+
+        self.client.force_authenticate(user=self.buyer)
+
+    def buy(self):
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': self.listing.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        return Order.objects.get(pk=response.data['id'])
+
+    def test_fee_is_charged_recorded_and_reported(self):
+        order = self.buy()
+
+        self.assertEqual(order.total_amount, Decimal('50.00'))
+        self.assertEqual(order.service_fee, Decimal('25.00'))
+        # Seller economics stay on the item total — the fee is not commissioned.
+        self.assertEqual(order.seller_amount, Decimal('50.00') - order.commission_amount)
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('25.00'))
+        tx = WalletTransaction.objects.get(
+            wallet=self.buyer_wallet,
+            transaction_type='purchase',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(tx.amount, Decimal('75.00'))
+        self.assertIn('service fee', tx.description)
+
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='service_fee_collected',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(entry.amount, Decimal('25.00'))
+
+        detail = self.client.get(f'/api/orders/{order.order_number}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data['service_fee'], '25.00')
+
+    def test_balance_covering_items_but_not_fee_is_rejected(self):
+        self.buyer_wallet.balance = Decimal('60.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': self.listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Insufficient wallet balance.')
+        self.assertFalse(Order.objects.exists())
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.quantity, 5)
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('60.00'))
+
+    @override_settings(CHECKOUT_SERVICE_FEE_PKR=Decimal('0.00'))
+    def test_zero_fee_charges_item_total_only(self):
+        order = self.buy()
+
+        self.assertEqual(order.service_fee, Decimal('0.00'))
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('50.00'))
+        self.assertFalse(
+            PlatformLedgerEntry.objects.filter(
+                entry_type='service_fee_collected',
+            ).exists()
+        )
+
+    def test_seller_refund_returns_fee_and_reverses_ledger(self):
+        order = self.buy()
+
+        self.client.force_authenticate(user=self.seller)
+        response = self.client.post(f'/api/orders/{order.order_number}/refund/')
+        self.assertEqual(response.status_code, 200)
+
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+        refund_tx = WalletTransaction.objects.get(
+            wallet=self.buyer_wallet,
+            transaction_type='refund',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(refund_tx.amount, Decimal('75.00'))
+        reversal = PlatformLedgerEntry.objects.get(
+            entry_type='service_fee_reversed',
+            reference_id=f'order_{order.pk}',
+        )
+        self.assertEqual(reversal.amount, Decimal('-25.00'))
+
+
+    def test_admin_refund_and_cancel_returns_fee(self):
+        order = self.buy()
+
+        site = AdminSite()
+        request = RequestFactory().post('/admin/')
+        request.user = User.objects.create_superuser(
+            username='feeadmin', email='feeadmin@example.com', password='password123',
+        )
+        admin_obj = OrderAdmin(Order, site)
+        with patch.object(admin_obj, 'message_user'):
+            admin_obj.refund_and_cancel(request, Order.objects.filter(pk=order.pk))
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'cancelled')
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('100.00'))
+        self.assertTrue(
+            PlatformLedgerEntry.objects.filter(
+                entry_type='service_fee_reversed',
+                reference_id=f'order_{order.pk}',
+            ).exists()
+        )
+
+
+class ShopOrderCompletionTests(TestCase):
+    """Escrow retirement: an order is complete the moment it is delivered."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='shopbuyer', password='password123')
+        self.seller = User.objects.create_user(username='shopseller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        self.buyer_wallet = Wallet.objects.get(user=self.buyer)
+        self.buyer_wallet.balance = Decimal('100.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+        self.seller_wallet = Wallet.objects.get(user=self.seller)
+
+        game = Game.objects.create(name='Shop Game', slug='shop-game')
+        self.category = Category.objects.create(
+            name='Shop Accounts', slug='shop-accounts',
+            commission_rate=Decimal('10.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=self.category)
+
+        self.client.force_authenticate(user=self.buyer)
+
+    def make_order(self, status, **extra):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Legacy order item',
+            price=Decimal('50.00'),
+            quantity=0,
+            status='sold',
+        )
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            listing_title=listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status=status,
+            **extra,
+        )
+
+    def test_auto_delivery_purchase_completes_and_credits_seller_immediately(self):
+        listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='Instant item',
+            price=Decimal('50.00'),
+            quantity=1,
+            status='active',
+            is_auto_delivery=True,
+            auto_delivery_data='code-one',
+        )
+
+        response = self.client.post(
+            '/api/orders/buy/',
+            {'listing_id': listing.id, 'quantity': 1},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['status'], 'completed')
+        order_id = response.data['id']
+
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(self.seller_wallet.balance, Decimal('45.00'))
+        self.assertTrue(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet,
+                transaction_type='sale',
+                reference_id=f'order_{order_id}',
+            ).exists()
+        )
+        entry = PlatformLedgerEntry.objects.get(
+            entry_type='commission_collected',
+            reference_id=f'order_{order_id}',
+        )
+        self.assertEqual(entry.amount, Decimal('5.00'))
+
+        # No confirm step: the buyer can review right away.
+        review_response = self.client.post(
+            '/api/reviews/',
+            {'order_id': order_id, 'rating': 5, 'comment': 'Instant and works.'},
+            format='json',
+        )
+        self.assertEqual(review_response.status_code, 201)
+
+    def test_close_escrow_completes_delivered_and_releases_held_orders_once(self):
+        delivered = self.make_order('delivered', delivered_at=timezone.now())
+        held = self.make_order(
+            'completed',
+            buyer_protection_enabled=True,
+            seller_payout_available_at=timezone.now() + timedelta(days=10),
+        )
+
+        call_command('close_escrow', stdout=StringIO())
+        call_command('close_escrow', stdout=StringIO())
+
+        delivered.refresh_from_db()
+        held.refresh_from_db()
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(delivered.status, 'completed')
+        self.assertIsNotNone(delivered.seller_payout_released_at)
+        self.assertIsNotNone(held.seller_payout_released_at)
+        # 45.00 for each order, credited exactly once despite the second run.
+        self.assertEqual(self.seller_wallet.balance, Decimal('90.00'))
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet=self.seller_wallet, transaction_type='sale',
+            ).count(),
+            2,
+        )
+
+    def test_close_escrow_dry_run_changes_nothing(self):
+        self.make_order('delivered', delivered_at=timezone.now())
+
+        output = StringIO()
+        call_command('close_escrow', '--dry-run', stdout=output)
+
+        self.assertIn('1 delivered order(s)', output.getvalue())
+        self.assertEqual(Order.objects.filter(status='delivered').count(), 1)
+        self.seller_wallet.refresh_from_db()
+        self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))

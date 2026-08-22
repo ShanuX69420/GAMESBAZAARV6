@@ -421,14 +421,6 @@ export async function getWithdrawRequests(pagination = {}) {
   return res.json();
 }
 
-export async function getHeldOrders(pagination = {}) {
-  const res = await authFetch(`${API_BASE}/api/wallet/held-orders/${paginationQuery(pagination)}`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error('Failed to get held orders');
-  return res.json();
-}
-
 // ── JazzCash API ────────────────────────────────────────────────────────────
 
 export async function initiateJazzCashTopUp(amount, mobileNumber) {
@@ -571,17 +563,6 @@ export async function deliverOrder(id, deliveryNote = '') {
   return data;
 }
 
-export async function confirmOrder(id) {
-  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/confirm/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({}),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to confirm order');
-  return data;
-}
-
 export async function getGuardCode(id) {
   const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/guard-code/`, {
     method: 'POST',
@@ -590,17 +571,6 @@ export async function getGuardCode(id) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to get Steam Guard code');
-  return data;
-}
-
-export async function disputeOrder(id, reason) {
-  const res = await authFetch(`${API_BASE}/api/orders/${pathSegment(id)}/dispute/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ reason }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to dispute order');
   return data;
 }
 

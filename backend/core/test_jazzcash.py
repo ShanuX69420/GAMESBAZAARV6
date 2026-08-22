@@ -354,6 +354,54 @@ class JazzCashPaymentFlowTests(TestCase):
         self.listing.refresh_from_db()
         self.assertEqual(self.listing.quantity, 1)
 
+    @override_settings(CHECKOUT_SERVICE_FEE_PKR=Decimal('25.00'))
+    def test_direct_buy_shortfall_covers_the_service_fee(self):
+        self.buyer_wallet.balance = Decimal('30.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        def fake_post(path, payload):
+            return self._gateway_response(
+                code='000', txn_ref_no=payload['pp_TxnRefNo'],
+                pp_Amount=payload['pp_Amount'],
+            )
+
+        with patch('core.jazzcash._post', side_effect=fake_post):
+            response = self.client.post(
+                '/api/payments/jazzcash/buy/',
+                {'listing_id': self.listing.id, 'quantity': 1,
+                 'mobile_number': '03001234567'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        payment = JazzCashPayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.status, 'completed')
+        # Item 150 + fee 25 = 175 to cover; 30 in wallet → charge 145.
+        self.assertEqual(payment.amount, Decimal('145.00'))
+        order = Order.objects.get(pk=payment.order_id)
+        self.assertEqual(order.total_amount, Decimal('150.00'))
+        self.assertEqual(order.service_fee, Decimal('25.00'))
+
+        # 30 wallet + 145 JazzCash - 175 purchase = nothing left over.
+        self.buyer_wallet.refresh_from_db()
+        self.assertEqual(self.buyer_wallet.balance, Decimal('0.00'))
+
+    @override_settings(CHECKOUT_SERVICE_FEE_PKR=Decimal('25.00'))
+    def test_direct_buy_rejected_when_balance_covers_total_plus_fee(self):
+        self.buyer_wallet.balance = Decimal('175.00')
+        self.buyer_wallet.save(update_fields=['balance'])
+
+        response = self.client.post(
+            '/api/payments/jazzcash/buy/',
+            {'listing_id': self.listing.id, 'quantity': 1,
+             'mobile_number': '03001234567'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('enough wallet balance', response.data['error'])
+        self.assertFalse(JazzCashPayment.objects.exists())
+
     def test_direct_buy_tops_up_only_the_shortfall(self):
         self.buyer_wallet.balance = Decimal('750.00')
         self.buyer_wallet.save(update_fields=['balance'])

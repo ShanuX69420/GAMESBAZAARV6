@@ -13,15 +13,15 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I buy something on GamesBazaar?',
-        a: 'Browse games, find a listing you like, click "Buy Now", and confirm the purchase. The payment is held securely until you receive and confirm your order. For categories with Buyer Protection, your funds stay held for an additional 14 days after confirmation — giving you a safety net to dispute any issues.',
+        a: 'Browse games, find a listing you like, click "Buy Now", and pay — from your wallet balance or directly at checkout. Many items are delivered instantly; the rest arrive in your order chat within the delivery time shown on the listing.',
       },
       {
         q: 'What if I don\'t receive my order?',
-        a: 'If your order isn\'t delivered within the expected time, you can open a dispute from your order page. For protected orders, you can even dispute within 14 days after confirming delivery if something goes wrong (like account recovery by the original owner). Our team will investigate and resolve the issue — including a full refund if necessary.',
+        a: 'If your order isn\'t delivered within the expected time, message us from the order page — it goes straight to our team. We\'ll deliver it, fix it, or refund you in full.',
       },
       {
         q: 'Can I get a refund?',
-        a: 'Yes! If your order isn\'t delivered or the item doesn\'t match the description, you can dispute it from the order page. For orders with 14-Day Buyer Protection, you can still raise a dispute within 14 days even after confirming delivery. Refunds are credited back instantly as wallet balance.',
+        a: 'Yes! If your order isn\'t delivered or the item doesn\'t match the description, message us from the order page and we\'ll sort it out. Refunds are credited back instantly as wallet balance.',
       },
     ],
   },
@@ -30,7 +30,7 @@ const FAQ_ITEMS = [
     questions: [
       {
         q: 'How do I add funds to my wallet?',
-        a: 'Go to your Wallet page and click "Add Funds" — pay instantly with JazzCash, or message us on WhatsApp (0371 2101998) to pay via Easypaisa or bank transfer. Your wallet is credited within minutes.',
+        a: 'You don\'t need a wallet balance to buy — checkout can charge your JazzCash account directly. To add funds anyway, go to your Wallet page and click "Add Funds" — pay instantly with JazzCash, or message us on WhatsApp (0371 2101998) to pay via Easypaisa or bank transfer. Your wallet is credited within minutes.',
       },
       {
         q: 'How do I withdraw money from my wallet?',
@@ -38,7 +38,7 @@ const FAQ_ITEMS = [
       },
       {
         q: 'Are my payments secure?',
-        a: 'Absolutely. Your payment stays protected until you confirm delivery. For eligible categories, our 14-Day Buyer Protection adds another layer: you can still dispute the order for a full 14 days after confirming delivery, and refunds are credited back instantly.',
+        a: 'Absolutely. Every payment goes through our secure checkout, and if anything is wrong with your order we fix it or refund you — refunds are credited back to your wallet instantly.',
       },
     ],
   },

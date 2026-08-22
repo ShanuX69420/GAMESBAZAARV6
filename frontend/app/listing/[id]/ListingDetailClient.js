@@ -315,8 +315,12 @@ export default function ListingDetailClient({ initialListing = null }) {
   }
 
   const totalPrice = (listing.price * quantity).toFixed(2);
+  // Flat checkout service fee from the backend (0 = no fee, no fee rows).
+  // Guests see item-only prices until they log in and the wallet loads.
+  const serviceFee = wallet ? (parseFloat(wallet.checkout_service_fee) || 0) : 0;
+  const orderTotal = parseFloat(totalPrice) + serviceFee;
   const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
-  const hasBalance = wallet && walletBalance >= parseFloat(totalPrice);
+  const hasBalance = wallet && walletBalance >= orderTotal;
   const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
   const isInstant = listing.is_auto_delivery || listing.instant_delivery;
@@ -330,8 +334,8 @@ export default function ListingDetailClient({ initialListing = null }) {
   // JazzCash only covers what the wallet is missing, subject to the gateway's
   // minimum charge — anything above the shortfall lands back in the wallet.
   const payWithJazzCash = !hasBalance && jazzCashEnabled;
-  const walletApplied = Math.min(walletBalance, parseFloat(totalPrice));
-  const jazzCashShortfall = Math.max(0, parseFloat(totalPrice) - walletBalance);
+  const walletApplied = Math.min(walletBalance, orderTotal);
+  const jazzCashShortfall = Math.max(0, orderTotal - walletBalance);
   const jazzCashCharge = Math.max(jazzCashShortfall, MIN_JAZZCASH_PAYMENT);
   const jazzCashChange = jazzCashCharge - jazzCashShortfall;
   // The initiate endpoint answers "pending" right away and we poll while the
@@ -561,7 +565,8 @@ export default function ListingDetailClient({ initialListing = null }) {
 
                   {(quantity > 1 || isCurrency) && (
                     <div className="buy-total">
-                      Total: <strong>PKR {formatPKR(totalPrice)}</strong>
+                      Total: <strong>PKR {formatPKR(orderTotal)}</strong>
+                      {serviceFee > 0 && <> (incl. PKR {formatPKR(serviceFee)} service fee)</>}
                     </div>
                   )}
 
@@ -584,7 +589,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                     onClick={user ? openConfirmModal : goToLoginToBuy}
                     disabled={buying || !currencyQtyValid || (Boolean(user) && !canBuy)}
                   >
-                    {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(totalPrice)}`}
+                    {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(orderTotal)}`}
                   </button>
                   {payWithJazzCash && (
                     <div className="form-hint" style={{ marginTop: '6px', textAlign: 'center' }}>
@@ -607,7 +612,8 @@ export default function ListingDetailClient({ initialListing = null }) {
                   <div className="trust-signal-body">
                     <div className="trust-signal-title">Secure Payment</div>
                     <div className="trust-signal-text">
-                      We hold your money — the seller is only paid after you confirm delivery.
+                      Anything wrong with your order? Message us — we make it
+                      right or refund straight to your wallet.
                     </div>
                   </div>
                 </div>
@@ -626,23 +632,6 @@ export default function ListingDetailClient({ initialListing = null }) {
                   </div>
                 )}
 
-                {listing.buyer_protection_enabled && (
-                  <div className="trust-signal">
-                    <svg className="trust-signal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                      <polyline points="9 12 11 14 15 10"/>
-                    </svg>
-                    <div className="trust-signal-body">
-                      {/* Scoped to this listing on purpose — buyer protection is
-                          a per-category flag, so never imply sitewide cover. */}
-                      <div className="trust-signal-title">14-Day Money-Back Guarantee</div>
-                      <div className="trust-signal-text">
-                        Item not as described or stops working? Report it within
-                        14 days for a full refund.
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -807,9 +796,21 @@ export default function ListingDetailClient({ initialListing = null }) {
                     </span>
                   </div>
                 )}
+                {serviceFee > 0 && (
+                  <>
+                    <div className="confirm-order-row">
+                      <span className="confirm-order-label">Items</span>
+                      <span className="confirm-order-value">PKR {formatPKR(totalPrice)}</span>
+                    </div>
+                    <div className="confirm-order-row">
+                      <span className="confirm-order-label">Service Fee</span>
+                      <span className="confirm-order-value">PKR {formatPKR(serviceFee)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="confirm-order-row confirm-order-row-total">
                   <span className="confirm-order-label">Total</span>
-                  <span className="confirm-order-value confirm-order-total">PKR {Number(totalPrice).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+                  <span className="confirm-order-value confirm-order-total">PKR {formatPKR(orderTotal)}</span>
                 </div>
               </div>
 
@@ -864,7 +865,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                     <div className="confirm-order-row">
                       <span className="confirm-order-label">After Purchase</span>
                       <span className="confirm-order-value" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
-                        PKR {formatPKR(walletBalance - parseFloat(totalPrice))}
+                        PKR {formatPKR(walletBalance - orderTotal)}
                       </span>
                     </div>
                   ) : payWithJazzCash ? (
@@ -946,7 +947,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                 </svg>
-                Your payment is protected — the seller only receives it after you confirm delivery.
+                Anything wrong with your order? Message us from the order page — we make it right or refund your wallet.
               </div>
 
               {buyError && <div className="alert alert-error" style={{ margin: '0' }}>{buyError}</div>}
@@ -967,7 +968,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                 ) : payWithJazzCash ? (
                   `Pay with JazzCash — PKR ${formatPKR(jazzCashCharge)}`
                 ) : (
-                  `Confirm Purchase — PKR ${formatPKR(totalPrice)}`
+                  `Confirm Purchase — PKR ${formatPKR(orderTotal)}`
                 )}
               </button>
             </div>

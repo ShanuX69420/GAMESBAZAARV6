@@ -49,9 +49,8 @@ export async function generateMetadata({ params }) {
       .filter(Boolean);
     const categoryText = categoryParts.length ? `${categoryParts.join(' ')} listing` : 'listing';
     const sellerText = cleanText(listing.seller_name) ? ` sold by ${cleanText(listing.seller_name)}` : '';
-    const protectionText = listing.buyer_protection_enabled ? ' with buyer protection' : '';
     const description = truncateDescription(
-      `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText}${sellerText}${protectionText} and secure checkout.`
+      `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText}${sellerText} with instant delivery and secure checkout.`
     );
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
@@ -65,7 +64,7 @@ export async function generateMetadata({ params }) {
     });
   } catch {
     const title = listingId ? `Listing ${listingId}` : 'Listing';
-    const description = 'View this GamesBazaar listing with secure checkout, buyer protection, and seller chat.';
+    const description = 'View this GamesBazaar listing with secure checkout and instant delivery.';
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
     return createPublicMetadata({

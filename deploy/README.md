@@ -17,10 +17,11 @@ backend HTTP — there are no websockets since the 2026-08 shop conversion
 (the old `gamesbazaar-backend` daphne service was retired with it).
 After a backend code deploy, restart `gamesbazaar-web`.
 
-Timers: `auto-confirm` and `reconcile-jazzcash` every 10 min,
-`release-holds` every 30 min, `fazer-fulfill` every 1 min (Fazer
+Timers: `reconcile-jazzcash` every 10 min, `fazer-fulfill` every 1 min (Fazer
 auto-fulfillment driver — safety net behind the in-process worker),
 `db-backup` nightly at 21:30 UTC (02:30 PKT).
+The old `auto-confirm` and `release-holds` timers were retired with escrow in
+the 2026-08 shop conversion — orders complete on delivery, nothing is held.
 After copying units: `systemctl daemon-reload && systemctl enable --now <name>.timer`.
 
 Secrets are NOT in this folder — they live only in

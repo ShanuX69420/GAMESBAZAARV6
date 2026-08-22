@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE } from '../lib/config';
 import {
   changePassword,
-  confirmOrder,
   confirmEmailChange,
   confirmPasswordReset,
   deliverOrder,
-  disputeOrder,
   fetchGames,
   fetchGame,
   fetchGameCategory,
@@ -15,7 +13,6 @@ import {
   getAutoDeliveryStockItem,
   getConversations,
   sendMessage,
-  getHeldOrders,
   getMySupportTickets,
   getMyListings,
   getMyOrders,
@@ -216,7 +213,7 @@ describe('API client helpers', () => {
     );
   });
 
-  it('encodes seller sales filters and held order pagination', async () => {
+  it('encodes seller sales filters', async () => {
     await getMySales({
       limit: 20,
       beforeId: 42,
@@ -226,19 +223,9 @@ describe('API client helpers', () => {
       date_from: '2026-01-01',
       date_to: '2026-01-31',
     });
-    await getHeldOrders({ limit: 10, offset: 20 });
 
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
+    expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/orders/sales/?limit=20&before_id=42&cursor=1&status=completed&search=buyer%2Bprime&date_from=2026-01-01&date_to=2026-01-31`,
-      {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      `${API_BASE}/api/wallet/held-orders/?limit=10&offset=20`,
       {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -343,8 +330,6 @@ describe('API client helpers', () => {
 
     await getOrderDetail(orderRef);
     await deliverOrder(orderRef, 'Delivered');
-    await confirmOrder(orderRef);
-    await disputeOrder(orderRef, 'Missing item');
     await refundOrder(orderRef);
 
     const encoded = 'GB-ABCD%2BEFGH%2FIJKL';
@@ -368,26 +353,6 @@ describe('API client helpers', () => {
     );
     expect(fetch).toHaveBeenNthCalledWith(
       3,
-      `${API_BASE}/api/orders/${encoded}/confirm/`,
-      {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      4,
-      `${API_BASE}/api/orders/${encoded}/dispute/`,
-      {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Missing item' }),
-      }
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      5,
       `${API_BASE}/api/orders/${encoded}/refund/`,
       {
         credentials: 'include',

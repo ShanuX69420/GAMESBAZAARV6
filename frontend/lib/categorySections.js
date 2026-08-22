@@ -8,7 +8,7 @@ export const CATEGORY_SECTIONS = [
     heading: 'All Game Keys',
     title: 'Buy Game Keys',
     description:
-      'Browse every game with keys for sale on GamesBazaar — Steam, PSN, Xbox and more. Buy game keys in PKR from verified sellers with fast delivery and buyer protection.',
+      'Browse every game with keys for sale on GamesBazaar — Steam, PSN, Xbox and more. Buy game keys in PKR with instant delivery and easy refunds.',
   },
   {
     slug: 'accounts',
@@ -16,7 +16,7 @@ export const CATEGORY_SECTIONS = [
     heading: 'All Game Accounts',
     title: 'Buy Game Accounts',
     description:
-      'Browse every game with accounts for sale on GamesBazaar. Buy game accounts in PKR from verified sellers with secure payments and buyer protection.',
+      'Browse every game with accounts for sale on GamesBazaar. Buy game accounts in PKR with secure payments and easy refunds.',
   },
   {
     slug: 'top-ups',
@@ -24,7 +24,7 @@ export const CATEGORY_SECTIONS = [
     heading: 'All Top Ups',
     title: 'Buy Game Top-Ups',
     description:
-      'Browse every game with top-ups on GamesBazaar — PUBG Mobile UC, Free Fire Diamonds, and more. Fast delivery, PKR pricing, and buyer protection.',
+      'Browse every game with top-ups on GamesBazaar — PUBG Mobile UC, Free Fire Diamonds, and more. Fast delivery, PKR pricing, and easy refunds.',
   },
   {
     slug: 'offline-activation',
@@ -32,7 +32,7 @@ export const CATEGORY_SECTIONS = [
     heading: 'All Offline Activation Games',
     title: 'Offline Activation Games',
     description:
-      'Browse every game available with offline activation on GamesBazaar. Play top PC titles for less, with fast delivery and PKR pricing from verified sellers.',
+      'Browse every game available with offline activation on GamesBazaar. Play top PC titles for less, with fast delivery and PKR pricing.',
   },
   {
     slug: 'gift-cards',
