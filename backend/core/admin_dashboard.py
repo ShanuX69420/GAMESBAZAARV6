@@ -184,7 +184,7 @@ class GamesBazaarAdminSite(AdminSite):
         from core.models import (
             Order, Listing, UserProfile, Wallet,
             TopUpRequest, Review, Game, Conversation,
-            Message,
+            Message, WhatsAppCheckout,
         )
 
         User = get_user_model()
@@ -249,6 +249,18 @@ class GamesBazaarAdminSite(AdminSite):
                 gmv=Sum('total_amount')
             )['gmv'] or 0
         )
+
+        # WhatsApp sales — logged by hand in WhatsAppCheckoutAdmin; they
+        # create no Order rows, so the site numbers above never include
+        # them. Period-filtered on completed_at: the sale happened when it
+        # was recorded, not when the buyer first clicked.
+        wa_qs = WhatsAppCheckout.objects.filter(status='completed')
+        if since:
+            wa_qs = wa_qs.filter(_since_filter('completed_at'))
+        wa_agg = wa_qs.aggregate(count=Count('id'), revenue=Sum('amount'))
+        whatsapp_sales = wa_agg['count'] or 0
+        whatsapp_revenue = float(wa_agg['revenue'] or 0)
+        all_channels_revenue = total_revenue + whatsapp_revenue
 
         # Wallets
         wallet_agg = Wallet.objects.aggregate(
@@ -379,6 +391,9 @@ class GamesBazaarAdminSite(AdminSite):
                 'disputed_orders': disputed_orders,
                 'cancelled_orders': cancelled_orders,
                 'total_revenue': total_revenue,
+                'whatsapp_sales': whatsapp_sales,
+                'whatsapp_revenue': whatsapp_revenue,
+                'all_channels_revenue': all_channels_revenue,
                 'total_commission': total_commission,
                 'total_seller_payouts': total_seller_payouts,
                 'avg_order_value': avg_order_value,

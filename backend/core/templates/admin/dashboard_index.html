@@ -428,6 +428,12 @@
         <div class="kpi-sub">Avg order: <span class="highlight">${fmtPKR(k.avg_order_value)}</span></div>
       </div>
       <div class="kpi-card revenue">
+        <div class="kpi-icon">💬</div>
+        <div class="kpi-label">WhatsApp Sales</div>
+        <div class="kpi-value">${fmtPKR(k.whatsapp_revenue)}</div>
+        <div class="kpi-sub">${fmt(k.whatsapp_sales)} sale${k.whatsapp_sales === 1 ? '' : 's'} · All channels: <span class="highlight">${fmtPKR(k.all_channels_revenue)}</span></div>
+      </div>
+      <div class="kpi-card revenue">
         <div class="kpi-icon">🏦</div>
         <div class="kpi-label">Platform Commission</div>
         <div class="kpi-value">${fmtPKR(k.total_commission)}</div>

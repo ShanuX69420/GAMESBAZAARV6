@@ -10,7 +10,8 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.contrib.auth.models import User
+from django.test import Client, TestCase, override_settings
 
 from . import meta_capi
 from .models import Listing, WhatsAppCheckout
@@ -199,3 +200,24 @@ class WhatsAppCompletionTests(PurchaseFixtureMixin, TestCase):
 
         (event,) = dispatch.call_args.args[0]['data']
         self.assertEqual(event['user_data'], {'ph': [sha256('923001234567')]})
+
+    def test_completed_sales_reach_the_admin_dashboard(self):
+        # WhatsApp sales create no Order rows, so the dashboard reads them
+        # from WhatsAppCheckout directly — clicked rows must not count.
+        self._complete(self._make_checkout(amount=Decimal('500.00')))
+        self._make_checkout(amount=Decimal('999.00'))  # clicked, never sold
+
+        staff = User.objects.create_user(
+            username='dashstaff', password='password123',
+            is_staff=True, is_superuser=True,
+        )
+        web = Client()
+        web.force_login(staff)
+        kpis = web.get('/admin/dashboard/stats/').json()['kpis']
+
+        self.assertEqual(kpis['whatsapp_sales'], 1)
+        self.assertEqual(kpis['whatsapp_revenue'], 500.0)
+        self.assertEqual(
+            kpis['all_channels_revenue'],
+            kpis['total_revenue'] + 500.0,
+        )
