@@ -828,7 +828,7 @@ export default function GameCategoryClient({ initialData = null }) {
                 </div>
               ) : (
                 <p className="offer-no-others">
-                  {bestOffer ? 'No other sellers for this option right now.' : 'Be the first seller to make an offer for this option.'}
+                  {bestOffer ? 'No other offers for this option right now.' : 'This option is out of stock right now.'}
                 </p>
               )}
             </div>

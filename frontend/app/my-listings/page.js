@@ -351,7 +351,7 @@ export default function MyListingsPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h1 className="page-title">My Listings</h1>
-            <p className="page-subtitle">Manage your marketplace listings</p>
+            <p className="page-subtitle">Manage your store listings</p>
           </div>
           <Link href="/dashboard/create-listing" className="btn btn-primary">
             + Create New Listing

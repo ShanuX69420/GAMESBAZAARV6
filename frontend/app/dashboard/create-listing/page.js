@@ -305,8 +305,8 @@ export default function CreateListingPage() {
                         ]}
                       />
                       <span className="form-hint">
-                        Your offer will appear under this option, competing with other sellers
-                        on price and delivery time. The listing title is set automatically.
+                        Your offer will appear under this option. The listing title is set
+                        automatically.
                       </span>
                     </>
                   ) : (
@@ -344,8 +344,8 @@ export default function CreateListingPage() {
                     />
                     {listingMode === 'currency' && (
                       <span className="form-hint">
-                        Your offer competes with other sellers on price{unitName ? ` per ${unitName}` : ''},
-                        stock and minimum quantity. The listing title is set automatically.
+                        Buyers see your price{unitName ? ` per ${unitName}` : ''}, stock and
+                        minimum quantity. The listing title is set automatically.
                       </span>
                     )}
                   </div>

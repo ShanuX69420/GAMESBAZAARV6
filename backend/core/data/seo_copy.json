@@ -10,8 +10,12 @@
     "lines starting with '## ' become subheadings.",
     "Payment wording rule: never JazzCash-only - say 'JazzCash, Easypaisa or",
     "bank transfer' or 'Pakistani payment methods', varied per page.",
-    "Copy voice rule: write for a MULTI-SELLER marketplace - never hardcode",
-    "one seller's delivery mechanic; mechanics live on listings.",
+    "Copy voice rule (INVERTED 2026-08-23, shop conversion): GamesBazaar is",
+    "a single-seller SHOP - write as 'we'/'GamesBazaar', never 'sellers on",
+    "GamesBazaar'. NEVER claim escrow / 'payment held until you confirm'",
+    "(retired 2026-08-22) or pre-purchase seller chat. Approved trust voice:",
+    "problems fixed fast, easy refunds, help one message away (order chat).",
+    "All 113 entries rewritten to shop voice 2026-08-23.",
     "Batch 1 (2026-07-17): highest-search Pakistani pages - mobile top-ups,",
     "gift cards, Steam keys.",
     "Batch 2 (2026-07-17): keys + accounts pages for the 10 biggest PC",
@@ -40,792 +44,792 @@
       "game": "pubg-mobile",
       "category": "uc",
       "seo_title": "Buy PUBG Mobile UC in Pakistan — Instant Top-Up",
-      "seo_description": "Top up PUBG Mobile UC in minutes and pay with JazzCash, Easypaisa or bank transfer. PKR prices, all popular UC packs, buyer protection on every order.",
-      "seo_body": "## PUBG Mobile UC top-up at PKR prices\n\nBuy UC for PUBG Mobile in Pakistani rupees and pay the way you already pay for everything else — JazzCash, Easypaisa, bank transfer and other Pakistani payment methods all work. Choose a UC pack, place your order, and follow the delivery steps in the order chat — every listing explains exactly what the seller needs, and most top-ups are completed within minutes.\n\n## Why buy UC on GamesBazaar\n\nEvery order is covered by buyer protection: your payment is held safely and only released to the seller once you confirm the UC arrived. Prices are in PKR with no hidden conversion charges, and support is one chat message away whenever you need help."
+      "seo_description": "Top up PUBG Mobile UC in minutes and pay with JazzCash, Easypaisa or bank transfer. PKR prices, all popular UC packs, easy refunds if anything goes wrong.",
+      "seo_body": "## PUBG Mobile UC top-up at PKR prices\n\nBuy UC for PUBG Mobile in Pakistani rupees and pay the way you already pay for everything else — JazzCash, Easypaisa, bank transfer and other Pakistani payment methods all work. Choose a UC pack, place your order, and follow the delivery steps in the order chat — every listing explains exactly what's needed, and most top-ups are completed within minutes.\n\n## Why buy UC on GamesBazaar\n\nPrices are in PKR with no hidden conversion charges, and if an order ever goes wrong we fix it fast — refunds are easy. Help is one chat message away whenever you need it."
     },
     {
       "game": "pubg-mobile",
       "category": "gift-cards",
       "seo_title": "PUBG Mobile UC Vouchers & Gift Cards in Pakistan",
       "seo_description": "Buy PUBG Mobile UC voucher codes at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Codes arrive in minutes; ideal for gifting UC to friends.",
-      "seo_body": "## UC voucher codes, delivered in minutes\n\nA UC voucher is a code you redeem on your own account whenever you like, so you stay in full control. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or other local methods, receive the code in your order chat within minutes, and redeem it for UC when you're ready.\n\n## A safe way to gift UC\n\nBecause vouchers are simple codes, they're perfect for gifting UC to a friend or topping up a second account. Your payment stays protected until you confirm the code works, so there's no risk of paying for a dead code."
+      "seo_body": "## UC voucher codes, delivered in minutes\n\nA UC voucher is a code you redeem on your own account whenever you like, so you stay in full control. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or other local methods, receive the code in your order chat within minutes, and redeem it for UC when you're ready.\n\n## A safe way to gift UC\n\nBecause vouchers are simple codes, they're perfect for gifting UC to a friend or topping up a second account. If a code ever fails, we replace it or refund you — no risk of paying for a dead code."
     },
     {
       "game": "free-fire",
       "category": "diamonds",
       "seo_title": "Buy Free Fire Diamonds in Pakistan — Cheap Top-Up",
       "seo_description": "Free Fire diamond top-ups at PKR prices with JazzCash, Easypaisa or bank transfer. Delivered to your player ID in minutes — Pakistan server supported.",
-      "seo_body": "## Free Fire diamond top-up by player ID\n\nPick a diamond pack, enter your Free Fire player ID, and the diamonds are topped up directly on your account — no password needed, usually within minutes. Pakistani server players are fully supported, and international servers are available too; just pick the region that matches your account.\n\n## PKR prices, Pakistani payment methods\n\nAll prices are in Pakistani rupees and you can pay with JazzCash, Easypaisa, bank transfer or other local methods, so there are no dollar conversions or foreign payment headaches. Buyer protection holds your payment until you confirm the diamonds arrived, and memberships are available alongside regular diamond packs."
+      "seo_body": "## Free Fire diamond top-up by player ID\n\nPick a diamond pack, enter your Free Fire player ID, and the diamonds are topped up directly on your account — no password needed, usually within minutes. Pakistani server players are fully supported, and international servers are available too; just pick the region that matches your account.\n\n## PKR prices, Pakistani payment methods\n\nAll prices are in Pakistani rupees and you can pay with JazzCash, Easypaisa, bank transfer or other local methods, so there are no dollar conversions or foreign payment headaches. If a top-up ever goes wrong we sort it out quickly — easy refunds — and memberships are available alongside regular diamond packs."
     },
     {
       "game": "free-fire",
       "category": "gift-cards",
       "seo_title": "Free Fire Diamond Voucher Codes in Pakistan",
-      "seo_description": "Buy Free Fire diamond gift cards at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Voucher codes delivered in minutes with buyer protection.",
-      "seo_body": "## Diamond vouchers you redeem yourself\n\nThese are Free Fire voucher codes: you buy the card, receive the code in minutes, and redeem it on your own account. Check the region on each listing and pick the one that matches your Free Fire account before ordering.\n\n## Simple, protected checkout\n\nPay in Pakistani rupees with any popular local payment method, and your money stays protected until you confirm the code redeemed successfully. If anything is unclear, the seller is one chat message away."
+      "seo_description": "Buy Free Fire diamond gift cards at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Voucher codes delivered in minutes — replaced or refunded if one fails.",
+      "seo_body": "## Diamond vouchers you redeem yourself\n\nThese are Free Fire voucher codes: you buy the card, receive the code in minutes, and redeem it on your own account. Check the region on each listing and pick the one that matches your Free Fire account before ordering.\n\n## Simple, worry-free checkout\n\nPay in Pakistani rupees with any popular local payment method. If a code doesn't redeem, message us in the order chat and we'll sort it out fast — replacement or refund."
     },
     {
       "game": "steam",
       "category": "gift-cards",
       "seo_title": "Buy Steam Wallet Gift Cards in Pakistan",
       "seo_description": "Steam Wallet codes at PKR prices — pay with JazzCash, Easypaisa or bank transfer. Pakistan and dozens of other regions, delivered within minutes.",
-      "seo_body": "## Steam Wallet codes for Pakistani gamers\n\nTop up your Steam Wallet without a credit card: pay in Pakistani rupees — JazzCash, Easypaisa and bank transfer all work — and receive your wallet code within minutes. Codes are available for the Pakistan Steam store as well as dozens of other regions.\n\n## Match the region to your account\n\nSteam Wallet codes are region-locked, so always pick the region your Steam account actually uses — for most players here, that's the Pakistan store. Every purchase is covered by buyer protection: the seller is only paid after you confirm your code worked."
+      "seo_body": "## Steam Wallet codes for Pakistani gamers\n\nTop up your Steam Wallet without a credit card: pay in Pakistani rupees — JazzCash, Easypaisa and bank transfer all work — and receive your wallet code within minutes. Codes are available for the Pakistan Steam store as well as dozens of other regions.\n\n## Match the region to your account\n\nSteam Wallet codes are region-locked, so always pick the region your Steam account actually uses — for most players here, that's the Pakistan store. If a code doesn't work, tell us in the order chat and we'll fix it quickly — easy refunds when we can't."
     },
     {
       "game": "steam",
       "category": "keys",
       "seo_title": "Buy Steam Games & Keys Cheap in Pakistan",
       "seo_description": "Hundreds of Steam games at PKR prices — pay with JazzCash, Easypaisa or bank transfer and get your game as a key or Steam gift, usually within minutes.",
-      "seo_body": "## Cheap Steam games, paid in rupees\n\nThis page collects every Steam game key on GamesBazaar in one place — use the search and filters to find your game. Prices are in Pakistani rupees, every popular Pakistani payment method is accepted, and most orders are delivered within minutes.\n\n## How delivery works\n\nDepending on the listing, you either get a key to redeem on Steam, receive the game as a Steam gift, or the seller activates it for you — in every case the game ends up in your own Steam library. Keys can be region-locked, so check the region noted on each listing. Your payment is protected until you confirm the game is in your library."
+      "seo_body": "## Cheap Steam games, paid in rupees\n\nThis page collects every Steam game key on GamesBazaar in one place — use the search and filters to find your game. Prices are in Pakistani rupees, every popular Pakistani payment method is accepted, and most orders are delivered within minutes.\n\n## How delivery works\n\nDepending on the listing, you either get a key to redeem on Steam, receive the game as a Steam gift, or we activate it for you — in every case the game ends up in your own Steam library. Keys can be region-locked, so check the region noted on each listing. If a delivery ever goes wrong, we make it right — easy refunds."
     },
     {
       "game": "playstation",
       "category": "gift-cards",
       "seo_title": "Buy PSN Gift Cards in Pakistan — All Regions",
       "seo_description": "PSN wallet codes at PKR prices with JazzCash, Easypaisa or bank transfer. US, UK, UAE and many more regions, delivered in minutes — no credit card needed.",
-      "seo_body": "## PSN cards without a credit card\n\nThere is no Pakistani PlayStation Store, so most players here run US, UK or UAE accounts — and this page has PSN wallet codes for those regions and many more. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method, and your code arrives within minutes.\n\n## Pick the right region\n\nPSN codes only redeem on accounts from the same region, so match the card to your PSN account's region before buying. Every order is covered by buyer protection: your payment is released only after you confirm the code redeemed."
+      "seo_body": "## PSN cards without a credit card\n\nThere is no Pakistani PlayStation Store, so most players here run US, UK or UAE accounts — and this page has PSN wallet codes for those regions and many more. Pay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method, and your code arrives within minutes.\n\n## Pick the right region\n\nPSN codes only redeem on accounts from the same region, so match the card to your PSN account's region before buying. If a code doesn't redeem, message us and we'll make it right — quick support, easy refunds."
     },
     {
       "game": "yalla-ludo",
       "category": "top-ups",
       "seo_title": "Yalla Ludo Diamonds & Gold Top-Up in Pakistan",
-      "seo_description": "Top up Yalla Ludo diamonds and gold at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Delivered in minutes with buyer protection on every order.",
-      "seo_body": "## Yalla Ludo diamonds and gold in minutes\n\nBuy diamonds and gold for Yalla Ludo the easy way: pick a pack, place your order, and follow the short delivery steps in the order chat — each listing explains exactly what the seller needs, and most orders finish within minutes.\n\n## Pay in rupees, stay protected\n\nPrices are in Pakistani rupees and every popular local payment method is accepted — JazzCash, Easypaisa, bank transfer and more — so topping up takes a couple of taps. Your payment is held safely until you confirm the diamonds or gold arrived, and support is available in chat if you need a hand."
+      "seo_description": "Top up Yalla Ludo diamonds and gold at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Delivered in minutes — problems fixed fast if anything goes wrong.",
+      "seo_body": "## Yalla Ludo diamonds and gold in minutes\n\nBuy diamonds and gold for Yalla Ludo the easy way: pick a pack, place your order, and follow the short delivery steps in the order chat — each listing explains exactly what's needed, and most orders finish within minutes.\n\n## Pay in rupees, no stress\n\nPrices are in Pakistani rupees and every popular local payment method is accepted — JazzCash, Easypaisa, bank transfer and more — so topping up takes a couple of taps. If an order ever stalls or lands wrong, we fix it fast — refunds included — and support is available in the order chat if you need a hand."
     },
     {
       "game": "yalla-ludo",
       "category": "gift-cards",
       "seo_title": "Yalla Ludo Gift Cards & Voucher Codes in Pakistan",
-      "seo_description": "Buy Yalla Ludo gift card codes at PKR prices with JazzCash, Easypaisa or bank transfer. Delivered in minutes and covered by buyer protection.",
-      "seo_body": "## Yalla Ludo vouchers delivered in minutes\n\nPrefer a code instead of an ID top-up? Yalla Ludo gift cards are voucher codes you redeem yourself, delivered to your order chat within minutes of payment.\n\n## Simple and safe\n\nPay in Pakistani rupees with any local payment method, and buyer protection holds your money until you confirm the code worked — ideal for gifting diamonds to friends and family too."
+      "seo_description": "Buy Yalla Ludo gift card codes at PKR prices with JazzCash, Easypaisa or bank transfer. Delivered in minutes — replaced or refunded if a code fails.",
+      "seo_body": "## Yalla Ludo vouchers delivered in minutes\n\nPrefer a code instead of an ID top-up? Yalla Ludo gift cards are voucher codes you redeem yourself, delivered to your order chat within minutes of payment.\n\n## Simple and safe\n\nPay in Pakistani rupees with any local payment method — and if a code ever fails, we replace it or refund you. Ideal for gifting diamonds to friends and family too."
     },
     {
       "game": "call-of-duty-mobile",
       "category": "cp",
       "seo_title": "Buy CODM CP in Pakistan — Call of Duty Mobile Top-Up",
-      "seo_description": "Call of Duty Mobile CP at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast top-ups from trusted sellers with buyer protection.",
-      "seo_body": "## CP for Call of Duty Mobile, in rupees\n\nBuy CODM CP without dollar cards or foreign wallets: prices are in Pakistani rupees and local payment methods like JazzCash, Easypaisa and bank transfer are accepted. Pick a CP pack, follow the simple delivery steps on the listing, and most orders are completed within minutes.\n\n## Protected from payment to delivery\n\nYour payment is held by GamesBazaar and released to the seller only after you confirm your CP arrived. If you have any question about a pack, message the seller in chat before or after ordering."
+      "seo_description": "Call of Duty Mobile CP at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast top-ups at PKR prices — problems fixed fast if anything goes wrong.",
+      "seo_body": "## CP for Call of Duty Mobile, in rupees\n\nBuy CODM CP without dollar cards or foreign wallets: prices are in Pakistani rupees and local payment methods like JazzCash, Easypaisa and bank transfer are accepted. Pick a CP pack, follow the simple delivery steps on the listing, and most orders are completed within minutes.\n\n## Looked after from payment to delivery\n\nIf your CP doesn't arrive as described, we sort it out quickly — easy refunds. Any question about a pack? Message us in the order chat and we'll help."
     },
     {
       "game": "fc-mobile",
       "category": "top-ups",
       "seo_title": "FC Mobile Top-Up in Pakistan — Buy FC Points",
-      "seo_description": "Top up FC Mobile at PKR prices and pay with JazzCash, Easypaisa or bank transfer. Fast delivery, buyer protection — back in the game within minutes.",
-      "seo_body": "## FC Mobile top-ups without the hassle\n\nBuy FC Mobile top-ups at Pakistani rupee prices and pay with any local method — JazzCash, Easypaisa, bank transfer and more. No international card required: choose your pack, follow the delivery steps on the listing, and most top-ups are finished within minutes.\n\n## Buy with confidence\n\nEvery order is covered by buyer protection: your money is only released once you confirm the top-up landed in your account. The seller is one chat message away throughout your order."
+      "seo_description": "Top up FC Mobile at PKR prices and pay with JazzCash, Easypaisa or bank transfer. Fast delivery, easy refunds — back in the game within minutes.",
+      "seo_body": "## FC Mobile top-ups without the hassle\n\nBuy FC Mobile top-ups at Pakistani rupee prices and pay with any local method — JazzCash, Easypaisa, bank transfer and more. No international card required: choose your pack, follow the delivery steps on the listing, and most top-ups are finished within minutes.\n\n## Buy with confidence\n\nIf a top-up doesn't land as described, we fix it fast — refunds are easy. And we're one chat message away throughout your order."
     },
     {
       "game": "8-ball-pool",
       "category": "cash",
       "seo_title": "8 Ball Pool Cash Top-Up in Pakistan",
-      "seo_description": "Buy 8 Ball Pool cash at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast, protected top-ups completed within minutes.",
-      "seo_body": "## 8 Ball Pool cash at rupee prices\n\nTop up 8 Ball Pool cash while paying in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. Pick the cash pack you want, follow the short delivery steps on the listing, and you're back at the table within minutes.\n\n## Every order protected\n\nGamesBazaar holds your payment until you confirm the cash arrived in your account, so there's no risk of paying and getting nothing. Questions? Message the seller directly in chat."
+      "seo_description": "Buy 8 Ball Pool cash at PKR prices — JazzCash, Easypaisa and bank transfer accepted. Fast top-ups completed within minutes — easy refunds if anything goes wrong.",
+      "seo_body": "## 8 Ball Pool cash at rupee prices\n\nTop up 8 Ball Pool cash while paying in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. Pick the cash pack you want, follow the short delivery steps on the listing, and you're back at the table within minutes.\n\n## If something goes wrong, we fix it\n\nIf your cash doesn't arrive as promised, we sort it out fast — refund included when we can't make it right. Questions? Message us in the order chat."
     },
     {
       "game": "nintendo",
       "category": "gift-cards",
       "seo_title": "Nintendo eShop Gift Cards in Pakistan",
       "seo_description": "Buy Nintendo eShop cards at PKR prices with JazzCash, Easypaisa or bank transfer. US, Europe, Japan and more regions — codes delivered in minutes.",
-      "seo_body": "## eShop credit without a foreign card\n\nTop up your Nintendo eShop balance from Pakistan: pay in rupees using JazzCash, Easypaisa or bank transfer and receive your card code within minutes. Cards are available for the US, European, Japanese and several other eShop regions.\n\n## Check your account region first\n\neShop cards only redeem in their own region, so match the card to the region your Nintendo account uses. Buyer protection covers every order — your payment is only released after you confirm the code redeemed."
+      "seo_body": "## eShop credit without a foreign card\n\nTop up your Nintendo eShop balance from Pakistan: pay in rupees using JazzCash, Easypaisa or bank transfer and receive your card code within minutes. Cards are available for the US, European, Japanese and several other eShop regions.\n\n## Check your account region first\n\neShop cards only redeem in their own region, so match the card to the region your Nintendo account uses. If a code won't redeem, tell us in the order chat — we'll replace it or refund you."
     },
     {
       "game": "resident-evil",
       "category": "keys",
       "seo_title": "Buy Resident Evil Keys Cheap in Pakistan",
-      "seo_description": "Resident Evil PC keys at PKR prices — from the classics to the remakes. Pay with JazzCash, Easypaisa or bank transfer; delivered in minutes, buyer protected.",
-      "seo_body": "## Every Resident Evil game in one place\n\nFrom the classic survival horror entries to the modern remakes and Village, this page lists Resident Evil keys from every seller on GamesBazaar. Use the Game filter to jump to the title you want, pay in Pakistani rupees with a local payment method, and most keys arrive within minutes.\n\n## Keys, gifts and regions\n\nDepending on the listing you'll get a key to redeem yourself, receive the game as a gift, or have the seller activate it for you — the game always ends up in your own library. Check the region noted on each listing before you buy, and remember every order is protected until you confirm delivery."
+      "seo_description": "Resident Evil PC keys at PKR prices — from the classics to the remakes. Pay with JazzCash, Easypaisa or bank transfer; delivered in minutes, easy refunds.",
+      "seo_body": "## Every Resident Evil game in one place\n\nFrom the classic survival horror entries to the modern remakes and Village, this page lists every Resident Evil key on GamesBazaar. Use the Game filter to jump to the title you want, pay in Pakistani rupees with a local payment method, and most keys arrive within minutes.\n\n## Keys, gifts and regions\n\nDepending on the listing you'll get a key to redeem yourself, receive the game as a gift, or have it activated for you — the game always ends up in your own library. Check the region noted on each listing before you buy; if a delivery ever goes wrong, we make it right."
     },
     {
       "game": "resident-evil",
       "category": "accounts",
       "seo_title": "Buy Resident Evil Accounts in Pakistan",
-      "seo_description": "Resident Evil game accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; buyer protected.",
-      "seo_body": "## Accounts for every budget\n\nSellers on GamesBazaar offer Resident Evil accounts in several forms — full-access accounts you keep, used accounts at lower prices, and time-limited rentals for a cheap playthrough. Each listing states exactly what's included, which platform it's for, and how delivery works.\n\n## Protected purchases in PKR\n\nPay in Pakistani rupees with JazzCash, Easypaisa or bank transfer. Your payment is held under buyer protection and only released once you confirm the account works as described — and the seller is one chat message away."
+      "seo_description": "Resident Evil game accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; problems fixed fast.",
+      "seo_body": "## Accounts for every budget\n\nGamesBazaar stocks Resident Evil accounts in several forms — full-access accounts you keep, used accounts at lower prices, and time-limited rentals for a cheap playthrough. Each listing states exactly what's included, which platform it's for, and how delivery works.\n\n## Easy checkout in PKR\n\nPay in Pakistani rupees with JazzCash, Easypaisa or bank transfer. If the account doesn't work as described, we fix it quickly — easy refunds — and help is one chat message away."
     },
     {
       "game": "farcry",
       "category": "keys",
       "seo_title": "Buy Far Cry Keys Cheap in Pakistan",
       "seo_description": "Far Cry PC keys at PKR prices, from Far Cry 3 to Far Cry 6 and the spin-offs. JazzCash, Easypaisa and bank transfer accepted — delivered within minutes.",
-      "seo_body": "## The whole Far Cry series at PKR prices\n\nWhether you're after Far Cry 6, the fan-favourite Far Cry 3, or spin-offs like Blood Dragon and Primal, sellers here list keys for the whole series. Filter by title, pay in rupees with JazzCash, Easypaisa or bank transfer, and get playing within minutes.\n\n## Buying keys safely\n\nEach listing states how delivery works — a key you redeem, a gift to your account, or activation by the seller — plus the region the key works in. Your money stays protected until you confirm the game is in your library, and the seller is one chat message away."
+      "seo_body": "## The whole Far Cry series at PKR prices\n\nWhether you're after Far Cry 6, the fan-favourite Far Cry 3, or spin-offs like Blood Dragon and Primal, we stock keys for the whole series. Filter by title, pay in rupees with JazzCash, Easypaisa or bank transfer, and get playing within minutes.\n\n## Buying keys safely\n\nEach listing states how delivery works — a key you redeem, a gift to your account, or activation done for you — plus the region the key works in. If the game doesn't land in your library as promised, we sort it out fast, refund included."
     },
     {
       "game": "farcry",
       "category": "accounts",
       "seo_title": "Buy Far Cry Accounts in Pakistan",
-      "seo_description": "Far Cry game accounts at PKR prices — full-access, used and rental listings across platforms. Pay with JazzCash, Easypaisa or bank transfer, fully protected.",
-      "seo_body": "## Play Far Cry for less\n\nAn account is often the cheapest way into a game: sellers here list Far Cry accounts as full-access (yours to keep), used, or short-term rentals across different platforms. The listing tells you exactly what you're getting and how it's delivered.\n\n## How buying works\n\nPay in Pakistani rupees using any popular local payment method. GamesBazaar holds your money until you confirm the account matches the listing, and you can message the seller in chat at any point before or after buying."
+      "seo_description": "Far Cry game accounts at PKR prices — full-access, used and rental listings across platforms. Pay with JazzCash, Easypaisa or bank transfer — easy refunds.",
+      "seo_body": "## Play Far Cry for less\n\nAn account is often the cheapest way into a game: Far Cry accounts here come as full-access (yours to keep), used, or short-term rentals across different platforms. The listing tells you exactly what you're getting and how it's delivered.\n\n## How buying works\n\nPay in Pakistani rupees using any popular local payment method. If the account doesn't match the listing, message us in the order chat — we fix problems quickly and refunds are easy."
     },
     {
       "game": "fallout",
       "category": "keys",
       "seo_title": "Buy Fallout Keys Cheap in Pakistan",
       "seo_description": "Fallout PC keys at PKR prices — Fallout 4, New Vegas, 76 and more. Pay with JazzCash, Easypaisa or bank transfer and get your key within minutes.",
-      "seo_body": "## Explore the wasteland for less\n\nFallout 4, New Vegas, Fallout 76 and the older classics — sellers on GamesBazaar list keys across the whole series at Pakistani rupee prices. Pick your title with the Game filter, pay with any local payment method, and most keys are delivered within minutes.\n\n## What to check before buying\n\nEvery listing spells out the delivery method — redeem a key, receive a gift, or seller activation — and the region it works in, so read it before ordering. Buyer protection holds your payment until the game is safely in your library."
+      "seo_body": "## Explore the wasteland for less\n\nFallout 4, New Vegas, Fallout 76 and the older classics — GamesBazaar stocks keys across the whole series at Pakistani rupee prices. Pick your title with the Game filter, pay with any local payment method, and most keys are delivered within minutes.\n\n## What to check before buying\n\nEvery listing spells out the delivery method — redeem a key, receive a gift, or activation done for you — and the region it works in, so read it before ordering. If the game doesn't make it safely into your library, we fix it — easy refunds."
     },
     {
       "game": "fallout",
       "category": "accounts",
       "seo_title": "Buy Fallout Accounts in Pakistan",
-      "seo_description": "Fallout game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted, with buyer protection.",
-      "seo_body": "## Wasteland-ready accounts\n\nSellers list Fallout accounts in different shapes: full-access accounts you keep, cheaper used accounts, and rentals when you just want one playthrough. Platform and details vary per listing, so read what's included before ordering.\n\n## PKR prices, protected payments\n\nEverything is priced in Pakistani rupees and paid with local methods like JazzCash, Easypaisa or bank transfer. Buyer protection keeps your payment on hold until you confirm the account is exactly as described."
+      "seo_description": "Fallout game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted — easy refunds if needed.",
+      "seo_body": "## Wasteland-ready accounts\n\nFallout accounts come in different shapes: full-access accounts you keep, cheaper used accounts, and rentals when you just want one playthrough. Platform and details vary per listing, so read what's included before ordering.\n\n## PKR prices, no headaches\n\nEverything is priced in Pakistani rupees and paid with local methods like JazzCash, Easypaisa or bank transfer. If an account isn't exactly as described, we fix it fast or refund you."
     },
     {
       "game": "star-wars",
       "category": "keys",
       "seo_title": "Buy Star Wars Game Keys in Pakistan",
       "seo_description": "Star Wars PC game keys at PKR prices — Jedi: Survivor, Battlefront, the classics and more. JazzCash, Easypaisa or bank transfer; delivered in minutes.",
-      "seo_body": "## A galaxy of games at rupee prices\n\nFrom Jedi: Fallen Order and Survivor to Battlefront and the beloved classics, this page gathers Star Wars keys from every seller on the marketplace. Prices are in Pakistani rupees, all popular local payment methods work, and delivery usually takes minutes.\n\n## Delivery and regions\n\nListings differ: some hand you a key to redeem, some gift the game to your account, some are activated by the seller — in every case it lands in your own library. Check the listed region before buying; your payment stays protected until you confirm delivery."
+      "seo_body": "## A galaxy of games at rupee prices\n\nFrom Jedi: Fallen Order and Survivor to Battlefront and the beloved classics, this page gathers every Star Wars key on GamesBazaar. Prices are in Pakistani rupees, all popular local payment methods work, and delivery usually takes minutes.\n\n## Delivery and regions\n\nListings differ: some hand you a key to redeem, some gift the game to your account, some we activate for you — in every case it lands in your own library. Check the listed region before buying; if anything goes wrong with delivery, we make it right."
     },
     {
       "game": "star-wars",
       "category": "accounts",
       "seo_title": "Buy Star Wars Game Accounts in Pakistan",
-      "seo_description": "Star Wars game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer; buyer protection included.",
-      "seo_body": "## Accounts across the galaxy\n\nFrom the Jedi series to Battlefront, sellers offer Star Wars game accounts as full-access purchases, used accounts, or time-limited rentals — across different platforms. Each listing spells out what's included and how it's delivered.\n\n## Buy without the risk\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. Your payment sits safely with GamesBazaar until you confirm the account works, and the seller is available in chat throughout."
+      "seo_description": "Star Wars game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer; problems fixed fast.",
+      "seo_body": "## Accounts across the galaxy\n\nFrom the Jedi series to Battlefront, Star Wars game accounts here come as full-access purchases, used accounts, or time-limited rentals — across different platforms. Each listing spells out what's included and how it's delivered.\n\n## Buy without the risk\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. If the account doesn't work as promised, we sort it out quickly — and we're available in the order chat throughout."
     },
     {
       "game": "monster-hunter",
       "category": "keys",
       "seo_title": "Buy Monster Hunter Keys in Pakistan",
       "seo_description": "Monster Hunter PC keys at PKR prices — World, Rise and more. Pay with JazzCash, Easypaisa or bank transfer and start hunting within minutes.",
-      "seo_body": "## Start hunting without import prices\n\nMonster Hunter: World, Rise and the rest of the series are listed here as PC keys at Pakistani rupee prices — often far below what a foreign storefront charges once currency conversion is done. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## Know what you're getting\n\nEach listing shows its delivery method — key, gift or seller activation — and its region lock. All of them end with the game in your own library, and buyer protection covers your payment until you confirm it's there."
+      "seo_body": "## Start hunting without import prices\n\nMonster Hunter: World, Rise and the rest of the series are listed here as PC keys at Pakistani rupee prices — often far below what a foreign storefront charges once currency conversion is done. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## Know what you're getting\n\nEach listing shows its delivery method — key, gift or activation done for you — and its region lock. All of them end with the game in your own library; if yours doesn't arrive, we fix it fast — easy refunds."
     },
     {
       "game": "monster-hunter",
       "category": "accounts",
       "seo_title": "Buy Monster Hunter Accounts in Pakistan",
-      "seo_description": "Monster Hunter accounts at PKR prices — full-access, used and rental options per listing. JazzCash, Easypaisa or bank transfer; protected until delivery.",
-      "seo_body": "## Hunt sooner, pay less\n\nMonster Hunter accounts here come as full-access accounts you keep, used accounts at friendlier prices, or rentals for a taste of the hunt. Platforms and included titles vary, so the listing is your source of truth for what you're buying.\n\n## Simple and safe checkout\n\nPay in Pakistani rupees with any local payment method. Buyer protection holds your payment until you confirm the account is as described — no risk of paying and getting nothing."
+      "seo_description": "Monster Hunter accounts at PKR prices — full-access, used and rental options per listing. JazzCash, Easypaisa or bank transfer; quick support and easy refunds.",
+      "seo_body": "## Hunt sooner, pay less\n\nMonster Hunter accounts here come as full-access accounts you keep, used accounts at friendlier prices, or rentals for a taste of the hunt. Platforms and included titles vary, so the listing is your source of truth for what you're buying.\n\n## Simple and safe checkout\n\nPay in Pakistani rupees with any local payment method. If the account isn't as described, we make it right fast — no risk of paying and getting nothing."
     },
     {
       "game": "elder-scrolls",
       "category": "keys",
       "seo_title": "Buy Elder Scrolls Keys in Pakistan",
       "seo_description": "Elder Scrolls PC keys at PKR prices — Skyrim, Oblivion, ESO and more. JazzCash, Easypaisa and bank transfer accepted, delivered within minutes.",
-      "seo_body": "## Skyrim and beyond, in rupees\n\nSkyrim in its many editions, Oblivion, Morrowind and Elder Scrolls Online — sellers list keys across the whole series at Pakistani rupee prices. Choose your title with the Game filter, pay with any local method, and you'll usually be playing within minutes.\n\n## Read the listing, buy with confidence\n\nDelivery differs by listing — a key to redeem, a gift, or activation by the seller — and keys can be region-locked, so check what's noted before ordering. Your payment is held under buyer protection until you confirm the game reached your library."
+      "seo_body": "## Skyrim and beyond, in rupees\n\nSkyrim in its many editions, Oblivion, Morrowind and Elder Scrolls Online — you'll find keys across the whole series at Pakistani rupee prices. Choose your title with the Game filter, pay with any local method, and you'll usually be playing within minutes.\n\n## Read the listing, buy with confidence\n\nDelivery differs by listing — a key to redeem, a gift, or activation done for you — and keys can be region-locked, so check what's noted before ordering. If the game doesn't reach your library, we'll fix it fast or refund you."
     },
     {
       "game": "elder-scrolls",
       "category": "accounts",
       "seo_title": "Buy Elder Scrolls Accounts in Pakistan",
-      "seo_description": "Elder Scrolls game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer with buyer protection.",
-      "seo_body": "## From Skyrim saves to fresh starts\n\nSellers list Elder Scrolls accounts in several forms — full-access, used, and rentals — across different platforms. Whether it's Skyrim or Elder Scrolls Online, the listing states exactly what's included and how delivery happens.\n\n## Rupees in, protection on\n\nAll prices are in Pakistani rupees, paid with JazzCash, Easypaisa, bank transfer or other local methods. Your money is only released to the seller after you confirm everything checks out."
+      "seo_description": "Elder Scrolls game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer — problems fixed fast.",
+      "seo_body": "## From Skyrim saves to fresh starts\n\nElder Scrolls accounts come in several forms — full-access, used, and rentals — across different platforms. Whether it's Skyrim or Elder Scrolls Online, the listing states exactly what's included and how delivery happens.\n\n## Rupees in, worries out\n\nAll prices are in Pakistani rupees, paid with JazzCash, Easypaisa, bank transfer or other local methods. If anything fails to check out, we put it right quickly — refunds included."
     },
     {
       "game": "persona",
       "category": "keys",
       "seo_title": "Buy Persona Game Keys in Pakistan",
       "seo_description": "Persona PC keys at PKR prices — Persona 5 Royal, P4 Golden, P3 Reload and more. Pay with JazzCash, Easypaisa or bank transfer; delivered in minutes.",
-      "seo_body": "## The Persona series at PKR prices\n\nPersona 5 Royal, Persona 4 Golden, Persona 3 Reload and more — this page lists keys for the series from every seller on GamesBazaar. Prices are in Pakistani rupees, every popular local payment method is accepted, and most keys arrive within minutes of ordering.\n\n## How your game arrives\n\nDepending on the listing you'll redeem a key yourself, receive the game as a gift, or have the seller activate it — the game always ends up in your own library. Check the region on the listing first, and your payment stays protected until you confirm delivery."
+      "seo_body": "## The Persona series at PKR prices\n\nPersona 5 Royal, Persona 4 Golden, Persona 3 Reload and more — this page lists every key for the series on GamesBazaar. Prices are in Pakistani rupees, every popular local payment method is accepted, and most keys arrive within minutes of ordering.\n\n## How your game arrives\n\nDepending on the listing you'll redeem a key yourself, receive the game as a gift, or have it activated for you — the game always ends up in your own library. Check the region on the listing first; if delivery goes sideways, we make it right."
     },
     {
       "game": "persona",
       "category": "accounts",
       "seo_title": "Buy Persona Game Accounts in Pakistan",
-      "seo_description": "Persona game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; buyer protection on every order.",
-      "seo_body": "## Persona without the import mark-up\n\nAccounts are a budget-friendly way into long JRPGs like Persona 5 Royal: sellers offer full-access accounts, used accounts and rentals, on varying platforms. Each listing tells you precisely what's included before you commit.\n\n## Checkout you can trust\n\nPay in Pakistani rupees using any popular local method. GamesBazaar keeps your payment on hold until you confirm the account matches its description, and sellers respond directly in chat."
+      "seo_description": "Persona game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; problems fixed fast.",
+      "seo_body": "## Persona without the import mark-up\n\nAccounts are a budget-friendly way into long JRPGs like Persona 5 Royal: full-access accounts, used accounts and rentals are all here, on varying platforms. Each listing tells you precisely what's included before you commit.\n\n## Checkout you can trust\n\nPay in Pakistani rupees using any popular local method. If the account doesn't match its description, message us in the order chat — we respond fast, fix or refund."
     },
     {
       "game": "stronghold",
       "category": "keys",
       "seo_title": "Buy Stronghold Keys in Pakistan",
       "seo_description": "Stronghold PC keys at PKR prices — Crusader and the whole castle-building series. JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Stronghold Crusader and the whole series\n\nFew games mean as much to Pakistani PC gamers as Stronghold Crusader — and this page lists keys for it and the entire series at Pakistani rupee prices. Pay with JazzCash, Easypaisa or bank transfer and relive the castle sieges within minutes.\n\n## Safe, simple delivery\n\nEvery listing explains its delivery method — a key you redeem, a gift to your account, or activation by the seller — plus any region lock. Whatever the method, the game lands in your own library and your payment is protected until you confirm it arrived."
+      "seo_body": "## Stronghold Crusader and the whole series\n\nFew games mean as much to Pakistani PC gamers as Stronghold Crusader — and this page lists keys for it and the entire series at Pakistani rupee prices. Pay with JazzCash, Easypaisa or bank transfer and relive the castle sieges within minutes.\n\n## Safe, simple delivery\n\nEvery listing explains its delivery method — a key you redeem, a gift to your account, or activation done for you — plus any region lock. Whatever the method, the game lands in your own library — and if it doesn't, we sort it out fast, refund included."
     },
     {
       "game": "stronghold",
       "category": "accounts",
       "seo_title": "Buy Stronghold Accounts in Pakistan",
-      "seo_description": "Stronghold game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer, protected until delivery.",
-      "seo_body": "## Castle sieges on a budget\n\nSellers list Stronghold accounts as full-access purchases, used accounts, or short rentals — a cheap way to revisit Crusader skirmishes. What's included varies per listing, so read it before you order.\n\n## Protected, rupee-priced orders\n\nEvery price is in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. Your payment stays with GamesBazaar until you confirm the account works as promised."
+      "seo_description": "Stronghold game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer — quick support, easy refunds.",
+      "seo_body": "## Castle sieges on a budget\n\nStronghold accounts come as full-access purchases, used accounts, or short rentals — a cheap way to revisit Crusader skirmishes. What's included varies per listing, so read it before you order.\n\n## Rupee-priced, no-stress orders\n\nEvery price is in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. If the account doesn't work as promised, we fix it or refund you — fast."
     },
     {
       "game": "need-for-speed",
       "category": "keys",
       "seo_title": "Buy Need for Speed Keys in Pakistan",
       "seo_description": "Need for Speed PC keys at PKR prices — Heat, Unbound and the classics. Pay with JazzCash, Easypaisa or bank transfer and race within minutes.",
-      "seo_body": "## NFS at Pakistani rupee prices\n\nHeat, Unbound, Payback and the older classics — sellers list Need for Speed keys across the series. Pick your title, pay in rupees with any local payment method, and most orders are delivered within minutes.\n\n## Before you hit the gas\n\nCheck each listing for its delivery method — key, gift or seller activation — and its region. Every route ends with the game in your own library, and buyer protection holds your payment until you confirm you're racing."
+      "seo_body": "## NFS at Pakistani rupee prices\n\nHeat, Unbound, Payback and the older classics — Need for Speed keys across the series are all here. Pick your title, pay in rupees with any local payment method, and most orders are delivered within minutes.\n\n## Before you hit the gas\n\nCheck each listing for its delivery method — key, gift or activation done for you — and its region. Every route ends with the game in your own library; if yours stalls, we get it sorted quickly — easy refunds."
     },
     {
       "game": "need-for-speed",
       "category": "accounts",
       "seo_title": "Buy Need for Speed Accounts in Pakistan",
-      "seo_description": "Need for Speed accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; buyer protected.",
-      "seo_body": "## Get on the grid for less\n\nNFS accounts here range from full-access accounts you keep to used accounts and short-term rentals, across different platforms. The listing states which games are included and how the seller delivers.\n\n## No-risk buying\n\nPay in Pakistani rupees with any local payment method — your money is held under buyer protection and released only when you confirm the account is exactly what was listed."
+      "seo_description": "Need for Speed accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; problems fixed fast.",
+      "seo_body": "## Get on the grid for less\n\nNFS accounts here range from full-access accounts you keep to used accounts and short-term rentals, across different platforms. The listing states which games are included and how delivery works.\n\n## No-risk buying\n\nPay in Pakistani rupees with any local payment method — if the account isn't exactly what was listed, we make it right quickly, refund included."
     },
     {
       "game": "tekken",
       "category": "keys",
       "seo_title": "Buy Tekken Keys in Pakistan",
       "seo_description": "Tekken PC keys at PKR prices — home of Pakistan's favourite fighting series. JazzCash, Easypaisa and bank transfer accepted; delivered in minutes.",
-      "seo_body": "## Pakistan's fighting game, at PKR prices\n\nNo country punches above its weight in Tekken like Pakistan — and you can get Tekken keys here at Pakistani rupee prices instead of foreign-store rates. Pay with JazzCash, Easypaisa or bank transfer and be in the lab within minutes.\n\n## Delivery details\n\nListings state whether you get a key to redeem, a gift to your account, or seller activation, along with any region lock — the game always ends up in your own library. Your payment stays protected until you confirm delivery, and sellers answer in chat."
+      "seo_body": "## Pakistan's fighting game, at PKR prices\n\nNo country punches above its weight in Tekken like Pakistan — and you can get Tekken keys here at Pakistani rupee prices instead of foreign-store rates. Pay with JazzCash, Easypaisa or bank transfer and be in the lab within minutes.\n\n## Delivery details\n\nListings state whether you get a key to redeem, a gift to your account, or activation done for you, along with any region lock — the game always ends up in your own library. If a delivery ever misses, we fix it fast and refunds are easy."
     },
     {
       "game": "tekken",
       "category": "accounts",
       "seo_title": "Buy Tekken Accounts in Pakistan",
-      "seo_description": "Tekken game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer with buyer protection included.",
-      "seo_body": "## Into the King of Iron Fist for less\n\nSellers offer Tekken accounts as full-access purchases, used accounts and rentals on various platforms — often the cheapest way to get practicing. Each listing details exactly what's included and how it's delivered.\n\n## Fair fights only\n\nPrices are in Pakistani rupees, with JazzCash, Easypaisa and bank transfer all accepted. Buyer protection holds your payment until you confirm the account is as described, and the seller is one message away in chat."
+      "seo_description": "Tekken game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer — quick support if anything goes wrong.",
+      "seo_body": "## Into the King of Iron Fist for less\n\nTekken accounts come as full-access purchases, used accounts and rentals on various platforms — often the cheapest way to get practicing. Each listing details exactly what's included and how it's delivered.\n\n## Fair fights only\n\nPrices are in Pakistani rupees, with JazzCash, Easypaisa and bank transfer all accepted. If the account isn't as described, we sort it out fast — and we're one message away in the order chat."
     },
     {
       "game": "dying-light",
       "category": "keys",
       "seo_title": "Buy Dying Light Keys Cheap in Pakistan",
       "seo_description": "Dying Light PC keys at PKR prices — the original, Dying Light 2 and their DLC. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Parkour and zombies at rupee prices\n\nSellers on GamesBazaar list keys for the original Dying Light, Dying Light 2 Stay Human and their expansions at Pakistani rupee prices. Pick your title with the Game filter, pay with a local payment method, and most keys arrive within minutes — in time for tonight's co-op session.\n\n## Delivery, simply explained\n\nEach listing states whether you redeem a key yourself, receive the game as a gift, or the seller activates it for you — the game always ends up in your own library. Keys can be region-locked, so check the region noted on the listing; buyer protection holds your payment until you confirm delivery."
+      "seo_body": "## Parkour and zombies at rupee prices\n\nGamesBazaar stocks keys for the original Dying Light, Dying Light 2 Stay Human and their expansions at Pakistani rupee prices. Pick your title with the Game filter, pay with a local payment method, and most keys arrive within minutes — in time for tonight's co-op session.\n\n## Delivery, simply explained\n\nEach listing states whether you redeem a key yourself, receive the game as a gift, or we activate it for you — the game always ends up in your own library. Keys can be region-locked, so check the region noted on the listing; if anything goes wrong, we make it right fast."
     },
     {
       "game": "dying-light",
       "category": "accounts",
       "seo_title": "Buy Dying Light Accounts in Pakistan",
-      "seo_description": "Dying Light game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; buyer protection included.",
-      "seo_body": "## Survive the night for less\n\nAccounts are often the cheapest way to play: sellers offer Dying Light accounts as full-access purchases you keep, used accounts, and short rentals. Platforms and included content vary, so treat the listing as the source of truth before ordering.\n\n## Safe from checkout to delivery\n\nPrices are in Pakistani rupees and every popular local payment method works. GamesBazaar holds your payment until you confirm the account matches its description, and the seller is one chat message away throughout."
+      "seo_description": "Dying Light game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; quick support, easy refunds.",
+      "seo_body": "## Survive the night for less\n\nAccounts are often the cheapest way to play: Dying Light accounts come as full-access purchases you keep, used accounts, and short rentals. Platforms and included content vary, so treat the listing as the source of truth before ordering.\n\n## Safe from checkout to delivery\n\nPrices are in Pakistani rupees and every popular local payment method works. If the account doesn't match its description we fix it quickly — refunds are easy — and we're one chat message away throughout."
     },
     {
       "game": "doom",
       "category": "keys",
       "seo_title": "Buy DOOM Keys Cheap in Pakistan",
       "seo_description": "DOOM PC keys at PKR prices — DOOM 2016, Eternal, The Dark Ages and the classics. Pay with JazzCash, Easypaisa or bank transfer; keys delivered in minutes.",
-      "seo_body": "## Rip and tear, priced in rupees\n\nDOOM (2016), DOOM Eternal, The Dark Ages and the classic entries are all listed here as PC keys at Pakistani rupee prices — no dollar storefronts needed. Pay with any popular Pakistani payment method and most keys are delivered within minutes.\n\n## What to check before you buy\n\nEvery listing shows its delivery method — a key you redeem, a gift to your account, or activation by the seller — and any region lock. Whichever way it arrives, the game ends up in your own library, and your payment stays protected until you confirm it's there."
+      "seo_body": "## Rip and tear, priced in rupees\n\nDOOM (2016), DOOM Eternal, The Dark Ages and the classic entries are all listed here as PC keys at Pakistani rupee prices — no dollar storefronts needed. Pay with any popular Pakistani payment method and most keys are delivered within minutes.\n\n## What to check before you buy\n\nEvery listing shows its delivery method — a key you redeem, a gift to your account, or activation done for you — and any region lock. Whichever way it arrives, the game ends up in your own library — and if it doesn't, we'll fix it or refund you fast."
     },
     {
       "game": "doom",
       "category": "accounts",
       "seo_title": "Buy DOOM Game Accounts in Pakistan",
-      "seo_description": "DOOM game accounts at PKR prices — full-access, used and rental listings across platforms. Pay with JazzCash, Easypaisa or bank transfer, fully protected.",
-      "seo_body": "## Hell, at a discount\n\nSellers list DOOM accounts as full-access accounts you keep, cheaper used accounts, and rentals for a single playthrough. Platforms and included titles differ per listing, so read what's included before you order.\n\n## Rupees in, protection on\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. Your money is released to the seller only after you confirm the account works as described."
+      "seo_description": "DOOM game accounts at PKR prices — full-access, used and rental listings across platforms. Pay with JazzCash, Easypaisa or bank transfer — easy refunds.",
+      "seo_body": "## Hell, at a discount\n\nDOOM accounts come as full-access accounts you keep, cheaper used accounts, and rentals for a single playthrough. Platforms and included titles differ per listing, so read what's included before you order.\n\n## Rupees in, doubts out\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. If the account doesn't work as described, we'll fix it or refund you quickly."
     },
     {
       "game": "metro",
       "category": "keys",
       "seo_title": "Buy Metro Game Keys Cheap in Pakistan",
       "seo_description": "Metro PC keys at PKR prices — 2033, Last Light and Exodus, including Redux editions. JazzCash, Easypaisa and bank transfer accepted; delivered in minutes.",
-      "seo_body": "## The Metro trilogy in rupees\n\nMetro 2033, Last Light and Exodus — including the Redux editions — are listed here as PC keys from multiple sellers at Pakistani rupee prices. Choose your entry, pay with a local payment method, and you'll usually be in the tunnels within minutes.\n\n## Buying without surprises\n\nDelivery differs by listing: redeem a key yourself, receive the game as a gift, or have the seller activate it — it always lands in your own library. Check the region noted on each listing first, and remember buyer protection holds your payment until you confirm delivery."
+      "seo_body": "## The Metro trilogy in rupees\n\nMetro 2033, Last Light and Exodus — including the Redux editions — are listed here as PC keys at Pakistani rupee prices. Choose your entry, pay with a local payment method, and you'll usually be in the tunnels within minutes.\n\n## Buying without surprises\n\nDelivery differs by listing: redeem a key yourself, receive the game as a gift, or have it activated for you — it always lands in your own library. Check the region noted on each listing first; if anything goes wrong, we'll put it right fast."
     },
     {
       "game": "metro",
       "category": "accounts",
       "seo_title": "Buy Metro Game Accounts in Pakistan",
-      "seo_description": "Metro game accounts at PKR prices — full-access, used and rental options per listing. JazzCash, Easypaisa or bank transfer; protected until you confirm.",
-      "seo_body": "## Into the tunnels for less\n\nAn account can cost less than a key: sellers offer Metro accounts as full-access purchases, used accounts and short-term rentals across platforms. Each listing states which games are included and how delivery works.\n\n## A checkout you can trust\n\nAll prices are in Pakistani rupees, paid with any popular local method. GamesBazaar keeps your payment on hold until you confirm the account is exactly as listed, and sellers answer questions directly in chat."
+      "seo_description": "Metro game accounts at PKR prices — full-access, used and rental options per listing. JazzCash, Easypaisa or bank transfer; problems sorted fast.",
+      "seo_body": "## Into the tunnels for less\n\nAn account can cost less than a key: Metro accounts come as full-access purchases, used accounts and short-term rentals across platforms. Each listing states which games are included and how delivery works.\n\n## A checkout you can trust\n\nAll prices are in Pakistani rupees, paid with any popular local method. If the account isn't exactly as listed, we make it right fast — and we answer questions directly in the order chat."
     },
     {
       "game": "tomb-raider",
       "category": "keys",
       "seo_title": "Buy Tomb Raider Keys Cheap in Pakistan",
       "seo_description": "Tomb Raider PC keys at PKR prices — the Survivor trilogy, remasters and classics. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Lara's adventures at PKR prices\n\nFrom the modern Survivor trilogy to the remastered classics, sellers list Tomb Raider keys across the whole series. Use the Game filter to find your entry, pay in Pakistani rupees with a local method, and most keys arrive within minutes.\n\n## Keys, gifts and regions\n\nDepending on the listing you'll redeem a key, receive the game as a gift, or have the seller activate it for you — the game always ends up in your own library. Keys can be region-locked, so match the region on the listing, and buyer protection covers your payment until you confirm delivery."
+      "seo_body": "## Lara's adventures at PKR prices\n\nFrom the modern Survivor trilogy to the remastered classics, Tomb Raider keys span the whole series here. Use the Game filter to find your entry, pay in Pakistani rupees with a local method, and most keys arrive within minutes.\n\n## Keys, gifts and regions\n\nDepending on the listing you'll redeem a key, receive the game as a gift, or have it activated for you — the game always ends up in your own library. Keys can be region-locked, so match the region on the listing; if a delivery fails, we fix it or refund you."
     },
     {
       "game": "tomb-raider",
       "category": "accounts",
       "seo_title": "Buy Tomb Raider Accounts in Pakistan",
-      "seo_description": "Tomb Raider game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted, with buyer protection.",
-      "seo_body": "## Raid tombs on a budget\n\nSellers offer Tomb Raider accounts in several forms — full-access accounts you keep, used accounts at lower prices, and rentals for a single adventure. Platforms and included games vary, so the listing is your source of truth.\n\n## Protected, rupee-priced orders\n\nPay in Pakistani rupees using any popular Pakistani payment method. Your payment is held safely until you confirm the account matches the listing, and the seller is available in chat before and after you buy."
+      "seo_description": "Tomb Raider game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted — easy refunds if needed.",
+      "seo_body": "## Raid tombs on a budget\n\nTomb Raider accounts come in several forms — full-access accounts you keep, used accounts at lower prices, and rentals for a single adventure. Platforms and included games vary, so the listing is your source of truth.\n\n## Rupee-priced, worry-free orders\n\nPay in Pakistani rupees using any popular Pakistani payment method. If the account doesn't match the listing, we sort it out quickly — and we're available in the order chat whenever you need us."
     },
     {
       "game": "tom-clancys-ghost-recon",
       "category": "keys",
       "seo_title": "Buy Ghost Recon Keys Cheap in Pakistan",
       "seo_description": "Tom Clancy's Ghost Recon PC keys at PKR prices — Wildlands, Breakpoint and more. JazzCash, Easypaisa or bank transfer; keys delivered within minutes.",
-      "seo_body": "## Tactical ops at rupee prices\n\nWildlands, Breakpoint and older Ghost Recon entries are listed here as keys from multiple sellers — ideal for squadding up with friends without paying foreign-store rates. Prices are in Pakistani rupees and most orders are delivered within minutes.\n\n## How delivery works\n\nEach listing explains whether you get a key to redeem, the game as a gift, or activation by the seller, plus any region lock — the game always ends up in your own library. Pay with any local payment method; buyer protection holds your money until you confirm delivery."
+      "seo_body": "## Tactical ops at rupee prices\n\nWildlands, Breakpoint and older Ghost Recon entries are listed here as keys — ideal for squadding up with friends without paying foreign-store rates. Prices are in Pakistani rupees and most orders are delivered within minutes.\n\n## How delivery works\n\nEach listing explains whether you get a key to redeem, the game as a gift, or activation done for you, plus any region lock — the game always ends up in your own library. Pay with any local payment method; if delivery goes wrong, we make it right fast."
     },
     {
       "game": "tom-clancys-ghost-recon",
       "category": "accounts",
       "seo_title": "Buy Ghost Recon Accounts in Pakistan",
-      "seo_description": "Ghost Recon game accounts at PKR prices — full-access, used and rental options. Pay with JazzCash, Easypaisa or bank transfer; buyer protection included.",
-      "seo_body": "## Deploy for less\n\nGhost Recon accounts here range from full-access accounts you keep to used accounts and short rentals — often the cheapest way into Wildlands or Breakpoint. Each listing details the platform, the games included and how the seller delivers.\n\n## No-risk buying\n\nEverything is priced in Pakistani rupees with JazzCash, Easypaisa and bank transfer all accepted. GamesBazaar holds your payment under buyer protection until you confirm the account is exactly what was listed."
+      "seo_description": "Ghost Recon game accounts at PKR prices — full-access, used and rental options. Pay with JazzCash, Easypaisa or bank transfer; problems fixed fast.",
+      "seo_body": "## Deploy for less\n\nGhost Recon accounts here range from full-access accounts you keep to used accounts and short rentals — often the cheapest way into Wildlands or Breakpoint. Each listing details the platform, the games included and how delivery works.\n\n## No-risk buying\n\nEverything is priced in Pakistani rupees with JazzCash, Easypaisa and bank transfer all accepted. If the account isn't exactly what was listed, we'll make it right — quick fixes, easy refunds."
     },
     {
       "game": "little-nightmares",
       "category": "keys",
       "seo_title": "Buy Little Nightmares Keys in Pakistan",
       "seo_description": "Little Nightmares PC keys at PKR prices — the whole eerie series and its DLC. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Eerie adventures in rupees\n\nThe whole Little Nightmares series is listed here as PC keys at Pakistani rupee prices — perfect for a short, unforgettable horror playthrough. Pick your entry, pay with a local payment method, and most keys arrive within minutes.\n\n## Before you step into the Maw\n\nCheck each listing for its delivery method — a key you redeem, a gift to your account, or seller activation — and its region. Every route ends with the game in your own library, and your payment stays protected until you confirm it arrived."
+      "seo_body": "## Eerie adventures in rupees\n\nThe whole Little Nightmares series is listed here as PC keys at Pakistani rupee prices — perfect for a short, unforgettable horror playthrough. Pick your entry, pay with a local payment method, and most keys arrive within minutes.\n\n## Before you step into the Maw\n\nCheck each listing for its delivery method — a key you redeem, a gift to your account, or activation done for you — and its region. Every route ends with the game in your own library; if yours doesn't arrive, we'll fix it fast or refund you."
     },
     {
       "game": "little-nightmares",
       "category": "accounts",
       "seo_title": "Buy Little Nightmares Accounts in Pakistan",
-      "seo_description": "Little Nightmares game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; buyer protected.",
-      "seo_body": "## Small games, smaller prices\n\nSellers list Little Nightmares accounts as full-access purchases, used accounts and rentals — a budget way to play these short horror gems. What's included varies per listing, so read it before ordering.\n\n## Simple, protected checkout\n\nPay in Pakistani rupees with any popular local method. Your money stays with GamesBazaar until you confirm the account works as described, and the seller is one chat message away if anything is unclear."
+      "seo_description": "Little Nightmares game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; easy refunds.",
+      "seo_body": "## Small games, smaller prices\n\nLittle Nightmares accounts come as full-access purchases, used accounts and rentals — a budget way to play these short horror gems. What's included varies per listing, so read it before ordering.\n\n## Simple, safe checkout\n\nPay in Pakistani rupees with any popular local method. If the account doesn't work as described we'll fix it or refund you, and we're one chat message away if anything is unclear."
     },
     {
       "game": "the-dark-pictures",
       "category": "keys",
       "seo_title": "Buy The Dark Pictures Keys in Pakistan",
       "seo_description": "The Dark Pictures PC keys at PKR prices — Man of Medan, Little Hope, House of Ashes and The Devil in Me. Local payment methods; delivered in minutes.",
-      "seo_body": "## Horror nights, priced in rupees\n\nMan of Medan, Little Hope, House of Ashes and The Devil in Me — sellers list keys for the whole Dark Pictures anthology, great for movie-night co-op sessions with friends. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## What each listing tells you\n\nDelivery method — key, gift or seller activation — and any region lock are stated on every listing, and the game always ends up in your own library. Buyer protection keeps your payment on hold until you confirm delivery."
+      "seo_body": "## Horror nights, priced in rupees\n\nMan of Medan, Little Hope, House of Ashes and The Devil in Me — keys for the whole Dark Pictures anthology are here, great for movie-night co-op sessions with friends. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## What each listing tells you\n\nDelivery method — key, gift or activation done for you — and any region lock are stated on every listing, and the game always ends up in your own library. If a delivery ever falls through, we fix it fast — easy refunds."
     },
     {
       "game": "the-dark-pictures",
       "category": "accounts",
       "seo_title": "The Dark Pictures Accounts in Pakistan",
-      "seo_description": "The Dark Pictures game accounts at PKR prices — full-access, used and rental options. Pay with JazzCash, Easypaisa or bank transfer, fully protected.",
-      "seo_body": "## The anthology for less\n\nAccounts are a cheap way to binge the anthology: sellers offer full-access accounts, used accounts and rentals, sometimes bundling several entries together. The listing states exactly which games are included and how delivery works.\n\n## Buy with confidence\n\nPrices are in Pakistani rupees and all popular Pakistani payment methods are accepted. Your payment is released only after you confirm the account matches its description — no risk of paying and getting nothing."
+      "seo_description": "The Dark Pictures game accounts at PKR prices — full-access, used and rental options. Pay with JazzCash, Easypaisa or bank transfer — problems fixed fast.",
+      "seo_body": "## The anthology for less\n\nAccounts are a cheap way to binge the anthology: full-access accounts, used accounts and rentals are all available, sometimes bundling several entries together. The listing states exactly which games are included and how delivery works.\n\n## Buy with confidence\n\nPrices are in Pakistani rupees and all popular Pakistani payment methods are accepted. If the account doesn't match its description, we fix it or refund you — no risk of paying and getting nothing."
     },
     {
       "game": "assassins-creed-chronicles",
       "category": "keys",
       "seo_title": "Assassin's Creed Chronicles Keys in Pakistan",
       "seo_description": "Assassin's Creed Chronicles PC keys at PKR prices — the China, India and Russia trilogy. JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## The Chronicles trilogy in rupees\n\nAssassin's Creed Chronicles: China, India and Russia — the stylish 2.5D side of the series — is listed here as PC keys at Pakistani rupee prices. Pay with any local payment method and most keys arrive within minutes.\n\n## Read before you leap\n\nEach listing shows how delivery works — a key you redeem, a gift, or activation by the seller — plus any region lock; the game always lands in your own library. Buyer protection holds your payment until you confirm it's there, and sellers answer in chat."
+      "seo_body": "## The Chronicles trilogy in rupees\n\nAssassin's Creed Chronicles: China, India and Russia — the stylish 2.5D side of the series — is listed here as PC keys at Pakistani rupee prices. Pay with any local payment method and most keys arrive within minutes.\n\n## Read before you leap\n\nEach listing shows how delivery works — a key you redeem, a gift, or activation done for you — plus any region lock; the game always lands in your own library. If it doesn't turn up as promised, we sort it out fast — refunds included."
     },
     {
       "game": "assassins-creed-chronicles",
       "category": "accounts",
       "seo_title": "Assassin's Creed Chronicles Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Chronicles accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; protected.",
-      "seo_body": "## Stealth on a budget\n\nSellers list Chronicles accounts as full-access purchases you keep, used accounts, and short rentals across platforms. Exactly which entries are included varies, so read the listing before ordering.\n\n## Protected in PKR\n\nPay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method. GamesBazaar holds your money until you confirm the account works as described, and the seller is a chat message away."
+      "seo_description": "Assassin's Creed Chronicles accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; quick support.",
+      "seo_body": "## Stealth on a budget\n\nChronicles accounts come as full-access purchases you keep, used accounts, and short rentals across platforms. Exactly which entries are included varies, so read the listing before ordering.\n\n## Easy buying in PKR\n\nPay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method. If the account doesn't work as described we'll fix it fast — and we're a chat message away."
     },
     {
       "game": "nba-2k",
       "category": "keys",
       "seo_title": "Buy NBA 2K Keys Cheap in Pakistan",
-      "seo_description": "NBA 2K PC keys at PKR prices — recent editions from multiple sellers. Pay with JazzCash, Easypaisa or bank transfer and hit the court within minutes.",
-      "seo_body": "## Basketball at rupee prices\n\nSkip the dollar storefront: sellers on GamesBazaar list NBA 2K keys at Pakistani rupee prices, with multiple editions to choose from. Pay with JazzCash, Easypaisa or bank transfer and most keys are delivered within minutes.\n\n## Check the listing first\n\nEach listing states its delivery method — a key you redeem, a gift to your account, or activation by the seller — and any region lock. The game ends up in your own library either way, and your payment is protected until you confirm delivery."
+      "seo_description": "NBA 2K PC keys at PKR prices — recent editions in stock. Pay with JazzCash, Easypaisa or bank transfer and hit the court within minutes.",
+      "seo_body": "## Basketball at rupee prices\n\nSkip the dollar storefront: GamesBazaar stocks NBA 2K keys at Pakistani rupee prices, with multiple editions to choose from. Pay with JazzCash, Easypaisa or bank transfer and most keys are delivered within minutes.\n\n## Check the listing first\n\nEach listing states its delivery method — a key you redeem, a gift to your account, or activation done for you — and any region lock. The game ends up in your own library either way; if it doesn't arrive, we'll fix it or refund you fast."
     },
     {
       "game": "nba-2k",
       "category": "accounts",
       "seo_title": "Buy NBA 2K Accounts in Pakistan",
-      "seo_description": "NBA 2K game accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; buyer protected.",
-      "seo_body": "## Courtside for less\n\nNBA 2K accounts here come as full-access accounts you keep, used accounts at lower prices, and rentals when you just want some court time. Platforms and editions vary per listing, so read what's included before you order.\n\n## Safe checkout in rupees\n\nPrices are in Pakistani rupees, paid with any popular Pakistani payment method. Your payment stays under buyer protection until you confirm the account matches the listing, and sellers respond directly in chat."
+      "seo_description": "NBA 2K game accounts at PKR prices — full-access, used and rental options across platforms. JazzCash, Easypaisa or bank transfer; problems fixed fast.",
+      "seo_body": "## Courtside for less\n\nNBA 2K accounts here come as full-access accounts you keep, used accounts at lower prices, and rentals when you just want some court time. Platforms and editions vary per listing, so read what's included before you order.\n\n## Safe checkout in rupees\n\nPrices are in Pakistani rupees, paid with any popular Pakistani payment method. If the account doesn't match the listing, we put it right quickly — and we respond directly in the order chat."
     },
     {
       "game": "thief",
       "category": "keys",
       "seo_title": "Buy Thief Game Keys in Pakistan",
       "seo_description": "Thief PC keys at PKR prices — from the classic stealth games to the 2014 reboot. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Master thievery at rupee prices\n\nFrom the classic Thief games that defined stealth to the 2014 reboot, sellers list keys for the series at Pakistani rupee prices. Pick your entry, pay with a local payment method, and most keys arrive within minutes.\n\n## Steal the deal, not the risk\n\nEvery listing explains its delivery — redeem a key, receive a gift, or seller activation — and notes any region lock; the game always ends up in your own library. Buyer protection holds your payment until you confirm it arrived."
+      "seo_body": "## Master thievery at rupee prices\n\nFrom the classic Thief games that defined stealth to the 2014 reboot, keys for the series are here at Pakistani rupee prices. Pick your entry, pay with a local payment method, and most keys arrive within minutes.\n\n## Steal the deal, not the risk\n\nEvery listing explains its delivery — redeem a key, receive a gift, or activation done for you — and notes any region lock; the game always ends up in your own library. If yours doesn't arrive, we make it right fast — easy refunds."
     },
     {
       "game": "thief",
       "category": "accounts",
       "seo_title": "Buy Thief Game Accounts in Pakistan",
-      "seo_description": "Thief game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer; protected until you confirm.",
-      "seo_body": "## Sneak in for less\n\nSellers offer Thief accounts as full-access purchases, used accounts and short rentals — a cheap route into the series. Platforms and included titles vary, so treat each listing as the source of truth.\n\n## Your rupees, guarded\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. GamesBazaar releases your payment only after you confirm the account is exactly as described, and sellers are available in chat."
+      "seo_description": "Thief game accounts at PKR prices — full-access, used and rental listings. Pay with JazzCash, Easypaisa or bank transfer; quick fixes, easy refunds.",
+      "seo_body": "## Sneak in for less\n\nThief accounts come as full-access purchases, used accounts and short rentals — a cheap route into the series. Platforms and included titles vary, so treat each listing as the source of truth.\n\n## Your rupees, safe\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. If the account isn't exactly as described, we'll fix it or refund you — and we're available in the order chat."
     },
     {
       "game": "tom-clancys-the-division",
       "category": "keys",
       "seo_title": "Buy The Division Keys Cheap in Pakistan",
-      "seo_description": "The Division and The Division 2 PC keys at PKR prices from multiple sellers. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## Take back the Dark Zone for less\n\nSellers on GamesBazaar list keys for Tom Clancy's The Division, The Division 2 and their expansions at Pakistani rupee prices, so you can gear up without touching a dollar storefront. Pay with a local payment method and most keys arrive within minutes.\n\n## Before you check out\n\nEach listing spells out its delivery method — a key you redeem yourself, a gift to your account, or activation by the seller — plus any region lock, and the game always lands in your own library. Buyer protection holds your payment until you confirm everything arrived as described."
+      "seo_description": "The Division and The Division 2 PC keys at PKR prices, in stock now. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
+      "seo_body": "## Take back the Dark Zone for less\n\nGamesBazaar stocks keys for Tom Clancy's The Division, The Division 2 and their expansions at Pakistani rupee prices, so you can gear up without touching a dollar storefront. Pay with a local payment method and most keys arrive within minutes.\n\n## Before you check out\n\nEach listing spells out its delivery method — a key you redeem yourself, a gift to your account, or activation done for you — plus any region lock, and the game always lands in your own library. If anything arrives wrong, we sort it out fast — easy refunds."
     },
     {
       "game": "tom-clancys-the-division",
       "category": "accounts",
       "seo_title": "Buy The Division Accounts in Pakistan",
-      "seo_description": "The Division game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; buyer protection included.",
-      "seo_body": "## Agent-ready accounts\n\nFull-access purchases, used accounts and short rentals — sellers list The Division accounts in every form, often far cheaper than starting fresh. Included titles and platforms differ per listing, so read it as the source of truth.\n\n## Protected while you buy\n\nPrices are in Pakistani rupees and local payment methods are accepted. GamesBazaar holds your money until you confirm the account matches its description, with the seller available in chat throughout."
+      "seo_description": "The Division game accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; problems fixed fast.",
+      "seo_body": "## Agent-ready accounts\n\nFull-access purchases, used accounts and short rentals — The Division accounts come in every form, often far cheaper than starting fresh. Included titles and platforms differ per listing, so read it as the source of truth.\n\n## Looked after while you buy\n\nPrices are in Pakistani rupees and local payment methods are accepted. If the account doesn't match its description we make it right fast, and we're available in the order chat throughout."
     },
     {
       "game": "kingdom-come-deliverance",
       "category": "keys",
       "seo_title": "Buy Kingdom Come Deliverance Keys in Pakistan",
       "seo_description": "Kingdom Come: Deliverance 1 and 2 PC keys at Pakistani rupee prices. Pay with JazzCash, Easypaisa or bank transfer and ride out for Bohemia in minutes.",
-      "seo_body": "## Bohemia, priced in rupees\n\nKeys for Kingdom Come: Deliverance, its sequel and their DLC are listed by multiple sellers at PKR prices. Choose an edition, pay with any popular Pakistani method, and most orders are delivered within minutes.\n\n## Henry's come to see us — safely\n\nDelivery differs per listing: some sellers send a key you redeem, others gift the game or activate it for you, and it always ends up in your own library. Check the region noted on the listing before buying — your payment stays protected until you confirm it works."
+      "seo_body": "## Bohemia, priced in rupees\n\nKeys for Kingdom Come: Deliverance, its sequel and their DLC are all listed at PKR prices. Choose an edition, pay with any popular Pakistani method, and most orders are delivered within minutes.\n\n## Henry's come to see us — safely\n\nDelivery differs per listing: some send a key you redeem, others gift the game or activate it for you, and it always ends up in your own library. Check the region noted on the listing before buying — if anything goes wrong, we fix it fast or refund you."
     },
     {
       "game": "kingdom-come-deliverance",
       "category": "accounts",
       "seo_title": "Buy Kingdom Come Deliverance Accounts in Pakistan",
-      "seo_description": "Kingdom Come: Deliverance accounts at PKR prices — full-access, used and rental options. Pay via Pakistani payment methods; protected until you confirm.",
-      "seo_body": "## A knight's tale on a squire's budget\n\nAccounts can undercut key prices: sellers offer Kingdom Come: Deliverance as full-access accounts you keep, used accounts and rentals. Editions and platforms vary, so the listing is always the source of truth.\n\n## Checkout without the peril\n\nPay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method. Your payment sits with GamesBazaar until you confirm the account is as described, and the seller is one chat message away."
+      "seo_description": "Kingdom Come: Deliverance accounts at PKR prices — full-access, used and rental options. Pay via Pakistani payment methods; problems put right fast.",
+      "seo_body": "## A knight's tale on a squire's budget\n\nAccounts can undercut key prices: Kingdom Come: Deliverance comes as full-access accounts you keep, used accounts and rentals. Editions and platforms vary, so the listing is always the source of truth.\n\n## Checkout without the peril\n\nPay in Pakistani rupees using JazzCash, Easypaisa, bank transfer or another local method. If the account isn't as described we'll fix it or refund you, and we're one chat message away."
     },
     {
       "game": "devil-may-cry",
       "category": "keys",
       "seo_title": "Buy Devil May Cry Keys Cheap in Pakistan",
       "seo_description": "Devil May Cry PC keys at PKR prices — DMC 5, the HD Collection and more. Pay with JazzCash, Easypaisa or bank transfer; keys delivered within minutes.",
-      "seo_body": "## Stylish action, sensible prices\n\nFrom Devil May Cry 5 to the HD Collection, sellers list DMC keys at Pakistani rupee prices so you can chase SSS ranks without paying dollar rates. Local payment methods work at checkout and most keys arrive within minutes.\n\n## Know before you slash\n\nEvery listing states how delivery works — a key you redeem, a gift to your account, or seller activation — along with any region lock. The game ends up in your own library either way, and your payment is held safely until you confirm it."
+      "seo_body": "## Stylish action, sensible prices\n\nFrom Devil May Cry 5 to the HD Collection, DMC keys are here at Pakistani rupee prices so you can chase SSS ranks without paying dollar rates. Local payment methods work at checkout and most keys arrive within minutes.\n\n## Know before you slash\n\nEvery listing states how delivery works — a key you redeem, a gift to your account, or activation done for you — along with any region lock. The game ends up in your own library either way; if it doesn't, we make it right fast."
     },
     {
       "game": "devil-may-cry",
       "category": "accounts",
       "seo_title": "Buy Devil May Cry Accounts in Pakistan",
-      "seo_description": "Devil May Cry game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Pakistani payment methods; buyer protected.",
-      "seo_body": "## Devil hunting for less\n\nSellers offer Devil May Cry accounts as full-access purchases, used accounts and short rentals — often the cheapest way to play the series. Included games and platforms vary per listing, so read it before you order.\n\n## Rupees, protected\n\nPay with JazzCash, Easypaisa, bank transfer or another Pakistani method. GamesBazaar releases your payment only after you confirm the account works as described; until then, the seller is right there in chat."
+      "seo_description": "Devil May Cry game accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; easy refunds.",
+      "seo_body": "## Devil hunting for less\n\nDevil May Cry accounts come as full-access purchases, used accounts and short rentals — often the cheapest way to play the series. Included games and platforms vary per listing, so read it before you order.\n\n## Rupees, no risk\n\nPay with JazzCash, Easypaisa, bank transfer or another Pakistani method. If the account doesn't work as described we'll fix it or refund you — and we're right there in the order chat."
     },
     {
       "game": "dragon-age",
       "category": "keys",
       "seo_title": "Buy Dragon Age Keys Cheap in Pakistan",
       "seo_description": "Dragon Age PC keys at PKR prices — Origins to The Veilguard. Pay with JazzCash, Easypaisa or bank transfer and join the Inquisition within minutes.",
-      "seo_body": "## Thedas at rupee prices\n\nOrigins, Inquisition, The Veilguard and everything between — sellers on GamesBazaar list Dragon Age keys at Pakistani rupee prices. Filter to the entry you want, pay through a local method, and most keys are delivered within minutes.\n\n## How your key arrives\n\nDepending on the listing you'll redeem a key yourself, receive the game as a gift, or have the seller activate it — in every case it ends up in your own library. Keys can be region-locked, so match the region on the listing; buyer protection covers you until you confirm delivery."
+      "seo_body": "## Thedas at rupee prices\n\nOrigins, Inquisition, The Veilguard and everything between — GamesBazaar stocks Dragon Age keys at Pakistani rupee prices. Filter to the entry you want, pay through a local method, and most keys are delivered within minutes.\n\n## How your key arrives\n\nDepending on the listing you'll redeem a key yourself, receive the game as a gift, or have it activated for you — in every case it ends up in your own library. Keys can be region-locked, so match the region on the listing; if a delivery goes wrong we make it right, fast."
     },
     {
       "game": "dragon-age",
       "category": "accounts",
       "seo_title": "Buy Dragon Age Accounts in Pakistan",
-      "seo_description": "Dragon Age game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; protected checkout.",
-      "seo_body": "## Every origin story, cheaper\n\nFull-access accounts you keep, used accounts and rentals — sellers list Dragon Age in all three forms, and accounts are often the budget route into the series. Titles included and platforms vary, so treat each listing as the source of truth.\n\n## Safe from order to confirm\n\nEverything is priced in Pakistani rupees and paid with local methods. Your money stays held until you confirm the account matches its description, and sellers answer questions in chat."
+      "seo_description": "Dragon Age game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer accepted; stress-free checkout.",
+      "seo_body": "## Every origin story, cheaper\n\nFull-access accounts you keep, used accounts and rentals — Dragon Age comes in all three forms, and accounts are often the budget route into the series. Titles included and platforms vary, so treat each listing as the source of truth.\n\n## Safe from order to confirm\n\nEverything is priced in Pakistani rupees and paid with local methods. If the account doesn't match its description we sort it out quickly — refunds included — and we answer questions in the order chat."
     },
     {
       "game": "squad",
       "category": "keys",
       "seo_title": "Buy Squad PC Keys Cheap in Pakistan",
-      "seo_description": "Squad PC keys at Pakistani rupee prices from multiple sellers. Pay with JazzCash, Easypaisa or bank transfer and deploy with your team within minutes.",
-      "seo_body": "## Milsim teamwork, PKR pricing\n\nSellers on GamesBazaar list Squad keys at Pakistani rupee prices — a straightforward saving over international storefronts. Pay with a local method and most keys are delivered within minutes, in time for the next round of 50v50.\n\n## The fine print, upfront\n\nEach listing shows whether you get a key to redeem, a gift to your account, or seller activation — the game always lands in your own library. Watch for region locks noted on the listing; your payment is protected until you confirm delivery."
+      "seo_description": "Squad PC keys at Pakistani rupee prices, ready to go. Pay with JazzCash, Easypaisa or bank transfer and deploy with your team within minutes.",
+      "seo_body": "## Milsim teamwork, PKR pricing\n\nGamesBazaar sells Squad keys at Pakistani rupee prices — a straightforward saving over international storefronts. Pay with a local method and most keys are delivered within minutes, in time for the next round of 50v50.\n\n## The fine print, upfront\n\nEach listing shows whether you get a key to redeem, a gift to your account, or activation done for you — the game always lands in your own library. Watch for region locks noted on the listing; if anything misfires, we fix it fast — easy refunds."
     },
     {
       "game": "squad",
       "category": "accounts",
       "seo_title": "Buy Squad Game Accounts in Pakistan",
-      "seo_description": "Squad game accounts at PKR prices — full-access, used and rental listings. Pay via Pakistani payment methods; payment held until you confirm delivery.",
-      "seo_body": "## Boots on the ground for less\n\nSellers list Squad accounts as full-access purchases, used accounts and short rentals — a cheaper way into the milsim. Exactly what's included differs per listing, so read it before ordering.\n\n## Covered at checkout\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. GamesBazaar keeps your payment safe until you confirm the account is as described, and the seller stays reachable in chat."
+      "seo_description": "Squad game accounts at PKR prices — full-access, used and rental listings. Pay via Pakistani payment methods; easy refunds if anything goes wrong.",
+      "seo_body": "## Boots on the ground for less\n\nSquad accounts come as full-access purchases, used accounts and short rentals — a cheaper way into the milsim. Exactly what's included differs per listing, so read it before ordering.\n\n## Covered at checkout\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. If the account isn't as described we'll fix it or refund you, and we stay reachable in the order chat."
     },
     {
       "game": "assassins-creed-odyssey",
       "category": "keys",
       "seo_title": "Buy Assassin's Creed Odyssey Keys in Pakistan",
       "seo_description": "Assassin's Creed Odyssey PC keys at PKR prices — standard to Ultimate editions. Pay with JazzCash, Easypaisa or bank transfer; delivered in minutes.",
-      "seo_body": "## Ancient Greece, modern prices\n\nSellers list Assassin's Creed Odyssey keys — standard, Deluxe and Ultimate editions — at Pakistani rupee prices. Pay with any popular local method and most keys arrive within minutes, ready for Kassandra or Alexios.\n\n## What each listing tells you\n\nEach listing states whether you redeem a key, receive a gift, or have the seller activate the game for you, plus any region lock and what the edition includes. It always ends up in your own library, and your payment stays protected until you confirm delivery."
+      "seo_body": "## Ancient Greece, modern prices\n\nAssassin's Creed Odyssey keys — standard, Deluxe and Ultimate editions — are listed at Pakistani rupee prices. Pay with any popular local method and most keys arrive within minutes, ready for Kassandra or Alexios.\n\n## What each listing tells you\n\nEach listing states whether you redeem a key, receive a gift, or have the game activated for you, plus any region lock and what the edition includes. It always ends up in your own library; if a delivery goes wrong, we fix it fast — easy refunds."
     },
     {
       "game": "assassins-creed-odyssey",
       "category": "accounts",
       "seo_title": "Buy Assassin's Creed Odyssey Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Odyssey accounts at PKR prices — full-access, used and rental options. Pakistani payment methods accepted; buyer protection included.",
-      "seo_body": "## Sail the Aegean on a budget\n\nOdyssey accounts come as full-access purchases you keep, used accounts and rentals, often well under key prices. Platforms and included DLC vary, so the listing is the source of truth.\n\n## Drachmae not required\n\nPay in Pakistani rupees through JazzCash, Easypaisa or bank transfer. Your payment is held until you confirm the account matches its description, and the seller is a chat message away if anything needs clarifying."
+      "seo_description": "Assassin's Creed Odyssey accounts at PKR prices — full-access, used and rental options. Pakistani payment methods accepted; problems fixed fast.",
+      "seo_body": "## Sail the Aegean on a budget\n\nOdyssey accounts come as full-access purchases you keep, used accounts and rentals, often well under key prices. Platforms and included DLC vary, so the listing is the source of truth.\n\n## Drachmae not required\n\nPay in Pakistani rupees through JazzCash, Easypaisa or bank transfer. If the account doesn't match its description we'll fix it or refund you, and we're a chat message away if anything needs clarifying."
     },
     {
       "game": "assassins-creed-valhalla",
       "category": "keys",
       "seo_title": "Buy Assassin's Creed Valhalla Keys in Pakistan",
       "seo_description": "Assassin's Creed Valhalla PC keys at PKR prices, from standard to Complete editions. Pay with local Pakistani methods; keys delivered within minutes.",
-      "seo_body": "## Raid England, not your wallet\n\nMultiple sellers list Assassin's Creed Valhalla keys at Pakistani rupee prices, across standard, Deluxe and Complete editions with the big expansions. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Delivery, listing by listing\n\nSome sellers send a key you redeem, some gift the game to your account, some activate it for you — the listing says which, and the game ends up in your own library regardless. Check the noted region before buying; your payment is protected until you confirm."
+      "seo_body": "## Raid England, not your wallet\n\nAssassin's Creed Valhalla keys are listed at Pakistani rupee prices, across standard, Deluxe and Complete editions with the big expansions. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Delivery, listing by listing\n\nSome listings send a key you redeem, some gift the game to your account, some we activate for you — the listing says which, and the game ends up in your own library regardless. Check the noted region before buying; if anything goes wrong, we make it right fast."
     },
     {
       "game": "assassins-creed-valhalla",
       "category": "accounts",
       "seo_title": "Buy Assassin's Creed Valhalla Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Valhalla accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer; protected checkout.",
-      "seo_body": "## A longship-load of options\n\nSellers offer Valhalla as full-access accounts, used accounts and short rentals, frequently cheaper than buying the game outright. Included expansions and platforms differ, so read the listing before you order.\n\n## Protected the whole way\n\nPrices are in Pakistani rupees, paid through popular local methods. GamesBazaar holds the money until you confirm the account is exactly as described, with the seller available in chat throughout."
+      "seo_description": "Assassin's Creed Valhalla accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer; worry-free checkout.",
+      "seo_body": "## A longship-load of options\n\nValhalla comes as full-access accounts, used accounts and short rentals, frequently cheaper than buying the game outright. Included expansions and platforms differ, so read the listing before you order.\n\n## Looked after the whole way\n\nPrices are in Pakistani rupees, paid through popular local methods. If the account isn't exactly as described we sort it out fast — easy refunds — and we're available in the order chat throughout."
     },
     {
       "game": "mafia",
       "category": "keys",
       "seo_title": "Buy Mafia Keys Cheap in Pakistan",
       "seo_description": "Mafia PC keys at PKR prices — the remade classics through The Old Country. Pay with JazzCash, Easypaisa or bank transfer; delivered within minutes.",
-      "seo_body": "## An offer priced in rupees\n\nFrom the remade classics to Mafia: The Old Country, sellers list Mafia PC keys at Pakistani rupee prices. Pick an entry, pay with a local method, and most keys are delivered within minutes — the family doesn't like waiting.\n\n## Strictly legitimate business\n\nEvery listing declares its delivery method — key, gift or seller activation — and any region lock, and the game always ends up in your own library. Your payment stays in GamesBazaar's hands until you confirm delivery, so nobody gets taken for a ride."
+      "seo_body": "## An offer priced in rupees\n\nFrom the remade classics to Mafia: The Old Country, Mafia PC keys are listed at Pakistani rupee prices. Pick an entry, pay with a local method, and most keys are delivered within minutes — the family doesn't like waiting.\n\n## Strictly legitimate business\n\nEvery listing declares its delivery method — key, gift or activation done for you — and any region lock, and the game always ends up in your own library. If a delivery goes wrong we fix it fast, refund included — nobody gets taken for a ride."
     },
     {
       "game": "mafia",
       "category": "accounts",
       "seo_title": "Buy Mafia Game Accounts in Pakistan",
-      "seo_description": "Mafia game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Pakistani payment methods; protected until confirmed.",
-      "seo_body": "## Join the family for less\n\nSellers list Mafia accounts as full-access purchases, used accounts and rentals — usually the cheapest seat at the table. Which titles and platforms are included varies, so treat the listing as the final word.\n\n## No funny business\n\nPay in rupees via JazzCash, Easypaisa or bank transfer. GamesBazaar holds your payment until you confirm the account matches its description, and the seller answers in chat if you need anything checked."
+      "seo_description": "Mafia game accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; problems fixed fast.",
+      "seo_body": "## Join the family for less\n\nMafia accounts come as full-access purchases, used accounts and rentals — usually the cheapest seat at the table. Which titles and platforms are included varies, so treat the listing as the final word.\n\n## No funny business\n\nPay in rupees via JazzCash, Easypaisa or bank transfer. If the account doesn't match its description we'll fix it or refund you, and we answer in the order chat if you need anything checked."
     },
     {
       "game": "rematch",
       "category": "keys",
       "seo_title": "Buy Rematch Keys Cheap in Pakistan",
       "seo_description": "Rematch PC keys at Pakistani rupee prices — Sloclap's 5v5 football hit. Pay with JazzCash, Easypaisa or bank transfer; keys delivered within minutes.",
-      "seo_body": "## Five-a-side at rupee prices\n\nSloclap's arcade football hit is listed by multiple sellers at Pakistani rupee prices, editions included. Pay with any popular local method and most keys arrive within minutes — quick enough to make tonight's kickoff.\n\n## Before the whistle\n\nCheck the listing for its delivery method — a key you redeem, a gift, or activation by the seller — and any region lock. The game ends up in your own library whichever way it's delivered, and buyer protection holds your payment until you confirm it's playable."
+      "seo_body": "## Five-a-side at rupee prices\n\nSloclap's arcade football hit is listed at Pakistani rupee prices, editions included. Pay with any popular local method and most keys arrive within minutes — quick enough to make tonight's kickoff.\n\n## Before the whistle\n\nCheck the listing for its delivery method — a key you redeem, a gift, or activation done for you — and any region lock. The game ends up in your own library whichever way it's delivered; if it isn't playable, we make it right fast."
     },
     {
       "game": "rematch",
       "category": "accounts",
       "seo_title": "Buy Rematch Game Accounts in Pakistan",
-      "seo_description": "Rematch game accounts at PKR prices — full-access, used and rental options. Local Pakistani payment methods accepted; payment held until you confirm.",
-      "seo_body": "## Get on the pitch for less\n\nFull-access accounts, used accounts and short rentals — sellers list Rematch in every form, often below key prices. Editions and platforms vary per listing, so read it before ordering.\n\n## Fair play at checkout\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local option. Your money is released to the seller only after you confirm the account works as described, and you can message the seller directly at any point."
+      "seo_description": "Rematch game accounts at PKR prices — full-access, used and rental options. Local Pakistani payment methods accepted; easy refunds if needed.",
+      "seo_body": "## Get on the pitch for less\n\nFull-access accounts, used accounts and short rentals — Rematch comes in every form, often below key prices. Editions and platforms vary per listing, so read it before ordering.\n\n## Fair play at checkout\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local option. If the account doesn't work as described we'll fix it or refund you, and you can message us directly in the order chat at any point."
     },
     {
       "game": "tom-clancys-rainbow-six-extraction",
       "category": "keys",
       "seo_title": "Buy Rainbow Six Extraction Keys in Pakistan",
       "seo_description": "Tom Clancy's Rainbow Six Extraction PC keys at PKR prices. Pay with JazzCash, Easypaisa or bank transfer and squad up with two friends within minutes.",
-      "seo_body": "## Co-op containment, priced locally\n\nSellers on GamesBazaar list Rainbow Six Extraction keys at Pakistani rupee prices — a cheap way into Ubisoft's co-op shooter for you and two friends. Local payment methods work at checkout, and most keys are delivered within minutes.\n\n## What the listing settles\n\nDelivery varies by seller: a key you redeem, the game gifted to your account, or activation handled for you — it lands in your own library in every case. Region locks are noted on the listing, and your payment stays protected until you confirm delivery."
+      "seo_body": "## Co-op containment, priced locally\n\nGamesBazaar stocks Rainbow Six Extraction keys at Pakistani rupee prices — a cheap way into Ubisoft's co-op shooter for you and two friends. Local payment methods work at checkout, and most keys are delivered within minutes.\n\n## What the listing settles\n\nDelivery varies by listing: a key you redeem, the game gifted to your account, or activation handled for you — it lands in your own library in every case. Region locks are noted on the listing; if a delivery goes sideways, we fix it fast — easy refunds."
     },
     {
       "game": "tom-clancys-rainbow-six-extraction",
       "category": "accounts",
       "seo_title": "Buy Rainbow Six Extraction Accounts in Pakistan",
-      "seo_description": "Rainbow Six Extraction accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; buyer protected.",
-      "seo_body": "## Suit up for less\n\nSellers offer Rainbow Six Extraction accounts as full-access purchases, used accounts and rentals — often the cheapest way to try the co-op shooter. Platforms and extras differ per listing, so the listing is the source of truth.\n\n## A clean extraction\n\nPrices are in Pakistani rupees and every popular local payment method is accepted. GamesBazaar holds your payment until you confirm the account matches its description, with the seller reachable in chat."
+      "seo_description": "Rainbow Six Extraction accounts at PKR prices — full-access, used and rental listings. JazzCash, Easypaisa and bank transfer accepted; easy refunds.",
+      "seo_body": "## Suit up for less\n\nRainbow Six Extraction accounts come as full-access purchases, used accounts and rentals — often the cheapest way to try the co-op shooter. Platforms and extras differ per listing, so the listing is the source of truth.\n\n## A clean extraction\n\nPrices are in Pakistani rupees and every popular local payment method is accepted. If the account doesn't match its description we make it right fast, and we're reachable in the order chat."
     },
     {
       "game": "gothic",
       "category": "keys",
       "seo_title": "Buy Gothic Keys Cheap in Pakistan",
       "seo_description": "Gothic PC keys at Pakistani rupee prices — the classic RPG series that started in the Colony. JazzCash, Easypaisa or bank transfer; delivered in minutes.",
-      "seo_body": "## Return to the Colony in rupees\n\nGothic, Gothic II and the rest of the series are listed as PC keys at Pakistani rupee prices — a cheap way back into one of the most loved old-school RPG worlds. Pay with a local method and most keys are delivered within minutes, faster than a night in the Old Camp.\n\n## Read before you redeem\n\nEach listing states how it delivers — a key you redeem, a gift, or activation by the seller — plus any region lock. The game always lands in your own library, and GamesBazaar holds your payment until you confirm it arrived."
+      "seo_body": "## Return to the Colony in rupees\n\nGothic, Gothic II and the rest of the series are listed as PC keys at Pakistani rupee prices — a cheap way back into one of the most loved old-school RPG worlds. Pay with a local method and most keys are delivered within minutes, faster than a night in the Old Camp.\n\n## Read before you redeem\n\nEach listing states how it delivers — a key you redeem, a gift, or activation done for you — plus any region lock. The game always lands in your own library; if it doesn't arrive, we'll fix it or refund you fast."
     },
     {
       "game": "gothic",
       "category": "accounts",
       "seo_title": "Buy Gothic Game Accounts in Pakistan",
-      "seo_description": "Gothic game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Pakistani payment methods; protected until you confirm.",
-      "seo_body": "## The old world, cheaper still\n\nSellers list Gothic accounts as full-access purchases, used accounts and rentals — often the cheapest way to revisit Khorinis. Which titles and platforms come with an account varies, so the listing is the source of truth.\n\n## No nameless risks\n\nPay in Pakistani rupees with JazzCash, Easypaisa or bank transfer. Your payment stays with GamesBazaar until you confirm the account matches its description, and the seller is a chat message away."
+      "seo_description": "Gothic game accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; quick support, easy refunds.",
+      "seo_body": "## The old world, cheaper still\n\nGothic accounts come as full-access purchases, used accounts and rentals — often the cheapest way to revisit Khorinis. Which titles and platforms come with an account varies, so the listing is the source of truth.\n\n## No nameless risks\n\nPay in Pakistani rupees with JazzCash, Easypaisa or bank transfer. If the account doesn't match its description we'll fix it or refund you, and we're a chat message away."
     },
     {
       "game": "microsoft-flight-simulator-2024",
       "category": "keys",
       "seo_title": "Microsoft Flight Simulator 2024 Keys in Pakistan",
       "seo_description": "Microsoft Flight Simulator 2024 PC keys at PKR prices, the whole planet included. Pay with JazzCash, Easypaisa or bank transfer; take off within minutes.",
-      "seo_body": "## Fly out of Jinnah for rupees\n\nSellers list Microsoft Flight Simulator 2024 keys at Pakistani rupee prices — and since the sim maps the entire planet, that includes taking off from Karachi, circling Lahore or threading the Karakoram. Pay with a local method and most keys are delivered within minutes.\n\n## Pre-flight checks\n\nEach listing states its delivery method — key, gift or seller activation — and any region lock, and the sim ends up in your own library either way. GamesBazaar holds your payment until you confirm delivery, so nothing takes off without you."
+      "seo_body": "## Fly out of Jinnah for rupees\n\nMicrosoft Flight Simulator 2024 keys are listed at Pakistani rupee prices — and since the sim maps the entire planet, that includes taking off from Karachi, circling Lahore or threading the Karakoram. Pay with a local method and most keys are delivered within minutes.\n\n## Pre-flight checks\n\nEach listing states its delivery method — key, gift or activation done for you — and any region lock, and the sim ends up in your own library either way. If a delivery stalls on the runway, we fix it fast — easy refunds."
     },
     {
       "game": "microsoft-flight-simulator-2024",
       "category": "accounts",
       "seo_title": "Buy Flight Simulator 2024 Accounts in Pakistan",
-      "seo_description": "Microsoft Flight Simulator 2024 accounts at Pakistani rupee prices — full-access, used and rental options. Local payments; held until you confirm.",
-      "seo_body": "## A cheaper seat in the cockpit\n\nFull-access accounts, used accounts and rentals — sellers list Flight Simulator 2024 in every form, often well under the price of a key. Editions and platforms vary per listing, so read it before you book your seat.\n\n## Clear skies at checkout\n\nPrices are in rupees and JazzCash, Easypaisa and bank transfer all work. GamesBazaar releases your payment only after you confirm the account is as described, with the seller reachable in chat."
+      "seo_description": "Microsoft Flight Simulator 2024 accounts at Pakistani rupee prices — full-access, used and rental options. Local payments; problems fixed fast.",
+      "seo_body": "## A cheaper seat in the cockpit\n\nFull-access accounts, used accounts and rentals — Flight Simulator 2024 comes in every form, often well under the price of a key. Editions and platforms vary per listing, so read it before you book your seat.\n\n## Clear skies at checkout\n\nPrices are in rupees and JazzCash, Easypaisa and bank transfer all work. If the account isn't as described we'll fix it or refund you, and we're reachable in the order chat."
     },
     {
       "game": "sea-of-thieves",
       "category": "keys",
       "seo_title": "Buy Sea of Thieves Keys Cheap in Pakistan",
       "seo_description": "Sea of Thieves PC keys at PKR prices — set sail with your crew for less. JazzCash, Easypaisa or bank transfer accepted; keys delivered within minutes.",
-      "seo_body": "## Piracy priced in rupees\n\nSellers list Sea of Thieves keys at Pakistani rupee prices, editions included — a cheap way to get a whole crew of friends on the same ship. Pay with any popular Pakistani method and most keys arrive within minutes, quick enough to sail tonight.\n\n## Check the map first\n\nEvery listing declares its delivery method — a key you redeem, a gift, or activation by the seller — and any region lock. The game ends up in your own library whichever way it lands, and buyer protection holds your payment until you confirm delivery: nobody walks the plank here."
+      "seo_body": "## Piracy priced in rupees\n\nSea of Thieves keys are listed at Pakistani rupee prices, editions included — a cheap way to get a whole crew of friends on the same ship. Pay with any popular Pakistani method and most keys arrive within minutes, quick enough to sail tonight.\n\n## Check the map first\n\nEvery listing declares its delivery method — a key you redeem, a gift, or activation done for you — and any region lock. The game ends up in your own library whichever way it lands; if a delivery sinks, we fix it fast — nobody walks the plank here."
     },
     {
       "game": "sea-of-thieves",
       "category": "accounts",
       "seo_title": "Buy Sea of Thieves Accounts in Pakistan",
-      "seo_description": "Sea of Thieves game accounts at Pakistani rupee prices — full-access, used and rental listings. Pakistani payment methods; protected until confirmed.",
-      "seo_body": "## Join a crew for less\n\nSea of Thieves accounts come as full-access purchases, used accounts and rentals — often the cheapest way aboard. Progress, editions and platforms differ per listing, so treat the listing as the final word on what you're buying.\n\n## Honest pirates only\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. GamesBazaar holds your payment until you confirm the account matches its description, and the seller answers questions in chat."
+      "seo_description": "Sea of Thieves game accounts at Pakistani rupee prices — full-access, used and rental listings. Pakistani payment methods; easy refunds if anything goes wrong.",
+      "seo_body": "## Join a crew for less\n\nSea of Thieves accounts come as full-access purchases, used accounts and rentals — often the cheapest way aboard. Progress, editions and platforms differ per listing, so treat the listing as the final word on what you're buying.\n\n## Honest pirates only\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. If the account doesn't match its description we fix it or refund you, and we answer questions in the order chat."
     },
     {
       "game": "the-crew-motorfest",
       "category": "keys",
       "seo_title": "Buy The Crew Motorfest Keys in Pakistan",
       "seo_description": "The Crew Motorfest PC keys at PKR prices — Ubisoft's open-world racer on O'ahu. Pay with local Pakistani methods; most keys delivered within minutes.",
-      "seo_body": "## Island racing at rupee prices\n\nMultiple sellers list The Crew Motorfest keys — standard and upgraded editions — at Pakistani rupee prices, far friendlier than a dollar storefront after conversion. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Before you hit the gas\n\nThe listing states whether you redeem a key, receive it as a gift, or have the seller activate it for you, plus any region lock. The game ends up in your own library in every case, and your payment is protected until you confirm it's ready to drive."
+      "seo_body": "## Island racing at rupee prices\n\nThe Crew Motorfest keys — standard and upgraded editions — are listed at Pakistani rupee prices, far friendlier than a dollar storefront after conversion. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Before you hit the gas\n\nThe listing states whether you redeem a key, receive it as a gift, or have it activated for you, plus any region lock. The game ends up in your own library in every case; if it isn't ready to drive, we fix it fast — easy refunds."
     },
     {
       "game": "the-crew-motorfest",
       "category": "accounts",
       "seo_title": "Buy The Crew Motorfest Accounts in Pakistan",
-      "seo_description": "The Crew Motorfest accounts at Pakistani rupee prices — full-access, used and rental options from multiple sellers. Payment held until you confirm.",
-      "seo_body": "## A cheaper set of keys\n\nSellers list Motorfest accounts as full-access purchases, used accounts and rentals — often cheaper than the game itself. Cars, editions and platforms vary per account, so the listing is the source of truth.\n\n## Smooth ride at checkout\n\nPrices are in Pakistani rupees and every popular local payment method works. Your money reaches the seller only after you confirm the account is as described — and the seller stays reachable in chat."
+      "seo_description": "The Crew Motorfest accounts at Pakistani rupee prices — full-access, used and rental options. Quick support and easy refunds if needed.",
+      "seo_body": "## A cheaper set of keys\n\nMotorfest accounts come as full-access purchases, used accounts and rentals — often cheaper than the game itself. Cars, editions and platforms vary per account, so the listing is the source of truth.\n\n## Smooth ride at checkout\n\nPrices are in Pakistani rupees and every popular local payment method works. If the account isn't as described we'll fix it or refund you — and we stay reachable in the order chat."
     },
     {
       "game": "age-of-mythology-retold",
       "category": "keys",
       "seo_title": "Buy Age of Mythology: Retold Keys in Pakistan",
       "seo_description": "Age of Mythology: Retold PC keys at PKR prices — the classic myth RTS remade. JazzCash, Easypaisa or bank transfer; keys delivered within minutes.",
-      "seo_body": "## Gods at local prices\n\nAge of Mythology: Retold is listed by multiple sellers as PC keys at Pakistani rupee prices — the remade classic, with expansions where the listing says so. Pay with a Pakistani method and most keys arrive within minutes, quick enough to rally your armies tonight.\n\n## Mortal-friendly fine print\n\nEach listing shows its delivery method — key, gift or seller activation — and any region lock, and the game ends up in your own library regardless. Buyer protection holds your payment until you confirm delivery."
+      "seo_body": "## Gods at local prices\n\nAge of Mythology: Retold is listed as PC keys at Pakistani rupee prices — the remade classic, with expansions where the listing says so. Pay with a Pakistani method and most keys arrive within minutes, quick enough to rally your armies tonight.\n\n## Mortal-friendly fine print\n\nEach listing shows its delivery method — key, gift or activation done for you — and any region lock, and the game ends up in your own library regardless. If a delivery goes wrong, we fix it fast — easy refunds."
     },
     {
       "game": "age-of-mythology-retold",
       "category": "accounts",
       "seo_title": "Age of Mythology: Retold Accounts in Pakistan",
-      "seo_description": "Age of Mythology: Retold game accounts at PKR prices — full-access, used and rental listings. Local Pakistani payments; protected until you confirm.",
-      "seo_body": "## Myth for less\n\nFull-access accounts, used accounts and rentals — sellers list Age of Mythology: Retold in all three forms, usually below key prices. What's included varies per listing, so read it before summoning your wallet.\n\n## Protected like a demigod\n\nPay in rupees via JazzCash, Easypaisa or bank transfer. GamesBazaar releases your payment only after you confirm the account works as described, and you can message the seller at any time."
+      "seo_description": "Age of Mythology: Retold game accounts at PKR prices — full-access, used and rental listings. Local Pakistani payments; problems put right fast.",
+      "seo_body": "## Myth for less\n\nFull-access accounts, used accounts and rentals — Age of Mythology: Retold comes in all three forms, usually below key prices. What's included varies per listing, so read it before summoning your wallet.\n\n## Treated like a demigod\n\nPay in rupees via JazzCash, Easypaisa or bank transfer. If the account doesn't work as described we'll fix it or refund you, and you can message us in the order chat at any time."
     },
     {
       "game": "dayz",
       "category": "keys",
       "seo_title": "Buy DayZ Keys Cheap in Pakistan",
       "seo_description": "DayZ PC keys at Pakistani rupee prices — survive Chernarus for less. Pay with JazzCash, Easypaisa or bank transfer; most keys delivered within minutes.",
-      "seo_body": "## Survival priced in rupees\n\nSellers list DayZ keys at Pakistani rupee prices — cheaper than most foreign storefronts once conversion and fees are counted. Pay with any popular local method and most keys are delivered within minutes, so the only long night is the one in Chernarus.\n\n## Trust, verified\n\nEvery listing declares its delivery method — a key you redeem, a gift to your account, or activation by the seller — along with any region lock. The game ends up in your own library, and your payment stays protected until you confirm delivery: rare in DayZ, standard here."
+      "seo_body": "## Survival priced in rupees\n\nDayZ keys are listed at Pakistani rupee prices — cheaper than most foreign storefronts once conversion and fees are counted. Pay with any popular local method and most keys are delivered within minutes, so the only long night is the one in Chernarus.\n\n## Trust, verified\n\nEvery listing declares its delivery method — a key you redeem, a gift to your account, or activation done for you — along with any region lock. The game ends up in your own library, and if a delivery goes wrong we fix it fast: trust is rare in DayZ, standard here."
     },
     {
       "game": "dayz",
       "category": "accounts",
       "seo_title": "Buy DayZ Game Accounts in Pakistan",
-      "seo_description": "DayZ game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Pakistani payment methods; held until you confirm.",
-      "seo_body": "## Spawn in for less\n\nDayZ accounts are listed as full-access purchases, used accounts and rentals — often the cheapest route into Chernarus. Platforms and extras differ per listing, so the listing is your source of truth.\n\n## No bandits at checkout\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. GamesBazaar holds your payment until you confirm the account matches its description, with the seller a message away."
+      "seo_description": "DayZ game accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; problems sorted fast.",
+      "seo_body": "## Spawn in for less\n\nDayZ accounts are listed as full-access purchases, used accounts and rentals — often the cheapest route into Chernarus. Platforms and extras differ per listing, so the listing is your source of truth.\n\n## No bandits at checkout\n\nPay in Pakistani rupees with JazzCash, Easypaisa, bank transfer or another local method. If the account doesn't match its description we'll fix it or refund you, and we're a message away in the order chat."
     },
     {
       "game": "doom-the-dark-ages",
       "category": "keys",
       "seo_title": "Buy Doom: The Dark Ages Keys in Pakistan",
       "seo_description": "Doom: The Dark Ages PC keys at Pakistani rupee prices — the Slayer's medieval prequel. Local payment methods accepted; keys delivered within minutes.",
-      "seo_body": "## The medieval Slayer, local price\n\nDoom: The Dark Ages — shield saw, dragon and all — is listed by multiple sellers as PC keys at Pakistani rupee prices, standard and premium editions alike. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Armour-plated buying\n\nThe listing states whether you redeem a key, receive a gift, or have the seller activate the game — it lands in your own library in every case — plus any region lock. GamesBazaar holds your payment until you confirm delivery."
+      "seo_body": "## The medieval Slayer, local price\n\nDoom: The Dark Ages — shield saw, dragon and all — is listed as PC keys at Pakistani rupee prices, standard and premium editions alike. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Armour-plated buying\n\nThe listing states whether you redeem a key, receive a gift, or have the game activated for you — it lands in your own library in every case — plus any region lock. If a delivery goes wrong, we fix it fast — easy refunds."
     },
     {
       "game": "doom-the-dark-ages",
       "category": "accounts",
       "seo_title": "Doom: The Dark Ages Accounts in Pakistan",
-      "seo_description": "Doom: The Dark Ages game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer; protected until confirmed.",
-      "seo_body": "## Cheaper than a crucible blade\n\nSellers list Doom: The Dark Ages accounts as full-access purchases, used accounts and rentals — usually the cheapest way to play the prequel. Editions and platforms vary, so read the listing before you order.\n\n## Demons in the game, not at checkout\n\nPrices are in Pakistani rupees with every popular local method accepted. Your money is released to the seller only after you confirm the account works as described, and the seller answers in chat."
+      "seo_description": "Doom: The Dark Ages game accounts at PKR prices — full-access, used and rental options. JazzCash, Easypaisa and bank transfer; quick fixes, easy refunds.",
+      "seo_body": "## Cheaper than a crucible blade\n\nDoom: The Dark Ages accounts come as full-access purchases, used accounts and rentals — usually the cheapest way to play the prequel. Editions and platforms vary, so read the listing before you order.\n\n## Demons in the game, not at checkout\n\nPrices are in Pakistani rupees with every popular local method accepted. If the account doesn't work as described we'll fix it or refund you, and we answer in the order chat."
     },
     {
       "game": "monster-hunter-wilds",
       "category": "keys",
       "seo_title": "Buy Monster Hunter Wilds Keys in Pakistan",
       "seo_description": "Monster Hunter Wilds PC keys at Pakistani rupee prices — hunt the Forbidden Lands for less. JazzCash, Easypaisa or bank transfer; delivery in minutes.",
-      "seo_body": "## Into the Forbidden Lands for rupees\n\nMonster Hunter Wilds keys are listed by multiple sellers at Pakistani rupee prices, deluxe upgrades included. Pay with a local Pakistani method and most keys arrive within minutes — your Seikret is saddled and waiting.\n\n## What each listing pins down\n\nDelivery differs by seller: a key you redeem, the game gifted to your account, or activation handled for you. The listing says which, notes any region lock, and the game ends up in your own library regardless. Buyer protection covers your payment until you confirm."
+      "seo_body": "## Into the Forbidden Lands for rupees\n\nMonster Hunter Wilds keys are listed at Pakistani rupee prices, deluxe upgrades included. Pay with a local Pakistani method and most keys arrive within minutes — your Seikret is saddled and waiting.\n\n## What each listing pins down\n\nDelivery differs by listing: a key you redeem, the game gifted to your account, or activation handled for you. The listing says which, notes any region lock, and the game ends up in your own library regardless. If anything goes wrong, we make it right fast."
     },
     {
       "game": "monster-hunter-wilds",
       "category": "accounts",
       "seo_title": "Monster Hunter Wilds Accounts in Pakistan",
-      "seo_description": "Monster Hunter Wilds game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Local payments; held until you confirm.",
-      "seo_body": "## A hunt that costs less\n\nFull-access accounts, used accounts and rentals — sellers list Monster Hunter Wilds in every form, often under the key price. Progress, platform and edition vary per account, so treat the listing as the final word.\n\n## Carve rewards, not risks\n\nPay in Pakistani rupees via JazzCash, Easypaisa or bank transfer. GamesBazaar holds your payment until you confirm the account is as described, and the seller stays reachable in chat."
+      "seo_description": "Monster Hunter Wilds game accounts at PKR prices — full-access, used and rental listings. Local payments; quick support, easy refunds.",
+      "seo_body": "## A hunt that costs less\n\nFull-access accounts, used accounts and rentals — Monster Hunter Wilds comes in every form, often under the key price. Progress, platform and edition vary per account, so treat the listing as the final word.\n\n## Carve rewards, not risks\n\nPay in Pakistani rupees via JazzCash, Easypaisa or bank transfer. If the account isn't as described we'll fix it or refund you, and we stay reachable in the order chat."
     },
     {
       "game": "warhammer-40000-space-marine-2",
       "category": "keys",
       "seo_title": "Buy Space Marine 2 Keys Cheap in Pakistan",
       "seo_description": "Warhammer 40,000: Space Marine 2 PC keys at PKR prices. Pay with JazzCash, Easypaisa or bank transfer and purge the Tyranids within minutes of buying.",
-      "seo_body": "## The Emperor protects your wallet\n\nSellers list Warhammer 40,000: Space Marine 2 keys at Pakistani rupee prices, from the standard edition up to Gold and Ultra. Pay with any popular Pakistani method and most keys are delivered within minutes — the Tyranids won't wait, and neither should you.\n\n## Purge doubt before buying\n\nEach listing shows its delivery method — key, gift or seller activation — and any region lock, and the game always ends up in your own library. Your payment stays with GamesBazaar until you confirm delivery."
+      "seo_body": "## The Emperor protects your wallet\n\nWarhammer 40,000: Space Marine 2 keys are listed at Pakistani rupee prices, from the standard edition up to Gold and Ultra. Pay with any popular Pakistani method and most keys are delivered within minutes — the Tyranids won't wait, and neither should you.\n\n## Purge doubt before buying\n\nEach listing shows its delivery method — key, gift or activation done for you — and any region lock, and the game always ends up in your own library. If a delivery falters, we fix it fast — easy refunds."
     },
     {
       "game": "warhammer-40000-space-marine-2",
       "category": "accounts",
       "seo_title": "Buy Space Marine 2 Accounts in Pakistan",
-      "seo_description": "Warhammer 40,000: Space Marine 2 accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; protected until confirmed.",
-      "seo_body": "## Enlist for less\n\nSpace Marine 2 accounts come as full-access purchases, used accounts and rentals — often the cheapest way into the fight for the Imperium. Platforms and editions differ per listing, so the listing is the source of truth.\n\n## A checkout without heresy\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. Your money reaches the seller only after you confirm the account matches its description, with chat open the whole time."
+      "seo_description": "Warhammer 40,000: Space Marine 2 accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; easy refunds if anything goes wrong.",
+      "seo_body": "## Enlist for less\n\nSpace Marine 2 accounts come as full-access purchases, used accounts and rentals — often the cheapest way into the fight for the Imperium. Platforms and editions differ per listing, so the listing is the source of truth.\n\n## A checkout without heresy\n\nPay in rupees with JazzCash, Easypaisa, bank transfer or another local option. If the account doesn't match its description we'll fix it or refund you, with the order chat open the whole time."
     },
     {
       "game": "assassins-creed-shadows",
       "category": "keys",
       "seo_title": "Assassin's Creed Shadows Keys in Pakistan",
       "seo_description": "Assassin's Creed Shadows PC keys at Pakistani rupee prices — feudal Japan with Naoe and Yasuke. Local payment methods; keys delivered within minutes.",
-      "seo_body": "## Feudal Japan, local prices\n\nSellers list Assassin's Creed Shadows keys — standard through Ultimate editions — at Pakistani rupee prices. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes, whether you favour the shinobi or the samurai.\n\n## Step out of the shadows informed\n\nEvery listing states its delivery method — a key you redeem, a gift, or activation by the seller — plus any region lock and what the edition includes. The game ends up in your own library either way, and your payment is protected until you confirm delivery."
+      "seo_body": "## Feudal Japan, local prices\n\nAssassin's Creed Shadows keys — standard through Ultimate editions — are listed at Pakistani rupee prices. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes, whether you favour the shinobi or the samurai.\n\n## Step out of the shadows informed\n\nEvery listing states its delivery method — a key you redeem, a gift, or activation done for you — plus any region lock and what the edition includes. The game ends up in your own library either way; if a delivery slips, we make it right fast."
     },
     {
       "game": "assassins-creed-shadows",
       "category": "accounts",
       "seo_title": "Assassin's Creed Shadows Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Shadows game accounts at PKR prices — full-access, used and rental options from multiple sellers. Payment held until you confirm.",
-      "seo_body": "## Two heroes, one smaller bill\n\nFull-access accounts, used accounts and rentals — Shadows is listed in every form, often below the price of a key. Editions and platforms vary per listing, so read it before you order.\n\n## Quiet, careful checkout\n\nPrices are in Pakistani rupees and every popular local payment method is accepted. GamesBazaar releases your payment only once you confirm the account works as described, and the seller answers questions in chat."
+      "seo_description": "Assassin's Creed Shadows game accounts at PKR prices — full-access, used and rental options. Quick support and easy refunds if needed.",
+      "seo_body": "## Two heroes, one smaller bill\n\nFull-access accounts, used accounts and rentals — Shadows is listed in every form, often below the price of a key. Editions and platforms vary per listing, so read it before you order.\n\n## Quiet, careful checkout\n\nPrices are in Pakistani rupees and every popular local payment method is accepted. If the account doesn't work as described we'll fix it or refund you, and we answer questions in the order chat."
     },
     {
       "game": "indiana-jones-and-the-great-circle",
       "category": "keys",
       "seo_title": "Indiana Jones and the Great Circle Keys Pakistan",
       "seo_description": "Indiana Jones and the Great Circle PC keys at Pakistani rupee prices — whip, fedora and all. Local payment methods; keys delivered within minutes.",
-      "seo_body": "## Fortune and glory, priced in rupees\n\nIndiana Jones and the Great Circle — MachineGames' globe-trotting 1937 adventure — is listed by multiple sellers as PC keys at Pakistani rupee prices, standard and premium editions alike. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys arrive within minutes.\n\n## It belongs in your library\n\nEach listing states how delivery works — a key you redeem yourself, the game gifted to your account, or activation handled by the seller — along with any region lock. Whichever route, the game ends up in your own library, and GamesBazaar holds your payment until you confirm delivery."
+      "seo_body": "## Fortune and glory, priced in rupees\n\nIndiana Jones and the Great Circle — MachineGames' globe-trotting 1937 adventure — is listed as PC keys at Pakistani rupee prices, standard and premium editions alike. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys arrive within minutes.\n\n## It belongs in your library\n\nEach listing states how delivery works — a key you redeem yourself, the game gifted to your account, or activation handled for you — along with any region lock. Whichever route, the game ends up in your own library; if it goes missing, we fix it fast — easy refunds."
     },
     {
       "game": "indiana-jones-and-the-great-circle",
       "category": "accounts",
       "seo_title": "Indiana Jones Great Circle Accounts in Pakistan",
-      "seo_description": "Indiana Jones and the Great Circle accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; held until you confirm.",
-      "seo_body": "## An adventure without the excavation budget\n\nSellers list Indiana Jones and the Great Circle as full-access accounts, used accounts and rentals — often the cheapest way into the Great Circle. Platforms and editions differ per account, so the listing is the source of truth.\n\n## No traps at checkout\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. Your payment stays held until you confirm the account matches its description, and the seller is a chat message away."
+      "seo_description": "Indiana Jones and the Great Circle accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; quick fixes, easy refunds.",
+      "seo_body": "## An adventure without the excavation budget\n\nIndiana Jones and the Great Circle comes as full-access accounts, used accounts and rentals — often the cheapest way into the Great Circle. Platforms and editions differ per account, so the listing is the source of truth.\n\n## No traps at checkout\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. If the account doesn't match its description we'll fix it or refund you, and we're a chat message away."
     },
     {
       "game": "assassins-creed-mirage",
       "category": "keys",
       "seo_title": "Buy Assassin's Creed Mirage Keys in Pakistan",
       "seo_description": "Assassin's Creed Mirage PC keys at Pakistani rupee prices — Basim's Baghdad, back to pure stealth. Local payments; most keys delivered within minutes.",
-      "seo_body": "## Baghdad's rooftops for rupees\n\nAssassin's Creed Mirage — Basim's stripped-back stealth story in ninth-century Baghdad — is listed as PC keys by multiple sellers at Pakistani rupee prices, standard and Deluxe alike. Pay through JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## Read before you leap\n\nSellers deliver differently: a key you redeem, the game gifted to your account, or activation handled for you. The listing spells out which, along with any region lock — and the game joins your own library in every case. Your payment is held until you confirm delivery."
+      "seo_body": "## Baghdad's rooftops for rupees\n\nAssassin's Creed Mirage — Basim's stripped-back stealth story in ninth-century Baghdad — is listed as PC keys at Pakistani rupee prices, standard and Deluxe alike. Pay through JazzCash, Easypaisa or bank transfer and most keys arrive within minutes.\n\n## Read before you leap\n\nListings deliver differently: a key you redeem, the game gifted to your account, or activation handled for you. The listing spells out which, along with any region lock — and the game joins your own library in every case. If a delivery slips, we fix it fast."
     },
     {
       "game": "assassins-creed-mirage",
       "category": "accounts",
       "seo_title": "Assassin's Creed Mirage Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Mirage game accounts at PKR prices — full-access, used and rental options from many sellers. Payment held until you confirm delivery.",
-      "seo_body": "## A quieter way to buy\n\nFull-access accounts, used accounts and rentals — sellers list Mirage in all three forms, frequently under the price of a key. Platform and edition vary per listing, so check it before ordering.\n\n## Hidden ones, not hidden fees\n\nEverything is priced in Pakistani rupees and paid with local methods. GamesBazaar releases the money to the seller only after you confirm the account works as described, and chat stays open if you need help."
+      "seo_description": "Assassin's Creed Mirage game accounts at PKR prices — full-access, used and rental options. Quick support and easy refunds if needed.",
+      "seo_body": "## A quieter way to buy\n\nFull-access accounts, used accounts and rentals — Mirage comes in all three forms, frequently under the price of a key. Platform and edition vary per listing, so check it before ordering.\n\n## Hidden ones, not hidden fees\n\nEverything is priced in Pakistani rupees and paid with local methods. If the account doesn't work as described we'll fix it or refund you, and the order chat stays open if you need help."
     },
     {
       "game": "assassins-creed-origins",
       "category": "keys",
       "seo_title": "Buy Assassin's Creed Origins Keys in Pakistan",
       "seo_description": "Assassin's Creed Origins PC keys at Pakistani rupee prices — Bayek's Egypt, where the Brotherhood began. Local payment methods; delivery in minutes.",
-      "seo_body": "## Ancient Egypt at a local price\n\nSellers list Assassin's Creed Origins keys — standard through Gold — at Pakistani rupee prices, letting you ride with Bayek of Siwa for less. Checkout works with JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Know your route in\n\nDelivery depends on the listing: a key you activate yourself, a gift to your account, or the seller activating for you. Region locks are stated where they apply, and the game ends up in your own library whichever way. Buyer protection holds your payment until you confirm."
+      "seo_body": "## Ancient Egypt at a local price\n\nAssassin's Creed Origins keys — standard through Gold — are listed at Pakistani rupee prices, letting you ride with Bayek of Siwa for less. Checkout works with JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Know your route in\n\nDelivery depends on the listing: a key you activate yourself, a gift to your account, or activation done for you. Region locks are stated where they apply, and the game ends up in your own library whichever way. If anything goes wrong, we fix it fast."
     },
     {
       "game": "assassins-creed-origins",
       "category": "accounts",
       "seo_title": "Assassin's Creed Origins Accounts in Pakistan",
-      "seo_description": "Assassin's Creed Origins accounts at PKR prices — full-access, used and rental listings from multiple sellers. Local payments; held until you confirm.",
-      "seo_body": "## Cross the desert for less\n\nFrom full-access purchases to used accounts and rentals, Origins turns up in every form on GamesBazaar — often cheaper than a key. Editions and platforms differ, so treat the listing as the final word.\n\n## By the creed of buyer protection\n\nPay in Pakistani rupees through JazzCash, Easypaisa or bank transfer. Your payment is released only once you confirm the account is as described; until then it stays protected, with the seller answering questions in chat."
+      "seo_description": "Assassin's Creed Origins accounts at PKR prices — full-access, used and rental listings. Local payments; quick support, easy refunds.",
+      "seo_body": "## Cross the desert for less\n\nFrom full-access purchases to used accounts and rentals, Origins turns up in every form on GamesBazaar — often cheaper than a key. Editions and platforms differ, so treat the listing as the final word.\n\n## By the creed of easy refunds\n\nPay in Pakistani rupees through JazzCash, Easypaisa or bank transfer. If the account isn't as described we'll fix it or refund you, and we answer questions in the order chat."
     },
     {
       "game": "avatar-frontiers-of-pandora",
       "category": "keys",
       "seo_title": "Avatar: Frontiers of Pandora Keys in Pakistan",
       "seo_description": "Avatar: Frontiers of Pandora PC keys at Pakistani rupee prices — explore the Western Frontier as a Na'vi. Local payments; keys arrive within minutes.",
-      "seo_body": "## Pandora, paid for in rupees\n\nAvatar: Frontiers of Pandora keys are listed by multiple sellers at Pakistani rupee prices, from the standard edition up to Ultimate. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes — the Western Frontier doesn't wait.\n\n## Before you take flight\n\nEach listing tells you how it delivers — a key to redeem, a gift to your account, or activation by the seller — and flags any region lock. The game lands in your own library in every case, and GamesBazaar keeps your payment held until you confirm it arrived."
+      "seo_body": "## Pandora, paid for in rupees\n\nAvatar: Frontiers of Pandora keys are listed at Pakistani rupee prices, from the standard edition up to Ultimate. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes — the Western Frontier doesn't wait.\n\n## Before you take flight\n\nEach listing tells you how it delivers — a key to redeem, a gift to your account, or activation done for you — and flags any region lock. The game lands in your own library in every case; if it doesn't arrive, we fix it fast — easy refunds."
     },
     {
       "game": "avatar-frontiers-of-pandora",
       "category": "accounts",
       "seo_title": "Avatar Frontiers of Pandora Accounts Pakistan",
-      "seo_description": "Avatar: Frontiers of Pandora accounts at PKR prices — full-access, used and rental options. Pakistani payment methods; protected until you confirm.",
-      "seo_body": "## See Pandora without the RDA price tag\n\nSellers list Frontiers of Pandora as full-access accounts, used accounts and rentals — usually the cheapest path onto the frontier. Platforms, editions and progress vary per account, so the listing is the source of truth.\n\n## Connected, like Eywa intended\n\nPrices are in Pakistani rupees with every popular local payment method accepted. Your money stays held until you confirm the account works as described, and the seller stays reachable in chat throughout."
+      "seo_description": "Avatar: Frontiers of Pandora accounts at PKR prices — full-access, used and rental options. Pakistani payment methods; problems fixed fast.",
+      "seo_body": "## See Pandora without the RDA price tag\n\nFrontiers of Pandora comes as full-access accounts, used accounts and rentals — usually the cheapest path onto the frontier. Platforms, editions and progress vary per account, so the listing is the source of truth.\n\n## Connected, like Eywa intended\n\nPrices are in Pakistani rupees with every popular local payment method accepted. If the account doesn't work as described we'll fix it or refund you, and we stay reachable in the order chat throughout."
     },
     {
       "game": "call-of-duty-black-ops-2",
       "category": "keys",
       "seo_title": "Buy Call of Duty: Black Ops 2 Keys in Pakistan",
       "seo_description": "Call of Duty: Black Ops 2 PC keys at Pakistani rupee prices — the classic campaign, multiplayer and Zombies. Local payments; delivery within minutes.",
-      "seo_body": "## A classic that still holds the line\n\nCall of Duty: Black Ops 2 — branching Cold War campaign, legendary multiplayer, Zombies — is listed as PC keys by multiple sellers at Pakistani rupee prices. Pay through JazzCash, Easypaisa or bank transfer and most keys are delivered within minutes.\n\n## Check your intel first\n\nListings differ on delivery: a key you redeem, the game gifted to your account, or seller-side activation. Each one says which applies and whether the key is region-locked — and the game ends up in your own library regardless. Your payment is protected until you confirm."
+      "seo_body": "## A classic that still holds the line\n\nCall of Duty: Black Ops 2 — branching Cold War campaign, legendary multiplayer, Zombies — is listed as PC keys at Pakistani rupee prices. Pay through JazzCash, Easypaisa or bank transfer and most keys are delivered within minutes.\n\n## Check your intel first\n\nListings differ on delivery: a key you redeem, the game gifted to your account, or activation done for you. Each one says which applies and whether the key is region-locked — and the game ends up in your own library regardless. If anything misfires, we fix it fast."
     },
     {
       "game": "call-of-duty-black-ops-2",
       "category": "accounts",
       "seo_title": "Call of Duty Black Ops 2 Accounts in Pakistan",
-      "seo_description": "Call of Duty: Black Ops 2 accounts at PKR prices — full-access, used and rental listings from many sellers. Local payments; held until you confirm.",
-      "seo_body": "## Old-school ops, present-day prices\n\nFull-access accounts, used accounts and rentals — Black Ops 2 shows up in all three forms, often below the price of a key. Platform and edition vary per listing, so read it before you commit.\n\n## Prestige-level protection\n\nEvery listing is priced in Pakistani rupees and paid via JazzCash, Easypaisa or bank transfer. GamesBazaar releases payment only after you confirm the account is as described, with the seller available in chat."
+      "seo_description": "Call of Duty: Black Ops 2 accounts at PKR prices — full-access, used and rental listings. Local payments; easy refunds if anything goes wrong.",
+      "seo_body": "## Old-school ops, present-day prices\n\nFull-access accounts, used accounts and rentals — Black Ops 2 shows up in all three forms, often below the price of a key. Platform and edition vary per listing, so read it before you commit.\n\n## Prestige-level service\n\nEvery listing is priced in Pakistani rupees and paid via JazzCash, Easypaisa or bank transfer. If the account isn't as described we'll fix it or refund you, and we're available in the order chat."
     },
     {
       "game": "forza-horizon-6",
       "category": "keys",
       "seo_title": "Buy Forza Horizon 6 Keys Cheap in Pakistan",
       "seo_description": "Forza Horizon 6 PC keys at Pakistani rupee prices — the Horizon Festival takes on Japan. Pakistani payment methods; keys delivered within minutes.",
-      "seo_body": "## The festival comes to Japan — and to PKR\n\nForza Horizon 6 keys are listed by multiple sellers at Pakistani rupee prices, standard and premium editions included. Checkout runs on JazzCash, Easypaisa or bank transfer, and most keys arrive within minutes — barely a pit stop.\n\n## The racing line to a safe buy\n\nHow you receive the game depends on the listing: a key to redeem, a gift to your account, or activation by the seller. Region locks are stated where they exist, the game ends up in your own library either way, and your payment is held until you confirm."
+      "seo_body": "## The festival comes to Japan — and to PKR\n\nForza Horizon 6 keys are listed at Pakistani rupee prices, standard and premium editions included. Checkout runs on JazzCash, Easypaisa or bank transfer, and most keys arrive within minutes — barely a pit stop.\n\n## The racing line to a safe buy\n\nHow you receive the game depends on the listing: a key to redeem, a gift to your account, or activation done for you. Region locks are stated where they exist, the game ends up in your own library either way, and if anything goes wrong we fix it fast."
     },
     {
       "game": "forza-horizon-6",
       "category": "accounts",
       "seo_title": "Buy Forza Horizon 6 Accounts in Pakistan",
-      "seo_description": "Forza Horizon 6 game accounts at PKR prices — full-access, used and rental options from multiple sellers. Local payments; protected until you confirm.",
-      "seo_body": "## Pole position without the price\n\nSellers list Forza Horizon 6 as full-access accounts, used accounts and rentals — often the cheapest seat behind the wheel. Editions, platforms and progress differ per account; the listing is the final word.\n\n## No wheelspin at checkout\n\nPay in Pakistani rupees with any popular local method. Your payment stays with GamesBazaar until you confirm the account works as described, and the seller answers questions in chat."
+      "seo_description": "Forza Horizon 6 game accounts at PKR prices — full-access, used and rental options. Local payments; quick support, easy refunds.",
+      "seo_body": "## Pole position without the price\n\nForza Horizon 6 comes as full-access accounts, used accounts and rentals — often the cheapest seat behind the wheel. Editions, platforms and progress differ per account; the listing is the final word.\n\n## No wheelspin at checkout\n\nPay in Pakistani rupees with any popular local method. If the account doesn't work as described we'll fix it or refund you, and we answer questions in the order chat."
     },
     {
       "game": "remnant-2",
       "category": "keys",
       "seo_title": "Buy Remnant 2 Keys Cheap in Pakistan",
       "seo_description": "Remnant 2 PC keys at Pakistani rupee prices — soulslike gunplay across strange worlds, solo or co-op. Local payment methods; delivery within minutes.",
-      "seo_body": "## Worlds worth dying in, priced in PKR\n\nRemnant 2 — Gunfire Games' soulslike shooter with rerolling worlds and three-player co-op — is listed as PC keys by multiple sellers at Pakistani rupee prices. Pay via JazzCash, Easypaisa or bank transfer; most keys arrive within minutes.\n\n## Loot the details first\n\nEvery listing states its delivery method — a key, a gift, or activation handled by the seller — plus any region lock, and the game joins your own library whichever applies. Payment is held by GamesBazaar until you confirm delivery, so a failed run only ever happens in-game."
+      "seo_body": "## Worlds worth dying in, priced in PKR\n\nRemnant 2 — Gunfire Games' soulslike shooter with rerolling worlds and three-player co-op — is listed as PC keys at Pakistani rupee prices. Pay via JazzCash, Easypaisa or bank transfer; most keys arrive within minutes.\n\n## Loot the details first\n\nEvery listing states its delivery method — a key, a gift, or activation handled for you — plus any region lock, and the game joins your own library whichever applies. If a delivery fails we fix it fast, so a failed run only ever happens in-game."
     },
     {
       "game": "remnant-2",
       "category": "accounts",
       "seo_title": "Buy Remnant 2 Accounts in Pakistan",
-      "seo_description": "Remnant 2 game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Pakistani payment methods; held until you confirm.",
-      "seo_body": "## Cheaper than another archetype grind\n\nFull-access accounts, used accounts and rentals — sellers list Remnant 2 in every form, often under the price of a key. Platform, edition and progress vary per account, so read the listing before ordering.\n\n## Rooted in buyer protection\n\nPrices are in Pakistani rupees, paid through JazzCash, Easypaisa or bank transfer. GamesBazaar keeps the money held until you confirm the account is as described, and the seller stays reachable in chat."
+      "seo_description": "Remnant 2 game accounts at PKR prices — full-access, used and rental listings. Pakistani payment methods; problems sorted fast.",
+      "seo_body": "## Cheaper than another archetype grind\n\nFull-access accounts, used accounts and rentals — Remnant 2 comes in every form, often under the price of a key. Platform, edition and progress vary per account, so read the listing before ordering.\n\n## Rooted in good service\n\nPrices are in Pakistani rupees, paid through JazzCash, Easypaisa or bank transfer. If the account isn't as described we'll fix it or refund you, and we stay reachable in the order chat."
     },
     {
       "game": "resident-evil-requiem",
       "category": "keys",
       "seo_title": "Buy Resident Evil Requiem Keys in Pakistan",
       "seo_description": "Resident Evil Requiem PC keys at Pakistani rupee prices — survival horror returns to Raccoon City. Local payment methods; keys arrive within minutes.",
-      "seo_body": "## Raccoon City, revisited for rupees\n\nResident Evil Requiem keys — standard and deluxe editions — are listed by multiple sellers at Pakistani rupee prices, so Grace Ashcroft's nightmare costs less to enter. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Survival rules for buyers\n\nThe listing states how delivery works — a key you redeem, the game gifted to your account, or activation by the seller — and flags any region lock. The game ends up in your own library in every case, with your payment held until you confirm."
+      "seo_body": "## Raccoon City, revisited for rupees\n\nResident Evil Requiem keys — standard and deluxe editions — are listed at Pakistani rupee prices, so Grace Ashcroft's nightmare costs less to enter. Checkout takes JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Survival rules for buyers\n\nThe listing states how delivery works — a key you redeem, the game gifted to your account, or activation done for you — and flags any region lock. The game ends up in your own library in every case; if it doesn't, we make it right fast."
     },
     {
       "game": "resident-evil-requiem",
       "category": "accounts",
       "seo_title": "Resident Evil Requiem Accounts in Pakistan",
-      "seo_description": "Resident Evil Requiem game accounts at PKR prices — full-access, used and rental options. Pakistani payment methods; protected until you confirm.",
-      "seo_body": "## Horror priced to survive\n\nSellers list Resident Evil Requiem as full-access accounts, used accounts and rentals — often the cheapest way into Capcom's latest nightmare. Editions and platforms vary per listing, so treat it as the source of truth.\n\n## Nothing lurking at checkout\n\nEvery price is in Pakistani rupees and every popular local payment method works. Your money is released to the seller only after you confirm the account matches its description; until then, buyer protection has it."
+      "seo_description": "Resident Evil Requiem game accounts at PKR prices — full-access, used and rental options. Pakistani payment methods; problems fixed fast.",
+      "seo_body": "## Horror priced to survive\n\nResident Evil Requiem comes as full-access accounts, used accounts and rentals — often the cheapest way into Capcom's latest nightmare. Editions and platforms vary per listing, so treat it as the source of truth.\n\n## Nothing lurking at checkout\n\nEvery price is in Pakistani rupees and every popular local payment method works. If the account doesn't match its description, we fix it or refund you — nothing to fear at this counter."
     },
     {
       "game": "skull-and-bones",
       "category": "keys",
       "seo_title": "Buy Skull and Bones Keys Cheap in Pakistan",
       "seo_description": "Skull and Bones PC keys at Pakistani rupee prices — build your ship and rule the Indian Ocean. Local payment methods; keys delivered within minutes.",
-      "seo_body": "## Piracy priced in rupees — the legal kind\n\nSkull and Bones keys are listed by multiple sellers at Pakistani rupee prices, standard and premium editions both. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes, ready for the Indian Ocean.\n\n## Chart the listing before you sail\n\nSellers deliver in different ways — a key you redeem, the game gifted to your account, or activation handled for you — and the listing says which, plus any region lock. The game docks in your own library regardless, and your payment stays held until you confirm delivery."
+      "seo_body": "## Piracy priced in rupees — the legal kind\n\nSkull and Bones keys are listed at Pakistani rupee prices, standard and premium editions both. Pay with JazzCash, Easypaisa or bank transfer and most keys arrive within minutes, ready for the Indian Ocean.\n\n## Chart the listing before you sail\n\nListings deliver in different ways — a key you redeem, the game gifted to your account, or activation handled for you — and the listing says which, plus any region lock. The game docks in your own library regardless; if a delivery runs aground, we fix it fast."
     },
     {
       "game": "skull-and-bones",
       "category": "accounts",
       "seo_title": "Skull and Bones Accounts in Pakistan",
-      "seo_description": "Skull and Bones game accounts at PKR prices — full-access, used and rental listings from multiple sellers. Local payments; held until you confirm.",
-      "seo_body": "## Board a ship, not a full-price bill\n\nFull-access accounts, used accounts and rentals — Skull and Bones is listed in all three forms, often for less than a key. Platform, edition and progress differ per account, so the listing is the final word.\n\n## No mutiny over your money\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. GamesBazaar holds your payment until you confirm the account works as described, and the seller remains a chat away."
+      "seo_description": "Skull and Bones game accounts at PKR prices — full-access, used and rental listings. Local payments; quick support, easy refunds.",
+      "seo_body": "## Board a ship, not a full-price bill\n\nFull-access accounts, used accounts and rentals — Skull and Bones is listed in all three forms, often for less than a key. Platform, edition and progress differ per account, so the listing is the final word.\n\n## No mutiny over your money\n\nPrices are in Pakistani rupees with JazzCash, Easypaisa and bank transfer accepted. If the account doesn't work as described we'll fix it or refund you, and we remain a chat away."
     },
     {
       "game": "wwe-2k26",
       "category": "keys",
       "seo_title": "Buy WWE 2K26 Keys Cheap in Pakistan",
       "seo_description": "WWE 2K26 PC keys at Pakistani rupee prices — the latest ring, roster and career modes for less. Local payment methods; keys delivered within minutes.",
-      "seo_body": "## Main-event wrestling, undercard price\n\nWWE 2K26 keys are listed by multiple sellers at Pakistani rupee prices, from the standard edition up to the deluxe tiers. Checkout works with JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Scout the listing like an opponent\n\nDelivery varies by seller — a key you redeem, the game gifted to your account, or activation done for you — and each listing states which, along with any region lock. Whichever way, the game ends up in your own library, and your payment is protected until you confirm."
+      "seo_body": "## Main-event wrestling, undercard price\n\nWWE 2K26 keys are listed at Pakistani rupee prices, from the standard edition up to the deluxe tiers. Checkout works with JazzCash, Easypaisa or bank transfer, and most keys are delivered within minutes.\n\n## Scout the listing like an opponent\n\nDelivery varies by listing — a key you redeem, the game gifted to your account, or activation done for you — and each listing states which, along with any region lock. Whichever way, the game ends up in your own library; if anything goes wrong, we fix it fast."
     },
     {
       "game": "wwe-2k26",
       "category": "accounts",
       "seo_title": "Buy WWE 2K26 Accounts in Pakistan",
-      "seo_description": "WWE 2K26 game accounts at PKR prices — full-access, used and rental options from multiple sellers. Pakistani payments; protected until you confirm.",
-      "seo_body": "## Step into the ring for less\n\nSellers list WWE 2K26 as full-access accounts, used accounts and rentals — frequently cheaper than buying a key. Editions, platforms and unlocked content vary per account, so read the listing first.\n\n## A clean finish at checkout\n\nEverything is priced in Pakistani rupees and paid through local methods. Your money is released only once you confirm the account is as described — until then GamesBazaar holds it, and the seller answers in chat."
+      "seo_description": "WWE 2K26 game accounts at PKR prices — full-access, used and rental options. Pakistani payments; easy refunds if anything goes wrong.",
+      "seo_body": "## Step into the ring for less\n\nWWE 2K26 comes as full-access accounts, used accounts and rentals — frequently cheaper than buying a key. Editions, platforms and unlocked content vary per account, so read the listing first.\n\n## A clean finish at checkout\n\nEverything is priced in Pakistani rupees and paid through local methods. If the account isn't as described we'll fix it or refund you, and we answer in the order chat."
     }
   ]
 }
