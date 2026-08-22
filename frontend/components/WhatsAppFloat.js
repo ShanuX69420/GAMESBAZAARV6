@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { openWhatsAppChat, waLink } from '@/lib/whatsapp';
 
 // Hidden on pages where a pinned chat input owns the bottom of the screen
 // (fullscreen mobile inbox chat, order-page chat).
@@ -14,7 +15,13 @@ export default function WhatsAppFloat() {
 
   return (
     <a
-      href="https://wa.me/923712101998"
+      href={waLink()}
+      onClick={(e) => {
+        // Tracked click: mint a reference code and stash the pixel cookies
+        // server-side, so a sale closed in this chat can still reach Meta.
+        e.preventDefault();
+        openWhatsAppChat({ page: pathname });
+      }}
       target="_blank"
       rel="noopener noreferrer"
       className="wa-float"

@@ -1340,6 +1340,11 @@ class JazzCashBuyInitiateSerializer(serializers.Serializer):
     )
 
 
+class JazzCashGuestBuyInitiateSerializer(JazzCashBuyInitiateSerializer):
+    """Guest checkout adds the email the silent account is created with."""
+    email = serializers.EmailField(max_length=254)
+
+
 class JazzCashPaymentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     order_id = serializers.IntegerField(read_only=True)

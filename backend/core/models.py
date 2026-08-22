@@ -962,6 +962,82 @@ class JazzCashPayment(models.Model):
         return f"{self.txn_ref_no} — {self.user.username} — PKR {self.amount} — {self.get_status_display()}"
 
 
+# ── WhatsApp checkout ────────────────────────────────────────────────────────
+
+def generate_whatsapp_ref():
+    token = ''.join(secrets.choice(ORDER_NUMBER_ALPHABET) for _ in range(6))
+    return f'WA-{token}'
+
+
+class WhatsAppCheckout(models.Model):
+    """A Buy-on-WhatsApp click — and, if the chat turns into a sale, the
+    record of that sale.
+
+    Created when a visitor taps "Buy on WhatsApp" or the floating WhatsApp
+    icon: the row snapshots the listing and the browser's Meta attribution
+    data, and mints a short reference code that rides along in the prefilled
+    WhatsApp message. When the sale closes in chat, the admin marks the row
+    completed (WhatsAppCheckoutAdmin), which reduces listing stock and sends
+    the server-side Meta Purchase event built from the click-time snapshot
+    plus the buyer's number.
+    """
+    STATUS_CHOICES = [
+        ('clicked', 'Clicked'),
+        ('completed', 'Completed'),
+    ]
+
+    ref = models.CharField(max_length=12, unique=True, editable=False, blank=True)
+    listing = models.ForeignKey(Listing, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='whatsapp_checkouts')
+    listing_title = models.CharField(max_length=300, blank=True, default='',
+                                     help_text='Snapshot of listing title at click time')
+    quantity = models.PositiveIntegerField(default=1)
+    amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Expected total at click time — correct it to what the '
+                  'buyer actually paid before marking the row completed.',
+    )
+    page_url = models.CharField(max_length=500, blank=True, default='',
+                                help_text='Page the click came from')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                             null=True, blank=True, related_name='whatsapp_checkouts',
+                             help_text='Set when the clicker was logged in')
+    meta_tracking = models.TextField(
+        blank=True, default='',
+        help_text='JSON snapshot of browser attribution data (IP, user agent, '
+                  '_fbp/_fbc cookies) captured at click time — replayed into '
+                  'the Meta Purchase event when the sale is recorded.',
+    )
+    buyer_phone = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text="Buyer's WhatsApp number (e.g. 03001234567) — required to "
+                  'mark the sale completed.',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='clicked')
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at'],
+                         name='wa_checkout_status_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.ref:
+            ref = generate_whatsapp_ref()
+            while WhatsAppCheckout.objects.filter(ref=ref).exists():
+                ref = generate_whatsapp_ref()
+            self.ref = ref
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'ref'}
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.ref} - {self.listing_title or "general chat"} - {self.get_status_display()}'
+
+
 # ── Orders (Escrow) ──────────────────────────────────────────────────────────
 
 class Order(models.Model):

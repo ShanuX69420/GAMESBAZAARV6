@@ -71,6 +71,18 @@ export function trackPurchase(order, listing, quantity) {
   }, { eventID: `purchase-${order.id}` });
 }
 
+export function trackWhatsAppContact(ref, listing = null, quantity = 1) {
+  const value = listing ? Number(listing.price) * quantity : undefined;
+  gtag('event', 'whatsapp_click', listing
+    ? { currency: CURRENCY, value, items: [gaItem(listing, quantity)] }
+    : {});
+  // The backend sends the same Contact via the Conversions API with this
+  // exact eventID (wa-click-<ref>), so Meta deduplicates the pair.
+  fbq('track', 'Contact', listing
+    ? { ...pixelContents(listing), currency: CURRENCY, value }
+    : {}, { eventID: `wa-click-${ref}` });
+}
+
 export function trackSignUp(method) {
   gtag('event', 'sign_up', { method });
   // No fbq here: Meta CompleteRegistration is sent server-side only

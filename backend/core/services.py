@@ -22,7 +22,7 @@ from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
 
-from . import guardmail, steamguard
+from . import guardmail, meta_capi, steamguard
 from .models import (
     Conversation,
     Listing,
@@ -406,6 +406,31 @@ def notify_requester_item_fulfilled(item_request):
     )
 
 
+def send_guest_account_email(user):
+    """Tell a guest-checkout buyer that an account now exists for their email.
+
+    The account has no password (guest accounts are created with an unusable
+    one) — Forgot Password sets the first one, so the claim flow is the
+    existing reset flow, no extra tokens."""
+    site_url = settings.PUBLIC_SITE_URL
+    send_transactional_email(
+        user,
+        subject='Your GamesBazaar account',
+        message_body=(
+            'We created a GamesBazaar account for you with this email while '
+            'processing your order. Your orders and receipts live there, and '
+            'you are already signed in on the device you bought from.'
+        ),
+        detail_rows=[('Sign-in email', user.email)],
+        extra_message=(
+            'To sign in on another device, set a password first at '
+            f'{site_url}/forgot-password using this email address.'
+        ),
+        cta_url=f'{site_url}/orders',
+        cta_label='View My Orders',
+    )
+
+
 def send_topup_request_received_email(topup):
     return send_transactional_email(
         topup.user,
@@ -718,6 +743,48 @@ def approve_topup_request(topup):
     topup.save(update_fields=['status', 'reviewed_at'])
     if credited:
         send_topup_status_email(topup)
+
+
+def complete_whatsapp_checkout(checkout):
+    """Record a sale that closed inside WhatsApp.
+
+    Stamps the row completed, reduces listing stock the way an on-site
+    purchase would, and queues the server-side Meta Purchase event from the
+    click-time attribution snapshot plus the buyer's number. Runs inside the
+    caller's transaction (admin save_model), which also holds the row lock
+    and has validated buyer_phone/amount. Returns a list of warnings about
+    stock the admin must adjust by hand.
+    """
+    warnings = []
+    checkout.status = 'completed'
+    checkout.completed_at = timezone.now()
+    checkout.save()
+
+    if checkout.listing_id:
+        listing = Listing.objects.select_for_update().filter(pk=checkout.listing_id).first()
+        if listing is None:
+            warnings.append('The listing no longer exists — no stock was adjusted.')
+        elif listing.is_auto_delivery:
+            # Auto-delivery stock is the key list itself; consuming a line
+            # here would retire a key the admin may not have sent.
+            warnings.append(
+                f'"{listing.title}" is an auto-delivery listing — remove the '
+                'key/item you sent from its stock yourself.'
+            )
+        elif listing.quantity is not None:
+            if listing.quantity < checkout.quantity:
+                warnings.append(
+                    f'"{listing.title}" only had {listing.quantity} in stock '
+                    f'but {checkout.quantity} were recorded — stock set to 0.'
+                )
+            listing.quantity -= checkout.quantity
+            if listing.quantity <= 0:
+                listing.quantity = 0
+                listing.status = 'sold'
+            listing.save(update_fields=['quantity', 'status'])
+
+    meta_capi.queue_whatsapp_purchase_event(checkout)
+    return warnings
 
 
 def record_withdrawal_approval_once(withdraw):

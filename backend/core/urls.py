@@ -61,8 +61,13 @@ urlpatterns = [
     # JazzCash gateway payments
     path('payments/jazzcash/top-up/', views.JazzCashTopUpView.as_view(), name='jazzcash-topup'),
     path('payments/jazzcash/buy/', views.JazzCashBuyView.as_view(), name='jazzcash-buy'),
+    path('payments/jazzcash/guest-buy/', views.GuestJazzCashBuyView.as_view(), name='jazzcash-guest-buy'),
+    path('checkout/config/', views.CheckoutConfigView.as_view(), name='checkout-config'),
     path('payments/jazzcash/ipn/', views.JazzCashIPNView.as_view(), name='jazzcash-ipn'),
     path('payments/jazzcash/<int:pk>/', views.JazzCashPaymentDetailView.as_view(), name='jazzcash-payment-detail'),
+
+    # WhatsApp checkout (Buy-on-WhatsApp click tracking — open to guests)
+    path('whatsapp/checkout/', views.WhatsAppCheckoutView.as_view(), name='whatsapp-checkout'),
 
     # Orders
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),

@@ -462,6 +462,44 @@ export async function initiateJazzCashPurchase(listingId, quantity, mobileNumber
   return data;
 }
 
+// Public checkout facts for guests — the logged-in flow reads the same
+// fields from /api/wallet/, which needs an account.
+export async function getCheckoutConfig() {
+  const res = await fetch(`${API_BASE}/api/checkout/config/`);
+  if (!res.ok) throw new Error('Failed to fetch checkout config');
+  return res.json();
+}
+
+// Guest checkout: the backend creates a silent account for the email, signs
+// it in via the normal auth cookies on this response, and starts the same
+// JazzCash purchase flow as initiateJazzCashPurchase. Returns { payment }.
+export async function initiateGuestJazzCashPurchase(listingId, quantity, mobileNumber, email, checkoutFields) {
+  const body = { listing_id: listingId, quantity, mobile_number: mobileNumber, email };
+  if (checkoutFields && Object.keys(checkoutFields).length) {
+    body.checkout_fields = checkoutFields;
+  }
+  const res = await authFetch(`${API_BASE}/api/payments/jazzcash/guest-buy/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(
+      data.error ||
+      data.email?.[0] ||
+      data.mobile_number?.[0] ||
+      'JazzCash payment could not be started'
+    );
+    err.code = data.code;
+    // The account (and its login cookies) can exist even when initiation
+    // failed — the caller must adopt the session before retrying.
+    err.accountCreated = Boolean(data.account_created);
+    throw err;
+  }
+  return data;
+}
+
 export async function getJazzCashPayment(paymentId) {
   const res = await authFetch(`${API_BASE}/api/payments/jazzcash/${paymentId}/`, {
     headers: authHeaders(),
@@ -506,6 +544,19 @@ export async function buyListing(listingId, quantity = 1, checkoutFields) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Purchase failed');
   return data;
+}
+
+// Buy-on-WhatsApp click: mints the tracked reference code. Open to guests —
+// authFetch still sends credentials, which carries the Meta pixel cookies
+// (_fbp/_fbc) the backend snapshots for later attribution.
+export async function createWhatsAppCheckout(body) {
+  const res = await authFetch(`${API_BASE}/api/whatsapp/checkout/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error('Failed to start WhatsApp checkout');
+  return res.json();
 }
 
 export async function getMyOrders({ limit, offset, beforeId, status, search, date_from, date_to, cursor } = {}) {

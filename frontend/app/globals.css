@@ -12073,6 +12073,29 @@ html[data-auth-hint="1"] .navbar-guest-links {
   }
 }
 
+/* Second buy rail on the listing page, under the Buy Now button. WhatsApp's
+   own brand green on both themes — deliberately not a site token, so it reads
+   as "this leaves the site for a chat". */
+.btn-whatsapp {
+  margin-top: 8px;
+  background: #25d366;
+  color: #fff;
+}
+
+.btn-whatsapp:hover:not(:disabled) {
+  background: #1fb958;
+  color: #fff;
+}
+
+.btn-whatsapp:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-whatsapp svg {
+  flex-shrink: 0;
+}
+
 /* ── Touch Keyboard Zoom Guard ─────────────────────────────────────────────── */
 /* iOS Safari zooms the whole page in whenever a focused field renders text
    smaller than 16px, and it never zooms back out — the user has to pinch out

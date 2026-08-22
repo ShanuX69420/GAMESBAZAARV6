@@ -311,6 +311,13 @@ REST_FRAMEWORK = {
         'create_report': '10/hour',
         'create_support_ticket': '5/hour',
         'create_item_request': '5/hour',
+        # Per client IP, and carriers NAT many subscribers behind one address
+        # (see auth_register above) — leave room for several real shoppers.
+        'whatsapp_checkout': '120/hour',
+        # Guest checkout mints an account per success, so it mirrors the
+        # register limits: successes counted separately from attempts.
+        'guest_checkout': '10/hour',
+        'guest_checkout_attempts': '40/hour',
     },
 }
 

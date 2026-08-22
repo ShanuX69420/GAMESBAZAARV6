@@ -11,7 +11,9 @@ import {
   fetchSiteReviews,
   getAutoDeliveryStock,
   getAutoDeliveryStockItem,
+  getCheckoutConfig,
   getConversations,
+  initiateGuestJazzCashPurchase,
   sendMessage,
   getMySupportTickets,
   getMyListings,
@@ -55,6 +57,38 @@ describe('API client helpers', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('fetches the public checkout config without credentials', async () => {
+    await getCheckoutConfig();
+    expect(fetch).toHaveBeenCalledWith(`${API_BASE}/api/checkout/config/`);
+  });
+
+  it('serializes guest checkout initiation and surfaces the account_exists code', async () => {
+    await initiateGuestJazzCashPurchase(7, 2, '03001234567', 'guest@example.com', { player_id: '99' });
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/api/payments/jazzcash/guest-buy/`,
+      {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listing_id: 7,
+          quantity: 2,
+          mobile_number: '03001234567',
+          email: 'guest@example.com',
+          checkout_fields: { player_id: '99' },
+        }),
+      }
+    );
+
+    fetch.mockResolvedValue(jsonResponse(
+      { error: 'exists', code: 'account_exists', account_created: false }, 409,
+    ));
+    await expect(
+      initiateGuestJazzCashPurchase(7, 1, '03001234567', 'guest@example.com'),
+    ).rejects.toMatchObject({ code: 'account_exists', accountCreated: false });
   });
 
   it('encodes listing filter query params for my listings', async () => {

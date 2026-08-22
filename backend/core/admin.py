@@ -13,7 +13,7 @@ from .models import (
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
-    JazzCashPayment,
+    JazzCashPayment, WhatsAppCheckout,
     Notification, Report, SupportTicket, ItemRequest,
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
     OfflineAccount,
@@ -23,6 +23,7 @@ from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
     complete_order_with_seller_payout,
+    complete_whatsapp_checkout,
     create_notification,
     decrypt_sensitive_text,
     notify_requester_item_fulfilled,
@@ -530,6 +531,104 @@ class TopUpRequestAdmin(admin.ModelAdmin):
                 self._create_topup_notification(topup)
                 count += 1
         self.message_user(request, f'{count} top-up(s) rejected.')
+
+
+@admin.register(WhatsAppCheckout)
+class WhatsAppCheckoutAdmin(admin.ModelAdmin):
+    """Buy-on-WhatsApp clicks, and the place WhatsApp sales get recorded.
+
+    A row lands here whenever a visitor taps "Buy on WhatsApp" (or the float
+    icon) — the reference code from the prefilled chat message finds it via
+    search. If the chat turns into a sale: open the row, enter the buyer's
+    WhatsApp number, correct the amount to what they actually paid, and flip
+    status to Completed — that reduces listing stock and sends Meta the
+    Purchase event with the click-time attribution data. Sales that never
+    touched the site (buyer messaged directly) can be added by hand; Meta
+    then matches them by phone number alone.
+    """
+    list_display = ['ref', 'listing_title', 'amount', 'buyer_phone', 'status',
+                    'from_ad_click', 'created_at']
+    list_filter = ['status']
+    search_fields = ['ref', 'listing_title', 'buyer_phone']
+    autocomplete_fields = ['listing']
+    fields = ['ref', 'status', 'listing', 'listing_title', 'quantity', 'amount',
+              'buyer_phone', 'page_url', 'user', 'from_ad_click',
+              'created_at', 'completed_at']
+    readonly_fields = ['ref', 'listing_title', 'page_url', 'user',
+                       'from_ad_click', 'created_at', 'completed_at']
+
+    @admin.display(boolean=True, description='From an ad click')
+    def from_ad_click(self, obj):
+        # The _fbc cookie only exists when the visitor arrived from a Meta
+        # ad — with it, the recorded sale is attributed to the specific ad.
+        return '"fbc": "fb' in (obj.meta_tracking or '')
+
+    def has_delete_permission(self, request, obj=None):
+        # A completed row is the bookkeeping record of a WhatsApp sale (and
+        # of its Meta Purchase event) — keep it. Stray clicks can go.
+        return obj is None or obj.status != 'completed'
+
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            # Hand-added row for a sale that never touched the site.
+            return ['listing', 'quantity', 'amount', 'buyer_phone']
+        return self.fields
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return []
+        if obj.status == 'completed':
+            return self.readonly_fields + ['status', 'listing', 'quantity',
+                                           'amount', 'buyer_phone']
+        return self.readonly_fields
+
+    def save_model(self, request, obj, form, change):
+        if obj.listing_id and (not change or 'listing' in form.changed_data):
+            obj.listing_title = obj.listing.title
+
+        completing = (change and 'status' in form.changed_data
+                      and obj.status == 'completed')
+        if not completing:
+            super().save_model(request, obj, form, change)
+            if not change:
+                self.message_user(
+                    request,
+                    f'Reference {obj.ref} created — open it and mark it '
+                    'Completed once the buyer has paid.',
+                )
+            return
+
+        with transaction.atomic():
+            locked = WhatsAppCheckout.objects.select_for_update().get(pk=obj.pk)
+            if locked.status == 'completed':
+                self.message_user(
+                    request,
+                    'This WhatsApp sale was already completed — nothing was '
+                    'sent to Meta again.',
+                    level=messages.WARNING,
+                )
+                return
+            problem = None
+            if not (obj.buyer_phone or '').strip():
+                problem = ("Enter the buyer's WhatsApp number before marking "
+                           'the sale completed.')
+            elif obj.amount is None or obj.amount <= 0:
+                problem = ('Enter the amount the buyer actually paid before '
+                           'marking the sale completed.')
+            if problem:
+                obj.status = locked.status
+                super().save_model(request, obj, form, change)
+                self.message_user(request, problem, level=messages.WARNING)
+                return
+            super().save_model(request, obj, form, change)
+            stock_warnings = complete_whatsapp_checkout(obj)
+            for warning in stock_warnings:
+                self.message_user(request, warning, level=messages.WARNING)
+        self.message_user(
+            request,
+            f'WhatsApp sale {obj.ref} recorded — PKR {obj.amount} Purchase '
+            'event sent to Meta.',
+        )
 
 
 @admin.register(JazzCashPayment)

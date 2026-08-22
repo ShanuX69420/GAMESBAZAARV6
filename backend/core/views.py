@@ -30,7 +30,7 @@ from .throttling import AttemptScopedRateThrottle, SuccessScopedRateThrottle
 from .models import (
     Game, GameCategory, CategoryOption, Filter, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
-    JazzCashPayment, SellerCommissionOverride,
+    JazzCashPayment, SellerCommissionOverride, WhatsAppCheckout,
     Review, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
 )
 
@@ -122,7 +122,7 @@ from .serializers import (
     WalletSerializer, WalletTransactionSerializer,
     TopUpRequestSerializer, CreateTopUpRequestSerializer,
     JazzCashTopUpInitiateSerializer, JazzCashBuyInitiateSerializer,
-    JazzCashPaymentSerializer,
+    JazzCashGuestBuyInitiateSerializer, JazzCashPaymentSerializer,
     WithdrawRequestSerializer, CreateWithdrawRequestSerializer,
     OrderSerializer, BuyListingSerializer, DeliverOrderSerializer,
     ReviewSerializer, CreateReviewSerializer, UpdateReviewSerializer, ReplyToReviewSerializer,
@@ -166,6 +166,7 @@ from .services import (
     verify_password_reset_token,
     consume_password_reset_token,
     send_password_reset_code,
+    send_guest_account_email,
     send_topup_request_received_email,
     send_withdraw_request_received_email,
     generate_email_verification_code,
@@ -3156,6 +3157,54 @@ class JazzCashTopUpView(ScopedPostThrottleMixin, APIView):
         )
 
 
+def validate_jazzcash_purchase(listing, qty, *, wallet_balance, checkout_fields):
+    """Fail fast on obviously invalid JazzCash direct-buy initiations — shared
+    by the logged-in and guest checkout views. The authoritative checks run
+    again (with locks) when the confirmed payment executes the purchase.
+
+    Returns ``(charge, checkout_info, None)`` on success or
+    ``(None, None, error_message)``.
+    """
+    if listing.status != 'active':
+        return None, None, 'This listing is no longer available.'
+    is_currency = listing.game_category.listing_mode == 'currency'
+    unit = listing.game_category.unit_name.strip() if is_currency else ''
+    unit_suffix = f' {unit}' if unit else ''
+    if is_currency:
+        if qty < listing.min_quantity:
+            return None, None, f'Minimum purchase is {listing.min_quantity}{unit_suffix}.'
+    elif qty > MAX_PURCHASE_QUANTITY:
+        return None, None, MAX_PURCHASE_QUANTITY_ERROR
+    if listing.quantity is not None and qty > listing.quantity:
+        return None, None, f'Only {listing.quantity}{unit_suffix} available.'
+
+    total = listing.price * qty
+    if total <= 0:
+        return None, None, 'Invalid listing price.'
+    if total > Decimal('99999999.99'):
+        return None, None, 'Order total is too large — please buy a smaller amount.'
+    # The purchase that executes once the payment confirms charges the
+    # wallet the fee-inclusive amount, so the shortfall must cover it too.
+    buyer_charge = total + settings.CHECKOUT_SERVICE_FEE_PKR
+
+    if wallet_balance >= buyer_charge:
+        return None, None, 'You have enough wallet balance for this order — pay with your wallet.'
+    charge = max(buyer_charge - wallet_balance, settings.JAZZCASH_MIN_PAYMENT_PKR)
+    if charge > settings.JAZZCASH_MAX_PAYMENT_PKR:
+        return None, None, (
+            f'JazzCash payments are limited to PKR {settings.JAZZCASH_MAX_PAYMENT_PKR:,.0f} '
+            'per transaction. Please contact support for larger orders.'
+        )
+
+    # Auto-fulfilled top-ups need the buyer's player/user ID up front — the
+    # purchase executes later (IPN/reconcile), when we can no longer ask the
+    # buyer for anything.
+    checkout_info, checkout_error = prepare_fazer_checkout(listing, checkout_fields)
+    if checkout_error:
+        return None, None, checkout_error
+    return charge, checkout_info, None
+
+
 class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
     """POST /api/payments/jazzcash/buy/ — Cover a wallet shortfall with JazzCash.
 
@@ -3198,61 +3247,17 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
         if existing is not None:
             return Response(JazzCashPaymentSerializer(existing).data)
 
-        # Fail fast on obviously invalid purchases. The authoritative checks
-        # run again (with locks) when the confirmed payment executes the
-        # purchase.
-        if listing.status != 'active':
-            return Response({'error': 'This listing is no longer available.'}, status=400)
         if listing.seller == request.user:
             return Response({'error': 'You cannot buy your own listing.'}, status=400)
-        is_currency = listing.game_category.listing_mode == 'currency'
-        unit = listing.game_category.unit_name.strip() if is_currency else ''
-        unit_suffix = f' {unit}' if unit else ''
-        if is_currency:
-            if qty < listing.min_quantity:
-                return Response(
-                    {'error': f'Minimum purchase is {listing.min_quantity}{unit_suffix}.'},
-                    status=400,
-                )
-        elif qty > MAX_PURCHASE_QUANTITY:
-            return Response({'error': MAX_PURCHASE_QUANTITY_ERROR}, status=400)
-        if listing.quantity is not None and qty > listing.quantity:
-            return Response({'error': f'Only {listing.quantity}{unit_suffix} available.'}, status=400)
-
-        total = listing.price * qty
-        if total <= 0:
-            return Response({'error': 'Invalid listing price.'}, status=400)
-        if total > Decimal('99999999.99'):
-            return Response(
-                {'error': 'Order total is too large — please buy a smaller amount.'},
-                status=400,
-            )
-        # The purchase that executes once the payment confirms charges the
-        # wallet the fee-inclusive amount, so the shortfall must cover it too.
-        buyer_charge = total + settings.CHECKOUT_SERVICE_FEE_PKR
 
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
-        if wallet.balance >= buyer_charge:
-            return Response(
-                {'error': 'You have enough wallet balance for this order — pay with your wallet.'},
-                status=400,
-            )
-        charge = max(buyer_charge - wallet.balance, settings.JAZZCASH_MIN_PAYMENT_PKR)
-        if charge > settings.JAZZCASH_MAX_PAYMENT_PKR:
-            return Response(
-                {'error': f'JazzCash payments are limited to PKR {settings.JAZZCASH_MAX_PAYMENT_PKR:,.0f} '
-                          'per transaction. Please contact support for larger orders.'},
-                status=400,
-            )
-
-        # Auto-fulfilled top-ups need the buyer's player/user ID up front —
-        # the purchase executes later (IPN/reconcile), when we can no longer
-        # ask the buyer for anything.
-        checkout_info, checkout_error = prepare_fazer_checkout(
-            listing, data.get('checkout_fields'),
+        charge, checkout_info, error = validate_jazzcash_purchase(
+            listing, qty,
+            wallet_balance=wallet.balance,
+            checkout_fields=data.get('checkout_fields'),
         )
-        if checkout_error:
-            return Response({'error': checkout_error}, status=400)
+        if error:
+            return Response({'error': error}, status=400)
 
         try:
             payment = start_jazzcash_payment(
@@ -3278,6 +3283,165 @@ class JazzCashBuyView(ScopedPostThrottleMixin, APIView):
             JazzCashPaymentSerializer(payment).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+def _create_guest_user(email):
+    """Create the silent account behind a guest checkout.
+
+    Active immediately (JWT auth refuses inactive users) with an unusable
+    password — the buyer claims it later via Forgot Password. Terms count as
+    accepted: the guest checkout UI states that placing the order accepts
+    them. Username collision loop mirrors the Google sign-in one.
+    """
+    import re
+    import secrets as _secrets
+
+    base_username = re.sub(r'[^a-zA-Z0-9_]', '', email.split('@')[0])[:20] or 'buyer'
+    for _ in range(10):
+        username = base_username
+        while User.objects.filter(username__iexact=username).exists():
+            username = f'{base_username}_{_secrets.token_hex(3)}'
+        try:
+            with db_transaction.atomic():
+                user = User.objects.create_user(
+                    username=username, email=email, password=None,
+                )
+            break
+        except IntegrityError:
+            continue
+    else:
+        raise IntegrityError('Could not create a unique username for guest checkout.')
+
+    profile = user.profile
+    profile.has_accepted_terms = True
+    profile.save(update_fields=['has_accepted_terms'])
+    return user
+
+
+class GuestJazzCashBuyView(SuccessCountedThrottleMixin, APIView):
+    """POST /api/payments/jazzcash/guest-buy/ — Guest checkout.
+
+    A buyer with no account pays at the Buy button: validate the purchase,
+    silently create an active account for their email (unusable password —
+    claimed later via Forgot Password), sign them in with the normal JWT
+    cookies, and start the same JazzCash direct-buy flow the logged-in
+    checkout uses. From the cookies onward this IS a normal logged-in
+    session — payment polling, the order page and any retry all take the
+    authenticated paths, which is also why a retry never hits this endpoint
+    again (the email now exists and would be refused).
+
+    Success is charged to the throttle only when an account was actually
+    created; rejected forms cost nothing (attempts still capped).
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'guest_checkout'
+    attempt_throttle_scope = 'guest_checkout_attempts'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        if request.user.is_authenticated:
+            return Response(
+                {'error': 'You are already signed in — use the normal checkout.'},
+                status=400,
+            )
+        if not settings.JAZZCASH_ENABLED:
+            return _jazzcash_disabled_response()
+
+        serializer = JazzCashGuestBuyInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        email = data['email'].strip().lower()
+        qty = data.get('quantity', 1)
+
+        try:
+            listing = (
+                Listing.objects.select_related('seller', 'game_category__category')
+                .get(id=data['listing_id'])
+            )
+        except Listing.DoesNotExist:
+            return Response({'error': 'This listing is no longer available.'}, status=400)
+
+        # No claiming someone else's account by typing their email — the
+        # buyer must log in to prove it's theirs (Forgot Password if needed).
+        if User.objects.filter(email__iexact=email).exists():
+            return Response(
+                {'error': 'This email already has a GamesBazaar account — log in to finish your order.',
+                 'code': 'account_exists'},
+                status=409,
+            )
+
+        charge, checkout_info, error = validate_jazzcash_purchase(
+            listing, qty,
+            wallet_balance=Decimal('0.00'),
+            checkout_fields=data.get('checkout_fields'),
+        )
+        if error:
+            return Response({'error': error}, status=400)
+
+        # Everything checks out — only now does the account exist.
+        user = _create_guest_user(email)
+        self.record_throttled_success()
+        tracking = meta_capi.tracking_from_request(request)
+        meta_capi.queue_registration_event(user, method='guest_checkout', tracking=tracking)
+        send_guest_account_email(user)
+
+        payment = None
+        try:
+            payment = start_jazzcash_payment(
+                user=user,
+                purpose='purchase',
+                amount=charge,
+                mobile_number=data['mobile_number'],
+                description='GamesBazaar order payment',
+                listing=listing,
+                listing_quantity=qty,
+                checkout_payload=(
+                    encrypt_sensitive_text(json.dumps(checkout_info, ensure_ascii=False))
+                    if checkout_info else ''
+                ),
+                # The purchase may execute from IPN/reconcile long after the
+                # buyer left — snapshot their attribution data now.
+                meta_tracking=json.dumps(tracking),
+            )
+        except jazzcash.JazzCashError:
+            pass
+
+        # The account exists either way — sign the buyer in so retries and
+        # polling use the authenticated paths (a retry here would 409).
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = add_profile_setup_token_claim(RefreshToken.for_user(user), user)
+        if payment is not None:
+            response = Response(
+                {'payment': JazzCashPaymentSerializer(payment).data},
+                status=status.HTTP_201_CREATED,
+            )
+        else:
+            response = Response(
+                {'error': JAZZCASH_UNAVAILABLE_ERROR, 'account_created': True},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        set_jwt_auth_cookies(
+            response,
+            access=str(refresh.access_token),
+            refresh=str(refresh),
+        )
+        return response
+
+
+class CheckoutConfigView(APIView):
+    """GET /api/checkout/config/ — public checkout facts for guests.
+
+    The logged-in flow reads the same two fields from /api/wallet/; guests
+    have no wallet, and without these the guest UI could neither show the
+    service fee nor know whether JazzCash is up.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({
+            'jazzcash_enabled': settings.JAZZCASH_ENABLED,
+            'checkout_service_fee': str(settings.CHECKOUT_SERVICE_FEE_PKR),
+        })
 
 
 class JazzCashPaymentDetailView(APIView):
@@ -3786,6 +3950,66 @@ class BuyListingView(APIView):
             return Response({'error': error}, status=400)
 
         return Response(OrderSerializer(order, context={'request': request}).data, status=201)
+
+
+class WhatsAppCheckoutView(ScopedPostThrottleMixin, APIView):
+    """POST /api/whatsapp/checkout/ — a Buy-on-WhatsApp (or float icon) click.
+
+    Mints a reference code and snapshots the browser's Meta attribution data
+    before the visitor leaves for WhatsApp — the last moment the pixel
+    cookies are within reach. Open to guests: WhatsApp buyers usually have no
+    account. If the chat turns into a sale, the admin completes the row
+    (WhatsAppCheckoutAdmin), which is when the Meta Purchase event fires.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'whatsapp_checkout'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+
+        listing = None
+        listing_id = request.data.get('listing_id')
+        if listing_id is not None:
+            try:
+                listing = Listing.objects.get(pk=int(listing_id))
+            except (TypeError, ValueError, Listing.DoesNotExist):
+                return Response({'error': 'This listing is no longer available.'}, status=404)
+
+        try:
+            quantity = max(1, int(request.data.get('quantity', 1)))
+        except (TypeError, ValueError):
+            quantity = 1
+        quantity = min(quantity, 100_000_000)
+
+        amount = None
+        if listing is not None:
+            amount = listing.price * quantity
+            if amount > Decimal('9999999999.99'):  # DecimalField(12, 2) cap
+                amount = None
+
+        # Meta wants a full event_source_url; trust only the path from the
+        # client and rebuild the rest.
+        page = str(request.data.get('page') or '')[:400]
+        page_url = ''
+        if page.startswith('/') and not page.startswith('//'):
+            page_url = f'{settings.PUBLIC_SITE_URL}{page}'
+        elif listing is not None:
+            page_url = f'{settings.PUBLIC_SITE_URL}/listing/{listing.pk}'
+
+        tracking = meta_capi.tracking_from_request(request)
+        checkout = WhatsAppCheckout.objects.create(
+            listing=listing,
+            listing_title=listing.title if listing else '',
+            quantity=quantity if listing else 1,
+            amount=amount,
+            page_url=page_url,
+            user=request.user if request.user.is_authenticated else None,
+            meta_tracking=json.dumps(tracking),
+        )
+        meta_capi.queue_whatsapp_contact_event(
+            checkout, user=checkout.user, tracking=tracking,
+        )
+        return Response({'ref': checkout.ref}, status=201)
 
 
 class MyOrdersView(APIView):

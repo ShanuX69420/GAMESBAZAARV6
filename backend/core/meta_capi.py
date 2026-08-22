@@ -23,6 +23,7 @@ META_CAPI_ACCESS_TOKEN are both set in the environment.
 """
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -143,6 +144,63 @@ def queue_registration_event(user, *, method, tracking=None):
         'event_source_url': f'{settings.PUBLIC_SITE_URL}/register',
         'user_data': _user_data(user=user, tracking=tracking),
         'custom_data': {'content_name': method},
+    }
+    _queue(event)
+
+
+def queue_whatsapp_contact_event(checkout, *, user=None, tracking=None):
+    """Register a server-side Contact for a Buy-on-WhatsApp click. The
+    browser pixel fires Contact with the same event ID (``wa-click-<ref>``,
+    see frontend/lib/analytics.js), so Meta keeps exactly one of the pair."""
+    custom_data = {}
+    if checkout.listing_id:
+        custom_data = {
+            'currency': CURRENCY,
+            'value': float(checkout.amount or 0),
+            'content_ids': [str(checkout.listing_id)],
+            'content_type': 'product',
+            'content_name': checkout.listing_title[:200],
+        }
+    event = {
+        'event_name': 'Contact',
+        'event_time': int(time.time()),
+        'event_id': f'wa-click-{checkout.ref}',
+        'action_source': 'website',
+        'event_source_url': checkout.page_url or settings.PUBLIC_SITE_URL,
+        'user_data': _user_data(user=user, tracking=tracking),
+        'custom_data': custom_data,
+    }
+    _queue(event)
+
+
+def queue_whatsapp_purchase_event(checkout):
+    """Register a Purchase that closed inside WhatsApp (``action_source``
+    'chat').
+
+    There is no browser counterpart — the buyer paid in a chat, not on a
+    page — so nothing to deduplicate. Matching comes from the cookie
+    snapshot stored on the checkout row at click time plus the buyer's
+    WhatsApp number; ad attribution rides on the snapshotted ``_fbc``.
+    """
+    try:
+        tracking = json.loads(checkout.meta_tracking)
+    except (TypeError, ValueError):
+        tracking = {}
+    tracking['phone'] = checkout.buyer_phone
+    event = {
+        'event_name': 'Purchase',
+        'event_time': int(time.time()),
+        'event_id': f'wa-purchase-{checkout.ref}',
+        'action_source': 'chat',
+        'user_data': _user_data(user=checkout.user, tracking=tracking),
+        'custom_data': {
+            'currency': CURRENCY,
+            'value': float(checkout.amount or 0),
+            'content_ids': [str(checkout.listing_id)] if checkout.listing_id else [],
+            'content_type': 'product',
+            'content_name': checkout.listing_title[:200],
+            'num_items': checkout.quantity,
+        },
     }
     _queue(event)
 

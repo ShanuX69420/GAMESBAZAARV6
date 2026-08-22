@@ -5,11 +5,12 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
-  buyListing, getWallet, getSellerReviews,
-  initiateJazzCashPurchase, pollJazzCashPayment,
+  buyListing, getWallet, getSellerReviews, getCheckoutConfig,
+  initiateJazzCashPurchase, initiateGuestJazzCashPurchase, pollJazzCashPayment,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
+import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import ReportModal from '@/components/ReportModal';
@@ -18,6 +19,7 @@ import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
+const GUEST_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Keep in sync with JAZZCASH_MIN_PAYMENT_PKR (backend settings).
 const MIN_JAZZCASH_PAYMENT = 20;
 
@@ -31,7 +33,7 @@ export default function ListingDetailClient({ initialListing = null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { id } = params;
-  const { user } = useAuth();
+  const { user, loading: authLoading, fetchUser } = useAuth();
   const [listing, setListing] = useState(initialListing);
   const [loading, setLoading] = useState(!initialListing);
   const [wallet, setWallet] = useState(null);
@@ -43,6 +45,11 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [buyError, setBuyError] = useState('');
   const [buySuccess, setBuySuccess] = useState('');
   const [jazzCashMobile, setJazzCashMobile] = useState('');
+  // Guest checkout: the email the silent account is created with, plus the
+  // public checkout facts (fee, JazzCash availability) guests can't read
+  // from the wallet payload.
+  const [guestEmail, setGuestEmail] = useState('');
+  const [checkoutConfig, setCheckoutConfig] = useState(null);
   const buyingRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -72,6 +79,8 @@ export default function ListingDetailClient({ initialListing = null }) {
         .then(w => setWallet(w))
         .catch(() => {})
         .finally(() => setWalletFetched(true));
+    } else {
+      getCheckoutConfig().then(setCheckoutConfig).catch(() => {});
     }
   }, [user]);
 
@@ -99,17 +108,19 @@ export default function ListingDetailClient({ initialListing = null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing?.id]);
 
-  // Coming from an offer page with ?buy=1: jump straight into the purchase
-  // confirmation once the listing and wallet are ready.
+  // Coming from an offer page or the login round-trip with ?buy=1: jump
+  // straight into the purchase confirmation once the listing (and, when
+  // logged in, the wallet) are ready. Guests get the modal too — their
+  // checkout happens right there.
   useEffect(() => {
     if (autoBuyRef.current) return;
     if (searchParams.get('buy') !== '1') return;
-    if (!user || !walletFetched || !listing) return;
-    if (listing.status !== 'active' || user.id === listing.seller_id) return;
+    if (!listing || listing.status !== 'active' || authLoading) return;
+    if (user && (!walletFetched || user.id === listing.seller_id)) return;
     autoBuyRef.current = true;
     openConfirmModal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, walletFetched, listing, searchParams]);
+  }, [user, authLoading, walletFetched, listing, searchParams]);
 
   // Load seller reviews
   useEffect(() => {
@@ -208,6 +219,32 @@ export default function ListingDetailClient({ initialListing = null }) {
     }
   }
 
+  // Shared tail of both JazzCash flows (logged-in and guest): the payment
+  // stopped being pending — turn it into a redirect, an error, or the
+  // "still processing" note. Returns true when redirecting (the caller must
+  // keep `buying` true so the button stays disabled until then).
+  function settleJazzCashOutcome(payment) {
+    if (payment?.status === 'completed' && payment.order_id) {
+      const order = { id: payment.order_id, order_number: payment.order_number };
+      trackPurchase(order, listing, quantity);
+      setShowConfirm(false);
+      setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
+      setTimeout(() => router.push(orderPath(order)), 1500);
+      return true;
+    }
+    if (payment?.status === 'completed') {
+      // Paid, but the listing was no longer available — money is in the wallet.
+      setShowConfirm(false);
+      setBuyError(payment.note || 'Your payment was received but the purchase could not be completed. The amount was added to your wallet.');
+      getWallet().then(w => setWallet(w)).catch(() => {});
+    } else if (payment?.status === 'failed') {
+      setBuyError(payment.user_message || 'JazzCash payment failed. Please try again.');
+    } else {
+      setBuyError('Your JazzCash payment is still processing. Once it is confirmed, your order will appear in My Orders automatically.');
+    }
+    return false;
+  }
+
   async function handleJazzCashBuy() {
     if (buyingRef.current) return;
     const mobile = jazzCashMobile.trim();
@@ -224,25 +261,7 @@ export default function ListingDetailClient({ initialListing = null }) {
       if (payment.status === 'pending') {
         payment = await pollJazzCashPayment(payment.id);
       }
-      if (payment?.status === 'completed' && payment.order_id) {
-        const order = { id: payment.order_id, order_number: payment.order_number };
-        trackPurchase(order, listing, quantity);
-        setShowConfirm(false);
-        setBuySuccess(`Order ${orderLabel(order)} placed! Redirecting...`);
-        // Keep `buying` true so the buy button stays disabled until redirect.
-        setTimeout(() => router.push(orderPath(order)), 1500);
-        return;
-      }
-      if (payment?.status === 'completed') {
-        // Paid, but the listing was no longer available — money is in the wallet.
-        setShowConfirm(false);
-        setBuyError(payment.note || 'Your payment was received but the purchase could not be completed. The amount was added to your wallet.');
-        getWallet().then(w => setWallet(w)).catch(() => {});
-      } else if (payment?.status === 'failed') {
-        setBuyError(payment.user_message || 'JazzCash payment failed. Please try again.');
-      } else {
-        setBuyError('Your JazzCash payment is still processing. Once it is confirmed, your order will appear in My Orders automatically.');
-      }
+      if (settleJazzCashOutcome(payment)) return;
     } catch (err) {
       setBuyError(err.message);
     }
@@ -250,7 +269,48 @@ export default function ListingDetailClient({ initialListing = null }) {
     setBuying(false);
   }
 
+  async function handleGuestBuy() {
+    if (buyingRef.current) return;
+    const mobile = jazzCashMobile.trim();
+    const email = guestEmail.trim();
+    if (!GUEST_EMAIL_REGEX.test(email)) {
+      setBuyError('Enter a valid email address — your order and receipt go there.');
+      return;
+    }
+    if (!JAZZCASH_MOBILE_REGEX.test(mobile)) {
+      setBuyError('Enter a valid JazzCash mobile number (e.g., 03001234567).');
+      return;
+    }
+    buyingRef.current = true;
+    setBuyError('');
+    setBuySuccess('');
+    setBuying(true);
+    try {
+      const data = await initiateGuestJazzCashPurchase(listing.id, quantity, mobile, email, checkoutFieldValues);
+      // The response set login cookies for the newly created account — adopt
+      // the session so payment polling, the order page and any retry all run
+      // logged in (a retry against the guest endpoint would be refused).
+      fetchUser().catch(() => {});
+      let payment = data.payment;
+      if (payment.status === 'pending') {
+        payment = await pollJazzCashPayment(payment.id);
+      }
+      if (settleJazzCashOutcome(payment)) return;
+    } catch (err) {
+      if (err.accountCreated) fetchUser().catch(() => {});
+      setBuyError(err.code === 'account_exists'
+        ? 'This email already has a GamesBazaar account — log in to finish your order.'
+        : err.message);
+    }
+    buyingRef.current = false;
+    setBuying(false);
+  }
+
   function handleConfirmPurchase() {
+    if (!user) {
+      handleGuestBuy();
+      return;
+    }
     const canPayFromWallet = wallet && parseFloat(wallet.balance) >= listing.price * quantity;
     if (canPayFromWallet) {
       handleBuy();
@@ -297,13 +357,13 @@ export default function ListingDetailClient({ initialListing = null }) {
     }
   }
 
-  // Guests see the real Buy button. Pressing it sends them to login and back
-  // to this listing with the same amount and the confirmation step waiting.
-  function goToLoginToBuy() {
+  // For guests who'd rather sign in: the login round-trip comes back to this
+  // listing with the same amount and the confirmation step waiting.
+  function loginToBuyHref() {
     const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('buy', '1');
     if (isCurrency || quantity > 1) params.set('qty', String(quantity));
-    router.push(loginHref(`/listing/${listing.id}?${params.toString()}`));
+    return loginHref(`/listing/${listing.id}?${params.toString()}`);
   }
 
   function stepCurrencyQty(delta) {
@@ -316,12 +376,17 @@ export default function ListingDetailClient({ initialListing = null }) {
 
   const totalPrice = (listing.price * quantity).toFixed(2);
   // Flat checkout service fee from the backend (0 = no fee, no fee rows).
-  // Guests see item-only prices until they log in and the wallet loads.
-  const serviceFee = wallet ? (parseFloat(wallet.checkout_service_fee) || 0) : 0;
+  // Logged-in buyers read it from the wallet payload; guests from the
+  // public checkout config — both are the same backend value.
+  const serviceFee = wallet
+    ? (parseFloat(wallet.checkout_service_fee) || 0)
+    : (parseFloat(checkoutConfig?.checkout_service_fee) || 0);
   const orderTotal = parseFloat(totalPrice) + serviceFee;
   const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
   const hasBalance = wallet && walletBalance >= orderTotal;
-  const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
+  const jazzCashEnabled = wallet
+    ? Boolean(wallet.jazzcash_enabled)
+    : Boolean(checkoutConfig?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
   const isInstant = listing.is_auto_delivery || listing.instant_delivery;
   const sellerRating = listing.seller_avg_rating ?? null;
@@ -349,9 +414,18 @@ export default function ListingDetailClient({ initialListing = null }) {
     <div className="alert alert-info" style={{ marginTop: '8px', marginBottom: 0 }}>
       <strong>No JazzCash account?</strong>
       <div style={{ marginTop: '4px', fontWeight: 400 }}>
-        You can also pay by Easypaisa or bank transfer.{' '}
-        <Link href="/wallet" className="buy-topup-link">Add funds to your wallet</Link>{' '}
-        and come back to finish this order.
+        {user ? (
+          <>
+            You can also pay by Easypaisa or bank transfer.{' '}
+            <Link href="/wallet" className="buy-topup-link">Add funds to your wallet</Link>{' '}
+            and come back to finish this order.
+          </>
+        ) : (
+          <>
+            You can also pay by Easypaisa or bank transfer — tap{' '}
+            <strong>Buy on WhatsApp</strong> and we&apos;ll sort it out in chat.
+          </>
+        )}
       </div>
     </div>
   );
@@ -498,9 +572,9 @@ export default function ListingDetailClient({ initialListing = null }) {
               {/* Buy section */}
               {!isOwnListing && listing.status === 'active' && (
                 <div className="buy-section">
-                  {/* Logged out visitors get the same box — only the button's
-                      destination changes, so nobody is asked to sign in before
-                      they know what they are buying. */}
+                  {/* Logged out visitors get the same box and the same modal —
+                      guest checkout asks for their email in there instead of
+                      sending anyone to a signup page first. */}
 
                   {/* Quantity selector — currency mode gets a free-amount
                       input; other listings step within finite stock */}
@@ -586,8 +660,11 @@ export default function ListingDetailClient({ initialListing = null }) {
 
                   <button
                     className="btn btn-primary btn-full buy-now-btn"
-                    onClick={user ? openConfirmModal : goToLoginToBuy}
-                    disabled={buying || !currencyQtyValid || (Boolean(user) && !canBuy)}
+                    onClick={openConfirmModal}
+                    disabled={
+                      buying || !currencyQtyValid ||
+                      (user ? !canBuy : Boolean(checkoutConfig) && !jazzCashEnabled)
+                    }
                   >
                     {buying ? 'Purchasing...' : `Buy Now — PKR ${formatPKR(orderTotal)}`}
                   </button>
@@ -598,6 +675,22 @@ export default function ListingDetailClient({ initialListing = null }) {
                         : 'Pay directly with JazzCash — no wallet balance needed'}
                     </div>
                   )}
+
+                  {/* Second buy rail: close the sale in a WhatsApp chat
+                      instead. The helper records the click (with the Meta
+                      pixel cookies) before opening the chat — see
+                      lib/whatsapp.js. */}
+                  <button
+                    type="button"
+                    className="btn btn-whatsapp btn-full"
+                    onClick={() => openWhatsAppChat({ listing, quantity })}
+                    disabled={buying}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                    </svg>
+                    Buy on WhatsApp
+                  </button>
                 </div>
               )}
 
@@ -901,6 +994,31 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </div>
               )}
 
+              {/* Guest checkout: where the order (and the account we quietly
+                  create for it) goes. */}
+              {!user && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Email *</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={guestEmail}
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    maxLength={254}
+                    disabled={buying}
+                  />
+                  <span className="form-hint">
+                    Your order and receipt go to this email — an account is
+                    created for you automatically, no password needed now.
+                  </span>
+                  <div className="form-hint" style={{ marginTop: '8px' }}>
+                    Already have an account?{' '}
+                    <Link href={loginToBuyHref()} className="buy-topup-link">Log in</Link>
+                  </div>
+                </div>
+              )}
+
               {/* JazzCash payment */}
               {payWithJazzCash && (
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -918,9 +1036,18 @@ export default function ListingDetailClient({ initialListing = null }) {
                     PKR {formatPKR(jazzCashCharge)} will be charged to this JazzCash account.
                   </span>
                   <div className="form-hint" style={{ marginTop: '8px' }}>
-                    No JazzCash? Pay by Easypaisa or bank transfer instead —{' '}
-                    <Link href="/wallet" className="buy-topup-link">add funds to your wallet</Link> and
-                    come back to complete the purchase.
+                    {user ? (
+                      <>
+                        No JazzCash? Pay by Easypaisa or bank transfer instead —{' '}
+                        <Link href="/wallet" className="buy-topup-link">add funds to your wallet</Link> and
+                        come back to complete the purchase.
+                      </>
+                    ) : (
+                      <>
+                        No JazzCash? Pay by Easypaisa or bank transfer instead — use
+                        the <strong>Buy on WhatsApp</strong> button on this listing.
+                      </>
+                    )}
                   </div>
                   {jazzCashInFlight && (
                     <div className="alert alert-success" style={{ marginTop: '8px', marginBottom: 0 }}>
@@ -949,6 +1076,13 @@ export default function ListingDetailClient({ initialListing = null }) {
                 </svg>
                 Anything wrong with your order? Message us from the order page — we make it right or refund your wallet.
               </div>
+
+              {!user && (
+                <div className="form-hint" style={{ marginTop: 0 }}>
+                  By placing this order you agree to the{' '}
+                  <Link href="/terms-of-service" className="buy-topup-link" target="_blank">Terms of Service</Link>.
+                </div>
+              )}
 
               {buyError && <div className="alert alert-error" style={{ margin: '0' }}>{buyError}</div>}
               {buyError && payWithJazzCash && paymentFallback}
