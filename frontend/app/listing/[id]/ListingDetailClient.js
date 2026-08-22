@@ -13,7 +13,6 @@ import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analy
 import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
-import ReportModal from '@/components/ReportModal';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 
@@ -51,7 +50,6 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [guestEmail, setGuestEmail] = useState('');
   const [checkoutConfig, setCheckoutConfig] = useState(null);
   const buyingRef = useRef(false);
-  const [showReport, setShowReport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
   const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
@@ -728,21 +726,6 @@ export default function ListingDetailClient({ initialListing = null }) {
               </div>
             </div>
 
-          {!isOwnListing && user && (
-            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-              <button
-                className="report-flag-btn"
-                onClick={() => setShowReport(true)}
-                title="Report this listing"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                  <line x1="4" y1="22" x2="4" y2="15"/>
-                </svg>
-                Report
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Left column, under the description: seller reviews */}
@@ -829,15 +812,6 @@ export default function ListingDetailClient({ initialListing = null }) {
           )}
         </div>
       </div>
-
-      {/* Report Modal */}
-      <ReportModal
-        isOpen={showReport}
-        onClose={() => setShowReport(false)}
-        targetType="listing"
-        listingId={listing.id}
-        targetName={listing.title}
-      />
 
       {/* Order Confirmation Modal */}
       {showConfirm && (
