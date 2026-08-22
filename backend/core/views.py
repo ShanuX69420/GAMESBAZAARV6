@@ -1069,10 +1069,12 @@ class GameCategoryDetailView(APIView):
                     offer_count=Count('listings', filter=offer_stats_q),
                 ).order_by('order', 'name')
             )
-            # Once the buyer applies a filter (e.g. gift-card Region), options
-            # with no offers under it are just noise — show only what's buyable.
-            if applied_filters or any(k.startswith('filter_') and v
-                                      for k, v in request.query_params.items()):
+            # Buyers only see buyable options: a tile whose every offer is
+            # switched off (supplier out of stock, discontinued pack) is just
+            # noise, and it reappears by itself the moment an offer comes back.
+            # The sell form passes all_options=1 — a seller may create an offer
+            # under a currently-dead option.
+            if request.query_params.get('all_options') != '1':
                 options = [opt for opt in options if opt.offer_count]
 
             requested_option = request.query_params.get('option', '').strip()

@@ -71,7 +71,9 @@ export default function CreateListingPage() {
   // Fetch filters + auto delivery permission when category is selected
   useEffect(() => {
     if (selectedGame && selectedCategory) {
-      fetch(`${API_BASE}/api/games/${selectedGame.slug}/${selectedCategory.slug}/`)
+      // all_options=1: sellers may create an offer under an option that
+      // currently has none (buyers only ever see buyable options)
+      fetch(`${API_BASE}/api/games/${selectedGame.slug}/${selectedCategory.slug}/?all_options=1`)
         .then(r => r.json())
         .then(data => {
           setFilters(data.filters || []);

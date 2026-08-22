@@ -64,6 +64,16 @@ class OfferModeTests(TestCase):
         options = {opt['name']: opt for opt in response.data['options']}
         self.assertEqual(options['60 UC']['min_price'], '120.00')
         self.assertEqual(options['60 UC']['offer_count'], 2)
+        # an option whose every offer is switched off is hidden from buyers
+        # (it comes back by itself when an offer does)
+        self.assertNotIn('325 UC', options)
+
+    def test_browse_all_options_shows_offerless_options_for_sellers(self):
+        self.make_offer(self.seller, self.option_small, '150.00')
+
+        response = self.client.get('/api/games/pubg-mobile/uc/?all_options=1')
+
+        options = {opt['name']: opt for opt in response.data['options']}
         self.assertIsNone(options['325 UC']['min_price'])
         self.assertEqual(options['325 UC']['offer_count'], 0)
 
