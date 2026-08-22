@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { getSellerProfile, getSellerReviews, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 import { useAuth } from '@/lib/auth';
-import ReportModal from '@/components/ReportModal';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 
 const REVIEW_PAGE_SIZE = 20;
@@ -26,7 +25,6 @@ export default function SellerProfileClient({
   const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('shop');
-  const [showReport, setShowReport] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
@@ -149,21 +147,6 @@ export default function SellerProfileClient({
               <span className="sp-review-count-inline">{profile.review_count} review{profile.review_count !== 1 ? 's' : ''}</span>
             </div>
           </div>
-        </div>
-        <div className="sp-header-right">
-          {user && user.username !== profile.username && (
-            <button
-              className="report-flag-btn"
-              onClick={() => setShowReport(true)}
-              title="Report this seller"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                <line x1="4" y1="22" x2="4" y2="15"/>
-              </svg>
-              Report
-            </button>
-          )}
         </div>
       </div>
 
@@ -378,16 +361,6 @@ export default function SellerProfileClient({
         </div>
       )}
 
-      {/* Report Modal */}
-      {profile && (
-        <ReportModal
-          isOpen={showReport}
-          onClose={() => setShowReport(false)}
-          targetType="user"
-          userId={profile.user_id}
-          targetName={profile.username}
-        />
-      )}
     </div>
   );
 }
