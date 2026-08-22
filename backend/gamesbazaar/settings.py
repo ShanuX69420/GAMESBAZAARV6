@@ -112,7 +112,6 @@ if not DEBUG:
         )
 
 INSTALLED_APPS = [
-    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -126,7 +125,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
-    'channels',
     # Local
     'core',
 ]
@@ -299,16 +297,12 @@ REST_FRAMEWORK = {
         'password_reset_confirm': '10/hour',
         'email_change_request': '5/hour',
         'email_change_confirm': '10/hour',
-        'chat_start': '20/min',
-        'chat_ws_ticket': '30/min',
-        'inbox_ws_ticket': '30/min',
         'chat_message': '60/min',
         'chat_upload': '20/min',
         'guard_code': '60/hour',
         'topup_request': '10/hour',
         'jazzcash_initiate': '15/hour',
         'withdraw_request': '10/hour',
-        'heartbeat': '120/hour',
         'search': '120/min',
         'avatar_upload': '20/hour',
         'listing_create': '30/hour',
@@ -365,19 +359,11 @@ CORS_ALLOWED_ORIGINS = env_list(
 CORS_ALLOW_CREDENTIALS = True
 CORS_EXPOSE_HEADERS = sorted(set(env_list('CORS_EXPOSE_HEADERS', []) + ['Date']))
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
-WEBSOCKET_ALLOWED_ORIGINS = env_list(
-    'WEBSOCKET_ALLOWED_ORIGINS',
-    CORS_ALLOWED_ORIGINS if not DEBUG else DEV_FRONTEND_ORIGINS,
-)
 
 if not DEBUG:
     if not CORS_ALLOWED_ORIGINS:
         raise ImproperlyConfigured(
             'CORS_ALLOWED_ORIGINS must list the production frontend origin when DJANGO_DEBUG=False.'
-        )
-    if not WEBSOCKET_ALLOWED_ORIGINS:
-        raise ImproperlyConfigured(
-            'WEBSOCKET_ALLOWED_ORIGINS or CORS_ALLOWED_ORIGINS must list the production frontend origin when DJANGO_DEBUG=False.'
         )
 
 # Email — console in dev, configure SMTP for production
@@ -445,27 +431,6 @@ if EMAIL_BACKEND == DKIM_EMAIL_BACKEND:
         raise ImproperlyConfigured(
             f'DKIM_PRIVATE_KEY_PATH does not exist: {DKIM_PRIVATE_KEY_PATH}'
         )
-
-# ASGI / Channels
-ASGI_APPLICATION = 'gamesbazaar.asgi.application'
-CHANNEL_REDIS_URL = os.environ.get('CHANNEL_REDIS_URL')
-if CHANNEL_REDIS_URL:
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [CHANNEL_REDIS_URL],
-            },
-        },
-    }
-elif DEBUG:
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        },
-    }
-else:
-    raise ImproperlyConfigured('CHANNEL_REDIS_URL is required when DJANGO_DEBUG=False.')
 
 # Google OAuth — Sign-In with Google
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '').strip()

@@ -59,7 +59,6 @@ describe('security proxy', () => {
   it('sets a static allowlist CSP and hardening headers in production without Node Buffer', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk/v1');
-    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://realtime.gamesbazaar.pk/socket');
     vi.stubEnv('NEXT_PUBLIC_IMAGE_HOSTS', 'cdn.gamesbazaar.pk, https://media.gamesbazaar.pk/images');
     vi.stubEnv(
       'NEXT_PUBLIC_SENTRY_DSN',
@@ -79,7 +78,7 @@ describe('security proxy', () => {
     expect(csp).not.toContain("'strict-dynamic'");
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain('https://api.gamesbazaar.pk');
-    expect(csp).toContain('wss://realtime.gamesbazaar.pk');
+    expect(csp).not.toContain('wss://');
     expect(csp).toContain('https://accounts.google.com/gsi/client');
     expect(csp).toContain('https://accounts.google.com/gsi/style');
     expect(csp).toContain('https://www.googletagmanager.com');
@@ -125,10 +124,9 @@ describe('security proxy', () => {
     expect([...response.headers.entries()]).toEqual([]);
   });
 
-  it('omits invalid API and websocket origins from CSP directives', async () => {
+  it('omits invalid API origins from CSP directives', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'not a url');
-    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'also not a url');
     vi.stubEnv('NEXT_PUBLIC_IMAGE_HOSTS', 'bad url, wss://not-an-image.example');
     vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'not a dsn');
     const { module } = await importFreshProxy();
@@ -139,7 +137,6 @@ describe('security proxy', () => {
     expect(csp).toContain("img-src 'self' data: blob:");
     expect(csp).toContain("connect-src 'self'");
     expect(csp).not.toContain('not a url');
-    expect(csp).not.toContain('also not a url');
     expect(csp).not.toContain('bad url');
     expect(csp).not.toContain('wss://not-an-image.example');
     expect(csp).not.toContain('not a dsn');

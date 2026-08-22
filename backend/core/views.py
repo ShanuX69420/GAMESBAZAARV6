@@ -133,13 +133,9 @@ from .serializers import (
 )
 from .services import (
     CHAT_MESSAGE_EMPTY_ERROR,
-    CHAT_WS_TICKET_MAX_AGE_SECONDS,
-    INBOX_WS_TICKET_MAX_AGE_SECONDS,
     broadcast_chat_message_after_commit,
     chat_unread_cache_key,
     notification_unread_cache_key,
-    create_chat_ws_ticket,
-    create_inbox_ws_ticket,
     create_notification as create_user_notification,
     decode_private_media_ticket,
     apply_wallet_delta_once,
@@ -153,7 +149,6 @@ from .services import (
     ALLOWED_IMAGE_CONTENT_TYPES,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
-    broadcast_presence_update,
     get_or_create_private_conversation,
     issue_guard_code,
     maybe_answer_guard_command,
@@ -238,7 +233,6 @@ SITE_REVIEWS_LIMIT = 20
 SITE_REVIEWS_MIN_RATING = 4
 SITE_REVIEWS_MIN_COMMENT_LENGTH = 12
 SITE_REVIEWS_MAX_COMMENT_LENGTH = 200
-HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS = 30
 MAX_SEARCH_QUERY_LENGTH = 80
 SEARCH_CACHE_SECONDS = 60
 SEARCH_RESULT_LIMIT = 50
@@ -605,11 +599,13 @@ def apply_recommended_listing_ordering(listings_qs):
 
 
 def broadcast_chat_message(message, request):
-    """Broadcast a REST-created message to any open WebSocket clients."""
-    # Serialize with the request so image URLs stay absolute, then hand off to
-    # the central broadcaster (chat room + participants' inbox sockets).
+    """Serialize a REST-created message and refresh unread badges.
+
+    Serialize with the request so image URLs stay absolute; the after-commit
+    hook invalidates the other participants' unread caches for polling.
+    """
     message_data = dict(MessageSerializer(message, context={'request': request}).data)
-    broadcast_chat_message_after_commit(message, message_data=message_data)
+    broadcast_chat_message_after_commit(message)
     return message_data
 
 
@@ -1002,12 +998,8 @@ class GameCategoryDetailView(APIView):
     def get(self, request, game_slug, category_slug):
         # Only anonymous responses are cached: authenticated payloads can
         # include owner-only fields (e.g., a seller's delivery instructions).
-        # "Online sellers" is also left uncached — the set it returns is a live
-        # presence query, and a 30s/300s-old copy of it lists sellers who have
-        # since gone offline (and hides ones who just came back).
         browse_cache_key = None
-        online_only = request.query_params.get('online_only') == 'true'
-        if not request.user.is_authenticated and not online_only:
+        if not request.user.is_authenticated:
             param_signature = '&'.join(
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
@@ -1186,11 +1178,6 @@ class GameCategoryDetailView(APIView):
                 Q(is_auto_delivery=True) | Q(delivery_time='Instant')
             )
 
-        # Online seller filter: only show listings from sellers who are currently online
-        if online_only:
-            online_threshold = timezone.now() - timedelta(seconds=120)
-            listings_qs = listings_qs.filter(seller__profile__last_active__gte=online_threshold)
-
         # Search filter: filter by title
         search_q = request.query_params.get('search', '').strip()
         if search_q:
@@ -1285,9 +1272,6 @@ class GameCategoryDetailView(APIView):
         if browse_cache_key is not None:
             cache.set(browse_cache_key, cat_data, BROWSE_CACHE_SECONDS)
             response['Cache-Control'] = public_cache_header(BROWSE_CACHE_SECONDS)
-        elif online_only:
-            # Keep nginx and the browser off it too, not just the Django cache.
-            response['Cache-Control'] = 'private, no-store'
         else:
             response['Cache-Control'] = 'private'
         return response
@@ -2718,72 +2702,6 @@ class ConversationListView(APIView):
         })
 
 
-class StartConversationView(ScopedPostThrottleMixin, APIView):
-    """POST /api/chat/start/ — Find or create a conversation with a user.
-    Body: {"user_id": 5, "message": "Hi, is this still available?"}
-    """
-    permission_classes = [HasCompletedProfile]
-    throttle_scope = 'chat_start'
-
-    def post(self, request):
-        other_user_id = request.data.get('user_id')
-        initial_message, validation_error = validate_chat_message_content(
-            request.data.get('message', ''),
-            allow_empty=True,
-        )
-        if validation_error and validation_error != CHAT_MESSAGE_EMPTY_ERROR:
-            return Response({'error': validation_error}, status=400)
-
-        if other_user_id in (None, ''):
-            return Response({'error': 'user_id is required.'}, status=400)
-
-        try:
-            other_user_id = int(other_user_id)
-        except (TypeError, ValueError):
-            return Response({'error': 'user_id must be a valid user id.'}, status=400)
-
-        if other_user_id <= 0:
-            return Response({'error': 'user_id must be a valid user id.'}, status=400)
-
-        if other_user_id == request.user.id:
-            return Response({'error': 'Cannot chat with yourself.'}, status=400)
-
-        other_user = get_object_or_404(User, id=other_user_id)
-        referenced_listing, listing_error = validate_chat_listing_reference(
-            request.data.get('listing_id'),
-            seller_id=other_user.id,
-        )
-        if listing_error:
-            return Response({'error': listing_error}, status=400)
-
-        conversation, _ = get_or_create_private_conversation(request.user, other_user)
-
-        # Send initial message if provided
-        if initial_message:
-            message = Message.objects.create(
-                conversation=conversation,
-                sender=request.user,
-                content=initial_message,
-                referenced_listing=referenced_listing,
-                referenced_listing_title=referenced_listing.title if referenced_listing else '',
-                referenced_listing_price=referenced_listing.price if referenced_listing else None,
-            )
-            conversation.save()  # Update updated_at
-            broadcast_chat_message(message, request)
-
-        # Cap the payload to the latest messages — an existing conversation
-        # can hold thousands and the serializer fallback would load them all.
-        recent_messages = list(reversed(
-            conversation.messages.select_related('sender', 'referenced_listing')
-            .order_by('-pk')[:DEFAULT_MESSAGE_PAGE_SIZE]
-        ))
-        data = ConversationDetailSerializer(
-            conversation,
-            context={'request': request, 'messages': recent_messages},
-        ).data
-        return Response(data, status=201)
-
-
 class ConversationDetailView(APIView):
     """GET /api/chat/{id}/ — Get conversation with messages."""
     permission_classes = [HasCompletedProfile]
@@ -2857,35 +2775,6 @@ class ConversationDetailView(APIView):
         ).data
         data['message_pagination'] = pagination
         return Response(data)
-
-
-class ChatWebSocketTicketView(APIView):
-    """POST /api/chat/{id}/ws-ticket/ — Issue a short-lived chat WebSocket ticket."""
-    permission_classes = [HasCompletedProfile]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = 'chat_ws_ticket'
-
-    def post(self, request, pk):
-        conversation = get_object_or_404(Conversation, pk=pk, participants=request.user)
-        return Response({
-            'ticket': create_chat_ws_ticket(request.user, conversation.pk),
-            'expires_in': CHAT_WS_TICKET_MAX_AGE_SECONDS,
-        })
-
-
-class InboxWebSocketTicketView(APIView):
-    """POST /api/chat/inbox/ws-ticket/ — Issue a short-lived inbox WebSocket ticket."""
-    permission_classes = [HasCompletedProfile]
-    throttle_classes = [ScopedRateThrottle]
-    # Own bucket: the chat and inbox sockets reconnect independently and must
-    # not drain each other's ticket budget.
-    throttle_scope = 'inbox_ws_ticket'
-
-    def post(self, request):
-        return Response({
-            'ticket': create_inbox_ws_ticket(request.user),
-            'expires_in': INBOX_WS_TICKET_MAX_AGE_SECONDS,
-        })
 
 
 class SendMessageView(ScopedPostThrottleMixin, APIView):
@@ -3004,61 +2893,6 @@ class UnreadCountView(APIView):
         ).distinct().count()
         cache.set(cache_key, count, UNREAD_COUNT_CACHE_SECONDS)
         return Response({'unread_count': count})
-
-
-class HeartbeatView(ScopedPostThrottleMixin, APIView):
-    """POST /api/heartbeat/ — Update user's last_active timestamp."""
-    permission_classes = [HasCompletedProfile]
-    throttle_scope = 'heartbeat'
-
-    def post(self, request):
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        now = timezone.now()
-        should_update = (
-            profile.last_active is None or
-            (now - profile.last_active).total_seconds() >= HEARTBEAT_MIN_WRITE_INTERVAL_SECONDS
-        )
-        if should_update:
-            profile.last_active = now
-            profile.save(update_fields=['last_active'])
-            broadcast_presence_update(request.user.id, now)
-        return Response({'status': 'ok', 'updated': should_update})
-
-
-class PresenceView(APIView):
-    """GET /api/presence/?user_ids=1,2,3 — live last_active for seller dots.
-
-    Presence must never travel inside a cached payload. The catalog responses
-    that carry seller_last_active are cached at three layers (Django browse
-    cache 30s, nginx s-maxage 300s, Next.js revalidate 120s) and every one of
-    those windows is longer than the 120s online window, so a seller who
-    heartbeats every 65s still reads as offline until the cache turns over.
-    This endpoint is deliberately tiny and uncacheable so the dot has one live
-    source on every page outside chat (chat gets the socket push instead).
-    """
-    permission_classes = [permissions.AllowAny]
-    MAX_IDS = 100
-
-    def get(self, request):
-        user_ids = set()
-        for chunk in request.query_params.get('user_ids', '').split(','):
-            chunk = chunk.strip()
-            if chunk.isdigit():
-                user_ids.add(int(chunk))
-            if len(user_ids) >= self.MAX_IDS:
-                break
-
-        users = {}
-        if user_ids:
-            rows = UserProfile.objects.filter(
-                user_id__in=user_ids,
-                last_active__isnull=False,
-            ).values_list('user_id', 'last_active')
-            users = {str(user_id): last_active.isoformat() for user_id, last_active in rows}
-
-        response = Response({'users': users, 'now': timezone.now().isoformat()})
-        response['Cache-Control'] = 'no-store'
-        return response
 
 
 # ── Wallet views ──────────────────────────────────────────────────────────────

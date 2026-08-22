@@ -13,9 +13,9 @@ machine can be rebuilt from this repo plus the nightly database backups
 | `backup_db.py` | `/opt/gamesbazaar/backup_db.py` (chmod 750) |
 
 App services: `gamesbazaar-web` (gunicorn WSGI, 127.0.0.1:8001) serves ALL
-plain HTTP; `gamesbazaar-backend` (daphne ASGI, 127.0.0.1:8000) serves only
-websockets — nginx routes `/ws/` to daphne and everything else to gunicorn.
-After a backend code deploy, restart BOTH.
+backend HTTP — there are no websockets since the 2026-08 shop conversion
+(the old `gamesbazaar-backend` daphne service was retired with it).
+After a backend code deploy, restart `gamesbazaar-web`.
 
 Timers: `auto-confirm` and `reconcile-jazzcash` every 10 min,
 `release-holds` every 30 min, `fazer-fulfill` every 1 min (Fazer

@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getSellerProfile, getSellerReviews, formatLastActive, startConversation, replyToReview } from '@/lib/api';
+import { getSellerProfile, getSellerReviews, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
-import { useLivePresence } from '@/lib/presence';
 import { useAuth } from '@/lib/auth';
 import ReportModal from '@/components/ReportModal';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
@@ -18,7 +17,6 @@ export default function SellerProfileClient({
   initialReviewPagination = null,
 }) {
   const params = useParams();
-  const router = useRouter();
   const { username } = params;
   const { user } = useAuth();
   const [profile, setProfile] = useState(initialProfile);
@@ -28,20 +26,11 @@ export default function SellerProfileClient({
   const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('shop');
-  const [startingChat, setStartingChat] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState('');
-  // The server-rendered profile is up to 2 minutes stale (revalidate window),
-  // which is longer than the 120s online window — so the dot reads presence
-  // from the live endpoint rather than from profile.last_active.
-  const sellerPresenceIds = useMemo(
-    () => (profile?.user_id ? [profile.user_id] : []),
-    [profile?.user_id],
-  );
-  const { lastActiveFor, isOnline } = useLivePresence(sellerPresenceIds);
 
   useEffect(() => {
     if (initialProfile) {
@@ -93,18 +82,6 @@ export default function SellerProfileClient({
     return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
   }
 
-  async function handleStartChat() {
-    setStartingChat(true);
-    try {
-      const data = await startConversation(profile.user_id);
-      router.push(`/inbox?c=${data.conversation_id || data.id}`);
-    } catch (err) {
-      alert(err.message || 'Could not start chat. Please log in first.');
-    } finally {
-      setStartingChat(false);
-    }
-  }
-
   async function handleReply(reviewId) {
     if (!replyText.trim() || replyLoading) return;
     setReplyLoading(true);
@@ -122,8 +99,6 @@ export default function SellerProfileClient({
   }
 
   const isOwnProfile = user && user.username === username;
-  const sellerLastActive = lastActiveFor(profile?.user_id, profile?.last_active);
-  const sellerIsOnline = isOnline(profile?.user_id, profile?.last_active);
 
   if (loading) {
     return (
@@ -151,7 +126,6 @@ export default function SellerProfileClient({
         <div className="sp-header-left">
           <div className="sp-avatar">
             <img src={profile.avatar_url || '/avatar-default.svg'} alt={profile.username} />
-            <span className={`sp-avatar-dot ${sellerIsOnline ? 'online' : ''}`} />
           </div>
           <div className="sp-header-info">
             <div className="sp-name-row">
@@ -174,24 +148,9 @@ export default function SellerProfileClient({
               <span className="sp-meta-sep">·</span>
               <span className="sp-review-count-inline">{profile.review_count} review{profile.review_count !== 1 ? 's' : ''}</span>
             </div>
-            <div className="sp-status-row">
-              {sellerIsOnline ? (
-                <span className="sp-online-badge">● Online</span>
-              ) : (
-                <span className="sp-offline-text">{formatLastActive(sellerLastActive)}</span>
-              )}
-            </div>
           </div>
         </div>
         <div className="sp-header-right">
-          <button
-            className="sp-msg-btn"
-            onClick={handleStartChat}
-            disabled={startingChat}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-            {startingChat ? 'Starting...' : 'Message'}
-          </button>
           {user && user.username !== profile.username && (
             <button
               className="report-flag-btn"

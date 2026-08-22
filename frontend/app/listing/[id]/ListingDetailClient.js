@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -8,12 +8,10 @@ import {
   buyListing, getWallet, getSellerReviews,
   initiateJazzCashPurchase, pollJazzCashPayment,
 } from '@/lib/api';
-import { useLivePresence } from '@/lib/presence';
 import { API_BASE } from '@/lib/config';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
-import ChatBox from '@/components/ChatBox';
 import ReportModal from '@/components/ReportModal';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
@@ -50,15 +48,6 @@ export default function ListingDetailClient({ initialListing = null }) {
   const [showConfirm, setShowConfirm] = useState(false);
   // Auto-fulfilled top-ups: buyer's player/user ID entered at checkout.
   const [checkoutFieldValues, setCheckoutFieldValues] = useState({});
-  // Seller presence. The listing payload is server-rendered with a 120s
-  // revalidate — longer than the 120s online window — so its seller_last_active
-  // cannot be trusted for the dot, and nothing on this page ever re-fetched the
-  // listing. Poll the live presence endpoint instead.
-  const sellerPresenceIds = useMemo(
-    () => (listing?.seller_id ? [listing.seller_id] : []),
-    [listing?.seller_id],
-  );
-  const { lastActiveFor, isOnline } = useLivePresence(sellerPresenceIds);
   const [reviews, setReviews] = useState([]);
   const [reviewPagination, setReviewPagination] = useState(null);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -331,8 +320,6 @@ export default function ListingDetailClient({ initialListing = null }) {
   const jazzCashEnabled = Boolean(wallet?.jazzcash_enabled);
   const canBuy = hasBalance || jazzCashEnabled;
   const isInstant = listing.is_auto_delivery || listing.instant_delivery;
-  const sellerLastActive = lastActiveFor(listing.seller_id, listing.seller_last_active);
-  const sellerOnline = isOnline(listing.seller_id, listing.seller_last_active);
   const sellerRating = listing.seller_avg_rating ?? null;
   // The reviews panel below already knows the true total; prefer it once loaded.
   const sellerReviewCount = reviewPagination?.count ?? listing.seller_review_count ?? 0;
@@ -410,7 +397,6 @@ export default function ListingDetailClient({ initialListing = null }) {
                     style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
                   />
                 </div>
-                <span className={`listing-card-status-dot ${sellerOnline ? 'online' : 'offline'}`} />
               </div>
               <div className="listing-seller-info">
                 <span className="seller-name-row">
@@ -457,7 +443,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                   <span>
                     {listing.delivery_time
                       ? <>Delivery time — <strong>{listing.delivery_time}</strong></>
-                      : 'The seller delivers through chat after your order'}
+                      : 'Delivered on your order page after purchase'}
                   </span>
                 </>
               )}
@@ -482,8 +468,7 @@ export default function ListingDetailClient({ initialListing = null }) {
 
         </div>
 
-        {/* Right column: buy box, then the seller chat directly under it —
-            one continuous panel, no floating and no gap between the two. */}
+        {/* Right column: the buy box. */}
         <div className="listing-detail-side">
           <div className="listing-detail-price-card">
               <div className="listing-detail-price">
@@ -661,34 +646,19 @@ export default function ListingDetailClient({ initialListing = null }) {
               </div>
             </div>
 
-          {/* Chat sits in the same column, right below the buy box */}
-          {!isOwnListing && (
-            <div className="listing-detail-chat-wrap">
-              <ChatBox
-                sellerId={listing.seller_id}
-                sellerName={listing.seller_name}
-                sellerAvatarUrl={listing.seller_avatar_url}
-                sellerLastActive={sellerLastActive}
-                listingId={listing.id}
-                listingTitle={listing.title}
-                listingPrice={listing.price}
-              />
-
-              {user && (
-                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-                  <button
-                    className="report-flag-btn"
-                    onClick={() => setShowReport(true)}
-                    title="Report this listing"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                      <line x1="4" y1="22" x2="4" y2="15"/>
-                    </svg>
-                    Report
-                  </button>
-                </div>
-              )}
+          {!isOwnListing && user && (
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+              <button
+                className="report-flag-btn"
+                onClick={() => setShowReport(true)}
+                title="Report this listing"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                  <line x1="4" y1="22" x2="4" y2="15"/>
+                </svg>
+                Report
+              </button>
             </div>
           )}
         </div>

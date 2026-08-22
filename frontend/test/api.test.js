@@ -15,7 +15,6 @@ import {
   getAutoDeliveryStockItem,
   getConversations,
   sendMessage,
-  startConversation,
   getHeldOrders,
   getMySupportTickets,
   getMyListings,
@@ -41,9 +40,6 @@ import {
   updateAutoDeliveryStock,
   updateReview,
   uploadAvatar,
-  isOnlineFromLastActive,
-  formatLastActive,
-  heartbeatGateOpen,
 } from '../lib/api';
 
 function jsonResponse(data = {}, status = 200) {
@@ -151,25 +147,9 @@ describe('API client helpers', () => {
   });
 
   it('sends listing references as structured chat data', async () => {
-    await startConversation(5, 'Is this available?', 91);
     await sendMessage(12, 'I can buy today.', 91);
 
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
-      `${API_BASE}/api/chat/start/`,
-      {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: 5,
-          message: 'Is this available?',
-          listing_id: 91,
-        }),
-      }
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
+    expect(fetch).toHaveBeenCalledWith(
       `${API_BASE}/api/chat/12/send/`,
       {
         credentials: 'include',
@@ -627,58 +607,4 @@ describe('API client helpers', () => {
     );
   });
 
-  it('correctly manages client-server clock drift for presence indicators', async () => {
-    const now = Date.now();
-    const activeTimeIso = new Date(now - 10000).toISOString(); // 10 seconds ago
-    expect(isOnlineFromLastActive(activeTimeIso, now)).toBe(true);
-
-    // Mock a response with a Date header that is 5 minutes ahead of client time
-    // Client time is now, Server time is now + 5 mins (300,000 ms)
-    const serverTime = now + 300000;
-    const dateHeader = new Date(serverTime).toUTCString();
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: {
-        get: (name) => (name.toLowerCase() === 'date' ? dateHeader : null)
-      },
-      json: vi.fn().mockResolvedValue({ status: 'ok' })
-    });
-
-    await getSellerProfile('testuser');
-
-    // With clock drift, the user active 10 seconds ago on server is serverTime - 10000.
-    const lastActiveServerTime = serverTime - 10000;
-    const lastActiveIso = new Date(lastActiveServerTime).toISOString();
-
-    // Synced functions should return true and 'Online' because serverTimeOffset corrects it!
-    expect(isOnlineFromLastActive(lastActiveIso, now)).toBe(true);
-    expect(formatLastActive(lastActiveIso)).toBe('Online');
-  });
-
-  describe('heartbeatGateOpen', () => {
-    const now = Date.now();
-
-    it('sends when nothing has been stored yet', () => {
-      expect(heartbeatGateOpen(0, now)).toBe(true);
-      expect(heartbeatGateOpen(null, now)).toBe(true);
-      expect(heartbeatGateOpen('not-a-number', now)).toBe(true);
-    });
-
-    it('holds the gate shut until the minimum gap has passed', () => {
-      expect(heartbeatGateOpen(now - 59000, now)).toBe(false);
-      expect(heartbeatGateOpen(now - 60000, now)).toBe(true);
-      expect(heartbeatGateOpen(now - 65000, now)).toBe(true);
-    });
-
-    // Regression: a motherboard swap left the clock 3h12m fast, both browsers
-    // stamped a future time, then the correction stepped time backwards and
-    // presence stayed latched off site-wide until real time caught up.
-    it('ignores a stored time left in the future by a backwards clock step', () => {
-      const clockWasFastBy = 3 * 60 * 60 * 1000 + 12 * 60 * 1000;
-      expect(heartbeatGateOpen(now + clockWasFastBy, now)).toBe(true);
-      expect(heartbeatGateOpen(now + 1000, now)).toBe(true);
-    });
-  });
 });

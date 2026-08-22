@@ -14,7 +14,6 @@ export function buildGameCategoryListingUrl({
   offset = 0,
   filters = {},
   instantOnly = false,
-  onlineOnly = false,
   search = '',
   seller = '',
   ordering = '',
@@ -48,9 +47,6 @@ export function buildGameCategoryListingUrl({
 
   if (instantOnly) {
     query.set('instant_delivery', 'true');
-  }
-  if (onlineOnly) {
-    query.set('online_only', 'true');
   }
   if (search) {
     query.set('search', search);

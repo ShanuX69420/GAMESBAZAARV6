@@ -31,20 +31,7 @@ function requireProductionUrl(name, value, allowedProtocols, localProtocols = al
 }
 
 requireProductionUrl('NEXT_PUBLIC_API_URL', process.env.NEXT_PUBLIC_API_URL, ['https:'], ['http:', 'https:']);
-requireProductionUrl('NEXT_PUBLIC_WS_URL', process.env.NEXT_PUBLIC_WS_URL, ['wss:'], ['ws:', 'wss:']);
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-function websocketBaseFromApiBase() {
-  try {
-    const url = new URL(API_BASE);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return url.origin;
-  } catch {
-    return 'ws://localhost:8000';
-  }
-}
-
-export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || websocketBaseFromApiBase();
 
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';

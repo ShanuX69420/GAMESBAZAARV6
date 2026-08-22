@@ -292,19 +292,6 @@ export async function getConversations(pagination = {}) {
   return res.json();
 }
 
-export async function startConversation(userId, message = '', listingId = null) {
-  const body = { user_id: userId, message };
-  if (listingId) body.listing_id = listingId;
-  const res = await authFetch(`${API_BASE}/api/chat/start/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to start conversation');
-  return data;
-}
-
 export async function getConversation(id, pagination = {}) {
   const { signal, ...paginationParams } = pagination;
   const res = await authFetch(`${API_BASE}/api/chat/${id}/${paginationQuery(paginationParams)}`, {
@@ -313,28 +300,6 @@ export async function getConversation(id, pagination = {}) {
   });
   if (!res.ok) throw new Error('Failed to get conversation');
   return res.json();
-}
-
-export async function getChatWebSocketTicket(conversationId) {
-  const res = await authFetch(`${API_BASE}/api/chat/${conversationId}/ws-ticket/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({}),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to get chat connection ticket');
-  return data;
-}
-
-export async function getInboxWebSocketTicket() {
-  const res = await authFetch(`${API_BASE}/api/chat/inbox/ws-ticket/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({}),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to get inbox connection ticket');
-  return data;
 }
 
 export async function sendMessage(conversationId, content, listingId = null) {
@@ -370,81 +335,6 @@ export async function sendImageMessage(conversationId, imageFile, content = '') 
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to send image');
   return data;
-}
-
-// ── Presence API ────────────────────────────────────────────────────────────
-
-// Presence latches off while a heartbeat is in flight, so a request that never
-// settles (a connection dropped mid-flight, sleep/resume) would stop presence
-// for good. Bound it, so the caller always gets something to unlatch on.
-const HEARTBEAT_TIMEOUT_MS = 20000;
-export const HEARTBEAT_MIN_SEND_GAP_MS = 60000;
-
-export async function sendHeartbeat() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS);
-  try {
-    const res = await authFetch(`${API_BASE}/api/heartbeat/`, {
-      method: 'POST',
-      headers: authHeaders(),
-      signal: controller.signal,
-    });
-    return res.ok;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-// Live presence for seller dots. The seller_last_active baked into catalog
-// payloads is only as fresh as the caches those payloads pass through (Django
-// browse cache, nginx, Next.js revalidate) — all longer than the 120s online
-// window — so the dot reads its timestamps from this uncached endpoint instead.
-export async function getPresence(userIds, options = {}) {
-  const ids = [...new Set((userIds || []).filter((id) => id !== null && id !== undefined))];
-  if (!ids.length) return {};
-  const params = new URLSearchParams({ user_ids: ids.join(',') });
-  const res = await fetch(`${API_BASE}/api/presence/?${params.toString()}`, {
-    cache: 'no-store',
-    ...options,
-  });
-  updateServerTimeOffset(res);
-  if (!res.ok) throw new Error('Failed to get presence');
-  const data = await res.json();
-  return data.users || {};
-}
-
-// Whether enough time has passed since the last heartbeat to send another.
-// `storedAt` is a reading of the client's own clock, so it cannot be assumed to
-// sit in the past: a backwards clock step (a wrong RTC after a hardware change,
-// an NTP correction) strands a future timestamp in storage, and a plain
-// elapsed-time check then stays negative until real time catches up — latching
-// presence off for hours, across every tab at once. Treat a future stored time
-// as "never sent" rather than trusting it.
-export function heartbeatGateOpen(storedAt, nowMs = Date.now()) {
-  const stored = Number(storedAt) || 0;
-  return nowMs - (stored > nowMs ? 0 : stored) >= HEARTBEAT_MIN_SEND_GAP_MS;
-}
-
-const ONLINE_WINDOW_MS = 120000;
-
-export function isOnlineFromLastActive(isoString, nowMs = Date.now()) {
-  if (!isoString) return false;
-  const lastActiveMs = new Date(isoString).getTime();
-  if (Number.isNaN(lastActiveMs)) return false;
-  const adjustedNow = nowMs + serverTimeOffset;
-  return adjustedNow - lastActiveMs < ONLINE_WINDOW_MS;
-}
-
-export function formatLastActive(isoString) {
-  if (!isoString) return 'Offline';
-  const date = new Date(isoString);
-  const adjustedNow = Date.now() + serverTimeOffset;
-  const diff = (adjustedNow - date.getTime()) / 1000; // seconds
-
-  if (isOnlineFromLastActive(isoString, Date.now())) return 'Online';
-  if (diff < 3600) return `Active ${Math.floor(Math.max(0, diff) / 60)}m ago`;
-  if (diff < 86400) return `Active ${Math.floor(Math.max(0, diff) / 3600)}h ago`;
-  return `Active ${Math.floor(Math.max(0, diff) / 86400)}d ago`;
 }
 
 // ── Wallet API ──────────────────────────────────────────────────────────────

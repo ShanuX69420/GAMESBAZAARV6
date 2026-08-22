@@ -1,48 +1,18 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { WS_BASE } from '@/lib/config';
-import { currentPath, loginHref } from '@/lib/loginRedirect';
 import {
-  getChatWebSocketTicket,
   getConversation,
-  getConversations,
-  startConversation,
   sendMessage,
   sendImageMessage,
-  formatLastActive,
 } from '@/lib/api';
-import { useLivePresence } from '@/lib/presence';
-import { resetMessageSoundCooldown } from '@/lib/messageAlerts';
 import Linkified from '@/components/Linkified';
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
-const CHAT_SUBPROTOCOL = 'gb.chat';
-const DRAFT_KEY_PREFIX = 'gb_chat_draft:';
-
-// A guest's half-written message is parked here while they sign in, so the
-// login trip doesn't cost them what they typed.
-function takeDraft(sellerId) {
-  if (!sellerId || typeof window === 'undefined') return '';
-  try {
-    const key = `${DRAFT_KEY_PREFIX}${sellerId}`;
-    const draft = sessionStorage.getItem(key);
-    if (draft) sessionStorage.removeItem(key);
-    return draft || '';
-  } catch {
-    return '';
-  }
-}
-
-function saveDraft(sellerId, text) {
-  if (!sellerId || typeof window === 'undefined') return;
-  try {
-    sessionStorage.setItem(`${DRAFT_KEY_PREFIX}${sellerId}`, text);
-  } catch { }
-}
+// New messages land on the next poll; the tab pauses polling while hidden.
+const MESSAGE_POLL_MS = 5000;
 
 // Turn the order number and participant usernames inside a system notice
 // into links (order page / seller profiles).
@@ -77,25 +47,14 @@ function renderSenderName(label) {
   );
 }
 
-function encodeWebSocketTicket(ticket) {
-  return btoa(ticket).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
 export default function ChatBox({
   conversationId,
-  sellerId,
-  sellerName,
-  sellerAvatarUrl,
-  sellerLastActive,
-  onConversationStart,
+  otherUserName,
+  otherUserAvatarUrl,
   compact = false,
-  listingId,
-  listingTitle,
-  listingPrice,
   onOrderEvent,
 }) {
   const { user } = useAuth();
-  const router = useRouter();
   const [convo, setConvo] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagePagination, setMessagePagination] = useState(null);
@@ -103,18 +62,13 @@ export default function ChatBox({
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [activeConvoId, setActiveConvoId] = useState(conversationId);
-  const [connected, setConnected] = useState(false);
   const [pendingImage, setPendingImage] = useState(null); // { file, preview }
   const [imageUploading, setImageUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [chatError, setChatError] = useState('');
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const wsRef = useRef(null);
-  const reconnectTimer = useRef(null);
   const errorTimerRef = useRef(null);
-  const reconnectAttempts = useRef(0);
   const isNearBottom = useRef(true);
   const loadingOlderRef = useRef(false);
   const mountedRef = useRef(true);
@@ -123,25 +77,8 @@ export default function ChatBox({
   const initialImageAutoScrollRef = useRef(false);
   const pendingInitialImageLoadsRef = useRef(0);
   const initialImageScrollTimerRef = useRef(null);
-  const [listingContextSent, setListingContextSent] = useState(false);
   const onOrderEventRef = useRef(onOrderEvent);
   onOrderEventRef.current = onOrderEvent;
-
-  // Logged out visitors see the whole chat box; only sending is gated.
-  const isGuest = !user;
-  const chatPartnerId = convo?.other_user?.id || sellerId || null;
-  const chatPresenceIds = useMemo(
-    () => (chatPartnerId ? [chatPartnerId] : []),
-    [chatPartnerId],
-  );
-  const { lastActiveFor, isOnline } = useLivePresence(chatPresenceIds);
-
-  // Coming back from the login trip: put the guest's message back in the box.
-  useEffect(() => {
-    if (isGuest || !sellerId) return;
-    const draft = takeDraft(sellerId);
-    if (draft) setInput(draft);
-  }, [isGuest, sellerId]);
 
   // Auto-grow the message box as lines are added (Shift+Enter), reset after send.
   useEffect(() => {
@@ -228,66 +165,87 @@ export default function ChatBox({
     scrollToBottom();
   }
 
-  // On mount: look up existing conversation with seller
-  useEffect(() => {
-    if (activeConvoId || !sellerId || !user) return;
-    let cancelled = false;
-    setLoadingMessages(true);
+  // Merge freshly-polled messages into state without disturbing older pages
+  // the user has scrolled back through.
+  const mergePolledMessages = useCallback((data) => {
+    const polled = data.messages || [];
+    if (!polled.length) return;
+    setMessages(prev => {
+      const existing = new Set(prev.map(m => m.id));
+      const fresh = polled.filter(m => !existing.has(m.id));
+      if (!fresh.length) return prev;
 
-    getConversations({ otherUserId: sellerId, limit: 1 })
-      .then(data => {
-        if (cancelled || !mountedRef.current) return;
-        const convos = data.conversations || data;
-        const existing = convos.find(c => c.other_user?.id === sellerId);
-        if (existing) {
-          setActiveConvoId(existing.id);
-        } else {
-          setLoadingMessages(false);
+      // Surface order updates and refresh navbar badges for messages that
+      // arrived from the other side.
+      for (const msg of fresh) {
+        if (
+          onOrderEventRef.current &&
+          (msg.message_type === 'system' || msg.message_type === 'delivery')
+        ) {
+          onOrderEventRef.current(msg);
         }
-      })
-      .catch(() => {
-        if (!cancelled && mountedRef.current) setLoadingMessages(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sellerId, user, activeConvoId]);
-
-  // Sync conversationId prop
-  useEffect(() => {
-    if (conversationId) {
-      setActiveConvoId(conversationId);
-      setMessages([]);
-      setLoadingMessages(true);
-    }
+      }
+      window.dispatchEvent(new Event('chatUpdate'));
+      setMessagePagination(prevPage =>
+        prevPage ? { ...prevPage, count: prevPage.count + fresh.length } : prevPage
+      );
+      return [...prev, ...fresh];
+    });
   }, [conversationId]);
 
   // Load messages via REST. `silent` refreshes in place (no skeleton, no
-  // forced scroll) — used to catch up after a reconnect.
+  // forced scroll) — used by the poll loop.
   const loadMessages = useCallback(async ({ silent = false } = {}) => {
-    if (!activeConvoId) return;
+    if (!conversationId) return;
     if (!silent) setLoadingMessages(true);
     try {
-      const data = await getConversation(activeConvoId, { limit: MESSAGE_PAGE_SIZE });
+      const data = await getConversation(conversationId, { limit: MESSAGE_PAGE_SIZE });
       if (!mountedRef.current) return;
+      if (silent) {
+        setConvo(prev => prev || data);
+        mergePolledMessages(data);
+        return;
+      }
       const nextMessages = data.messages || [];
       setConvo(data);
       setMessages(nextMessages);
       setMessagePagination(data.message_pagination || null);
-      if (!silent) armInitialImageAutoScroll(nextMessages);
+      armInitialImageAutoScroll(nextMessages);
     } catch { } finally {
       if (mountedRef.current && !silent) setLoadingMessages(false);
     }
-  }, [activeConvoId]);
+  }, [conversationId, mergePolledMessages]);
 
-  // Initial load
+  // Initial load, then poll for new messages while the tab is visible.
   useEffect(() => {
+    mountedRef.current = true;
+    if (!conversationId) return;
+    setMessages([]);
+    setConvo(null);
+    setLoadingMessages(true);
     loadMessages();
-  }, [loadMessages]);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadMessages({ silent: true });
+      }
+    }, MESSAGE_POLL_MS);
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') loadMessages({ silent: true });
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisible);
+      clearTimeout(errorTimerRef.current);
+      clearTimeout(initialImageScrollTimerRef.current);
+    };
+  }, [conversationId, loadMessages]);
 
   async function loadOlderMessages() {
-    if (!activeConvoId || messagePagination?.next_before_id === null ||
+    if (!conversationId || messagePagination?.next_before_id === null ||
         messagePagination?.next_before_id === undefined || loadingOlderRef.current) return;
     const el = messagesContainerRef.current;
     const previousHeight = el?.scrollHeight || 0;
@@ -295,7 +253,7 @@ export default function ChatBox({
     loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
-      const data = await getConversation(activeConvoId, {
+      const data = await getConversation(conversationId, {
         limit: MESSAGE_PAGE_SIZE,
         beforeId: messagePagination.next_before_id,
       });
@@ -318,130 +276,6 @@ export default function ChatBox({
     }
   }
 
-  // WebSocket with auto-reconnect
-  useEffect(() => {
-    mountedRef.current = true;
-    if (!activeConvoId || !user) return;
-    // Per-run liveness flag: unlike mountedRef (which the next effect run
-    // sets back to true), this stays false once this run is torn down, so
-    // stale async connects and orphaned retry timers can't resurrect.
-    let disposed = false;
-
-    function scheduleReconnect() {
-      if (disposed) return;
-      setConnected(false);
-      // Replace any pending retry so reconnect loops can't multiply
-      clearTimeout(reconnectTimer.current);
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
-      reconnectAttempts.current += 1;
-      reconnectTimer.current = setTimeout(() => {
-        if (!disposed) connectWs();
-      }, delay);
-    }
-
-    async function connectWs() {
-      let ticket;
-      try {
-        const data = await getChatWebSocketTicket(activeConvoId);
-        ticket = data.ticket;
-      } catch {
-        scheduleReconnect();
-        return;
-      }
-      if (!ticket || disposed) return;
-
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-      }
-
-      const ticketProtocol = `gb.ticket.${encodeWebSocketTicket(ticket)}`;
-      const ws = new WebSocket(`${WS_BASE}/ws/chat/${activeConvoId}/`, [
-        CHAT_SUBPROTOCOL,
-        ticketProtocol,
-      ]);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (disposed) return;
-        clearTimeout(reconnectTimer.current);
-        setConnected(true);
-        // Connecting marks the conversation read server-side; treat it as
-        // caught up so its next incoming message dings again.
-        resetMessageSoundCooldown(activeConvoId);
-        if (reconnectAttempts.current > 0) {
-          // Catch up quietly on messages and order events missed while
-          // offline — no skeleton, no scroll jump.
-          loadMessages({ silent: true });
-          if (onOrderEventRef.current) onOrderEventRef.current(null);
-        }
-        reconnectAttempts.current = 0;
-        setTimeout(() => window.dispatchEvent(new Event('chatUpdate')), 300);
-      };
-
-      ws.onmessage = (e) => {
-        if (disposed) return;
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'new_message') {
-            if (
-              data.message.is_mine &&
-              data.message.listing_reference?.id === Number(listingId)
-            ) {
-              setListingContextSent(true);
-            }
-            setMessages(prev => {
-              if (prev.some(m => m.id === data.message.id)) return prev;
-              return [...prev, data.message];
-            });
-            setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
-            setChatError('');
-            // Messages landing in an open chat are auto-read by the server,
-            // so keep the sound cooldown reset while the user watches.
-            if (!data.message.is_mine) resetMessageSoundCooldown(activeConvoId);
-            window.dispatchEvent(new Event('chatUpdate'));
-            if (
-              onOrderEventRef.current &&
-              (data.message.message_type === 'system' || data.message.message_type === 'delivery')
-            ) {
-              onOrderEventRef.current(data.message);
-            }
-          } else if (data.type === 'presence') {
-            // Server pushes the other participant's fresh last_active —
-            // replaces the old 30s polling.
-            setConvo(prev => {
-              if (!prev?.other_user || prev.other_user.id !== data.user_id) return prev;
-              return { ...prev, other_user: { ...prev.other_user, last_active: data.last_active } };
-            });
-          } else if (data.type === 'error') {
-            showChatError(data.error || 'Message could not be sent.');
-          }
-        } catch { }
-      };
-
-      ws.onclose = () => {
-        scheduleReconnect();
-      };
-
-      ws.onerror = () => {};
-    }
-
-    connectWs();
-
-    return () => {
-      disposed = true;
-      mountedRef.current = false;
-      clearTimeout(reconnectTimer.current);
-      clearTimeout(errorTimerRef.current);
-      clearTimeout(initialImageScrollTimerRef.current);
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, [activeConvoId, user, loadMessages, listingId]);
-
   // Close the image lightbox with Escape
   useEffect(() => {
     if (!lightboxUrl) return;
@@ -454,7 +288,6 @@ export default function ChatBox({
 
   // Handle paste for images
   function handlePaste(e) {
-    if (isGuest) return;
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of items) {
@@ -487,11 +320,10 @@ export default function ChatBox({
   }
 
   async function sendImage() {
-    if (!pendingImage || !activeConvoId) return;
+    if (!pendingImage || !conversationId) return;
     setImageUploading(true);
     try {
-      const data = await sendImageMessage(activeConvoId, pendingImage.file, '');
-      // Add to messages immediately (REST-uploaded, not via WebSocket)
+      const data = await sendImageMessage(conversationId, pendingImage.file, '');
       setMessages(prev => {
         if (prev.some(m => m.id === data.id)) return prev;
         return [...prev, { ...data, is_mine: true }];
@@ -507,25 +339,11 @@ export default function ChatBox({
     }
   }
 
-  // Nothing leaves the browser for a logged out visitor — the message waits
-  // in session storage while they sign in and land back on this page.
-  function sendAsGuest(e) {
-    if (e) e.preventDefault();
-    const draft = input.trim();
-    if (draft) saveDraft(sellerId, draft);
-    router.push(loginHref(currentPath()));
-  }
-
   async function handleSend(e) {
     e.preventDefault();
-    if (!input.trim()) return;
-    if (isGuest) {
-      sendAsGuest();
-      return;
-    }
+    if (!input.trim() || !conversationId) return;
 
     const rawText = input.trim();
-    const messageListingId = listingId && !listingContextSent ? listingId : null;
     if (rawText.length > MAX_CHAT_MESSAGE_LENGTH) {
       showChatError(`Message cannot be longer than ${MAX_CHAT_MESSAGE_LENGTH} characters.`);
       return;
@@ -534,35 +352,13 @@ export default function ChatBox({
     setInput('');
 
     try {
-      if (!activeConvoId && sellerId) {
-        const data = await startConversation(sellerId, rawText, messageListingId);
-        setActiveConvoId(data.id);
-        setConvo(data);
-        const nextMessages = data.messages || [];
-        setMessages(nextMessages);
-        setMessagePagination(data.message_pagination || null);
-        if (onConversationStart) onConversationStart(data.id);
-        armInitialImageAutoScroll(nextMessages);
-        if (messageListingId) setListingContextSent(true);
-      } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'chat_message',
-          content: rawText,
-          ...(messageListingId ? { listing_id: messageListingId } : {}),
-        }));
-      } else if (activeConvoId) {
-        const data = await sendMessage(activeConvoId, rawText, messageListingId);
-        setMessages(prev => {
-          if (prev.some(m => m.id === data.id)) return prev;
-          return [...prev, { ...data, is_mine: true }];
-        });
-        setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
-        window.dispatchEvent(new Event('chatUpdate'));
-        if (messageListingId && data.listing_reference) setListingContextSent(true);
-      } else {
-        setInput(rawText);
-        showChatError('Chat is still connecting. Please try again.');
-      }
+      const data = await sendMessage(conversationId, rawText);
+      setMessages(prev => {
+        if (prev.some(m => m.id === data.id)) return prev;
+        return [...prev, { ...data, is_mine: true }];
+      });
+      setMessagePagination(prev => prev ? { ...prev, count: prev.count + 1 } : prev);
+      window.dispatchEvent(new Event('chatUpdate'));
     } catch (err) {
       setInput(rawText);
       showChatError(err.message || 'Message could not be sent.');
@@ -712,19 +508,8 @@ export default function ChatBox({
     return elements;
   }
 
-  const chatHeaderName = convo?.other_user?.username || sellerName || 'Seller';
-  const chatHeaderAvatarUrl = convo?.other_user?.avatar_url || sellerAvatarUrl;
-  // The socket push is the fast path; the presence poll is the safety net for
-  // the window before the first push and for a socket that dropped (the order
-  // page shows the seller's dot here and nowhere else).
-  const chatHeaderLastActive = lastActiveFor(
-    chatPartnerId,
-    convo?.other_user?.last_active || sellerLastActive,
-  );
-  const chatHeaderIsOnline = isOnline(
-    chatPartnerId,
-    convo?.other_user?.last_active || sellerLastActive,
-  );
+  const chatHeaderName = convo?.other_user?.username || otherUserName || 'GamesBazaar';
+  const chatHeaderAvatarUrl = convo?.other_user?.avatar_url || otherUserAvatarUrl;
 
   return (
     <div className={`chatbox ${compact ? 'chatbox-compact' : ''}`}>
@@ -732,19 +517,11 @@ export default function ChatBox({
         <div className="chatbox-header">
           <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
             <img src={chatHeaderAvatarUrl || '/avatar-default.svg'} alt={chatHeaderName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            {chatHeaderIsOnline && <span className="online-dot"></span>}
           </div>
           <div>
             <div className="chatbox-header-name">
-              <a href={`/seller/${chatHeaderName}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                {chatHeaderName}
-              </a>
+              {chatHeaderName}
             </div>
-            {chatHeaderLastActive && (
-              <div className={`presence-text ${chatHeaderIsOnline ? 'is-online' : ''}`}>
-                {formatLastActive(chatHeaderLastActive)}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -759,7 +536,7 @@ export default function ChatBox({
             Loading older messages...
           </div>
         )}
-        {loadingMessages && !isGuest ? (
+        {loadingMessages ? (
           <div className="chat-skeleton-loader">
             <div className="chat-skeleton-row">
               <div className="chat-skeleton-avatar"></div>
@@ -791,7 +568,7 @@ export default function ChatBox({
           </div>
         ) : messages.length === 0 ? (
           <div className="chatbox-empty-msg">
-            No messages yet. Say hello!
+            No messages yet.
           </div>
         ) : renderMessages()}
         <div ref={messagesEndRef} />
@@ -831,20 +608,6 @@ export default function ChatBox({
       {/* Input Area */}
       {chatError && <div className="chatbox-error">{chatError}</div>}
 
-      {/* Listing context banner — shown when messaging from a listing page */}
-      {listingId && listingTitle && !listingContextSent && (
-        <div className="chat-listing-context">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
-            <line x1="7" y1="7" x2="7.01" y2="7"/>
-          </svg>
-          <span className="chat-listing-context-text">
-            Messaging about: <strong>{listingTitle}</strong>
-            {listingPrice && <span className="chat-listing-context-price"> — PKR {listingPrice}</span>}
-          </span>
-        </div>
-      )}
-
       <form className="chatbox-input" onSubmit={handleSend} onPaste={handlePaste}>
         <input type="hidden" />
         <input
@@ -878,7 +641,7 @@ export default function ChatBox({
         <button
           type="button"
           className="chatbox-attach-btn"
-          onClick={isGuest ? sendAsGuest : () => fileInputRef.current?.click()}
+          onClick={() => fileInputRef.current?.click()}
           title="Attach image"
           aria-label="Attach image"
         >

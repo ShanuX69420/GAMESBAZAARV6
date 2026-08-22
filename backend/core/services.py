@@ -21,8 +21,6 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
 from . import guardmail, steamguard
 from .models import (
@@ -51,15 +49,6 @@ CHAT_MESSAGE_EMPTY_ERROR = 'Message cannot be empty.'
 CHAT_MESSAGE_NOT_TEXT_ERROR = 'Message must be text.'
 CHAT_MESSAGE_TOO_LONG_ERROR = f'Message cannot be longer than {MAX_CHAT_MESSAGE_LENGTH} characters.'
 CHAT_LISTING_REFERENCE_INVALID_ERROR = 'Listing reference is invalid for this conversation.'
-CHAT_WS_MESSAGE_LIMIT = 20
-CHAT_WS_MESSAGE_WINDOW_SECONDS = 60
-CHAT_WS_RATE_LIMIT_CACHE_PREFIX = 'chat-ws-rate'
-CHAT_WS_TICKET_MAX_AGE_SECONDS = 60
-CHAT_WS_TICKET_CACHE_PREFIX = 'chat-ws-ticket'
-CHAT_WS_TICKET_SALT = 'core.chat.websocket'
-INBOX_WS_TICKET_MAX_AGE_SECONDS = 60
-INBOX_WS_TICKET_CACHE_PREFIX = 'inbox-ws-ticket'
-INBOX_WS_TICKET_SALT = 'core.inbox.websocket'
 PRIVATE_MEDIA_TICKET_MAX_AGE_SECONDS = 5 * 60
 PRIVATE_MEDIA_TICKET_SALT = 'core.private_media'
 ENCRYPTED_TEXT_V1_PREFIX = 'enc:v1:'
@@ -367,23 +356,11 @@ def create_notification(*, recipient, notification_type, title, message='', orde
 
 
 def broadcast_notification_after_commit(notification):
-    """Push a fresh notification to the recipient's inbox socket so the
-    navbar bell updates instantly instead of waiting for its next poll."""
-    def _send():
-        cache.delete(notification_unread_cache_key(notification.recipient_id))
-        channel_layer = get_channel_layer()
-        if channel_layer is None:
-            return
-        from .serializers import NotificationSerializer
-        async_to_sync(channel_layer.group_send)(
-            f'user_inbox_{notification.recipient_id}',
-            {
-                'type': 'notification.created',
-                'notification': dict(NotificationSerializer(notification).data),
-            },
-        )
-
-    transaction.on_commit(_send)
+    """Invalidate the recipient's unread-count cache once the notification
+    lands, so the navbar bell picks it up on its next poll."""
+    transaction.on_commit(
+        lambda: cache.delete(notification_unread_cache_key(notification.recipient_id))
+    )
 
 
 def notify_staff_about_item_request(item_request):
@@ -1182,11 +1159,10 @@ def get_or_create_private_conversation(user, other_user):
 
 
 def broadcast_chat_message_after_commit(message, message_data=None):
-    """Push a message to open chat sockets once the surrounding transaction lands.
+    """Invalidate the other participants' unread caches once the message lands.
 
-    Every code path that creates a chat message must come through here: it also
-    notifies each participant's inbox socket (``user_inbox_<id>``) so sidebars
-    learn about activity in conversations they don't have open.
+    Every code path that creates a chat message must come through here so
+    unread badges (polled over HTTP) stay correct.
     """
     def _send():
         participant_ids = list(
@@ -1195,49 +1171,6 @@ def broadcast_chat_message_after_commit(message, message_data=None):
         for user_id in participant_ids:
             if user_id != message.sender_id:
                 cache.delete(chat_unread_cache_key(user_id))
-        channel_layer = get_channel_layer()
-        if channel_layer is None:
-            return
-        data = message_data
-        if data is None:
-            from .serializers import MessageSerializer
-            data = dict(MessageSerializer(message, context={}).data)
-        async_to_sync(channel_layer.group_send)(
-            f'chat_{message.conversation_id}',
-            {
-                'type': 'chat.message',
-                'message': data,
-            },
-        )
-        for user_id in participant_ids:
-            other_ids = [pid for pid in participant_ids if pid != user_id]
-            async_to_sync(channel_layer.group_send)(
-                f'user_inbox_{user_id}',
-                {
-                    'type': 'inbox.conversation_updated',
-                    'conversation_id': message.conversation_id,
-                    'other_user_id': other_ids[0] if other_ids else None,
-                    'sender_id': message.sender_id,
-                },
-            )
-
-    transaction.on_commit(_send)
-
-
-def broadcast_presence_update(user_id, last_active):
-    """Push a user's fresh last_active to chat sockets watching them."""
-    def _send():
-        channel_layer = get_channel_layer()
-        if channel_layer is None:
-            return
-        async_to_sync(channel_layer.group_send)(
-            f'presence_{user_id}',
-            {
-                'type': 'presence.update',
-                'user_id': user_id,
-                'last_active': last_active.isoformat(),
-            },
-        )
 
     transaction.on_commit(_send)
 
@@ -1497,100 +1430,6 @@ def _answer_guard_command(message):
                 content=first_error or GUARD_CODE_UNAVAILABLE_ERROR,
             )
     return True
-
-
-def consume_chat_ws_message_quota(user_id, conversation_id):
-    bucket = int(time() // CHAT_WS_MESSAGE_WINDOW_SECONDS)
-    cache_key = (
-        f'core:{CHAT_WS_RATE_LIMIT_CACHE_PREFIX}:'
-        f'{int(user_id)}:{int(conversation_id)}:{bucket}'
-    )
-    timeout = CHAT_WS_MESSAGE_WINDOW_SECONDS + 5
-    cache.add(cache_key, 0, timeout=timeout)
-    try:
-        count = cache.incr(cache_key)
-    except ValueError:
-        cache.set(cache_key, 1, timeout=timeout)
-        count = 1
-    return count <= CHAT_WS_MESSAGE_LIMIT
-
-
-def create_chat_ws_ticket(user, conversation_id):
-    """Create a short-lived ticket for opening one chat WebSocket."""
-    nonce = secrets.token_urlsafe(24)
-    cache.set(
-        f'{CHAT_WS_TICKET_CACHE_PREFIX}:{nonce}',
-        True,
-        timeout=CHAT_WS_TICKET_MAX_AGE_SECONDS,
-    )
-    return signing.dumps(
-        {
-            'user_id': user.pk,
-            'conversation_id': int(conversation_id),
-            'nonce': nonce,
-        },
-        salt=CHAT_WS_TICKET_SALT,
-    )
-
-
-def decode_chat_ws_ticket(ticket, max_age=CHAT_WS_TICKET_MAX_AGE_SECONDS):
-    payload = signing.loads(ticket, salt=CHAT_WS_TICKET_SALT, max_age=max_age)
-    return {
-        'user_id': int(payload['user_id']),
-        'conversation_id': int(payload['conversation_id']),
-        'nonce': str(payload.get('nonce', '')),
-    }
-
-
-def consume_chat_ws_ticket(ticket):
-    payload = decode_chat_ws_ticket(ticket)
-    nonce = payload.get('nonce')
-    if not nonce:
-        raise signing.BadSignature('Missing ticket nonce.')
-
-    cache_key = f'{CHAT_WS_TICKET_CACHE_PREFIX}:{nonce}'
-    if not cache.get(cache_key):
-        raise signing.BadSignature('Ticket has already been used.')
-    cache.delete(cache_key)
-    return payload
-
-
-def create_inbox_ws_ticket(user):
-    """Create a short-lived ticket for opening the per-user inbox WebSocket."""
-    nonce = secrets.token_urlsafe(24)
-    cache.set(
-        f'{INBOX_WS_TICKET_CACHE_PREFIX}:{nonce}',
-        True,
-        timeout=INBOX_WS_TICKET_MAX_AGE_SECONDS,
-    )
-    return signing.dumps(
-        {
-            'user_id': user.pk,
-            'nonce': nonce,
-        },
-        salt=INBOX_WS_TICKET_SALT,
-    )
-
-
-def decode_inbox_ws_ticket(ticket, max_age=INBOX_WS_TICKET_MAX_AGE_SECONDS):
-    payload = signing.loads(ticket, salt=INBOX_WS_TICKET_SALT, max_age=max_age)
-    return {
-        'user_id': int(payload['user_id']),
-        'nonce': str(payload.get('nonce', '')),
-    }
-
-
-def consume_inbox_ws_ticket(ticket):
-    payload = decode_inbox_ws_ticket(ticket)
-    nonce = payload.get('nonce')
-    if not nonce:
-        raise signing.BadSignature('Missing ticket nonce.')
-
-    cache_key = f'{INBOX_WS_TICKET_CACHE_PREFIX}:{nonce}'
-    if not cache.get(cache_key):
-        raise signing.BadSignature('Ticket has already been used.')
-    cache.delete(cache_key)
-    return payload
 
 
 def create_private_media_ticket(kind, object_id, *, viewer_user_id=None):

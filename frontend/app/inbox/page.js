@@ -3,23 +3,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import {
-  getConversations,
-  getInboxWebSocketTicket,
-  formatLastActive,
-  isOnlineFromLastActive,
-} from '@/lib/api';
-import { WS_BASE } from '@/lib/config';
-import {
-  buildTicketSubprotocols,
-  sortConversationsByActivity,
-  upsertConversation,
-  applyPresenceToConversations,
-} from '@/lib/inbox';
+import { getConversations } from '@/lib/api';
+import { sortConversationsByActivity } from '@/lib/inbox';
 import ChatBox from '@/components/ChatBox';
 
 const CONVERSATION_PAGE_SIZE = 30;
-const PRESENCE_TICK_MS = 30000;
+const CONVERSATION_POLL_MS = 10000;
 
 export default function InboxPage() {
   const { user, loading: authLoading } = useAuth();
@@ -30,7 +19,6 @@ export default function InboxPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeChatId, setActiveChatId] = useState(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
-  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const loadedLimitRef = useRef(CONVERSATION_PAGE_SIZE);
   const activeChatIdRef = useRef(null);
   activeChatIdRef.current = activeChatId;
@@ -91,23 +79,14 @@ export default function InboxPage() {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') setPresenceNow(Date.now());
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
   const fetchConvos = useCallback(() => {
     if (!user) return;
     getConversations({ limit: loadedLimitRef.current })
       .then(data => {
-        const nextConversations = data.conversations || data;
+        const nextConversations = (data.conversations || data).map(convo =>
+          // ChatBox auto-marks the open conversation read; don't flash a badge.
+          convo.id === activeChatIdRef.current ? { ...convo, unread_count: 0 } : convo
+        );
         setConversations(sortConversationsByActivity(nextConversations));
         setConversationPagination(data.pagination || null);
       })
@@ -141,108 +120,21 @@ export default function InboxPage() {
     }
   }
 
-  // Initial load + full refetch when the tab becomes visible again
-  // (fallback for anything missed while hidden).
+  // Initial load, then poll the list while the tab is visible (plus a full
+  // refetch when the tab becomes visible again to catch anything missed).
   useEffect(() => {
     if (!user) return;
     fetchConvos();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchConvos();
+    }, CONVERSATION_POLL_MS);
     const handleVisible = () => {
       if (document.visibilityState === 'visible') fetchConvos();
     };
     document.addEventListener('visibilitychange', handleVisible);
-    return () => document.removeEventListener('visibilitychange', handleVisible);
-  }, [user, fetchConvos]);
-
-  // Per-user inbox socket: the server pushes "conversation updated" and
-  // presence events, replacing the old 10s full-list polling.
-  useEffect(() => {
-    if (!user) return;
-    let disposed = false;
-    let ws = null;
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
-
-    function scheduleReconnect() {
-      if (disposed) return;
-      // Replace any pending retry so reconnect loops can't multiply
-      clearTimeout(reconnectTimer);
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-      reconnectAttempts += 1;
-      reconnectTimer = setTimeout(() => {
-        if (!disposed) connectWs();
-      }, delay);
-    }
-
-    async function applyConversationUpdate(conversationId, otherUserId) {
-      if (!otherUserId) {
-        fetchConvos();
-        return;
-      }
-      try {
-        const data = await getConversations({ otherUserId, limit: 1 });
-        const updated = (data.conversations || []).find(convo => convo.id === conversationId);
-        if (disposed) return;
-        if (!updated) {
-          fetchConvos();
-          return;
-        }
-        // ChatBox auto-marks the open conversation read; don't flash a badge
-        if (updated.id === activeChatIdRef.current) updated.unread_count = 0;
-        setConversations(prev => upsertConversation(prev, updated));
-      } catch { }
-    }
-
-    async function connectWs() {
-      let ticket;
-      try {
-        ({ ticket } = await getInboxWebSocketTicket());
-      } catch {
-        scheduleReconnect();
-        return;
-      }
-      if (!ticket || disposed) return;
-
-      ws = new WebSocket(`${WS_BASE}/ws/inbox/`, buildTicketSubprotocols(ticket));
-
-      ws.onopen = () => {
-        if (disposed) return;
-        clearTimeout(reconnectTimer);
-        // Catch up on anything missed while disconnected
-        if (reconnectAttempts > 0) fetchConvos();
-        reconnectAttempts = 0;
-      };
-
-      ws.onmessage = (e) => {
-        if (disposed) return;
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'conversation_updated') {
-            applyConversationUpdate(data.conversation_id, data.other_user_id);
-            // Nudge the navbar so its total-unread badge moves in step with
-            // the row badge instead of waiting for its 15s poll.
-            window.dispatchEvent(new Event('chatUpdate'));
-          } else if (data.type === 'presence') {
-            setConversations(prev =>
-              applyPresenceToConversations(prev, data.user_id, data.last_active)
-            );
-            setPresenceNow(Date.now());
-          }
-        } catch { }
-      };
-
-      ws.onclose = () => scheduleReconnect();
-      ws.onerror = () => {};
-    }
-
-    connectWs();
-
     return () => {
-      disposed = true;
-      clearTimeout(reconnectTimer);
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisible);
     };
   }, [user, fetchConvos]);
 
@@ -291,7 +183,7 @@ export default function InboxPage() {
         <div className="loading"><div className="loading-spinner"></div> Loading...</div>
       ) : conversations.length === 0 ? (
         <div className="empty-state">
-          <p>No conversations yet. Start chatting from a listing page!</p>
+          <p>No messages yet. Order updates and deliveries will appear here.</p>
         </div>
       ) : (
         <div className={`inbox-split ${mobileChatOpen ? 'mobile-chat-open' : ''}`}>
@@ -304,7 +196,6 @@ export default function InboxPage() {
               >
                 <div className="inbox-avatar">
                   <img src={convo.other_user?.avatar_url || '/avatar-default.svg'} alt={convo.other_user?.username || ''} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                  {isOnlineFromLastActive(convo.other_user?.last_active, presenceNow) && <span className="online-dot"></span>}
                 </div>
                 <div className="inbox-info">
                   <div className="inbox-name">
@@ -358,16 +249,10 @@ export default function InboxPage() {
                   </button>
                   <div className="inbox-avatar" style={{ width: 36, height: 36, fontSize: '0.9rem' }}>
                     <img src={activeChat.other_user?.avatar_url || '/avatar-default.svg'} alt={activeChat.other_user?.username || ''} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                    {isOnlineFromLastActive(activeChat.other_user?.last_active, presenceNow) && <span className="online-dot"></span>}
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                      <a href={`/seller/${activeChat.other_user?.username}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                        {activeChat.other_user?.username}
-                      </a>
-                    </div>
-                    <div className={`presence-text ${isOnlineFromLastActive(activeChat.other_user?.last_active, presenceNow) ? 'is-online' : ''}`}>
-                      {formatLastActive(activeChat.other_user?.last_active)}
+                      {activeChat.other_user?.username}
                     </div>
                   </div>
                 </div>

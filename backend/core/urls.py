@@ -42,20 +42,13 @@ urlpatterns = [
     path('listings/<int:pk>/stock/', views.AutoDeliveryStockView.as_view(), name='listing-stock'),
     path('listings/<int:pk>/', views.ListingDetailView.as_view(), name='listing-detail'),
 
-    # Chat
+    # Chat (order threads + admin messages — HTTP only, no websockets)
     path('chat/', views.ConversationListView.as_view(), name='conversation-list'),
-    path('chat/start/', views.StartConversationView.as_view(), name='start-conversation'),
     path('chat/unread/', views.UnreadCountView.as_view(), name='unread-count'),
-    path('chat/inbox/ws-ticket/', views.InboxWebSocketTicketView.as_view(), name='inbox-ws-ticket'),
     path('chat/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
-    path('chat/<int:pk>/ws-ticket/', views.ChatWebSocketTicketView.as_view(), name='chat-ws-ticket'),
     path('chat/<int:pk>/send/', views.SendMessageView.as_view(), name='send-message'),
     path('chat/<int:pk>/send-image/', views.SendImageView.as_view(), name='send-image'),
     path('chat/messages/<int:pk>/image/', views.ChatMessageImageView.as_view(), name='chat-message-image'),
-
-    # Presence
-    path('heartbeat/', views.HeartbeatView.as_view(), name='heartbeat'),
-    path('presence/', views.PresenceView.as_view(), name='presence'),
 
     # Wallet
     path('wallet/', views.WalletView.as_view(), name='wallet'),

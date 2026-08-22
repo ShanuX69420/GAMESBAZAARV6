@@ -50,8 +50,8 @@ export default function OrderDetailPage() {
     if (user) loadOrder();
   }, [user, id]);
 
-  // Refresh when returning to the tab — WebSocket events can be throttled
-  // or dropped while the tab is in the background.
+  // Refresh when returning to the tab — polling pauses while the tab is
+  // in the background.
   useEffect(() => {
     if (!user) return;
     function handleVisible() {

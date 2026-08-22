@@ -37,7 +37,7 @@ const META_IMAGE_ORIGINS = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function originFromEnv(value, allowedProtocols = ['http:', 'https:', 'ws:', 'wss:']) {
+function originFromEnv(value, allowedProtocols = ['http:', 'https:']) {
   if (!value) return null;
   try {
     const url = new URL(value.includes('://') ? value : `https://${value}`);
@@ -69,7 +69,6 @@ function sourceList(values) {
 
 function buildCspHeader() {
   const apiOrigin = originFromEnv(process.env.NEXT_PUBLIC_API_URL, ['https:']);
-  const wsOrigin = originFromEnv(process.env.NEXT_PUBLIC_WS_URL, ['wss:']);
   // The DSN's origin is where the browser SDK delivers error envelopes.
   const sentryOrigin = originFromEnv(process.env.NEXT_PUBLIC_SENTRY_DSN, ['https:']);
   const imageOrigins = originsFromEnvList(process.env.NEXT_PUBLIC_IMAGE_HOSTS, ['http:', 'https:']);
@@ -97,7 +96,6 @@ function buildCspHeader() {
   const connectSrc = sourceList([
     "'self'",
     apiOrigin,
-    wsOrigin,
     sentryOrigin,
     GOOGLE_IDENTITY_ORIGIN,
     ...analyticsAndAdsOrigins,

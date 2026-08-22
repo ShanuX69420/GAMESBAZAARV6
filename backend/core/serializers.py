@@ -500,8 +500,6 @@ class CompleteProfileSerializer(UpdateProfileSerializer):
 class ListingSerializer(serializers.ModelSerializer):
     seller_id = serializers.IntegerField(source='seller.id', read_only=True)
     seller_name = serializers.CharField(source='seller.username', read_only=True)
-    seller_is_online = serializers.SerializerMethodField()
-    seller_last_active = serializers.SerializerMethodField()
     seller_avatar_url = serializers.SerializerMethodField()
     seller_avg_rating = serializers.SerializerMethodField()
     seller_review_count = serializers.SerializerMethodField()
@@ -525,7 +523,7 @@ class ListingSerializer(serializers.ModelSerializer):
         model = Listing
         fields = [
             'id', 'title', 'description', 'price', 'quantity', 'min_quantity', 'status',
-            'seller_id', 'seller_name', 'seller_is_online', 'seller_last_active',
+            'seller_id', 'seller_name',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'seller_is_official_store',
             'game_name', 'category_name', 'listing_mode', 'unit_name',
@@ -599,16 +597,6 @@ class ListingSerializer(serializers.ModelSerializer):
             # Sellers still see their own instructions (e.g., in My Listings).
             return obj.delivery_instructions
         return ''
-
-    def get_seller_is_online(self, obj):
-        profile = getattr(obj.seller, 'profile', None)
-        return profile.is_online if profile else False
-
-    def get_seller_last_active(self, obj):
-        profile = getattr(obj.seller, 'profile', None)
-        if profile and profile.last_active:
-            return profile.last_active.isoformat()
-        return None
 
     def get_seller_avatar_url(self, obj):
         profile = getattr(obj.seller, 'profile', None)
@@ -1126,8 +1114,6 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 return {
                     'id': other.id,
                     'username': other.username,
-                    'is_online': profile.is_online if profile else False,
-                    'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
                     'avatar_url': avatar_url,
                 }
         return None
@@ -1207,8 +1193,6 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
                 return {
                     'id': other.id,
                     'username': other.username,
-                    'is_online': profile.is_online if profile else False,
-                    'last_active': profile.last_active.isoformat() if profile and profile.last_active else None,
                     'avatar_url': avatar_url,
                 }
         return None

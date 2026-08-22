@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
-import { useLivePresence } from '@/lib/presence';
 import {
   buildGameCategoryListingUrl,
   buildSellerListingsPath,
@@ -18,9 +17,7 @@ import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 const LISTING_PAGE_SIZE = 48;
 // The listing list re-polls to refresh price/stock/rating on the cards already
 // on screen — it never adds or removes cards, so this is not how a new listing
-// surfaces. It used to run every 30s only because seller presence rode along in
-// the payload; presence now has its own live endpoint (lib/presence.js), so this
-// can be far lazier and stop re-sending the whole listing payload every 30s.
+// surfaces.
 const LISTING_POLL_MS = 90000;
 
 const SORT_OPTIONS = [
@@ -28,7 +25,7 @@ const SORT_OPTIONS = [
   { value: 'price_asc', label: 'Price: Low to High' },
   { value: 'price_desc', label: 'Price: High to Low' },
   { value: 'newest', label: 'Newest First' },
-  { value: 'rating', label: 'Seller Rating' },
+  { value: 'rating', label: 'Top Rated' },
 ];
 
 const OFFER_SORT_OPTIONS = [
@@ -36,7 +33,7 @@ const OFFER_SORT_OPTIONS = [
   { value: 'price_asc', label: 'Price: Low to High' },
   { value: 'price_desc', label: 'Price: High to Low' },
   { value: 'delivery', label: 'Fastest Delivery' },
-  { value: 'rating', label: 'Seller Rating' },
+  { value: 'rating', label: 'Top Rated' },
   { value: 'newest', label: 'Newest First' },
 ];
 
@@ -128,7 +125,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   // the filter UI so it shows the same selection the listings reflect.
   const [activeFilters, setActiveFilters] = useState(initialData?.applied_filters || {});
   const [instantDeliveryFilter, setInstantDeliveryFilter] = useState(false);
-  const [onlineSellerFilter, setOnlineSellerFilter] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('');
@@ -143,7 +139,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const hasListingData = Boolean(data);
   const loadedListingCount = data?.listings?.length || 0;
 
-  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, onlineOnly = false, search = '', ordering = '', option = null) => {
+  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, search = '', ordering = '', option = null) => {
     if (append) {
       setLoadingMore(true);
     } else {
@@ -158,7 +154,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         offset,
         filters,
         instantOnly,
-        onlineOnly,
         search,
         seller: sellerFilter,
         ordering,
@@ -194,7 +189,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     // reflects applied_filters); on category switches it resets properly.
     setActiveFilters(initialData?.applied_filters || {});
     setInstantDeliveryFilter(false);
-    setOnlineSellerFilter(false);
     setSearchInput('');
     setSearchQuery('');
     setSortBy('');
@@ -206,19 +200,8 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       setLoadingMore(false);
       return;
     }
-    fetchData({}, 0, false, false, false, '', '');
+    fetchData({}, 0, false, false, '', '');
   }, [fetchData, initialData]);
-
-  // Seller dots read presence from the live endpoint, not from the listing
-  // payload: this page is server-rendered with a 120s revalidate and the browse
-  // API is cached (30s in Django, up to 300s in nginx for anonymous visitors),
-  // all longer than the 120s online window — so the timestamps that arrive with
-  // the listings routinely show an online seller as offline.
-  const sellerPresenceIds = useMemo(
-    () => (data?.listings || []).map((listing) => listing.seller_id),
-    [data?.listings],
-  );
-  const { isOnline } = useLivePresence(sellerPresenceIds);
 
   // Background polling for listing price/stock updates
   useEffect(() => {
@@ -242,7 +225,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           offset: 0,
           filters: activeFilters,
           instantOnly: instantDeliveryFilter,
-          onlineOnly: onlineSellerFilter,
           search: searchQuery,
           seller: sellerFilter,
           ordering: sortBy,
@@ -260,8 +242,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               if (fresh) {
                 return {
                   ...existing,
-                  seller_last_active: fresh.seller_last_active,
-                  seller_is_online: fresh.seller_is_online,
                   price: fresh.price,
                   quantity: fresh.quantity,
                   min_quantity: fresh.min_quantity,
@@ -280,7 +260,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
         }
       } catch (err) {
         if (err?.name !== 'AbortError') {
-          console.error('Failed to background poll listings presence:', err);
+          console.error('Failed to background poll listings:', err);
         }
       } finally {
         inFlight = false;
@@ -294,7 +274,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
       if (controller) controller.abort();
       clearInterval(interval);
     };
-  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sellerFilter, sortBy, selectedOption]);
+  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, searchQuery, sellerFilter, sortBy, selectedOption]);
 
   // Debounce search input
   useEffect(() => {
@@ -347,17 +327,17 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     }));
   }
 
-  // Re-fetch when filters, instant delivery toggle, online seller toggle, search, or sort change
+  // Re-fetch when filters, instant delivery toggle, search, or sort change
   useEffect(() => {
     if (!filterEffectReadyRef.current) {
       filterEffectReadyRef.current = true;
       return;
     }
     if (data) {
-      fetchData(activeFilters, 0, false, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, selectedOption);
+      fetchData(activeFilters, 0, false, instantDeliveryFilter, searchQuery, sortBy, selectedOption);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilters, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy]);
+  }, [activeFilters, instantDeliveryFilter, searchQuery, sortBy]);
 
   function handleCategorySwitch(catSlug) {
     if (catSlug !== categorySlug) {
@@ -393,7 +373,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
     const query = new URLSearchParams(searchParams.toString());
     query.set('option', String(optionId));
     window.history.replaceState(null, '', `${window.location.pathname}?${query.toString()}`);
-    fetchData(activeFilters, 0, false, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, optionId);
+    fetchData(activeFilters, 0, false, instantDeliveryFilter, searchQuery, sortBy, optionId);
   }
 
   if (loading && !data) {
@@ -444,7 +424,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
   const hasGateSteps = gateFilters.length > 0;
   const panelFilters = isOfferMode ? visibleFilters.filter((f) => !f.require_selection) : visibleFilters;
   const hasActiveFilters = Object.values(activeFilters).some(v => v)
-    || instantDeliveryFilter || onlineSellerFilter || Boolean(searchInput);
+    || instantDeliveryFilter || Boolean(searchInput);
 
   return (
     <div className="container">
@@ -514,7 +494,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
           {hasActiveFilters && (
             <button
               className="btn btn-sm btn-outline"
-              onClick={() => { clearLandingParams(); setActiveFilters({}); setInstantDeliveryFilter(false); setOnlineSellerFilter(false); setSearchInput(''); }}
+              onClick={() => { clearLandingParams(); setActiveFilters({}); setInstantDeliveryFilter(false); setSearchInput(''); }}
             >
               Clear All
             </button>
@@ -555,22 +535,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                 )}
               </div>
             ))}
-
-            {/* Online Sellers Toggle */}
-            <div className="filter-group">
-              <label className="filter-label">Seller Status</label>
-              <label className="online-seller-filter-toggle" htmlFor="online-seller-filter">
-                <input
-                  type="checkbox"
-                  id="online-seller-filter"
-                  checked={onlineSellerFilter}
-                  onChange={(e) => setOnlineSellerFilter(e.target.checked)}
-                />
-                <span className="online-seller-filter-dot"></span>
-                <span>Online Sellers</span>
-                <span className="online-seller-filter-slider"></span>
-              </label>
-            </div>
 
             {/* Instant Delivery Toggle */}
             {allowAutoDelivery && (
@@ -796,7 +760,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <div className="listing-card-avatar">
                         <img src={bestOffer.seller_avatar_url || '/avatar-default.svg'} alt={bestOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
-                      <span className={`listing-card-status-dot ${isOnline(bestOffer.seller_id, bestOffer.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="offer-buybox-seller-info">
                       <span className="seller-name-row">
@@ -855,7 +818,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <div className="listing-card-avatar">
                               <img src={offer.seller_avatar_url || '/avatar-default.svg'} alt={offer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
-                            <span className={`listing-card-status-dot ${isOnline(offer.seller_id, offer.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
                             <span className="seller-name-row">
@@ -902,7 +864,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                   {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
                     <button
                       className="btn btn-outline btn-full"
-                      onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy, selectedOption)}
+                      onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, searchQuery, sortBy, selectedOption)}
                       disabled={loadingMore}
                     >
                       {loadingMore ? 'Loading...' : 'Load More'}
@@ -947,7 +909,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                     <div className="listing-card-avatar currency-hero-avatar">
                       <img src={currentOffer.seller_avatar_url || '/avatar-default.svg'} alt={currentOffer.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     </div>
-                    <span className={`listing-card-status-dot ${isOnline(currentOffer.seller_id, currentOffer.seller_last_active) ? 'online' : 'offline'}`} />
                   </div>
                   <div className="currency-hero-seller-info">
                     <span className="seller-name-row">
@@ -1111,7 +1072,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                             <div className="listing-card-avatar">
                               <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                             </div>
-                            <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                           </div>
                           <div className="offer-seller-row-info">
                             <span className="seller-name-row">
@@ -1154,7 +1114,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                 {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
                   <button
                     className="btn btn-outline btn-full"
-                    onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy)}
+                    onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, searchQuery, sortBy)}
                     disabled={loadingMore}
                   >
                     {loadingMore ? 'Loading...' : 'Load More'}
@@ -1221,7 +1181,6 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
                       <div className="listing-card-avatar">
                         <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                       </div>
-                      <span className={`listing-card-status-dot ${isOnline(listing.seller_id, listing.seller_last_active) ? 'online' : 'offline'}`} />
                     </div>
                     <div className="listing-card-seller-info">
                       <span className="seller-name-row">
@@ -1261,7 +1220,7 @@ export default function GameCategoryClient({ initialData = null, initialSeller =
               <div className="listing-cards-load-more">
                 <button
                   className="btn btn-outline btn-full"
-                  onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, onlineSellerFilter, searchQuery, sortBy)}
+                  onClick={() => fetchData(activeFilters, pagination.next_offset, true, instantDeliveryFilter, searchQuery, sortBy)}
                   disabled={loadingMore}
                 >
                   {loadingMore ? 'Loading...' : 'Load More'}

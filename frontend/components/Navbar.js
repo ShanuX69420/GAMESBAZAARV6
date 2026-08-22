@@ -5,27 +5,22 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { getUnreadCount, sendHeartbeat, heartbeatGateOpen, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount, getInboxWebSocketTicket } from '@/lib/api';
+import { getUnreadCount, searchMarketplace, getNotifications, markNotificationRead, getNotificationUnreadCount } from '@/lib/api';
 import { notificationOrderPath } from '@/lib/orderNumbers';
-import { WS_BASE } from '@/lib/config';
-import { buildTicketSubprotocols } from '@/lib/inbox';
-import { withUnreadCount, playMessageSound, unlockMessageSound, resetMessageSoundCooldown } from '@/lib/messageAlerts';
+import { withUnreadCount } from '@/lib/messageAlerts';
 import { GameIconFallback } from '@/lib/icons';
 
-// Badges arrive over the inbox socket; these polls are only a fallback for
-// clients whose WebSocket can't connect, so they can afford to be slow.
-const UNREAD_POLL_INTERVAL_MS = 60000;
+// Badges are polled over HTTP (no websockets); pages that need faster
+// updates (open chats) poll on their own and nudge via the chatUpdate event.
+const UNREAD_POLL_INTERVAL_MS = 30000;
 const SEARCH_DEBOUNCE_MS = 300;
-const NOTIF_POLL_INTERVAL_MS = 120000;
-const HEARTBEAT_INTERVAL_MS = 65000;
-const HEARTBEAT_STORAGE_KEY = 'gamesbazaar:last-heartbeat-at';
+const NOTIF_POLL_INTERVAL_MS = 60000;
 const SETUP_ALLOWED_PATHS = new Set(['/complete-profile', '/terms-of-service', '/privacy-policy']);
 
 export default function Navbar() {
   const { user, loading, logout } = useAuth();
   const [unread, setUnread] = useState(0);
   const prevUnread = useRef(0);
-  const heartbeatInFlightRef = useRef(false);
   const router = useRouter();
   const pathname = usePathname();
   const setupPending = Boolean(user?.needs_setup);
@@ -108,18 +103,6 @@ export default function Navbar() {
     };
   }, [user, setupPending, fetchUnread]);
 
-  // Unlock audio on the first user gesture so the message ding can play
-  // later, even while this tab sits in the background.
-  useEffect(() => {
-    if (!user || setupPending) return;
-    window.addEventListener('pointerdown', unlockMessageSound);
-    window.addEventListener('keydown', unlockMessageSound);
-    return () => {
-      window.removeEventListener('pointerdown', unlockMessageSound);
-      window.removeEventListener('keydown', unlockMessageSound);
-    };
-  }, [user, setupPending]);
-
   // ── Tab title unread counter: "(4) GamesBazaar — …" ───────────────────
   useEffect(() => {
     const apply = () => {
@@ -137,114 +120,6 @@ export default function Navbar() {
       document.title = withUnreadCount(document.title, 0);
     };
   }, [unread]);
-
-  // Heartbeat
-  useEffect(() => {
-    if (!user || setupPending) return;
-
-    const readLastHeartbeatAt = () => {
-      try {
-        return Number(window.localStorage.getItem(HEARTBEAT_STORAGE_KEY)) || 0;
-      } catch {
-        return 0;
-      }
-    };
-
-    const writeLastHeartbeatAt = (timestamp) => {
-      try {
-        window.localStorage.setItem(HEARTBEAT_STORAGE_KEY, String(timestamp));
-      } catch {
-        // Ignore storage failures; the in-tab guard still prevents overlap.
-      }
-    };
-
-    const canHeartbeat = () => (
-      heartbeatGateOpen(readLastHeartbeatAt()) &&
-      !heartbeatInFlightRef.current
-    );
-
-    const sendActiveHeartbeat = async () => {
-      if (!canHeartbeat()) return;
-      heartbeatInFlightRef.current = true;
-      writeLastHeartbeatAt(Date.now());
-      try {
-        await sendHeartbeat();
-      } catch {
-        // Presence will retry on the next eligible tick.
-      } finally {
-        heartbeatInFlightRef.current = false;
-      }
-    };
-
-    const handleTick = () => {
-      sendActiveHeartbeat();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        sendActiveHeartbeat();
-      }
-    };
-
-    // Send immediate heartbeat on mount
-    sendActiveHeartbeat();
-
-    let worker = null;
-    let workerUrl = null;
-    let fallbackInterval = null;
-
-    if (typeof window !== 'undefined' && window.Worker) {
-      try {
-        const blob = new Blob([
-          `let intervalId = null;
-           self.onmessage = function(e) {
-             if (e.data === 'start') {
-               if (intervalId) clearInterval(intervalId);
-               intervalId = setInterval(() => {
-                 self.postMessage('tick');
-               }, ${HEARTBEAT_INTERVAL_MS});
-             } else if (e.data === 'stop') {
-               if (intervalId) {
-                 clearInterval(intervalId);
-                 intervalId = null;
-               }
-             }
-           };`
-        ], { type: 'application/javascript' });
-        workerUrl = URL.createObjectURL(blob);
-        worker = new Worker(workerUrl);
-        worker.onmessage = (e) => {
-          if (e.data === 'tick') {
-            handleTick();
-          }
-        };
-        worker.postMessage('start');
-      } catch (err) {
-        console.error('Failed to start presence worker, falling back to interval:', err);
-        fallbackInterval = setInterval(handleTick, HEARTBEAT_INTERVAL_MS);
-      }
-    } else {
-      fallbackInterval = setInterval(handleTick, HEARTBEAT_INTERVAL_MS);
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleVisibilityChange);
-
-    return () => {
-      if (worker) {
-        worker.postMessage('stop');
-        worker.terminate();
-      }
-      if (workerUrl) {
-        URL.revokeObjectURL(workerUrl);
-      }
-      if (fallbackInterval) {
-        clearInterval(fallbackInterval);
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
-    };
-  }, [user, setupPending]);
 
   // ── Notification polling ───────────────────────────────────────────────
   const fetchNotifCount = useCallback(() => {
@@ -269,93 +144,6 @@ export default function Navbar() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user, setupPending, fetchNotifCount]);
-
-  // ── Real-time badges: per-user inbox socket ────────────────────────────
-  // Pushes new notifications (bell) and conversation activity (messages
-  // icon) instantly; the polls above stay as a fallback when the socket
-  // is down. Survives client-side navigation since the navbar persists.
-  useEffect(() => {
-    if (!user || setupPending) return;
-    let disposed = false;
-    let ws = null;
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
-
-    function scheduleReconnect() {
-      if (disposed) return;
-      clearTimeout(reconnectTimer);
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-      reconnectAttempts += 1;
-      reconnectTimer = setTimeout(() => {
-        if (!disposed) connectWs();
-      }, delay);
-    }
-
-    async function connectWs() {
-      let ticket;
-      try {
-        ({ ticket } = await getInboxWebSocketTicket());
-      } catch {
-        scheduleReconnect();
-        return;
-      }
-      if (!ticket || disposed) return;
-
-      ws = new WebSocket(`${WS_BASE}/ws/inbox/`, buildTicketSubprotocols(ticket));
-
-      ws.onopen = () => {
-        if (disposed) return;
-        clearTimeout(reconnectTimer);
-        // Catch up on anything missed while disconnected
-        if (reconnectAttempts > 0) {
-          fetchUnread();
-          fetchNotifCount();
-        }
-        reconnectAttempts = 0;
-      };
-
-      ws.onmessage = (e) => {
-        if (disposed) return;
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'notification') {
-            setNotifUnread(prev => prev + 1);
-            // Keep the dropdown list fresh if it has been loaded already
-            setNotifications(prev => (prev.length ? [data.notification, ...prev].slice(0, 15) : prev));
-          } else if (data.type === 'conversation_updated') {
-            fetchUnread();
-            // Ding only for other people's messages — our own sends echo
-            // here too. Requiring the key keeps a stale backend (deploy
-            // window) from dinging on the user's own messages. The sound
-            // is cooled down per conversation, and replying counts as
-            // caught up: the next message in that chat dings again.
-            if ('sender_id' in data) {
-              if (data.sender_id === user.id) {
-                resetMessageSoundCooldown(data.conversation_id);
-              } else {
-                playMessageSound(data.conversation_id);
-              }
-            }
-          }
-          // presence events feed the inbox page; nothing to do here
-        } catch { }
-      };
-
-      ws.onclose = () => scheduleReconnect();
-      ws.onerror = () => {};
-    }
-
-    connectWs();
-
-    return () => {
-      disposed = true;
-      clearTimeout(reconnectTimer);
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
-    };
-  }, [user, setupPending, fetchUnread, fetchNotifCount]);
 
   const loadNotifications = useCallback(async () => {
     if (!user || setupPending) return;

@@ -20,7 +20,6 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 |---|---|
 | `backend/` | Django 5.2 + DRF + Channels. Single app: `core`. Run from `backend/` with `python manage.py ...` |
 | `backend/core/jazzcash.py` | JazzCash MWallet gateway client (secure hash, initiate, status inquiry) |
-| `backend/core/consumers.py` | WebSocket chat/notifications (Channels, daphne) |
 | `frontend/` | Next.js 16 App Router, React 19, plain JS. **Read `frontend/AGENTS.md` first** — this Next.js version differs from training data; check `node_modules/next/dist/docs/` before writing Next code |
 | `deploy/` | Versioned copies of prod nginx + systemd units. **Nothing syncs automatically** — if you change a file here, copy it to the server too (and vice versa). See `deploy/README.md` |
 | `docs/` | `production-deployment.md` (env checklist), `jazzcash-golive-runbook.md` (JazzCash production cutover) |
@@ -42,9 +41,10 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 - SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129`
   — then run git/pip/manage.py as `sudo -u gamesbazaar`.
 - App at `/opt/gamesbazaar/app`, venv `/opt/gamesbazaar/venv`.
-- Services: `gamesbazaar-web` (gunicorn :8001 — ALL plain HTTP),
-  `gamesbazaar-backend` (daphne :8000 — websockets `/ws/` ONLY; nginx does the
-  split), `gamesbazaar-frontend`. Restart BOTH backend halves after a backend deploy.
+- Services: `gamesbazaar-web` (gunicorn :8001 — ALL backend HTTP; no websockets
+  since the 2026-08 shop conversion retired daphne/Channels) and
+  `gamesbazaar-frontend`. Restart `gamesbazaar-web` after a backend deploy.
+  Redis stays: it backs the Django cache (CACHE_REDIS_URL/CHANNEL_REDIS_URL env).
   Timers: auto-confirm + reconcile-jazzcash (10 min), release-holds (30 min),
   db-backup (nightly 21:30 UTC → R2 `db-backups/`).
 - Deploy order matters: **frontend build BEFORE migrate, restart backend right after
