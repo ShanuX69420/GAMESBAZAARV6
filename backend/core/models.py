@@ -371,6 +371,27 @@ class UserProfile(models.Model):
         default=False,
         help_text='Whether password registration is awaiting email verification.',
     )
+    # First-touch acquisition attribution, captured once when the account is
+    # created (core/attribution.py). Blank = unknown (pre-feature account or
+    # the browser stash was unavailable); 'direct' = captured, no referrer.
+    acquisition_source = models.CharField(
+        max_length=32, blank=True, default='',
+        help_text="Derived source label for the user's first visit "
+                  "(google, chatgpt, facebook, direct, ...).",
+    )
+    acquisition_referrer = models.CharField(
+        max_length=500, blank=True, default='',
+        help_text='Raw document.referrer of the first visit.',
+    )
+    acquisition_landing_page = models.CharField(
+        max_length=500, blank=True, default='',
+        help_text='Path + query the first visit landed on (UTM tags live here).',
+    )
+    acquisition_first_seen_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When the browser first saw the site. Also the write-once '
+                  'flag: set means attribution was captured.',
+    )
     last_active = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1100,6 +1121,11 @@ class Order(models.Model):
         max_digits=12, decimal_places=2, default=Decimal('0.00'),
         help_text='Flat checkout service fee the buyer paid on top of '
                   'total_amount. Platform revenue; returned on refund.',
+    )
+    buyer_source = models.CharField(
+        max_length=32, blank=True, default='',
+        help_text="Snapshot of the buyer's first-touch acquisition source at "
+                  'purchase time (blank for pre-attribution accounts).',
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     was_auto_delivery = models.BooleanField(

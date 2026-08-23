@@ -291,11 +291,17 @@ class FilterAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'seller_status', 'is_official_store', 'wallet_balance',
-                    'created_at', 'seller_reviewed_at', 'message_user_link']
-    list_filter = ['seller_status', 'is_official_store']
+    list_display = ['user', 'source_display', 'seller_status', 'is_official_store',
+                    'wallet_balance', 'created_at', 'seller_reviewed_at', 'message_user_link']
+    list_filter = ['seller_status', 'is_official_store', 'acquisition_source']
     search_fields = ['user__username', 'user__email']
-    readonly_fields = ['user', 'seller_application_note', 'created_at']
+    readonly_fields = ['user', 'seller_application_note', 'created_at',
+                       'acquisition_source', 'acquisition_referrer',
+                       'acquisition_landing_page', 'acquisition_first_seen_at']
+
+    @admin.display(description='Source', ordering='acquisition_source')
+    def source_display(self, obj):
+        return obj.acquisition_source or '—'
     actions = ['send_admin_message']
 
     @admin.display(description='Wallet Balance')
@@ -852,15 +858,16 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['id', 'order_number', 'listing_title', 'buyer', 'seller', 'total_amount',
-                    'commission_display', 'buyer_protection_enabled', 'payout_display',
-                    'status', 'created_at']
-    list_filter = ['status', 'buyer_protection_enabled']
+    list_display = ['id', 'order_number', 'listing_title', 'buyer', 'source_display', 'seller',
+                    'total_amount', 'commission_display', 'buyer_protection_enabled',
+                    'payout_display', 'status', 'created_at']
+    list_filter = ['status', 'buyer_protection_enabled', 'buyer_source']
     search_fields = ['order_number', 'listing_title', 'buyer__username', 'seller__username']
     # status is read-only: editing it directly would skip the refund/payout
     # logic — use the refund_and_cancel / release_to_seller actions instead.
     readonly_fields = ['order_number', 'buyer', 'seller', 'listing', 'listing_title', 'quantity',
-                       'unit_price', 'total_amount', 'service_fee', 'commission_rate',
+                       'unit_price', 'total_amount', 'service_fee', 'buyer_source',
+                       'commission_rate',
                        'commission_amount', 'seller_amount', 'status', 'delivery_note_status',
                        'delivered_at', 'buyer_protection_enabled',
                        'seller_payout_available_at', 'seller_payout_released_at',
@@ -871,6 +878,10 @@ class OrderAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Escrowed funds hang off this row; every refund path needs it.
         return False
+
+    @admin.display(description='Source', ordering='buyer_source')
+    def source_display(self, obj):
+        return obj.buyer_source or '—'
 
     @admin.display(description='Commission')
     def commission_display(self, obj):

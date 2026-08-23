@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { API_BASE } from '@/lib/config';
 import { formatApiError, requestLogout } from '@/lib/authRequests';
+import { attributionBody } from '@/lib/attribution';
 
 const AuthContext = createContext(null);
 
@@ -98,7 +99,8 @@ export function AuthProvider({ children }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ credential }),
+      // Attribution only sticks when this sign-in creates the account.
+      body: JSON.stringify({ credential, ...attributionBody() }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -117,7 +119,11 @@ export function AuthProvider({ children }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, email, password, password2, accepted_terms: acceptedTerms }),
+      body: JSON.stringify({
+        username, email, password, password2,
+        accepted_terms: acceptedTerms,
+        ...attributionBody(),
+      }),
     });
     const data = await res.json();
     if (!res.ok) {

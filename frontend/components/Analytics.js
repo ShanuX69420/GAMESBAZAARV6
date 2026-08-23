@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Script from 'next/script';
+import { captureFirstTouch } from '@/lib/attribution';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
@@ -43,6 +44,9 @@ function installStubs() {
   }
 }
 installStubs();
+// Same module-eval timing: document.referrer still holds the external
+// referrer here; by the first route change it would be meaningless.
+captureFirstTouch();
 
 // Meta Pixel only counts the initial page load by itself; client-side route
 // changes must be reported manually. GA4 needs no equivalent — its Enhanced

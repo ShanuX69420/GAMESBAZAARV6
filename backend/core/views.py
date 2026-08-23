@@ -174,7 +174,7 @@ from .services import (
     send_email_verification_code,
     notify_staff_about_item_request,
 )
-from . import fazer, fulfillment, jazzcash, meta_capi
+from . import attribution, fazer, fulfillment, jazzcash, meta_capi
 from .payments import (
     apply_gateway_result,
     find_reusable_pending_payment,
@@ -1449,6 +1449,7 @@ class RegisterView(SuccessCountedThrottleMixin, generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         self.record_throttled_success()
+        attribution.apply_first_touch(user, request.data.get('attribution'))
 
         # Server-side Meta CompleteRegistration (the pixel doesn't send one).
         meta_capi.queue_registration_event(
@@ -1661,6 +1662,7 @@ class GoogleAuthView(ScopedPostThrottleMixin, APIView):
             user_created = False
 
         if user_created:
+            attribution.apply_first_touch(user, request.data.get('attribution'))
             # Server-side Meta CompleteRegistration (the pixel doesn't send
             # one). Only for genuinely new users — linking Google to an
             # existing account is a login, not a registration.
@@ -3381,6 +3383,7 @@ class GuestJazzCashBuyView(SuccessCountedThrottleMixin, APIView):
 
         # Everything checks out — only now does the account exist.
         user = _create_guest_user(email)
+        attribution.apply_first_touch(user, request.data.get('attribution'))
         self.record_throttled_success()
         tracking = meta_capi.tracking_from_request(request)
         meta_capi.queue_registration_event(user, method='guest_checkout', tracking=tracking)
@@ -3691,6 +3694,14 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                     listing.status = 'sold'
                 listing.save(update_fields=['quantity', 'status'])
 
+        # Snapshot the buyer's first-touch source so the admin order list
+        # answers "where did this sale come from?" without a profile join
+        # (and keeps answering it even if the profile is ever edited).
+        try:
+            buyer_source = buyer.profile.acquisition_source
+        except UserProfile.DoesNotExist:
+            buyer_source = ''
+
         # Create order
         order = Order.objects.create(
             buyer=buyer,
@@ -3704,6 +3715,7 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             commission_amount=commission,
             seller_amount=seller_receives,
             service_fee=service_fee,
+            buyer_source=buyer_source,
             status=initial_status,
             was_auto_delivery=delivered_instantly,
             delivery_note=delivery_note,

@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/config';
+import { attributionBody } from '@/lib/attribution';
 let refreshAuthPromise = null;
 const GAME_LIST_REVALIDATE_SECONDS = 60;
 const PUBLIC_CATALOG_REVALIDATE_SECONDS = 120;
@@ -474,7 +475,9 @@ export async function getCheckoutConfig() {
 // it in via the normal auth cookies on this response, and starts the same
 // JazzCash purchase flow as initiateJazzCashPurchase. Returns { payment }.
 export async function initiateGuestJazzCashPurchase(listingId, quantity, mobileNumber, email, checkoutFields) {
-  const body = { listing_id: listingId, quantity, mobile_number: mobileNumber, email };
+  // Guest checkout creates the buyer's account — the one moment their
+  // first-touch attribution can be recorded.
+  const body = { listing_id: listingId, quantity, mobile_number: mobileNumber, email, ...attributionBody() };
   if (checkoutFields && Object.keys(checkoutFields).length) {
     body.checkout_fields = checkoutFields;
   }
