@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getSellerProfile, getSellerReviews, replyToReview } from '@/lib/api';
+import { formatReviewDate } from '@/lib/dates';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 import { useAuth } from '@/lib/auth';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
@@ -265,9 +266,7 @@ export default function SellerProfileClient({
                   <div className="review-card-header">
                     <span className="review-card-user">Buyer</span>
                     <span className="review-card-date">
-                      {new Date(review.created_at).toLocaleDateString('en-PK', {
-                        day: 'numeric', month: 'short', year: 'numeric',
-                      })}
+                      {formatReviewDate(review.created_at)}
                       {review.updated_at && (
                         <span className="review-edited-badge"> (edited)</span>
                       )}
@@ -293,7 +292,7 @@ export default function SellerProfileClient({
                         <span>Seller's Reply</span>
                         {review.seller_reply_at && (
                           <span className="review-reply-date">
-                            {new Date(review.seller_reply_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatReviewDate(review.seller_reply_at)}
                           </span>
                         )}
                       </div>

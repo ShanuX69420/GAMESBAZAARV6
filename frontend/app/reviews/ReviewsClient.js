@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getAllReviews } from '@/lib/api';
+import { formatReviewDate } from '@/lib/dates';
 import ReviewPhotos from '@/components/ReviewPhotos';
 
 const REVIEW_PAGE_SIZE = 20;
@@ -110,9 +111,7 @@ export default function ReviewsClient({ initialData = null }) {
               <div className="review-card-header">
                 <span className="review-card-user">Buyer</span>
                 <span className="review-card-date">
-                  {new Date(review.created_at).toLocaleDateString('en-PK', {
-                    day: 'numeric', month: 'short', year: 'numeric',
-                  })}
+                  {formatReviewDate(review.created_at)}
                   {review.updated_at && (
                     <span className="review-edited-badge"> (edited)</span>
                   )}
@@ -136,7 +135,7 @@ export default function ReviewsClient({ initialData = null }) {
                     <span>Seller&apos;s Reply</span>
                     {review.seller_reply_at && (
                       <span className="review-reply-date">
-                        {new Date(review.seller_reply_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {formatReviewDate(review.seller_reply_at)}
                       </span>
                     )}
                   </div>
