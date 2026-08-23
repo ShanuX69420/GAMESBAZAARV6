@@ -55,6 +55,17 @@ const nextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  async redirects() {
+    return [
+      // The Offline Activation section was retired 2026-08-23; the page was
+      // indexed and in the sitemap, so send old visitors somewhere useful.
+      {
+        source: '/offline-activation',
+        destination: '/keys',
+        permanent: true,
+      },
+    ];
+  },
   images: {
     formats: ['image/webp'],
     remotePatterns: imageRemotePatterns,

@@ -45,9 +45,8 @@ GAME_LIST_CACHE_SECONDS = 60
 # gets them (Shayan 2026-08-08): top-ups/gift-cards/accounts pages also carry
 # Region filters, so detecting facets from the data alone put unwanted
 # dropdowns on their View All pages.
-# home=False keeps a section's View All page but drops its home-page panel —
-# Offline Activation is off the home page (Shayan 2026-08-15) and Keys took its
-# slot; /offline-activation itself stays live, in the sitemap and in the footer.
+# home=False keeps a section's View All page but drops its home-page panel
+# (no section uses it since Offline Activation was removed outright, 2026-08-23).
 HOME_POPULAR_SECTIONS = [
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
@@ -58,8 +57,6 @@ HOME_POPULAR_SECTIONS = [
      'sortable': True},
     {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
      'category_slugs': ('gift-cards',)},
-    {'slug': 'offline-activation', 'title': 'Popular Offline Activation',
-     'category_slugs': ('offline-activation',), 'home': False},
 ]
 # The subset the home page actually renders panels for.
 HOME_PANEL_SECTIONS = [
@@ -705,8 +702,8 @@ class HomePopularView(APIView):
 
 class CategorySectionGamesView(APIView):
     """GET /api/categories/{slug}/games/ — every game with active listings in
-    one home "Popular" section (keys, accounts, top-ups, offline-activation,
-    gift-cards), for that section's View All page. Same item shape as
+    one home "Popular" section (keys, accounts, top-ups, gift-cards),
+    for that section's View All page. Same item shape as
     HomePopularView, uncapped; unlike the panels, stockless games are omitted.
 
     Sections whose pages carry Method/Region filters (keys) also accept

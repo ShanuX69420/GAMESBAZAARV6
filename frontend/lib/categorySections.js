@@ -1,6 +1,6 @@
 // The home "Popular" panels and their View All pages. Slugs must match
 // both the backend section registry (HOME_POPULAR_SECTIONS) and the app
-// routes: /keys, /accounts, /top-ups, /offline-activation, /gift-cards.
+// routes: /keys, /accounts, /top-ups, /gift-cards.
 export const CATEGORY_SECTIONS = [
   {
     slug: 'keys',
@@ -25,14 +25,6 @@ export const CATEGORY_SECTIONS = [
     title: 'Buy Game Top-Ups',
     description:
       'Browse every game with top-ups on GamesBazaar — PUBG Mobile UC, Free Fire Diamonds, and more. Fast delivery, PKR pricing, and easy refunds.',
-  },
-  {
-    slug: 'offline-activation',
-    name: 'Offline Activation',
-    heading: 'All Offline Activation Games',
-    title: 'Offline Activation Games',
-    description:
-      'Browse every game available with offline activation on GamesBazaar. Play top PC titles for less, with fast delivery and PKR pricing.',
   },
   {
     slug: 'gift-cards',

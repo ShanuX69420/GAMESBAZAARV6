@@ -4160,9 +4160,9 @@ class HomePopularViewTests(TestCase):
         # Stockless game: no from-price to show.
         self.assertIsNone(sections[0]['items'][1]['min_price'])
 
-    def test_offline_activation_is_not_on_the_home_page(self):
-        # Offline Activation keeps its View All page but gets no home panel
-        # (Shayan 2026-08-15).
+    def test_offline_activation_section_is_gone(self):
+        # The Offline Activation section was removed outright — no home panel
+        # and no View All page (Shayan 2026-08-23).
         offline = Category.objects.create(
             name='Offline Activation', slug='offline-activation')
         offline_page = self.add_game('Hogwarts Legacy', 'hogwarts-legacy', offline)
@@ -4174,6 +4174,9 @@ class HomePopularViewTests(TestCase):
 
         sections = response.data['sections']
         self.assertEqual([s['slug'] for s in sections], ['accounts'])
+
+        response = self.client.get('/api/categories/offline-activation/games/')
+        self.assertEqual(response.status_code, 404)
 
     def test_featured_then_stocked_games_rank_first(self):
         self.add_game('Alpha', 'alpha', self.accounts)

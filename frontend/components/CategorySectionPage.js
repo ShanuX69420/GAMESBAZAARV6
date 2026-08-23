@@ -10,7 +10,7 @@ import { groupGamesByAlphabet } from '@/lib/gameGroups';
 import { formatStartingPrice } from '@/lib/price';
 
 // Shared body for the category View All pages (/keys, /accounts, /top-ups,
-// /offline-activation, /gift-cards) — same layout as /games, but each game
+// /gift-cards) — same layout as /games, but each game
 // links straight to its page for this category. Sections whose listings carry
 // Method/Region filters (keys) also get dropdowns driven by ?method=/?region=,
 // plus ?sort= — the default sort keeps the A-Z letter groups, any other sort
