@@ -610,7 +610,7 @@ def _deliver(task, supplier_orders):
         delivery_text = (
             f'Top-up delivered directly to your account'
             f'{f" — ID {id_bits}" if id_bits else ""}{name_part}. '
-            'Please check in-game — if anything is missing, message us here.'
+            'Please check in-game.'
         )
     elif task.kind == 'gift':
         info = _checkout_info(order).get('fields') or {}
@@ -619,8 +619,7 @@ def _deliver(task, supplier_orders):
             'Your Steam gift has been sent to your account'
             f'{f" ({invite})" if invite else ""}. '
             'Open Steam, accept the friend request if one is pending, and '
-            'accept the gift — it stays in your library forever. If anything '
-            'goes wrong, message us here.'
+            'accept the gift — it stays in your library forever.'
         )
     else:
         codes = []
@@ -668,9 +667,7 @@ def _deliver(task, supplier_orders):
             sender=locked.seller,
             content=(
                 f'Order #{locked.order_number} was delivered automatically. '
-                f'{locked.buyer.username}, please check the delivery details — '
-                'if anything is wrong, message us right here and we will sort '
-                'it out.'
+                f'{locked.buyer.username}, please check the delivery details.'
             ),
         )
         create_notification(

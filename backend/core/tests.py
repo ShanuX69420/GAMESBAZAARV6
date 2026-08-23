@@ -8879,13 +8879,15 @@ class OrderChatMessageTests(TestCase):
         self.assertEqual(response.status_code, 201)
         return Order.objects.select_related('conversation').get(pk=response.data['id'])
 
-    def test_purchase_posts_paid_notice_and_seller_instructions(self):
+    def test_purchase_posts_paid_notice_without_seller_instructions(self):
         listing = self._create_listing(delivery_instructions='Redeem within 24 hours.')
         order = self._buy(listing)
 
+        # Seller instructions are NOT re-posted into chat — the buyer already
+        # saw them at checkout and the order page shows the snapshot.
         messages = list(order.conversation.messages.order_by('pk'))
-        self.assertEqual(len(messages), 2)
-        paid, instructions = messages
+        self.assertEqual(len(messages), 1)
+        paid = messages[0]
 
         self.assertEqual(paid.message_type, 'system')
         self.assertEqual(paid.system_event, 'order_paid')
@@ -8897,10 +8899,6 @@ class OrderChatMessageTests(TestCase):
         self.assertIn(f'#{order.order_number}', paid.content)
         self.assertIn('chatbuyer', paid.content)
         self.assertIn('chatseller', paid.content)
-
-        self.assertEqual(instructions.message_type, 'instructions')
-        self.assertEqual(instructions.sender, self.seller)
-        self.assertEqual(instructions.content, 'Redeem within 24 hours.')
 
     def test_auto_delivery_purchase_posts_encrypted_delivery_message(self):
         listing = self._create_listing(

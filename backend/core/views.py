@@ -3760,9 +3760,8 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         if delivered_instantly:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
-                f'{listing.title}{qty_part}. The order was delivered automatically. '
-                f'{buyer.username}, please check the delivery details — if anything '
-                f'is wrong, message us right here and we will sort it out.'
+                f'{listing.title}{qty_part}. The order was delivered automatically — '
+                f'{buyer.username}, please check the delivery details.'
             )
         elif fazer_task is not None:
             if fazer_task.kind == 'gift':
@@ -3775,16 +3774,13 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. This order is delivered automatically — '
-                f'{arrival}. '
-                f'{buyer.username}, if it does not arrive or anything is wrong, '
-                f'message us right here and we will sort it out.'
+                f'{arrival}.'
             )
         else:
             paid_content = (
                 f'{buyer.username} has paid for order #{order.order_number} — '
                 f'{listing.title}{qty_part}. {listing.seller.username}, please deliver '
-                f'the order. {buyer.username}, your delivery will arrive in this chat — '
-                f'message us any time if you have questions.'
+                f'the order. {buyer.username}, your delivery will arrive in this chat.'
             )
         post_order_chat_message(order, event='order_paid', content=paid_content, sender=buyer)
 
@@ -3807,20 +3803,15 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                     sender=buyer,
                 )
 
-        # Hand over auto-delivery data and the seller's standing instructions
+        # Hand over auto-delivery data. Seller instructions are NOT re-posted
+        # into chat — the buyer already saw them on the listing/checkout and
+        # the order page shows the snapshot.
         if delivered_instantly:
             post_order_chat_message(
                 order,
                 message_type='delivery',
                 sender=listing.seller,
                 content=delivery_note,  # already encrypted above
-            )
-        if order.delivery_instructions_snapshot:
-            post_order_chat_message(
-                order,
-                message_type='instructions',
-                sender=listing.seller,
-                content=order.delivery_instructions_snapshot,
             )
 
         # Notify seller about new order
@@ -4248,8 +4239,7 @@ class DeliverOrderView(APIView):
                 sender=request.user,
                 content=(
                     f'{request.user.username} has delivered order #{order.order_number}. '
-                    f'{order.buyer.username}, please check the delivery details — if '
-                    f'anything is wrong, message us right here and we will sort it out.'
+                    f'{order.buyer.username}, please check the delivery details.'
                 ),
             )
             if delivery_note:
