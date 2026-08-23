@@ -4,11 +4,13 @@ import {
   changePassword,
   confirmEmailChange,
   confirmPasswordReset,
+  createReview,
   deliverOrder,
   fetchGames,
   fetchGame,
   fetchGameCategory,
   fetchSiteReviews,
+  getAllReviews,
   getAutoDeliveryStock,
   getAutoDeliveryStockItem,
   getCheckoutConfig,
@@ -32,6 +34,8 @@ import {
   getSellerDashboard,
   getSellerProfile,
   getSellerReviews,
+  getWhatsAppReviewContext,
+  submitWhatsAppReview,
   searchMarketplace,
   submitReport,
   submitSupportTicket,
@@ -337,6 +341,15 @@ describe('API client helpers', () => {
     );
   });
 
+  it('paginates the sitewide reviews list', async () => {
+    await getAllReviews({ limit: 20, offset: 40 });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/reviews/all/?limit=20&offset=40`
+    );
+  });
+
   it('encodes seller review/profile path segments and review pagination', async () => {
     await getSellerReviews('seller+pk@example.com', { limit: 20, offset: 40 });
     await getSellerProfile('seller+pk@example.com');
@@ -398,19 +411,27 @@ describe('API client helpers', () => {
   });
 
   it('serializes review update and seller reply helpers', async () => {
-    await updateReview(12, 4, 'Updated review');
+    const photo = new Blob(['photo'], { type: 'image/png' });
+
+    await updateReview(12, 4, 'Updated review', { photos: [photo], removePhotoIds: [7] });
     await replyToReview(12, 'Thanks for the review');
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
       `${API_BASE}/api/reviews/12/`,
-      {
+      expect.objectContaining({
         credentials: 'include',
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating: 4, comment: 'Updated review' }),
-      }
+        body: expect.any(FormData),
+      })
     );
+    const updateForm = fetch.mock.calls[0][1].body;
+    expect(updateForm.get('rating')).toBe('4');
+    expect(updateForm.get('comment')).toBe('Updated review');
+    expect(updateForm.getAll('images')).toHaveLength(1);
+    expect(updateForm.getAll('remove_image_ids')).toEqual(['7']);
+    // The browser must set the multipart boundary itself.
+    expect(fetch.mock.calls[0][1].headers).toBeUndefined();
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       `${API_BASE}/api/reviews/12/reply/`,
@@ -421,6 +442,52 @@ describe('API client helpers', () => {
         body: JSON.stringify({ reply: 'Thanks for the review' }),
       }
     );
+  });
+
+  it('drives the WhatsApp review link without auth', async () => {
+    const photo = new Blob(['photo'], { type: 'image/png' });
+
+    await getWhatsAppReviewContext('tok-123');
+    await submitWhatsAppReview('tok-123', 5, 'Instant delivery', [photo]);
+
+    expect(fetch).toHaveBeenNthCalledWith(1, `${API_BASE}/api/reviews/whatsapp/tok-123/`);
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${API_BASE}/api/reviews/whatsapp/tok-123/`,
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.any(FormData),
+      })
+    );
+    const form = fetch.mock.calls[1][1].body;
+    expect(form.get('rating')).toBe('5');
+    expect(form.get('comment')).toBe('Instant delivery');
+    expect(form.getAll('images')).toHaveLength(1);
+    // Token-authenticated public endpoint — no cookies, no auth headers.
+    expect(fetch.mock.calls[1][1].credentials).toBeUndefined();
+    expect(fetch.mock.calls[1][1].headers).toBeUndefined();
+  });
+
+  it('sends new reviews as form data with attached photos', async () => {
+    const photo = new Blob(['photo'], { type: 'image/png' });
+
+    await createReview(34, 5, 'Great shop', [photo]);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      `${API_BASE}/api/reviews/`,
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        body: expect.any(FormData),
+      })
+    );
+    const createForm = fetch.mock.calls[0][1].body;
+    expect(createForm.get('order_id')).toBe('34');
+    expect(createForm.get('rating')).toBe('5');
+    expect(createForm.get('comment')).toBe('Great shop');
+    expect(createForm.getAll('images')).toHaveLength(1);
+    expect(fetch.mock.calls[0][1].headers).toBeUndefined();
   });
 
   it('serializes support ticket creation and support history pagination', async () => {

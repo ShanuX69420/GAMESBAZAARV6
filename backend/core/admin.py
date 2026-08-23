@@ -12,7 +12,7 @@ from .models import (
     GameCategoryFilter, UserProfile, SocialAccount, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
-    TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review,
+    TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review, ReviewImage,
     JazzCashPayment, WhatsAppCheckout,
     Notification, Report, SupportTicket, ItemRequest,
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
@@ -35,6 +35,7 @@ from .services import (
     optimize_uploaded_image,
 )
 from .serializers import get_auto_delivery_inventory_lines
+from .storage_backends import cached_media_url
 
 # Import the custom admin site and set it as the default
 from .admin_dashboard import GamesBazaarAdminSite
@@ -553,9 +554,32 @@ class WhatsAppCheckoutAdmin(admin.ModelAdmin):
     autocomplete_fields = ['listing']
     fields = ['ref', 'status', 'listing', 'listing_title', 'quantity', 'amount',
               'buyer_phone', 'page_url', 'user', 'from_ad_click',
-              'created_at', 'completed_at']
+              'review_link', 'created_at', 'completed_at']
     readonly_fields = ['ref', 'listing_title', 'page_url', 'user',
-                       'from_ad_click', 'created_at', 'completed_at']
+                       'from_ad_click', 'review_link', 'created_at', 'completed_at']
+
+    @admin.display(description='Review link')
+    def review_link(self, obj):
+        # Minted when the sale is marked completed — paste it into the chat
+        # so the buyer can leave a review (stars + photos, no account).
+        if not obj or not obj.review_token:
+            return format_html(
+                '<span style="color:#94a3b8;">Created when the sale is marked '
+                'completed</span>'
+            )
+        try:
+            reviewed = obj.review is not None
+        except Review.DoesNotExist:
+            reviewed = False
+        return format_html(
+            '<div><a href="{0}" target="_blank" rel="noopener" '
+            'style="font-family:monospace;">{0}</a><br>'
+            '<span style="color:{1};{2}">{3}</span></div>',
+            obj.review_url,
+            '#16a34a' if reviewed else '#94a3b8',
+            'font-weight:600;' if reviewed else '',
+            '✓ Review received' if reviewed else 'Not used yet — paste it into the chat',
+        )
 
     @admin.display(boolean=True, description='From an ad click')
     def from_ad_click(self, obj):
@@ -627,7 +651,7 @@ class WhatsAppCheckoutAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             f'WhatsApp sale {obj.ref} recorded — PKR {obj.amount} Purchase '
-            'event sent to Meta.',
+            f'event sent to Meta. Review link for the buyer: {obj.review_url}',
         )
 
 
@@ -1225,12 +1249,44 @@ class WalletTransactionAdmin(HiddenModelAdmin):
         return False
 
 
+class ReviewImageInline(admin.TabularInline):
+    """Buyer photos on a review — preview + delete (moderation), no uploads."""
+    model = ReviewImage
+    extra = 0
+    fields = ['preview', 'created_at']
+    readonly_fields = ['preview', 'created_at']
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description='Photo')
+    def preview(self, obj):
+        if not obj or not obj.image:
+            return '—'
+        url = cached_media_url(obj.image, cache_seconds=3600)
+        return format_html(
+            '<a href="{0}" target="_blank" rel="noopener">'
+            '<img src="{0}" style="max-height:120px;max-width:200px;'
+            'border-radius:8px;" /></a>',
+            url,
+        )
+
+
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
-    list_display = ['id', 'reviewer', 'seller', 'rating', 'order', 'created_at']
+    list_display = ['id', 'reviewer', 'seller', 'rating', 'photo_count', 'order',
+                    'whatsapp_checkout', 'created_at']
     list_filter = ['rating']
     search_fields = ['reviewer__username', 'seller__username', 'comment']
-    raw_id_fields = ['order', 'reviewer', 'seller']
+    raw_id_fields = ['order', 'whatsapp_checkout', 'reviewer', 'seller']
+    inlines = [ReviewImageInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('images')
+
+    @admin.display(description='Photos')
+    def photo_count(self, obj):
+        return len(obj.images.all())
 
 
 @admin.register(Notification)

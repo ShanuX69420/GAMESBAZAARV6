@@ -44,8 +44,9 @@ from .admin_dashboard import GamesBazaarAdminSite
 from .models import (
     Category, Conversation, Filter, FilterOption, Game, GameCategory, GameCategoryFilter,
     ItemRequest, Listing, Message, Notification, OfflineAccount, Order, Report, Review,
+    ReviewImage,
     SupportTicket, PlatformLedgerEntry, SellerCommissionOverride, SocialAccount, TopUpRequest,
-    UserProfile, Wallet, WalletTransaction, WithdrawRequest,
+    UserProfile, Wallet, WalletTransaction, WhatsAppCheckout, WithdrawRequest,
 )
 from .serializers import (
     MAX_AUTO_DELIVERY_LINE_LENGTH,
@@ -55,6 +56,7 @@ from .serializers import (
     WalletTransactionSerializer,
 )
 from .services import (
+    complete_whatsapp_checkout,
     create_email_verification_token,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
@@ -3395,6 +3397,7 @@ class ApiThrottleConfigurationTests(TestCase):
             '/api/reports/': 'create_report',
             '/api/support/': 'create_support_ticket',
             '/api/item-requests/': 'create_item_request',
+            '/api/reviews/whatsapp/some-token/': 'whatsapp_review',
         }
 
         for path, scope in cases.items():
@@ -7398,6 +7401,408 @@ class ReviewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['active_listings'], 1)
+
+
+class ReviewImageTests(TestCase):
+    """Buyer photos attached to reviews."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+
+        game = Game.objects.create(name='Photo Game', slug='photo-game')
+        category = Category.objects.create(
+            name='Accounts', slug='accounts', commission_rate=Decimal('10.00'),
+        )
+        game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category,
+            title='Photo Listing',
+            price=Decimal('50.00'),
+            quantity=5,
+            status='active',
+        )
+        self.completed_order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('50.00'),
+            total_amount=Decimal('50.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('5.00'),
+            seller_amount=Decimal('45.00'),
+            status='completed',
+        )
+
+    def create_review_with_photos(self, photos, rating=5, comment='With photos.'):
+        self.client.force_authenticate(user=self.buyer)
+        return self.client.post(
+            '/api/reviews/',
+            {
+                'order_id': self.completed_order.id,
+                'rating': rating,
+                'comment': comment,
+                'images': photos,
+            },
+            format='multipart',
+        )
+
+    def test_create_review_with_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                response = self.create_review_with_photos([
+                    make_image_file(name='one.png', size=(600, 400)),
+                    make_image_file(name='two.png', size=(300, 300)),
+                ])
+
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(len(response.data['images']), 2)
+                for image_payload in response.data['images']:
+                    self.assertIn('review_images/', image_payload['url'])
+
+                review = Review.objects.get(order=self.completed_order)
+                images = list(review.images.all())
+                self.assertEqual(len(images), 2)
+                for stored in images:
+                    assert_storage_name_under(self, stored.image.name, 'review_images/')
+                    # Uploads are optimized to WebP before storage.
+                    self.assertTrue(stored.image.name.endswith('.webp'))
+
+    def test_create_review_rejects_too_many_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                response = self.create_review_with_photos([
+                    make_image_file(name=f'photo{i}.png') for i in range(4)
+                ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('at most', response.data['error'])
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_create_review_rejects_non_image_file(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                response = self.create_review_with_photos([
+                    SimpleUploadedFile('notes.txt', b'not an image', content_type='text/plain'),
+                ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Review.objects.filter(order=self.completed_order).exists())
+
+    def test_json_review_without_photos_still_works(self):
+        self.client.force_authenticate(user=self.buyer)
+
+        response = self.client.post(
+            '/api/reviews/',
+            {'order_id': self.completed_order.id, 'rating': 5, 'comment': 'No photos.'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['images'], [])
+
+    def test_update_review_adds_and_removes_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                created = self.create_review_with_photos([
+                    make_image_file(name='original.png'),
+                ])
+                self.assertEqual(created.status_code, 201)
+                review_id = created.data['id']
+                original_image_id = created.data['images'][0]['id']
+
+                response = self.client.put(
+                    f'/api/reviews/{review_id}/',
+                    {
+                        'rating': 4,
+                        'comment': 'Swapped the photo.',
+                        'remove_image_ids': [original_image_id],
+                        'images': [
+                            make_image_file(name='newer-a.png'),
+                            make_image_file(name='newer-b.png'),
+                        ],
+                    },
+                    format='multipart',
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(response.data['images']), 2)
+                remaining_ids = {img['id'] for img in response.data['images']}
+                self.assertNotIn(original_image_id, remaining_ids)
+                self.assertFalse(ReviewImage.objects.filter(pk=original_image_id).exists())
+
+    def test_update_review_enforces_photo_cap(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                created = self.create_review_with_photos([
+                    make_image_file(name=f'full{i}.png') for i in range(3)
+                ])
+                self.assertEqual(created.status_code, 201)
+                review_id = created.data['id']
+
+                response = self.client.put(
+                    f'/api/reviews/{review_id}/',
+                    {
+                        'rating': 5,
+                        'comment': 'One too many.',
+                        'images': [make_image_file(name='extra.png')],
+                    },
+                    format='multipart',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(ReviewImage.objects.filter(review_id=review_id).count(), 3)
+
+    def test_seller_reviews_endpoint_includes_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                self.create_review_with_photos([make_image_file(name='shown.png')])
+                self.client.force_authenticate(user=None)
+
+                response = self.client.get('/api/reviews/seller/seller/')
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(response.data['reviews'][0]['images']), 1)
+                self.assertIn('review_images/', response.data['reviews'][0]['images'][0]['url'])
+
+    def test_order_detail_review_data_includes_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                self.create_review_with_photos([make_image_file(name='mine.png')])
+
+                response = self.client.get(
+                    f'/api/orders/{self.completed_order.order_number}/'
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(response.data['review_data']['images']), 1)
+
+
+class WhatsAppReviewTests(TestCase):
+    """The tokenized review link for sales that closed on WhatsApp."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='shopseller', password='password123')
+        self.seller.profile.seller_status = 'approved'
+        self.seller.profile.save(update_fields=['seller_status'])
+
+        game = Game.objects.create(name='WA Game', slug='wa-game')
+        category = Category.objects.create(
+            name='Accounts', slug='accounts', commission_rate=Decimal('10.00'),
+        )
+        self.game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title='WA Listing',
+            price=Decimal('100.00'),
+            quantity=5,
+            status='active',
+        )
+        self.checkout = WhatsAppCheckout.objects.create(
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            amount=Decimal('100.00'),
+            buyer_phone='03001234567',
+        )
+        complete_whatsapp_checkout(self.checkout)
+        self.review_path = f'/api/reviews/whatsapp/{self.checkout.review_token}/'
+
+    def test_completing_a_sale_mints_a_review_token(self):
+        self.assertTrue(self.checkout.review_token)
+        self.assertIn(f'/review/{self.checkout.review_token}', self.checkout.review_url)
+
+    def test_get_returns_sale_context(self):
+        response = self.client.get(self.review_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['listing_title'], 'WA Listing')
+        self.assertFalse(response.data['reviewed'])
+        self.assertIsNone(response.data['review'])
+
+    def test_get_unknown_token_is_404(self):
+        response = self.client.get('/api/reviews/whatsapp/not-a-real-token/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_token_on_uncompleted_sale_is_404(self):
+        clicked = WhatsAppCheckout.objects.create(
+            listing=self.listing, listing_title=self.listing.title,
+        )
+        clicked.ensure_review_token()
+        clicked.save()
+
+        response = self.client.get(f'/api/reviews/whatsapp/{clicked.review_token}/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_post_creates_anonymous_review_with_photos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            with local_media_storage_settings(media_root):
+                response = self.client.post(
+                    self.review_path,
+                    {
+                        'rating': 5,
+                        'comment': 'Delivered in minutes, works perfectly.',
+                        'images': [make_image_file(name='delivered.png')],
+                    },
+                    format='multipart',
+                )
+
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.data['rating'], 5)
+                self.assertEqual(response.data['reviewer_name'], '')
+                self.assertEqual(response.data['listing_title'], 'WA Listing')
+                self.assertEqual(len(response.data['images']), 1)
+
+                review = Review.objects.get(whatsapp_checkout=self.checkout)
+                self.assertIsNone(review.reviewer)
+                self.assertIsNone(review.order)
+                self.assertEqual(review.seller, self.seller)
+
+    def test_post_twice_is_rejected(self):
+        first = self.client.post(self.review_path, {'rating': 5}, format='multipart')
+        self.assertEqual(first.status_code, 201)
+
+        second = self.client.post(self.review_path, {'rating': 1}, format='multipart')
+
+        self.assertEqual(second.status_code, 400)
+        self.assertIn('already', second.data['error'])
+        self.assertEqual(Review.objects.filter(whatsapp_checkout=self.checkout).count(), 1)
+
+    def test_get_shows_the_submitted_review(self):
+        self.client.post(
+            self.review_path,
+            {'rating': 4, 'comment': 'Good service.'},
+            format='multipart',
+        )
+
+        response = self.client.get(self.review_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['reviewed'])
+        self.assertEqual(response.data['review']['rating'], 4)
+
+    def test_whatsapp_review_counts_everywhere(self):
+        self.client.post(
+            self.review_path,
+            {'rating': 5, 'comment': 'Best price I found anywhere, instant delivery.'},
+            format='multipart',
+        )
+
+        # Seller reviews endpoint — shown as anonymous, titled from the checkout.
+        seller_reviews = self.client.get('/api/reviews/seller/shopseller/')
+        self.assertEqual(seller_reviews.status_code, 200)
+        self.assertEqual(len(seller_reviews.data['reviews']), 1)
+        self.assertEqual(seller_reviews.data['reviews'][0]['listing_title'], 'WA Listing')
+
+        # Sitewide strip payload.
+        from core.views import SiteReviewsView
+        payload = SiteReviewsView.build_payload()
+        self.assertEqual(payload['summary']['count'], 1)
+        self.assertEqual(payload['reviews'][0]['listing_title'], 'WA Listing')
+
+        # Per-listing stats that feed the Product JSON-LD.
+        listing_detail = self.client.get(f'/api/listings/{self.listing.id}/')
+        self.assertEqual(listing_detail.status_code, 200)
+        self.assertEqual(listing_detail.data['listing_reviews']['count'], 1)
+
+    def test_general_chat_sale_reviews_the_official_store(self):
+        general = WhatsAppCheckout.objects.create(
+            quantity=1, amount=Decimal('50.00'), buyer_phone='03007654321',
+        )
+        complete_whatsapp_checkout(general)
+        path = f'/api/reviews/whatsapp/{general.review_token}/'
+
+        # No official store configured yet → refused.
+        refused = self.client.post(path, {'rating': 5}, format='multipart')
+        self.assertEqual(refused.status_code, 400)
+
+        UserProfile.objects.filter(user=self.seller).update(is_official_store=True)
+        accepted = self.client.post(path, {'rating': 5}, format='multipart')
+
+        self.assertEqual(accepted.status_code, 201)
+        self.assertEqual(Review.objects.get(whatsapp_checkout=general).seller, self.seller)
+
+
+class AllReviewsViewTests(TestCase):
+    """The sitewide review list behind the public /reviews page."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(username='buyer', password='password123')
+        self.seller = User.objects.create_user(username='seller', password='password123')
+
+        game = Game.objects.create(name='All Reviews Game', slug='all-reviews-game')
+        category = Category.objects.create(
+            name='Accounts', slug='accounts', commission_rate=Decimal('10.00'),
+        )
+        game_category = GameCategory.objects.create(game=game, category=category)
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category,
+            title='Listed Item',
+            price=Decimal('75.00'),
+            quantity=5,
+            status='active',
+        )
+        order = Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            listing_title=self.listing.title,
+            quantity=1,
+            unit_price=Decimal('75.00'),
+            total_amount=Decimal('75.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('7.50'),
+            seller_amount=Decimal('67.50'),
+            status='completed',
+        )
+        Review.objects.create(
+            order=order, reviewer=self.buyer, seller=self.seller,
+            rating=5, comment='On-site order review.',
+        )
+        checkout = WhatsAppCheckout.objects.create(
+            listing=self.listing, listing_title='WhatsApp Item',
+            quantity=1, amount=Decimal('75.00'), buyer_phone='03001234567',
+        )
+        complete_whatsapp_checkout(checkout)
+        Review.objects.create(
+            whatsapp_checkout=checkout, reviewer=None, seller=self.seller,
+            rating=3, comment='WhatsApp sale review.',
+        )
+
+    def test_lists_both_review_sources_with_summary(self):
+        response = self.client.get('/api/reviews/all/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['summary']['count'], 2)
+        self.assertEqual(response.data['summary']['average'], 4.0)
+        self.assertEqual(response.data['summary']['rating_distribution']['5'], 1)
+        self.assertEqual(response.data['summary']['rating_distribution']['3'], 1)
+
+        reviews = response.data['reviews']
+        self.assertEqual(len(reviews), 2)
+        titles = {r['listing_title'] for r in reviews}
+        self.assertEqual(titles, {'Listed Item', 'WhatsApp Item'})
+        # Anonymous everywhere: the WhatsApp review has no account behind it.
+        wa_review = next(r for r in reviews if r['listing_title'] == 'WhatsApp Item')
+        self.assertEqual(wa_review['reviewer_name'], '')
+
+    def test_is_public_and_paginated(self):
+        response = self.client.get('/api/reviews/all/?limit=1')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['reviews']), 1)
+        self.assertEqual(response.data['pagination']['count'], 2)
+        self.assertEqual(response.data['pagination']['next_offset'], 1)
 
 
 class SearchTests(TestCase):

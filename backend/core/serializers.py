@@ -10,7 +10,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.urls import reverse
 from django.utils import timezone
 from .models import (
@@ -32,6 +32,7 @@ from .services import (
 from .storage_backends import (
     AVATAR_CACHE_SECONDS,
     GAME_ICON_CACHE_SECONDS,
+    REVIEW_IMAGE_CACHE_SECONDS,
     cached_media_url,
 )
 from .permissions import add_profile_setup_token_claim, user_needs_profile_setup
@@ -562,7 +563,9 @@ class ListingSerializer(serializers.ModelSerializer):
         listings."""
         if not self.context.get('include_listing_reviews'):
             return None
-        reviews_qs = Review.objects.filter(order__listing=obj).select_related('reviewer')
+        reviews_qs = Review.objects.filter(
+            Q(order__listing=obj) | Q(whatsapp_checkout__listing=obj)
+        ).select_related('reviewer')
         stats = reviews_qs.aggregate(avg=Avg('rating'))
         recent = [
             {
@@ -1498,6 +1501,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'seller_reply_at': review.seller_reply_at,
             'created_at': review.created_at,
             'updated_at': review.updated_at,
+            'images': review_images_payload(review, self.context.get('request')),
         }
 
     def get_delivery_note(self, obj):
@@ -1591,31 +1595,58 @@ class DeliverOrderSerializer(serializers.Serializer):
 
 # ── Review Serializers ───────────────────────────────────────────────────────
 
+def review_images_payload(review, request=None):
+    """Public URLs for a review's buyer photos."""
+    return [
+        {
+            'id': image.id,
+            'url': cached_media_url(
+                image.image,
+                request=request,
+                cache_seconds=REVIEW_IMAGE_CACHE_SECONDS,
+                cache_scope='public',
+            ),
+        }
+        for image in review.images.all()
+    ]
+
+
 class ReviewSerializer(serializers.ModelSerializer):
-    reviewer_name = serializers.CharField(source='reviewer.username', read_only=True)
-    listing_title = serializers.CharField(source='order.listing_title', read_only=True)
+    reviewer_name = serializers.SerializerMethodField()
+    listing_title = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
         fields = [
             'id', 'order', 'reviewer_name', 'seller',
-            'rating', 'comment', 'listing_title',
+            'rating', 'comment', 'listing_title', 'images',
             'seller_reply', 'seller_reply_at',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['order', 'seller', 'reviewer_name', 'listing_title',
+        read_only_fields = ['order', 'seller',
                             'seller_reply', 'seller_reply_at', 'created_at', 'updated_at']
+
+    def get_reviewer_name(self, obj):
+        # WhatsApp-sale reviews have no account behind them.
+        return obj.reviewer.username if obj.reviewer_id else ''
+
+    def get_listing_title(self, obj):
+        return obj.source_listing_title
+
+    def get_images(self, obj):
+        return review_images_payload(obj, self.context.get('request'))
 
 
 class CreateReviewSerializer(serializers.Serializer):
     order_id = serializers.CharField(max_length=32)
     rating = serializers.IntegerField(min_value=1, max_value=5)
-    comment = serializers.CharField(required=False, default='', max_length=2000)
+    comment = serializers.CharField(required=False, default='', allow_blank=True, max_length=2000)
 
 
 class UpdateReviewSerializer(serializers.Serializer):
     rating = serializers.IntegerField(min_value=1, max_value=5)
-    comment = serializers.CharField(required=False, default='', max_length=2000)
+    comment = serializers.CharField(required=False, default='', allow_blank=True, max_length=2000)
 
 
 class ReplyToReviewSerializer(serializers.Serializer):

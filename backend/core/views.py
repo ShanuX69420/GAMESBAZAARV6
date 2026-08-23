@@ -31,7 +31,7 @@ from .models import (
     Game, GameCategory, CategoryOption, Filter, UserProfile, Listing, Conversation, Message,
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment, SellerCommissionOverride, WhatsAppCheckout,
-    Review, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
+    Review, ReviewImage, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
 )
 
 GAME_LIST_CACHE_KEY = 'game-list:v3'
@@ -155,6 +155,7 @@ from .services import (
     validate_chat_message_content,
     validate_uploaded_image,
     optimize_uploaded_image,
+    resolve_whatsapp_review_seller,
     generate_email_change_code,
     create_email_change_token,
     verify_email_change_token,
@@ -222,6 +223,7 @@ DEFAULT_ORDER_PAGE_SIZE = 20
 MAX_ORDER_PAGE_SIZE = 100
 DEFAULT_REVIEW_PAGE_SIZE = 20
 MAX_REVIEW_PAGE_SIZE = 100
+MAX_REVIEW_IMAGES = 3
 # Sitewide review strip (the marquee above the footer). It renders on every
 # page, so it is cached hard and kept small. Only 4-5 star reviews with a real
 # sentence in them qualify — a bare "." or a one-word rating is not a
@@ -4377,14 +4379,37 @@ class RefundOrderView(APIView):
 
 # ── Reviews ───────────────────────────────────────────────────────────────────────
 
+def validate_review_images(files, existing_count=0):
+    """Validate uploaded review photos and return (optimized_list, error).
+
+    ``existing_count`` is how many photos the review will already have after
+    any removals, so the cap holds across edits too.
+    """
+    if existing_count + len(files) > MAX_REVIEW_IMAGES:
+        return None, f'You can attach at most {MAX_REVIEW_IMAGES} photos.'
+    for image in files:
+        validation_error = validate_uploaded_image(image)
+        if validation_error:
+            return None, validation_error
+    return [optimize_uploaded_image(image, preset='review') for image in files], None
+
+
 class CreateReviewView(APIView):
-    """POST /api/reviews/ — Submit a review for a completed order."""
+    """POST /api/reviews/ — Submit a review for a completed order.
+
+    Accepts multipart form data with up to MAX_REVIEW_IMAGES photos under
+    ``images`` (plain JSON still works for photo-less reviews).
+    """
     permission_classes = [HasCompletedProfile]
 
     def post(self, request):
         serializer = CreateReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        images, validation_error = validate_review_images(request.FILES.getlist('images'))
+        if validation_error:
+            return Response({'error': validation_error}, status=400)
 
         try:
             with db_transaction.atomic():
@@ -4408,6 +4433,9 @@ class CreateReviewView(APIView):
                     rating=data['rating'],
                     comment=data.get('comment', ''),
                 )
+
+                for image in images:
+                    ReviewImage.objects.create(review=review, image=image)
 
                 post_order_chat_message(
                     order,
@@ -4435,7 +4463,7 @@ class CreateReviewView(APIView):
         # now instead of at the end of its 5-minute window.
         cache.delete(SITE_REVIEWS_CACHE_KEY)
 
-        return Response(ReviewSerializer(review).data, status=201)
+        return Response(ReviewSerializer(review, context={'request': request}).data, status=201)
 
 
 class UpdateReviewView(APIView):
@@ -4453,10 +4481,33 @@ class UpdateReviewView(APIView):
             reviewer=request.user,
         )
 
+        # Photo changes: ``remove_image_ids`` drops existing photos,
+        # ``images`` adds new ones. The cap applies to the final set.
+        if hasattr(request.data, 'getlist'):
+            remove_ids = request.data.getlist('remove_image_ids')
+        else:
+            remove_ids = request.data.get('remove_image_ids') or []
+        remove_ids = {str(value) for value in remove_ids}
+        existing_images = list(review.images.all())
+        removed_images = [img for img in existing_images if str(img.id) in remove_ids]
+        kept_count = len(existing_images) - len(removed_images)
+
+        new_images, validation_error = validate_review_images(
+            request.FILES.getlist('images'), existing_count=kept_count,
+        )
+        if validation_error:
+            return Response({'error': validation_error}, status=400)
+
         review.rating = data['rating']
         review.comment = data.get('comment', '')
         review.updated_at = timezone.now()
         review.save(update_fields=['rating', 'comment', 'updated_at'])
+
+        for removed in removed_images:
+            removed.image.delete(save=False)
+            removed.delete()
+        for image in new_images:
+            ReviewImage.objects.create(review=review, image=image)
 
         post_order_chat_message(
             review.order,
@@ -4472,7 +4523,7 @@ class UpdateReviewView(APIView):
         cache.delete(f'seller-profile:v1:{review.seller_id}')
         cache.delete(SITE_REVIEWS_CACHE_KEY)
 
-        return Response(ReviewSerializer(review).data)
+        return Response(ReviewSerializer(review, context={'request': request}).data)
 
 
 class ReplyToReviewView(APIView):
@@ -4499,7 +4550,7 @@ class ReplyToReviewView(APIView):
         # Invalidate seller profile cache
         cache.delete(f'seller-profile:v1:{review.seller_id}')
 
-        return Response(ReviewSerializer(review).data)
+        return Response(ReviewSerializer(review, context={'request': request}).data)
 
 
 class SellerReviewsView(APIView):
@@ -4510,7 +4561,7 @@ class SellerReviewsView(APIView):
         seller = get_object_or_404(User, username=username)
         reviews_qs = Review.objects.filter(
             seller=seller
-        ).select_related('reviewer', 'order')
+        ).select_related('reviewer', 'order', 'whatsapp_checkout').prefetch_related('images')
         limit, offset = get_pagination_params(
             request,
             default_limit=DEFAULT_REVIEW_PAGE_SIZE,
@@ -4519,9 +4570,139 @@ class SellerReviewsView(APIView):
         total_count = reviews_qs.count()
         reviews = reviews_qs[offset:offset + limit]
         return Response({
-            'reviews': ReviewSerializer(reviews, many=True).data,
+            'reviews': ReviewSerializer(reviews, many=True, context={'request': request}).data,
             'pagination': get_pagination_payload(total_count, limit, offset),
         })
+
+
+class AllReviewsView(APIView):
+    """GET /api/reviews/all/ — every review on the site, newest first.
+
+    Feeds the public /reviews page. Unlike the marquee strip (a positive-only
+    showcase), this is the honest full list: every rating, order and WhatsApp
+    reviews alike, with photos and seller replies.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        limit, offset = get_pagination_params(
+            request,
+            default_limit=DEFAULT_REVIEW_PAGE_SIZE,
+            max_limit=MAX_REVIEW_PAGE_SIZE,
+        )
+
+        # One query yields the distribution, the total, and the average.
+        rating_distribution = {str(i): 0 for i in range(1, 6)}
+        total = 0
+        weighted = 0
+        for row in Review.objects.values('rating').annotate(count=Count('id')):
+            rating_distribution[str(row['rating'])] = row['count']
+            total += row['count']
+            weighted += row['rating'] * row['count']
+
+        reviews = (
+            Review.objects
+            .select_related('reviewer', 'order', 'whatsapp_checkout')
+            .prefetch_related('images')[offset:offset + limit]
+        )
+        return Response({
+            'summary': {
+                'count': total,
+                'average': round(weighted / total, 1) if total else None,
+                'rating_distribution': rating_distribution,
+            },
+            'reviews': ReviewSerializer(reviews, many=True, context={'request': request}).data,
+            'pagination': get_pagination_payload(total, limit, offset),
+        })
+
+
+class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
+    """GET/POST /api/reviews/whatsapp/<token>/ — review a WhatsApp sale.
+
+    The token is minted when the admin marks the WhatsAppCheckout completed
+    and is pasted into the buyer's chat, so possession of the link IS the
+    authentication — no account or login involved. One review per sale.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'whatsapp_review'
+
+    @staticmethod
+    def get_checkout(token):
+        return get_object_or_404(
+            WhatsAppCheckout.objects.select_related('listing__seller'),
+            review_token=token,
+            status='completed',
+        )
+
+    def get(self, request, token):
+        checkout = self.get_checkout(token)
+        try:
+            review = checkout.review
+        except Review.DoesNotExist:
+            review = None
+        return Response({
+            'listing_title': checkout.listing_title,
+            'completed_at': checkout.completed_at,
+            'reviewed': review is not None,
+            'review': (
+                ReviewSerializer(review, context={'request': request}).data
+                if review else None
+            ),
+        })
+
+    def post(self, request, token):
+        checkout = self.get_checkout(token)
+        serializer = UpdateReviewSerializer(data=request.data)  # rating + comment
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        images, validation_error = validate_review_images(request.FILES.getlist('images'))
+        if validation_error:
+            return Response({'error': validation_error}, status=400)
+
+        seller = resolve_whatsapp_review_seller(checkout)
+        if seller is None:
+            return Response(
+                {'error': 'This sale cannot be reviewed right now.'}, status=400,
+            )
+
+        try:
+            with db_transaction.atomic():
+                locked = WhatsAppCheckout.objects.select_for_update().get(pk=checkout.pk)
+                if Review.objects.filter(whatsapp_checkout=locked).exists():
+                    return Response(
+                        {'error': 'This sale has already been reviewed.'}, status=400,
+                    )
+
+                review = Review.objects.create(
+                    whatsapp_checkout=locked,
+                    reviewer=None,
+                    seller=seller,
+                    rating=data['rating'],
+                    comment=data.get('comment', ''),
+                )
+
+                for image in images:
+                    ReviewImage.objects.create(review=review, image=image)
+
+                create_notification(
+                    recipient=seller,
+                    notification_type='new_review',
+                    title=f'New {data["rating"]}-star review (WhatsApp sale)',
+                    message=(
+                        f'A WhatsApp buyer left a {data["rating"]}-star review'
+                        + (f' for "{locked.listing_title}".' if locked.listing_title else '.')
+                        + (f' "{data.get("comment", "")}"' if data.get('comment') else '')
+                    ),
+                    review=review,
+                )
+        except IntegrityError:
+            return Response({'error': 'This sale has already been reviewed.'}, status=400)
+
+        cache.delete(SITE_REVIEWS_CACHE_KEY)
+        cache.delete(f'seller-profile:v1:{seller.id}')
+
+        return Response(ReviewSerializer(review, context={'request': request}).data, status=201)
 
 
 class SiteReviewsView(APIView):
@@ -4555,7 +4736,7 @@ class SiteReviewsView(APIView):
                 rating__gte=SITE_REVIEWS_MIN_RATING,
                 comment_length__gte=SITE_REVIEWS_MIN_COMMENT_LENGTH,
             )
-            .select_related('order')
+            .select_related('order', 'whatsapp_checkout')
             .order_by('-created_at')[:SITE_REVIEWS_LIMIT]
         )
         average = summary['average']
@@ -4571,7 +4752,7 @@ class SiteReviewsView(APIView):
                     'comment': Truncator(review.comment.strip()).chars(
                         SITE_REVIEWS_MAX_COMMENT_LENGTH
                     ),
-                    'listing_title': review.order.listing_title,
+                    'listing_title': review.source_listing_title,
                     'created_at': review.created_at,
                 }
                 for review in reviews

@@ -969,6 +969,10 @@ def generate_whatsapp_ref():
     return f'WA-{token}'
 
 
+def generate_whatsapp_review_token():
+    return secrets.token_urlsafe(24)
+
+
 class WhatsAppCheckout(models.Model):
     """A Buy-on-WhatsApp click — and, if the chat turns into a sale, the
     record of that sale.
@@ -1014,6 +1018,12 @@ class WhatsAppCheckout(models.Model):
                   'mark the sale completed.',
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='clicked')
+    review_token = models.CharField(
+        max_length=48, unique=True, null=True, blank=True, editable=False,
+        help_text='One-time review link token, minted when the sale is marked '
+                  'completed. The link is pasted into the WhatsApp chat so the '
+                  'buyer can review without an account.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -1033,6 +1043,22 @@ class WhatsAppCheckout(models.Model):
             if kwargs.get('update_fields') is not None:
                 kwargs['update_fields'] = set(kwargs['update_fields']) | {'ref'}
         super().save(*args, **kwargs)
+
+    def ensure_review_token(self):
+        """Mint the buyer's review-link token if missing (caller saves)."""
+        if self.review_token:
+            return self.review_token
+        token = generate_whatsapp_review_token()
+        while WhatsAppCheckout.objects.filter(review_token=token).exists():
+            token = generate_whatsapp_review_token()
+        self.review_token = token
+        return token
+
+    @property
+    def review_url(self):
+        if not self.review_token:
+            return ''
+        return f'{settings.PUBLIC_SITE_URL}/review/{self.review_token}'
 
     def __str__(self):
         return f'{self.ref} - {self.listing_title or "general chat"} - {self.get_status_display()}'
@@ -1170,10 +1196,19 @@ class Order(models.Model):
 # ── Reviews ──────────────────────────────────────────────────────────────────
 
 class Review(models.Model):
-    """Buyer review of a seller after a completed order."""
-    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='review')
+    """Buyer review of a seller, from a completed on-site order OR a completed
+    WhatsApp sale (via the tokenized review link — no account needed)."""
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='review',
+                                 null=True, blank=True)
+    whatsapp_checkout = models.OneToOneField(
+        'WhatsAppCheckout', on_delete=models.CASCADE, related_name='review',
+        null=True, blank=True,
+        help_text='Set instead of order when the sale closed on WhatsApp.',
+    )
     reviewer = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews_given',
+        null=True, blank=True,
+        help_text='Empty for WhatsApp-sale reviews — the buyer has no account.',
     )
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews_received',
@@ -1196,9 +1231,41 @@ class Review(models.Model):
         indexes = [
             models.Index(fields=['seller', '-created_at'], name='review_seller_created_idx'),
         ]
+        constraints = [
+            models.CheckConstraint(
+                name='review_exactly_one_source',
+                condition=(
+                    models.Q(order__isnull=False, whatsapp_checkout__isnull=True) |
+                    models.Q(order__isnull=True, whatsapp_checkout__isnull=False)
+                ),
+            ),
+        ]
+
+    @property
+    def source_listing_title(self):
+        """Title of what was bought, whichever record the review came from."""
+        if self.order_id:
+            return self.order.listing_title
+        if self.whatsapp_checkout_id:
+            return self.whatsapp_checkout.listing_title
+        return ''
 
     def __str__(self):
-        return f"{self.reviewer.username} → {self.seller.username}: {self.rating}★"
+        reviewer = self.reviewer.username if self.reviewer_id else 'WhatsApp buyer'
+        return f"{reviewer} → {self.seller.username}: {self.rating}★"
+
+
+class ReviewImage(models.Model):
+    """Buyer-uploaded photo attached to a review. Publicly visible."""
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='review_images/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"Image #{self.pk} on review #{self.review_id}"
 
 
 # ── Notifications ────────────────────────────────────────────────────────────

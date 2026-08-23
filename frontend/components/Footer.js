@@ -34,6 +34,7 @@ export default function Footer() {
               {/* /offline-activation lost its home-page panel (2026-08-15) —
                   this is now its only internal link, so don't drop it. */}
               <li><Link href="/offline-activation">Offline Activation</Link></li>
+              <li><Link href="/reviews">Reviews</Link></li>
               <li><Link href="/support">Support</Link></li>
             </ul>
           </div>

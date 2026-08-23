@@ -15,6 +15,7 @@ import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
+import ReviewPhotos from '@/components/ReviewPhotos';
 
 const LISTING_REVIEW_PAGE_SIZE = 5;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
@@ -771,6 +772,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                     {review.comment && (
                       <div className="review-card-comment">{review.comment}</div>
                     )}
+                    <ReviewPhotos images={review.images} />
                     {review.listing_title && (
                       <div className="review-card-listing">Purchased: {review.listing_title}</div>
                     )}

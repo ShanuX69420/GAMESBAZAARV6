@@ -233,6 +233,230 @@
   font-size: 0.72rem;
 }
 
+/* ── Review Photos ─────────────────────────────────────────────────────── */
+
+.review-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.review-photo-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+button.review-photo-thumb {
+  cursor: zoom-in;
+}
+
+.review-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.review-photo-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-photo-add {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.review-photo-add:hover {
+  border-color: var(--green-400);
+  color: var(--green-600);
+  background: var(--green-50);
+}
+
+.review-photos-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Public /reviews Page ──────────────────────────────────────────────── */
+
+.reviews-page {
+  padding-top: 32px;
+  padding-bottom: 56px;
+  max-width: 860px;
+}
+
+.reviews-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.reviews-page-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+}
+
+.reviews-page .sp-rating-dist {
+  margin-bottom: 24px;
+}
+
+@media (max-width: 640px) {
+  .reviews-page {
+    padding-top: 20px;
+  }
+
+  .reviews-page .sp-rating-dist {
+    flex-direction: column;
+    gap: 18px;
+    padding: 18px;
+  }
+}
+
+/* ── WhatsApp Review-Link Page ─────────────────────────────────────────── */
+
+.wa-review-page {
+  padding-top: 40px;
+  padding-bottom: 56px;
+  max-width: 560px;
+}
+
+.wa-review-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 28px;
+}
+
+.wa-review-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.wa-review-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 18px;
+}
+
+@media (max-width: 640px) {
+  .wa-review-page {
+    padding-top: 20px;
+  }
+
+  .wa-review-card {
+    padding: 20px;
+  }
+}
+
+/* ── Fullscreen Photo Viewer ───────────────────────────────────────────── */
+
+.review-photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.88);
+  cursor: zoom-out;
+}
+
+.review-photo-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-md);
+  cursor: default;
+}
+
+.review-photo-viewer-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.review-photo-viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 4px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.review-photo-viewer-prev {
+  left: 14px;
+}
+
+.review-photo-viewer-next {
+  right: 14px;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ── Seller Profile Page (Minimal Redesign) ─────────────────────────────── */
@@ -769,6 +993,17 @@
 .site-reviews-summary-stars {
   color: #F59E0B;
   letter-spacing: 1px;
+}
+
+.site-reviews-all-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--green-600);
+  text-decoration: none;
+}
+
+.site-reviews-all-link:hover {
+  text-decoration: underline;
 }
 
 /* Two identical tracks side by side. Track one slides its full width plus the

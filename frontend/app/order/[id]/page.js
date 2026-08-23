@@ -8,6 +8,11 @@ import { getOrderDetail, deliverOrder, refundOrder, createReview, updateReview, 
 import { orderLabel } from '@/lib/orderNumbers';
 import ChatBox from '@/components/ChatBox';
 import Linkified from '@/components/Linkified';
+import ReviewPhotos from '@/components/ReviewPhotos';
+import ReviewPhotoPicker from '@/components/ReviewPhotoPicker';
+
+const MAX_REVIEW_PHOTOS = 3;
+const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -24,6 +29,11 @@ export default function OrderDetailPage() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
+  // New photos picked in the form ({file, previewUrl}), photos already on the
+  // saved review ({id, url}), and saved photos marked for removal while editing.
+  const [reviewPhotos, setReviewPhotos] = useState([]);
+  const [reviewExistingPhotos, setReviewExistingPhotos] = useState([]);
+  const [removePhotoIds, setRemovePhotoIds] = useState([]);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [editingReview, setEditingReview] = useState(false);
   const [sellerReplyText, setSellerReplyText] = useState('');
@@ -172,6 +182,53 @@ export default function OrderDetailPage() {
     });
   }
 
+  function clearReviewPhotos() {
+    setReviewPhotos((prev) => {
+      prev.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      return [];
+    });
+    setReviewExistingPhotos([]);
+    setRemovePhotoIds([]);
+  }
+
+  function handlePhotoSelect(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // let the same file be picked again after removal
+    if (!files.length) return;
+    setError('');
+    const room = MAX_REVIEW_PHOTOS - reviewExistingPhotos.length - reviewPhotos.length;
+    if (files.length > room) {
+      setError(`You can attach up to ${MAX_REVIEW_PHOTOS} photos.`);
+      return;
+    }
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        setError('Only image files can be attached.');
+        return;
+      }
+      if (file.size > MAX_REVIEW_PHOTO_BYTES) {
+        setError('Each photo must be 5MB or smaller.');
+        return;
+      }
+    }
+    setReviewPhotos((prev) => [
+      ...prev,
+      ...files.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
+    ]);
+  }
+
+  function removeNewPhoto(index) {
+    setReviewPhotos((prev) => {
+      URL.revokeObjectURL(prev[index].previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  function removeExistingPhoto(photoId) {
+    setReviewExistingPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+    setRemovePhotoIds((prev) => [...prev, photoId]);
+  }
+
   async function handleReview(e) {
     e.preventDefault();
     if (reviewRating === 0) return;
@@ -179,12 +236,16 @@ export default function OrderDetailPage() {
     setSuccess('');
     try {
       if (editingReview && order.review_data) {
-        await updateReview(order.review_data.id, reviewRating, reviewComment);
+        await updateReview(order.review_data.id, reviewRating, reviewComment, {
+          photos: reviewPhotos.map((photo) => photo.file),
+          removePhotoIds,
+        });
         setSuccess('Review updated!');
       } else {
-        await createReview(id, reviewRating, reviewComment);
+        await createReview(id, reviewRating, reviewComment, reviewPhotos.map((photo) => photo.file));
         setSuccess('Review submitted! Thank you for your feedback.');
       }
+      clearReviewPhotos();
       setReviewSubmitted(true);
       setEditingReview(false);
       await loadOrder();
@@ -197,6 +258,8 @@ export default function OrderDetailPage() {
     if (order.review_data) {
       setReviewRating(order.review_data.rating);
       setReviewComment(order.review_data.comment || '');
+      clearReviewPhotos();
+      setReviewExistingPhotos(order.review_data.images || []);
       setEditingReview(true);
       setReviewSubmitted(false);
     }
@@ -207,6 +270,7 @@ export default function OrderDetailPage() {
     setReviewRating(0);
     setReviewHover(0);
     setReviewComment('');
+    clearReviewPhotos();
   }
 
   async function handleSellerReply() {
@@ -529,6 +593,14 @@ export default function OrderDetailPage() {
                     rows={3}
                   />
                 </div>
+                <ReviewPhotoPicker
+                  existingPhotos={reviewExistingPhotos}
+                  newPhotos={reviewPhotos}
+                  onSelect={handlePhotoSelect}
+                  onRemoveNew={removeNewPhoto}
+                  onRemoveExisting={removeExistingPhoto}
+                  max={MAX_REVIEW_PHOTOS}
+                />
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button type="submit" className="btn btn-primary" disabled={reviewRating === 0}>
                     {editingReview ? 'Update Review' : 'Submit Review'}
@@ -563,6 +635,7 @@ export default function OrderDetailPage() {
                 {reviewData.comment && (
                   <div className="review-card-comment">{reviewData.comment}</div>
                 )}
+                <ReviewPhotos images={reviewData.images} />
                 {/* Show seller reply */}
                 {reviewData.seller_reply && (
                   <div className="review-reply-block">
@@ -594,6 +667,7 @@ export default function OrderDetailPage() {
                 {reviewData.comment && (
                   <div className="review-card-comment">{reviewData.comment}</div>
                 )}
+                <ReviewPhotos images={reviewData.images} />
                 {reviewData.seller_reply ? (
                   <div className="review-reply-block">
                     <div className="review-reply-header">

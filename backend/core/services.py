@@ -758,6 +758,9 @@ def complete_whatsapp_checkout(checkout):
     warnings = []
     checkout.status = 'completed'
     checkout.completed_at = timezone.now()
+    # Every completed sale gets a review-link token — the admin pastes the
+    # link into the chat so the buyer can review without an account.
+    checkout.ensure_review_token()
     checkout.save()
 
     if checkout.listing_id:
@@ -785,6 +788,19 @@ def complete_whatsapp_checkout(checkout):
 
     meta_capi.queue_whatsapp_purchase_event(checkout)
     return warnings
+
+
+def resolve_whatsapp_review_seller(checkout):
+    """Which seller account a WhatsApp-sale review belongs to.
+
+    The listing's seller when the click came from a listing; otherwise the
+    official store account (general-chat sales are always the shop's own).
+    Returns None when neither exists — the review endpoint then refuses.
+    """
+    if checkout.listing_id and checkout.listing:
+        return checkout.listing.seller
+    from django.contrib.auth.models import User
+    return User.objects.filter(profile__is_official_store=True).first()
 
 
 def record_withdrawal_approval_once(withdraw):
@@ -844,6 +860,7 @@ IMAGE_OPTIMIZE_PRESETS = {
     'game_icon': {'max_size': 256, 'quality': 85},
     'chat': {'max_size': 1920, 'quality': 80},
     'proof': {'max_size': 2000, 'quality': 80},
+    'review': {'max_size': 1920, 'quality': 80},
 }
 
 

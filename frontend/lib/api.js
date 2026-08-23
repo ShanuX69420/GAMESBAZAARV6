@@ -638,11 +638,16 @@ export async function refundOrder(id) {
 
 // ── Reviews API ─────────────────────────────────────────────────────────────
 
-export async function createReview(orderId, rating, comment = '') {
+export async function createReview(orderId, rating, comment = '', photos = []) {
+  const formData = new FormData();
+  formData.append('order_id', orderId);
+  formData.append('rating', rating);
+  formData.append('comment', comment);
+  photos.forEach((photo) => formData.append('images', photo));
+
   const res = await authFetch(`${API_BASE}/api/reviews/`, {
     method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ order_id: orderId, rating, comment }),
+    body: formData,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to submit review');
@@ -657,14 +662,50 @@ export async function getSellerReviews(username, pagination = {}, options = {}) 
   return res.json();
 }
 
-export async function updateReview(reviewId, rating, comment = '') {
+// Every review on the site — feeds the public /reviews page.
+export async function getAllReviews(pagination = {}, options = {}) {
+  const url = `${API_BASE}/api/reviews/all/${paginationQuery(pagination)}`;
+  const hasOptions = Object.keys(options).length > 0;
+  const res = hasOptions ? await fetch(url, options) : await fetch(url);
+  if (!res.ok) throw new Error('Failed to get reviews');
+  return res.json();
+}
+
+export async function updateReview(reviewId, rating, comment = '', { photos = [], removePhotoIds = [] } = {}) {
+  const formData = new FormData();
+  formData.append('rating', rating);
+  formData.append('comment', comment);
+  photos.forEach((photo) => formData.append('images', photo));
+  removePhotoIds.forEach((id) => formData.append('remove_image_ids', id));
+
   const res = await authFetch(`${API_BASE}/api/reviews/${reviewId}/`, {
     method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify({ rating, comment }),
+    body: formData,
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to update review');
+  return data;
+}
+
+// The WhatsApp review link — no account, the token in the link is the auth.
+export async function getWhatsAppReviewContext(token) {
+  const res = await fetch(`${API_BASE}/api/reviews/whatsapp/${pathSegment(token)}/`);
+  if (!res.ok) throw new Error('Review link not found');
+  return res.json();
+}
+
+export async function submitWhatsAppReview(token, rating, comment = '', photos = []) {
+  const formData = new FormData();
+  formData.append('rating', rating);
+  formData.append('comment', comment);
+  photos.forEach((photo) => formData.append('images', photo));
+
+  const res = await fetch(`${API_BASE}/api/reviews/whatsapp/${pathSegment(token)}/`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to submit review');
   return data;
 }
 

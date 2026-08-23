@@ -314,6 +314,8 @@ REST_FRAMEWORK = {
         # Per client IP, and carriers NAT many subscribers behind one address
         # (see auth_register above) — leave room for several real shoppers.
         'whatsapp_checkout': '120/hour',
+        # Review-link submissions — one per sale, so this is pure abuse headroom.
+        'whatsapp_review': '10/hour',
         # Guest checkout mints an account per success, so it mirrors the
         # register limits: successes counted separately from attempts.
         'guest_checkout': '10/hour',

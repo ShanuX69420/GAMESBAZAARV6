@@ -7,6 +7,7 @@ import { getSellerProfile, getSellerReviews, replyToReview } from '@/lib/api';
 import { buildSellerListingsPath } from '@/lib/marketplaceUrls';
 import { useAuth } from '@/lib/auth';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
+import ReviewPhotos from '@/components/ReviewPhotos';
 
 const REVIEW_PAGE_SIZE = 20;
 
@@ -276,6 +277,7 @@ export default function SellerProfileClient({
                   {review.comment && (
                     <div className="review-card-comment">{review.comment}</div>
                   )}
+                  <ReviewPhotos images={review.images} />
                   {review.listing_title && (
                     <div className="review-card-listing">Purchased: {review.listing_title}</div>
                   )}

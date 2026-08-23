@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { fetchSiteReviews } from '@/lib/api';
 import { marqueeDuration, repeatToFillLoop } from '@/lib/marquee';
 
@@ -70,6 +71,9 @@ export default async function SiteReviews() {
             </span>
           </p>
         )}
+        <Link href="/reviews" className="site-reviews-all-link">
+          View all reviews
+        </Link>
       </div>
 
       <div className="site-reviews-viewport">
