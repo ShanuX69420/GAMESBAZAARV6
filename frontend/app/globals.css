@@ -11642,6 +11642,13 @@ html[data-auth-hint="1"] .navbar-guest-links {
   margin-top: 0;
 }
 
+.category-seo-text h3 {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
 .category-seo-text p {
   margin: 0 0 12px;
 }

@@ -27,7 +27,8 @@ async function fetchInitialCategoryData({ slug, categorySlug, option, method, re
 }
 
 // Server-rendered so crawlers see the text without JS. Blank lines separate
-// paragraphs; "## " lines become subheadings (matches the seo_body help text).
+// paragraphs; "## " lines become subheadings and "### " sub-subheadings, e.g.
+// FAQ questions (matches the seo_body help text).
 function CategorySeoText({ text }) {
   const blocks = String(text || '')
     .split(/\n\s*\n/)
@@ -38,11 +39,15 @@ function CategorySeoText({ text }) {
   return (
     <div className="container">
       <section className="category-seo-text">
-        {blocks.map((block, index) => (
-          block.startsWith('## ')
-            ? <h2 key={index}>{block.slice(3).trim()}</h2>
-            : <p key={index}>{block}</p>
-        ))}
+        {blocks.map((block, index) => {
+          if (block.startsWith('### ')) {
+            return <h3 key={index}>{block.slice(4).trim()}</h3>;
+          }
+          if (block.startsWith('## ')) {
+            return <h2 key={index}>{block.slice(3).trim()}</h2>;
+          }
+          return <p key={index}>{block}</p>;
+        })}
       </section>
     </div>
   );
