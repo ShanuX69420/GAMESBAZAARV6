@@ -472,8 +472,8 @@ describe('SEO route metadata', () => {
   it('gives the homepage its own keyword title and self-canonical', () => {
     const source = readProjectFile('app/page.js');
 
-    expect(source).toContain('export const metadata = createPublicMetadata({');
-    expect(source).toContain("title: 'Buy Game Keys, Accounts, Top-Ups & Gift Cards in Pakistan'");
+    expect(source).toContain("const HOME_TITLE = 'Buy Game Keys, Accounts, Top-Ups & Gift Cards in Pakistan'");
+    expect(source).toContain('title: `${HOME_TITLE} | ${SITE_NAME}`');
     expect(source).toContain("path: '/',");
   });
 
