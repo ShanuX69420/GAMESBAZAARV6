@@ -221,6 +221,22 @@ export function productJsonLd({
   };
 }
 
+export function faqPageJsonLd(faqCategories) {
+  const questions = faqCategories.flatMap((faqCategory) => faqCategory.questions || []);
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: questions.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.a,
+      },
+    })),
+  };
+}
+
 export function collectionPageJsonLd({ name, description, path }) {
   return {
     '@context': 'https://schema.org',

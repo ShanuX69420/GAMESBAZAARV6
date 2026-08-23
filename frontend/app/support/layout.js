@@ -1,4 +1,6 @@
-import { createPublicMetadata } from '@/lib/seo';
+import { createPublicMetadata, faqPageJsonLd } from '@/lib/seo';
+import JsonLd from '@/components/JsonLd';
+import { FAQ_ITEMS } from './faqData';
 
 export const metadata = {
   ...createPublicMetadata({
@@ -9,5 +11,10 @@ export const metadata = {
 };
 
 export default function SupportLayout({ children }) {
-  return children;
+  return (
+    <>
+      <JsonLd data={faqPageJsonLd(FAQ_ITEMS)} />
+      {children}
+    </>
+  );
 }

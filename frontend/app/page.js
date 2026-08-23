@@ -1,10 +1,18 @@
 import { fetchGames, fetchHomePopular } from '@/lib/api';
+import { createPublicMetadata } from '@/lib/seo';
 import GameItem from '@/components/GameItem';
 import PopularPanel from '@/components/PopularPanel';
 import HomeCTA from '@/components/HomeCTA';
 import Link from 'next/link';
 
 const HOMEPAGE_GAME_LIMIT = 18;
+
+export const metadata = createPublicMetadata({
+  title: 'Buy Game Keys, Accounts, Top-Ups & Gift Cards in Pakistan',
+  description:
+    'Steam keys, game accounts, top-ups and gift cards at PKR prices. Pay with JazzCash, Easypaisa or bank transfer — instant delivery and easy refunds.',
+  path: '/',
+});
 
 export default async function HomePage() {
   let games = [];

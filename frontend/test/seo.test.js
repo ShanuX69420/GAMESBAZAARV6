@@ -457,12 +457,46 @@ describe('SEO route metadata', () => {
       '../app/login/layout.js',
       '../app/register/layout.js',
       '../app/forgot-password/layout.js',
+      '../app/verify-email/layout.js',
+      '../app/complete-profile/layout.js',
     ];
 
     for (const layoutPath of authLayoutPaths) {
       const { metadata } = await importFresh(layoutPath);
       expect(metadata.robots).toEqual({ index: false, follow: true });
     }
+  });
+
+  // Checked as source text: importing app/page.js pulls the whole JSX
+  // component tree, which vitest cannot parse from a .js file.
+  it('gives the homepage its own keyword title and self-canonical', () => {
+    const source = readProjectFile('app/page.js');
+
+    expect(source).toContain('export const metadata = createPublicMetadata({');
+    expect(source).toContain("title: 'Buy Game Keys, Accounts, Top-Ups & Gift Cards in Pakistan'");
+    expect(source).toContain("path: '/',");
+  });
+
+  it('folds every support FAQ into FAQPage JSON-LD', async () => {
+    const { faqPageJsonLd } = await importFresh('../lib/seo.js');
+    const { FAQ_ITEMS } = await importFresh('../app/support/faqData.js');
+
+    const data = faqPageJsonLd(FAQ_ITEMS);
+    const totalQuestions = FAQ_ITEMS.reduce(
+      (sum, faqCategory) => sum + faqCategory.questions.length,
+      0,
+    );
+
+    expect(data['@type']).toBe('FAQPage');
+    expect(data.mainEntity).toHaveLength(totalQuestions);
+    expect(data.mainEntity[0]).toEqual({
+      '@type': 'Question',
+      name: 'How do I buy something on GamesBazaar?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: expect.stringContaining('Buy Now'),
+      },
+    });
   });
 
   it('generates seller metadata from route params without an extra API request', async () => {
