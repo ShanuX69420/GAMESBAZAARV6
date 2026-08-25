@@ -199,7 +199,10 @@ class WhatsAppCompletionTests(PurchaseFixtureMixin, TestCase):
         warnings, dispatch = self._complete(checkout)
 
         (event,) = dispatch.call_args.args[0]['data']
-        self.assertEqual(event['user_data'], {'ph': [sha256('923001234567')]})
+        self.assertEqual(event['user_data'], {
+            'country': [sha256('pk')],
+            'ph': [sha256('923001234567')],
+        })
 
     def test_completed_sales_reach_the_admin_dashboard(self):
         # WhatsApp sales create no Order rows, so the dashboard reads them

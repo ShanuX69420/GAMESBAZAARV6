@@ -65,6 +65,13 @@ class UserDataTests(TestCase):
         self.assertEqual(data['fbc'], 'fb.1.1700000000.AbCdEf')
         self.assertEqual(data['ph'], [sha256('923001234567')])
 
+    def test_country_is_always_sent(self):
+        # Pakistan-only marketplace — every event carries the hashed ISO code.
+        self.assertEqual(meta_capi._user_data()['country'], [sha256('pk')])
+        self.assertEqual(
+            meta_capi._user_data(user=self.user)['country'], [sha256('pk')],
+        )
+
     def test_empty_values_are_omitted(self):
         self.user.email = ''
         data = meta_capi._user_data(user=self.user, tracking={'fbp': '', 'phone': ''})

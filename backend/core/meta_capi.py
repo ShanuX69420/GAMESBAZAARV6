@@ -87,7 +87,9 @@ def _user_data(*, user=None, tracking=None):
     back from JSON), optionally with a raw ``phone`` entry added by the
     caller (JazzCash buys know the buyer's wallet MSISDN).
     """
-    data = {}
+    # PKR-only Pakistani marketplace — country is a constant match key
+    # (Meta wants the hashed two-letter ISO code, lowercase).
+    data = {'country': [_sha256('pk')]}
     tracking = tracking or {}
 
     email = (user.email if user is not None else '').strip().lower()

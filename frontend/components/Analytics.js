@@ -39,7 +39,9 @@ function installStubs() {
     script.async = true;
     script.src = 'https://connect.facebook.net/en_US/fbevents.js';
     document.head.appendChild(script);
-    window.fbq('init', PIXEL_ID);
+    // Advanced matching: PKR-only Pakistani marketplace, so country is a
+    // constant match key. fbevents.js hashes it before sending.
+    window.fbq('init', PIXEL_ID, { country: 'pk' });
     window.fbq('track', 'PageView');
   }
 }
