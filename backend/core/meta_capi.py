@@ -135,6 +135,29 @@ def queue_purchase_event(order, *, buyer, tracking=None):
     _queue(event)
 
 
+def queue_view_content_event(listing, *, event_id, user=None, tracking=None):
+    """Register a server-side ViewContent for a listing page view. The
+    browser mints the event ID, fires the pixel with it, and reports it to
+    /api/track/listing-view/ — so Meta dedups the pair, and ad-blocked
+    visitors (who can't reach Facebook but can reach our API) still count."""
+    event = {
+        'event_name': 'ViewContent',
+        'event_time': int(time.time()),
+        'event_id': event_id,
+        'action_source': 'website',
+        'event_source_url': f'{settings.PUBLIC_SITE_URL}/listing/{listing.pk}',
+        'user_data': _user_data(user=user, tracking=tracking),
+        'custom_data': {
+            'currency': CURRENCY,
+            'value': float(listing.price),
+            'content_ids': [str(listing.pk)],
+            'content_type': 'product',
+            'content_name': listing.title[:200],
+        },
+    }
+    _queue(event)
+
+
 def queue_registration_event(user, *, method, tracking=None):
     """Register a server-side CompleteRegistration (email or google signup).
     Server-side only — no browser counterpart, so no dedup needed."""

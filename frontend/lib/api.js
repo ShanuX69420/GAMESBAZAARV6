@@ -562,6 +562,19 @@ export async function createWhatsAppCheckout(body) {
   return res.json();
 }
 
+// Server half of the pixel's ViewContent pair (see trackViewListing): reports
+// the listing view with the pixel's event ID so the backend can send the same
+// event via the Conversions API. Fire-and-forget — tracking must never
+// surface an error or block anything.
+export function reportListingView(listingId, eventId) {
+  authFetch(`${API_BASE}/api/track/listing-view/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ listing_id: listingId, event_id: eventId }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export async function getMyOrders({ limit, offset, beforeId, status, search, date_from, date_to, cursor } = {}) {
   const params = new URLSearchParams();
   if (limit !== undefined && limit !== null) params.set('limit', String(limit));

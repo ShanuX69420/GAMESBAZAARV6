@@ -2,6 +2,8 @@
 // when the corresponding script isn't loaded (ID not configured, ad blocker,
 // SSR), so callers never need to guard.
 
+import { reportListingView } from '@/lib/api';
+
 const CURRENCY = 'PKR';
 
 function gtag(...args) {
@@ -39,7 +41,16 @@ function pixelContents(listing) {
 export function trackViewListing(listing) {
   const value = Number(listing.price);
   gtag('event', 'view_item', { currency: CURRENCY, value, items: [gaItem(listing, 1)] });
-  fbq('track', 'ViewContent', { ...pixelContents(listing), currency: CURRENCY, value });
+  // window.fbq exists whenever the pixel is configured (the Analytics stub
+  // installs it even when an ad blocker stops fbevents.js from loading) —
+  // so gating on it skips unconfigured environments but still reports
+  // ad-blocked views. The backend sends the same ViewContent via the
+  // Conversions API with this exact eventID, so Meta deduplicates the pair.
+  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
+  const eventID =
+    `vc-${listing.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  window.fbq('track', 'ViewContent', { ...pixelContents(listing), currency: CURRENCY, value }, { eventID });
+  reportListingView(listing.id, eventID);
 }
 
 export function trackBeginCheckout(listing, quantity) {

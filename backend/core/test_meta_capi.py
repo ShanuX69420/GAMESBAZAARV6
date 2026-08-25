@@ -356,3 +356,78 @@ class DeliverTests(TestCase):
             with self.assertLogs('core.meta_capi', level='ERROR') as logs:
                 self.assertFalse(meta_capi.deliver(self.PAYLOAD))
         self.assertNotIn('test-access-token', '\n'.join(logs.output))
+
+
+@override_settings(**META_TEST_SETTINGS)
+class ListingViewTrackTests(PurchaseFixtureMixin, TestCase):
+    URL = '/api/track/listing-view/'
+
+    def setUp(self):
+        self._make_marketplace()
+
+    def _report(self, body):
+        self.client.cookies['_fbp'] = 'fb.1.1700000000.111'
+        with patch('core.meta_capi._dispatch') as dispatch:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    self.URL, body, format='json',
+                    HTTP_ORIGIN='http://testserver',
+                    HTTP_X_REAL_IP='39.50.1.2',
+                    HTTP_USER_AGENT='TestBrowser/1.0',
+                )
+        return response, dispatch
+
+    def test_guest_view_sends_deduplicated_view_content(self):
+        response, dispatch = self._report(
+            {'listing_id': self.listing.id, 'event_id': 'vc-1-abc123'},
+        )
+
+        self.assertEqual(response.status_code, 204)
+        dispatch.assert_called_once()
+        (event,) = dispatch.call_args.args[0]['data']
+        self.assertEqual(event['event_name'], 'ViewContent')
+        # Must match the browser pixel's client-minted eventID verbatim.
+        self.assertEqual(event['event_id'], 'vc-1-abc123')
+        self.assertEqual(event['action_source'], 'website')
+        self.assertIn(f'/listing/{self.listing.id}', event['event_source_url'])
+        self.assertEqual(event['custom_data']['currency'], 'PKR')
+        self.assertEqual(event['custom_data']['value'], 150.0)
+        self.assertEqual(event['custom_data']['content_ids'], [str(self.listing.id)])
+        user_data = event['user_data']
+        self.assertEqual(user_data['fbp'], 'fb.1.1700000000.111')
+        self.assertEqual(user_data['client_ip_address'], '39.50.1.2')
+        self.assertNotIn('em', user_data)
+
+    def test_logged_in_view_carries_identity(self):
+        self.client.force_authenticate(user=self.buyer)
+        response, dispatch = self._report(
+            {'listing_id': self.listing.id, 'event_id': 'vc-1-abc123'},
+        )
+
+        self.assertEqual(response.status_code, 204)
+        user_data = dispatch.call_args.args[0]['data'][0]['user_data']
+        self.assertEqual(user_data['em'], [sha256('buyer@example.com')])
+        self.assertEqual(user_data['external_id'], [sha256(str(self.buyer.pk))])
+
+    def test_malformed_event_ids_are_dropped_silently(self):
+        for bad in ('', 'purchase-9', 'vc-<script>', 'vc-' + 'x' * 70):
+            response, dispatch = self._report(
+                {'listing_id': self.listing.id, 'event_id': bad},
+            )
+            self.assertEqual(response.status_code, 204)
+            dispatch.assert_not_called()
+
+    def test_unknown_listing_is_dropped_silently(self):
+        response, dispatch = self._report(
+            {'listing_id': 999999, 'event_id': 'vc-999999-abc123'},
+        )
+        self.assertEqual(response.status_code, 204)
+        dispatch.assert_not_called()
+
+    def test_no_event_when_capi_not_configured(self):
+        with override_settings(META_PIXEL_ID='', META_CAPI_ACCESS_TOKEN=''):
+            response, dispatch = self._report(
+                {'listing_id': self.listing.id, 'event_id': 'vc-1-abc123'},
+            )
+        self.assertEqual(response.status_code, 204)
+        dispatch.assert_not_called()

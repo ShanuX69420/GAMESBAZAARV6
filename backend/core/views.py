@@ -4016,6 +4016,45 @@ class WhatsAppCheckoutView(ScopedPostThrottleMixin, APIView):
         return Response({'ref': checkout.ref}, status=201)
 
 
+class ListingViewTrackView(ScopedPostThrottleMixin, APIView):
+    """POST /api/track/listing-view/ — server-side half of the ViewContent pair.
+
+    The browser pixel fires ViewContent with a client-minted event ID and
+    reports the same ID here; we send the matching Conversions API event so
+    Meta dedups the pair. Ad blockers stop Facebook's domains, not ours, so
+    blocked browsers are counted through this path alone. Fire-and-forget:
+    always 204, never an error the frontend would have to handle.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'listing_view_track'
+
+    def post(self, request):
+        enforce_trusted_origin(request)
+        if not meta_capi.is_configured():
+            return Response(status=204)
+
+        event_id = str(request.data.get('event_id') or '')
+        if not (
+            event_id.startswith('vc-')
+            and len(event_id) <= 64
+            and all(ch.isalnum() or ch == '-' for ch in event_id)
+        ):
+            return Response(status=204)
+
+        try:
+            listing = Listing.objects.get(pk=int(request.data.get('listing_id')))
+        except (TypeError, ValueError, Listing.DoesNotExist):
+            return Response(status=204)
+
+        meta_capi.queue_view_content_event(
+            listing,
+            event_id=event_id,
+            user=request.user if request.user.is_authenticated else None,
+            tracking=meta_capi.tracking_from_request(request),
+        )
+        return Response(status=204)
+
+
 class MyOrdersView(APIView):
     """GET /api/orders/mine/ — Orders where I'm the buyer.
     Query params: status, search, date_from, date_to, limit, offset

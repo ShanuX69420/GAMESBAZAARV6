@@ -69,6 +69,9 @@ urlpatterns = [
     # WhatsApp checkout (Buy-on-WhatsApp click tracking — open to guests)
     path('whatsapp/checkout/', views.WhatsAppCheckoutView.as_view(), name='whatsapp-checkout'),
 
+    # Meta CAPI listing-view pairing (server half of pixel ViewContent — open to guests)
+    path('track/listing-view/', views.ListingViewTrackView.as_view(), name='track-listing-view'),
+
     # Orders
     path('orders/buy/', views.BuyListingView.as_view(), name='buy-listing'),
     path('orders/mine/', views.MyOrdersView.as_view(), name='my-orders'),

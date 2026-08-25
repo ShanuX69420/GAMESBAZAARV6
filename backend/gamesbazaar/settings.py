@@ -314,6 +314,10 @@ REST_FRAMEWORK = {
         # Per client IP, and carriers NAT many subscribers behind one address
         # (see auth_register above) — leave room for several real shoppers.
         'whatsapp_checkout': '120/hour',
+        # One per listing-page view. Browsing is high-volume and carrier NAT
+        # shares IPs, so this only exists to stop scripted floods of fake
+        # ViewContent events — throttled views just fall back to pixel-only.
+        'listing_view_track': '600/hour',
         # Review-link submissions — one per sale, so this is pure abuse headroom.
         'whatsapp_review': '10/hour',
         # Guest checkout mints an account per success, so it mirrors the
