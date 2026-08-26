@@ -19,7 +19,7 @@ Do not directly edit files on the VPS unless it is an emergency. GitHub should b
 VPS IP:
 
 ```text
-68.183.184.129
+178.128.127.124
 ```
 
 Main domain:
@@ -45,7 +45,7 @@ C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519
 SSH into the server from Windows PowerShell:
 
 ```powershell
-ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129
+ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@178.128.127.124
 ```
 
 After you SSH in, you are running Linux commands on the VPS.
@@ -105,7 +105,7 @@ Use this when you pushed new code to GitHub and want the VPS updated.
 SSH into the server first:
 
 ```powershell
-ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129
+ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@178.128.127.124
 ```
 
 Then run:

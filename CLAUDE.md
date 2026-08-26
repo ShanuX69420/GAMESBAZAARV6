@@ -33,12 +33,13 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 
 ## Production
 
-- DigitalOcean VPS `68.183.184.129` (**Singapore / SGP1**, Premium AMD 2 vCPU / 4 GB
-  since 2026-07-19). Domains: gamesbazaar.pk, www, api.
+- DigitalOcean VPS `178.128.127.124` (**Singapore / SGP1**, Premium AMD 1 vCPU / 2 GB
+  since 2026-08-27 — migrated off the old 4 GB droplet `68.183.184.129`, which relays
+  traffic until destroyed). Domains: gamesbazaar.pk, www, api.
   Migrated out of Bangalore on 2026-07-14 — see the India landmine below. **Never move it
   back to an Indian region.** DNS is Cloudflare, 3 A records (apex/www/api), TTL 300s,
   proxy OFF (grey cloud — the orange cloud made the site slower, don't re-enable).
-- SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@68.183.184.129`
+- SSH: `ssh -i C:\Users\pc\.ssh\gamesbazaar_digitalocean_ed25519 root@178.128.127.124`
   — then run git/pip/manage.py as `sudo -u gamesbazaar`.
 - App at `/opt/gamesbazaar/app`, venv `/opt/gamesbazaar/venv`.
 - Services: `gamesbazaar-web` (gunicorn :8001 — ALL backend HTTP; no websockets

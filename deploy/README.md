@@ -9,6 +9,7 @@ machine can be rebuilt from this repo plus the nightly database backups
 | `nginx/gamesbazaar.conf` | `/etc/nginx/sites-available/gamesbazaar` (symlinked into `sites-enabled/`) |
 | `nginx/api-cache.conf` | `/etc/nginx/conf.d/api-cache.conf` (proxy-cache zone — `gamesbazaar.conf` fails `nginx -t` without it) |
 | `nginx/timing.conf` | `/etc/nginx/conf.d/timing.conf` (request-timing `log_format` → `/var/log/nginx/timing.log`; `gamesbazaar.conf` fails `nginx -t` without it) |
+| `nginx/gamesbazaar-upgrade-map.conf` | `/etc/nginx/conf.d/gamesbazaar-upgrade-map.conf` (defines `$connection_upgrade`; `gamesbazaar.conf` fails `nginx -t` without it) |
 | `systemd/*.service`, `systemd/*.timer` | `/etc/systemd/system/` |
 | `backup_db.py` | `/opt/gamesbazaar/backup_db.py` (chmod 750) |
 
@@ -31,3 +32,9 @@ Secrets are NOT in this folder — they live only in
 `/opt/gamesbazaar/app/frontend/.env.production` on the server.
 If you change a config here, copy it to the server too (and vice versa) —
 nothing syncs these automatically.
+
+Rebuild-from-scratch gotchas (hit during the 2026-08-27 droplet migration):
+- `mkdir -p /var/cache/nginx/api && chown -R www-data:www-data /var/cache/nginx`
+  before `nginx -t` — `api-cache.conf` points its proxy cache there.
+- `/opt/gamesbazaar` must be mode 755 (`adduser --system` creates it 750,
+  which breaks nginx's access to `backend/staticfiles/`).

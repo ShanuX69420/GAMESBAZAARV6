@@ -14,3 +14,4 @@ requests==2.34.2
 dkimpy==1.1.8
 sentry-sdk[django]==2.62.0
 python-dotenv==1.0.0
+redis==6.4.0
