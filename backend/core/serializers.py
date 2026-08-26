@@ -526,6 +526,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'instant_delivery',
             'required_checkout_fields', 'listing_reviews', 'created_at',
+            'sales_count',
         ]
 
     def get_option_name(self, obj):

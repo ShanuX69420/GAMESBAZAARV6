@@ -155,6 +155,7 @@ from .services import (
     validate_uploaded_image,
     optimize_uploaded_image,
     resolve_whatsapp_review_seller,
+    seller_profile_cache_key,
     generate_email_change_code,
     create_email_change_token,
     verify_email_change_token,
@@ -980,7 +981,7 @@ class GameCategoryDetailView(APIView):
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
             )
-            browse_cache_key = 'browse:v4:' + hashlib.sha256(
+            browse_cache_key = 'browse:v5:' + hashlib.sha256(
                 f'{request_origin_cache_scope(request)}:{game_slug}:'
                 f'{category_slug}:{param_signature}'.encode('utf-8')
             ).hexdigest()
@@ -4331,6 +4332,8 @@ class RefundOrderView(APIView):
             if order.status == 'cancelled':
                 return Response(OrderSerializer(order, context={'request': request}).data)
 
+            was_completed = order.status == 'completed'
+
             listing = None
             if order.listing_id:
                 listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
@@ -4393,6 +4396,17 @@ class RefundOrderView(APIView):
 
             order.status = 'cancelled'
             order.save(update_fields=['status', 'updated_at'])
+
+            # A refunded sale no longer counts as sold — roll back the
+            # "N sold" counter and the cached profile Sales stat.
+            if was_completed:
+                if order.listing_id:
+                    Listing.objects.filter(
+                        pk=order.listing_id, sales_count__gt=0,
+                    ).update(sales_count=F('sales_count') - 1)
+                db_transaction.on_commit(
+                    lambda sid=order.seller_id: cache.delete(seller_profile_cache_key(sid))
+                )
 
             post_order_chat_message(
                 order,
@@ -4502,6 +4516,7 @@ class CreateReviewView(APIView):
         # The sitewide strip shows the newest reviews — let it pick this one up
         # now instead of at the end of its 5-minute window.
         cache.delete(SITE_REVIEWS_CACHE_KEY)
+        cache.delete(seller_profile_cache_key(review.seller_id))
 
         return Response(ReviewSerializer(review, context={'request': request}).data, status=201)
 
@@ -4560,7 +4575,7 @@ class UpdateReviewView(APIView):
         )
 
         # Invalidate seller profile cache
-        cache.delete(f'seller-profile:v1:{review.seller_id}')
+        cache.delete(seller_profile_cache_key(review.seller_id))
         cache.delete(SITE_REVIEWS_CACHE_KEY)
 
         return Response(ReviewSerializer(review, context={'request': request}).data)
@@ -4588,7 +4603,7 @@ class ReplyToReviewView(APIView):
         review.save(update_fields=['seller_reply', 'seller_reply_at', 'updated_at'])
 
         # Invalidate seller profile cache
-        cache.delete(f'seller-profile:v1:{review.seller_id}')
+        cache.delete(seller_profile_cache_key(review.seller_id))
 
         return Response(ReviewSerializer(review, context={'request': request}).data)
 
@@ -4657,32 +4672,42 @@ class AllReviewsView(APIView):
 
 
 class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
-    """GET/POST /api/reviews/whatsapp/<token>/ — review a WhatsApp sale.
+    """GET/POST /api/reviews/whatsapp/<token>/ — review a sale via its link.
 
-    The token is minted when the admin marks the WhatsAppCheckout completed
-    and is pasted into the buyer's chat, so possession of the link IS the
-    authentication — no account or login involved. One review per sale.
+    Serves two token namespaces with one page: WhatsAppCheckout tokens
+    (minted when the admin marks the sale completed, pasted into the chat)
+    and Order tokens (minted when the review-request email goes out).
+    Possession of the link IS the authentication — no account or login
+    involved. One review per sale.
     """
     permission_classes = [permissions.AllowAny]
     throttle_scope = 'whatsapp_review'
 
     @staticmethod
-    def get_checkout(token):
-        return get_object_or_404(
-            WhatsAppCheckout.objects.select_related('listing__seller'),
-            review_token=token,
-            status='completed',
-        )
+    def get_review_target(token):
+        """The completed sale this token belongs to — checkout or order."""
+        checkout = WhatsAppCheckout.objects.select_related('listing__seller').filter(
+            review_token=token, status='completed',
+        ).first()
+        if checkout is not None:
+            return checkout, None
+        order = Order.objects.select_related('buyer', 'seller').filter(
+            review_token=token, status='completed',
+        ).first()
+        if order is not None:
+            return None, order
+        raise Http404
 
     def get(self, request, token):
-        checkout = self.get_checkout(token)
+        checkout, order = self.get_review_target(token)
+        target = checkout if checkout is not None else order
         try:
-            review = checkout.review
+            review = target.review
         except Review.DoesNotExist:
             review = None
         return Response({
-            'listing_title': checkout.listing_title,
-            'completed_at': checkout.completed_at,
+            'listing_title': target.listing_title,
+            'completed_at': target.completed_at,
             'reviewed': review is not None,
             'review': (
                 ReviewSerializer(review, context={'request': request}).data
@@ -4691,7 +4716,7 @@ class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
         })
 
     def post(self, request, token):
-        checkout = self.get_checkout(token)
+        checkout, order = self.get_review_target(token)
         serializer = UpdateReviewSerializer(data=request.data)  # rating + comment
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -4700,7 +4725,10 @@ class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
         if validation_error:
             return Response({'error': validation_error}, status=400)
 
-        seller = resolve_whatsapp_review_seller(checkout)
+        if checkout is not None:
+            seller = resolve_whatsapp_review_seller(checkout)
+        else:
+            seller = order.seller
         if seller is None:
             return Response(
                 {'error': 'This sale cannot be reviewed right now.'}, status=400,
@@ -4708,29 +4736,41 @@ class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
 
         try:
             with db_transaction.atomic():
-                locked = WhatsAppCheckout.objects.select_for_update().get(pk=checkout.pk)
-                if Review.objects.filter(whatsapp_checkout=locked).exists():
+                if checkout is not None:
+                    locked = WhatsAppCheckout.objects.select_for_update().get(pk=checkout.pk)
+                    review_source = {'whatsapp_checkout': locked, 'reviewer': None}
+                else:
+                    locked = Order.objects.select_for_update().get(pk=order.pk)
+                    # Email-link reviews still carry the buyer's name — the
+                    # order knows who bought.
+                    review_source = {'order': locked, 'reviewer': locked.buyer}
+                if Review.objects.filter(
+                    Q(whatsapp_checkout=locked) if checkout is not None else Q(order=locked)
+                ).exists():
                     return Response(
                         {'error': 'This sale has already been reviewed.'}, status=400,
                     )
 
                 review = Review.objects.create(
-                    whatsapp_checkout=locked,
-                    reviewer=None,
                     seller=seller,
                     rating=data['rating'],
                     comment=data.get('comment', ''),
+                    **review_source,
                 )
 
                 for image in images:
                     ReviewImage.objects.create(review=review, image=image)
 
+                reviewer_label = (
+                    'A WhatsApp buyer' if checkout is not None
+                    else locked.buyer.username
+                )
                 create_notification(
                     recipient=seller,
                     notification_type='new_review',
-                    title=f'New {data["rating"]}-star review (WhatsApp sale)',
+                    title=f'New {data["rating"]}-star review from {reviewer_label}',
                     message=(
-                        f'A WhatsApp buyer left a {data["rating"]}-star review'
+                        f'{reviewer_label} left a {data["rating"]}-star review'
                         + (f' for "{locked.listing_title}".' if locked.listing_title else '.')
                         + (f' "{data.get("comment", "")}"' if data.get('comment') else '')
                     ),
@@ -4740,7 +4780,7 @@ class WhatsAppReviewView(ScopedPostThrottleMixin, APIView):
             return Response({'error': 'This sale has already been reviewed.'}, status=400)
 
         cache.delete(SITE_REVIEWS_CACHE_KEY)
-        cache.delete(f'seller-profile:v1:{seller.id}')
+        cache.delete(seller_profile_cache_key(seller.id))
 
         return Response(ReviewSerializer(review, context={'request': request}).data, status=201)
 
@@ -4819,7 +4859,7 @@ class SellerProfileView(APIView):
             return Response({'error': 'Seller not found.'}, status=404)
 
         # Check cache for expensive aggregate queries
-        cache_key = f'seller-profile:v2:{seller.pk}'
+        cache_key = seller_profile_cache_key(seller.pk)
         cached = cache.get(cache_key)
         if cached is not None:
             # Online status and avatar must be fresh
@@ -4859,9 +4899,17 @@ class SellerProfileView(APIView):
             round(positive_count / review_count * 100, 1) if review_count > 0 else None
         )
 
-        # Get completed sales count
+        # Completed sales: on-site orders plus WhatsApp sales. General-chat
+        # WhatsApp sales carry no listing link — those belong to the shop's
+        # official store account.
         completed_sales = Order.objects.filter(
             seller=seller, status='completed'
+        ).count()
+        whatsapp_scope = Q(listing__seller=seller)
+        if profile.is_official_store:
+            whatsapp_scope |= Q(listing__isnull=True)
+        completed_sales += WhatsAppCheckout.objects.filter(
+            whatsapp_scope, status='completed',
         ).count()
 
         # Build game services and get active listing count in a single query

@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar send post-purchase review-request emails
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py send_review_requests

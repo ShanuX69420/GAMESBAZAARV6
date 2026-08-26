@@ -121,6 +121,10 @@ def _send_html_email(recipient_email, *, subject, template_name, context, fail_s
         text_parts.append(f'Admin note: {context["admin_note"]}')
     if context.get('extra_message'):
         text_parts.append(str(context['extra_message']))
+    if context.get('cta_url'):
+        text_parts.append(
+            f'{context.get("cta_label") or "Open"}: {context["cta_url"]}'
+        )
     if context.get('code'):
         text_parts.append(f'Your code: {context["code"]}')
     text_parts.extend(['', 'GamesBazaar'])
@@ -431,6 +435,36 @@ def send_guest_account_email(user):
     )
 
 
+def send_review_request_email(order):
+    """Queue the post-purchase "leave a review" email for a completed order.
+
+    The CTA is the no-login /review/<token> page (same one WhatsApp buyers
+    get), so guest-checkout buyers can review without setting a password.
+    Caller must have minted order.review_token first.
+    """
+    return send_transactional_email(
+        order.buyer,
+        subject='How was your order?',
+        message_body=(
+            f'Thanks for shopping at GamesBazaar — your order for '
+            f'"{order.listing_title}" is complete. If everything arrived as '
+            'expected, a quick review would mean a lot: it helps other '
+            'buyers shop with confidence.'
+        ),
+        detail_rows=[
+            ('Order', _order_reference(order)),
+            ('Item', order.listing_title),
+        ],
+        extra_message=(
+            'It takes under a minute and no sign-in is needed. If anything '
+            'was wrong with your order, message us on WhatsApp and we will '
+            'sort it out.'
+        ),
+        cta_url=order.review_url,
+        cta_label='Leave a Review',
+    )
+
+
 def send_topup_request_received_email(topup):
     return send_transactional_email(
         topup.user,
@@ -669,6 +703,22 @@ def release_order_funds_to_seller_once(order, *, sale_description, commission_de
     return wallet, True
 
 
+def seller_profile_cache_key(seller_id):
+    """Cache key for the public seller-profile payload.
+
+    Single source of truth for the version tag — SellerProfileView writes
+    this key and every event that changes the payload (reviews, completed
+    sales, refunds) must delete this exact key or the profile goes stale.
+    """
+    return f'seller-profile:v3:{seller_id}'
+
+
+def _invalidate_seller_profile_after_commit(seller_id):
+    transaction.on_commit(
+        lambda: cache.delete(seller_profile_cache_key(seller_id))
+    )
+
+
 def complete_order_with_seller_payout(order, *, sale_description, commission_description, ledger_description):
     """Complete an order and release seller funds immediately.
 
@@ -682,8 +732,21 @@ def complete_order_with_seller_payout(order, *, sale_description, commission_des
         commission_description=commission_description,
         ledger_description=ledger_description,
     )
+    newly_completed = order.status != 'completed'
     order.status = 'completed'
-    order.save(update_fields=['status', 'updated_at'])
+    if newly_completed:
+        # The "N sold" badge and the profile Sales stat both count completed
+        # sales — keep the denormalized counter and the cached profile in
+        # step inside this transaction.
+        order.completed_at = timezone.now()
+        order.save(update_fields=['status', 'completed_at', 'updated_at'])
+        if order.listing_id:
+            Listing.objects.filter(pk=order.listing_id).update(
+                sales_count=models.F('sales_count') + 1,
+            )
+        _invalidate_seller_profile_after_commit(order.seller_id)
+    else:
+        order.save(update_fields=['status', 'updated_at'])
     return {'released': released}
 
 
@@ -785,6 +848,15 @@ def complete_whatsapp_checkout(checkout):
                 listing.quantity = 0
                 listing.status = 'sold'
             listing.save(update_fields=['quantity', 'status'])
+
+        if listing is not None:
+            # A WhatsApp sale counts toward "N sold" and the profile Sales
+            # stat exactly like an on-site order. Completed rows are
+            # immutable in the admin, so this never needs a decrement.
+            Listing.objects.filter(pk=listing.pk).update(
+                sales_count=models.F('sales_count') + 1,
+            )
+            _invalidate_seller_profile_after_commit(listing.seller_id)
 
     meta_capi.queue_whatsapp_purchase_event(checkout)
     return warnings

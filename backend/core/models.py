@@ -481,6 +481,12 @@ class Listing(models.Model):
         help_text='Currency mode: the smallest amount (in units) a buyer can '
                   'purchase per order. Always 1 for other modes.',
     )
+    sales_count = models.PositiveIntegerField(
+        default=0,
+        help_text='Completed sales of this listing — on-site orders plus '
+                  'WhatsApp sales. Denormalized: bumped on completion, '
+                  'dropped on refund; shown on cards as "N sold".',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     # Stores filter values as JSON: {"filter_id": "option_value", ...}
     filter_values = models.JSONField(default=dict, blank=True)
@@ -1154,6 +1160,22 @@ class Order(models.Model):
         blank=True,
         help_text='When the order entered delivered status.',
     )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the order entered completed status.',
+    )
+    review_token = models.CharField(
+        max_length=48, unique=True, null=True, blank=True, editable=False,
+        help_text='No-login review-link token, minted when the review-request '
+                  'email goes out. Serves the same /review/<token> page as '
+                  'WhatsApp sales.',
+    )
+    review_email_sent_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When the review-request email was queued. Stamped in the '
+                  'same transaction so the timer never emails a buyer twice.',
+    )
     buyer_protection_enabled = models.BooleanField(
         default=False,
         help_text='Snapshot of whether this order uses the 14-day buyer protection payout hold.',
@@ -1214,6 +1236,22 @@ class Order(models.Model):
             if kwargs.get('update_fields') is not None:
                 kwargs['update_fields'] = set(kwargs['update_fields']) | {'order_number'}
         super().save(*args, **kwargs)
+
+    def ensure_review_token(self):
+        """Mint the buyer's review-link token if missing (caller saves)."""
+        if self.review_token:
+            return self.review_token
+        token = generate_whatsapp_review_token()
+        while Order.objects.filter(review_token=token).exists():
+            token = generate_whatsapp_review_token()
+        self.review_token = token
+        return token
+
+    @property
+    def review_url(self):
+        if not self.review_token:
+            return ''
+        return f'{settings.PUBLIC_SITE_URL}/review/{self.review_token}'
 
     def __str__(self):
         return f"Order #{self.order_number or self.pk} - {self.listing_title} - {self.get_status_display()}"

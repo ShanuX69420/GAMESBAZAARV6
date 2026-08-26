@@ -869,7 +869,8 @@ class OrderAdmin(admin.ModelAdmin):
                        'unit_price', 'total_amount', 'service_fee', 'buyer_source',
                        'commission_rate',
                        'commission_amount', 'seller_amount', 'status', 'delivery_note_status',
-                       'delivered_at', 'buyer_protection_enabled',
+                       'delivered_at', 'completed_at', 'review_email_sent_at',
+                       'buyer_protection_enabled',
                        'seller_payout_available_at', 'seller_payout_released_at',
                        'created_at', 'updated_at', 'chat_link']
     exclude = ['delivery_note', 'conversation']

@@ -13,6 +13,7 @@ import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependenci
 import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
+import SoldCountBadge from '@/components/SoldCountBadge';
 
 const LISTING_PAGE_SIZE = 48;
 // The listing list re-polls to refresh price/stock/rating on the cards already
@@ -245,6 +246,7 @@ export default function GameCategoryClient({ initialData = null }) {
                   seller_avg_rating: fresh.seller_avg_rating,
                   seller_review_count: fresh.seller_review_count,
                   seller_avatar_url: fresh.seller_avatar_url,
+                  sales_count: fresh.sales_count,
                 };
               }
               return existing;
@@ -703,6 +705,12 @@ export default function GameCategoryClient({ initialData = null }) {
                       <span className="offer-buybox-value">{value}</span>
                     </div>
                   ))}
+                  {Number(bestOffer.sales_count) > 0 && (
+                    <div className="offer-buybox-row">
+                      <span className="offer-buybox-label">Sold</span>
+                      <span className="offer-buybox-value">{Number(bestOffer.sales_count).toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="offer-buybox-row">
                     <span className="offer-buybox-label">Delivery time</span>
                     <DeliveryTimeBadge listing={bestOffer} />
@@ -1083,10 +1091,11 @@ export default function GameCategoryClient({ initialData = null }) {
                   <div className="listing-card-price">PKR {Number(listing.price).toLocaleString()}</div>
                 </div>
 
-                {/* Filter Tags */}
-                {listing.filter_display && Object.keys(listing.filter_display).length > 0 && (
+                {/* Filter Tags + sold count */}
+                {(Number(listing.sales_count) > 0 || (listing.filter_display && Object.keys(listing.filter_display).length > 0)) && (
                   <div className="listing-card-tags">
-                    {Object.entries(listing.filter_display).map(([name, value]) => (
+                    <SoldCountBadge count={listing.sales_count} />
+                    {listing.filter_display && Object.entries(listing.filter_display).map(([name, value]) => (
                       <span key={name} className="listing-card-tag">{value}</span>
                     ))}
                   </div>

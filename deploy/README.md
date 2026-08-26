@@ -19,6 +19,8 @@ After a backend code deploy, restart `gamesbazaar-web`.
 
 Timers: `reconcile-jazzcash` every 10 min, `fazer-fulfill` every 1 min (Fazer
 auto-fulfillment driver — safety net behind the in-process worker),
+`review-requests` every 15 min (post-purchase "leave a review" emails —
+top-ups/gift cards asked ~3 h after completion, accounts/keys after ~24 h),
 `db-backup` nightly at 21:30 UTC (02:30 PKT).
 The old `auto-confirm` and `release-holds` timers were retired with escrow in
 the 2026-08 shop conversion — orders complete on delivery, nothing is held.

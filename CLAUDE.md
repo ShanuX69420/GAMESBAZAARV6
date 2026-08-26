@@ -46,6 +46,7 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   `gamesbazaar-frontend`. Restart `gamesbazaar-web` after a backend deploy.
   Redis stays: it backs the Django cache (CACHE_REDIS_URL/CHANNEL_REDIS_URL env).
   Timers: reconcile-jazzcash (10 min), fazer-fulfill (1 min),
+  review-requests (15 min — post-purchase review emails),
   db-backup (nightly 21:30 UTC → R2 `db-backups/`). The auto-confirm and
   release-holds timers were retired with escrow (2026-08 shop conversion).
 - Deploy order matters: **frontend build BEFORE migrate, restart backend right after

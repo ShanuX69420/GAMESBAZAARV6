@@ -6161,6 +6161,12 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: var(--text-secondary);
 }
 
+/* Sold-count line above stock: green text greens flip in dark mode, safe here */
+.listing-sales-count {
+  color: var(--green-700);
+  font-weight: 600;
+}
+
 .listing-sold-badge {
   margin-top: 10px;
   padding: 8px 14px;
@@ -6728,6 +6734,21 @@ html[data-auth-hint="1"] .navbar-guest-links {
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+/* "N sold" pill — same footprint as .listing-card-tag, green tint so it
+   reads as proof, not just another filter value. green-50/700 both flip
+   in dark mode; never a solid green background here. */
+.sold-count-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--green-50);
+  border: 1px solid var(--green-200);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--green-700);
+  white-space: nowrap;
 }
 
 .listing-card-footer {

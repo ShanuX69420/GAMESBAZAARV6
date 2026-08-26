@@ -553,6 +553,13 @@ export default function ListingDetailClient({ initialListing = null }) {
                 {isCurrency && unitName && <span className="currency-unit-suffix"> / {unitName}</span>}
               </div>
 
+              {/* Sold count — social proof; hidden until the first sale */}
+              {Number(listing.sales_count) > 0 && (
+                <div className="listing-stock listing-sales-count">
+                  {Number(listing.sales_count).toLocaleString()} sold
+                </div>
+              )}
+
               {/* Stock */}
               {listing.quantity !== null && listing.quantity > 0 && (
                 <div className="listing-stock">
