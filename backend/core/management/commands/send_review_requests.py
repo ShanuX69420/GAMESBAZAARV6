@@ -10,8 +10,11 @@ or activated first, so they wait a full day.
 
 Each order is emailed at most once (review_email_sent_at is stamped in the
 same transaction that queues the email) and only while the purchase is
-recent enough to still be fresh in the buyer's mind. Safe to run every 15
-minutes.
+recent enough to still be fresh in the buyer's mind. A buyer is never
+asked more than once per window either — top-up buyers often make several
+purchases in a burst, and five identical emails at once reads as spam;
+their other orders simply age out of the window unasked. Safe to run
+every 15 minutes.
 """
 
 from datetime import timedelta
@@ -78,10 +81,19 @@ class Command(BaseCommand):
             .order_by('completed_at')[:500]
         )
 
+        # One email per buyer per window, no matter how many orders qualify.
+        already_asked = set(
+            Order.objects.filter(
+                review_email_sent_at__gte=now - timedelta(days=options['max_age_days']),
+            ).values_list('buyer_id', flat=True)
+        )
+
         sent = 0
         for order in candidates:
             if sent >= batch_size:
                 break
+            if order.buyer_id in already_asked:
+                continue
             if order.completed_at > now - review_email_delay(order):
                 continue
             if dry_run:
@@ -89,6 +101,7 @@ class Command(BaseCommand):
                     f'Would email {order.buyer.email} about order '
                     f'{order.order_number} ("{order.listing_title}")'
                 )
+                already_asked.add(order.buyer_id)
                 sent += 1
                 continue
             with transaction.atomic():
@@ -109,6 +122,7 @@ class Command(BaseCommand):
                     'review_token', 'review_email_sent_at', 'updated_at',
                 ])
                 send_review_request_email(locked)  # queued after this commit
+            already_asked.add(order.buyer_id)
             sent += 1
 
         if sent:

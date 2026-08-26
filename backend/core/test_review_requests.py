@@ -107,6 +107,16 @@ class SendReviewRequestsCommandTests(ReviewRequestFixture):
         self.run_command()
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_buyer_with_many_due_orders_gets_one_email(self):
+        for _ in range(3):
+            self.make_completed_order(self.topup_gc, hours_ago=4)
+
+        self.run_command()
+        self.assertEqual(len(mail.outbox), 1)
+
+        self.run_command()  # other orders stay silenced by the cooldown
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_dry_run_sends_nothing_and_stamps_nothing(self):
         order = self.make_completed_order(self.topup_gc, hours_ago=4)
         self.run_command('--dry-run')
