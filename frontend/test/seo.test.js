@@ -113,6 +113,7 @@ describe('SEO route metadata', () => {
       'https://www.gamesbazaar.pk/accounts',
       'https://www.gamesbazaar.pk/top-ups',
       'https://www.gamesbazaar.pk/gift-cards',
+      'https://www.gamesbazaar.pk/rentals',
       'https://www.gamesbazaar.pk/reviews',
       'https://www.gamesbazaar.pk/support',
       'https://www.gamesbazaar.pk/privacy-policy',

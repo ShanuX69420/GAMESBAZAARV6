@@ -1,6 +1,6 @@
 // The home "Popular" panels and their View All pages. Slugs must match
 // both the backend section registry (HOME_POPULAR_SECTIONS) and the app
-// routes: /keys, /accounts, /top-ups, /gift-cards.
+// routes: /keys, /accounts, /top-ups, /gift-cards, /rentals.
 export const CATEGORY_SECTIONS = [
   {
     slug: 'keys',
@@ -33,6 +33,14 @@ export const CATEGORY_SECTIONS = [
     title: 'Buy Gift Cards',
     description:
       'Browse every gift card on GamesBazaar — Steam Wallet, PlayStation, Nintendo, and more across many regions. Fast delivery and PKR pricing.',
+  },
+  {
+    slug: 'rentals',
+    name: 'Rentals',
+    heading: 'All Game Rentals',
+    title: 'Rent PS4 & PS5 Games',
+    description:
+      'Rent PlayStation games on GamesBazaar — play PS4 and PS5 titles for a week or a month at a fraction of the price of buying. PKR pricing, fast delivery, easy refunds.',
   },
 ];
 

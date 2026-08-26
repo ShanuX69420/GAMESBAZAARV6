@@ -57,13 +57,15 @@ HOME_POPULAR_SECTIONS = [
      'sortable': True},
     {'slug': 'gift-cards', 'title': 'Popular Gift Cards',
      'category_slugs': ('gift-cards',)},
+    {'slug': 'rentals', 'title': 'Popular Rentals',
+     'category_slugs': ('rentals',)},
 ]
 # The subset the home page actually renders panels for.
 HOME_PANEL_SECTIONS = [
     section for section in HOME_POPULAR_SECTIONS if section.get('home', True)
 ]
 HOME_POPULAR_GAMES_PER_SECTION = 8
-HOME_POPULAR_CACHE_KEY = 'home-popular:v4'
+HOME_POPULAR_CACHE_KEY = 'home-popular:v5'
 HOME_POPULAR_CACHE_SECONDS = 60
 # "View All" pages behind the popular panels reuse the same section registry.
 CATEGORY_SECTION_BY_SLUG = {
@@ -83,7 +85,7 @@ SECTION_SORTS = [
     {'value': 'listings', 'label': 'Most Listings'},
 ]
 SECTION_SORT_VALUES = {sort['value'] for sort in SECTION_SORTS}
-CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v4'
+CATEGORY_SECTION_CACHE_KEY = 'category-section-games:v5'
 BROWSE_CACHE_SECONDS = 30
 # Shared-cache TTL for the public browse endpoints nginx caches (games/,
 # home/popular/, categories/). Browsers keep the short max-age values; s-maxage

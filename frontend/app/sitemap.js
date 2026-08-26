@@ -36,6 +36,7 @@ export default async function sitemap() {
     { url: pageUrl(siteUrl, '/accounts'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/top-ups'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/gift-cards'), changeFrequency: 'daily', priority: 0.8 },
+    { url: pageUrl(siteUrl, '/rentals'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/reviews'), changeFrequency: 'daily', priority: 0.5 },
     // /login and /register are noindexed, so they stay out of the sitemap too.
     { url: pageUrl(siteUrl, '/support'), changeFrequency: 'monthly', priority: 0.4 },
