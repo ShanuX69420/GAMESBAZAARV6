@@ -1,15 +1,17 @@
 import json
 import tempfile
+from decimal import Decimal
 from io import StringIO
 from pathlib import Path
 
+from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Category, Game, GameCategory
+from .models import Category, Game, GameCategory, Listing
 
 
 def write_copy_file(directory, pages):
@@ -129,3 +131,68 @@ class SeedSeoTextTests(TestCase):
         self.assertIn('would update', output)
         self.game_category.refresh_from_db()
         self.assertEqual(self.game_category.seo_title, '')
+
+
+class FromPriceTitleTests(TestCase):
+    """The "from PKR {from_price}" token in seo_title, filled per-response."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='pseller', password='pw12345678')
+        game = Game.objects.create(name='PUBG Mobile', slug='pubg-mobile')
+        category = Category.objects.create(name='UC', slug='uc')
+        self.game_category = GameCategory.objects.create(
+            game=game, category=category,
+            seo_title='Buy PUBG Mobile UC in Pakistan from PKR {from_price} — Top-Up',
+        )
+
+    def add_listing(self, price, status='active'):
+        return Listing.objects.create(
+            seller=self.seller,
+            game_category=self.game_category,
+            title=f'{price} pack',
+            price=Decimal(price),
+            status=status,
+        )
+
+    def get_seo_title(self):
+        response = self.client.get('/api/games/pubg-mobile/uc/')
+        self.assertEqual(response.status_code, 200)
+        return response.data['seo_title']
+
+    def test_token_filled_with_min_price_floored_to_two_significant_digits(self):
+        self.add_listing('8499.00')
+        self.add_listing('12000.00')
+        self.assertEqual(
+            self.get_seo_title(),
+            'Buy PUBG Mobile UC in Pakistan from PKR 8,400 — Top-Up',
+        )
+
+    def test_small_prices_stay_exact(self):
+        self.add_listing('87.00')
+        self.assertEqual(
+            self.get_seo_title(),
+            'Buy PUBG Mobile UC in Pakistan from PKR 87 — Top-Up',
+        )
+
+    def test_inactive_listings_do_not_set_the_price(self):
+        self.add_listing('100.00', status='inactive')
+        self.add_listing('250.00')
+        self.assertEqual(
+            self.get_seo_title(),
+            'Buy PUBG Mobile UC in Pakistan from PKR 250 — Top-Up',
+        )
+
+    def test_no_stock_drops_the_whole_price_phrase(self):
+        self.add_listing('100.00', status='inactive')
+        self.assertEqual(
+            self.get_seo_title(),
+            'Buy PUBG Mobile UC in Pakistan — Top-Up',
+        )
+
+    def test_title_without_token_is_untouched(self):
+        self.game_category.seo_title = 'Buy PUBG Mobile UC in Pakistan'
+        self.game_category.save(update_fields=['seo_title'])
+        self.add_listing('250.00')
+        self.assertEqual(self.get_seo_title(), 'Buy PUBG Mobile UC in Pakistan')

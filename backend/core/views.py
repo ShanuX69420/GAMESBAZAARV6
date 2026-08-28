@@ -3,6 +3,7 @@ from decimal import Decimal
 import hashlib
 import json
 import logging
+import re
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -967,6 +968,36 @@ class GameDetailView(generics.RetrieveAPIView):
         return response
 
 
+# Hand-written seo_titles may carry a "from PKR {from_price}" phrase; the token
+# is filled with the page's cheapest active listing price at response time
+# (Search Console pilot 2026-08-29: "<game> price in pakistan" queries ranked
+# top-10 with ~0% CTR because the titles showed no price).
+SEO_FROM_PRICE_TOKEN = '{from_price}'
+
+
+def seo_title_with_from_price(game_category):
+    """Fill the from-price token in a seo_title. The price is floored to two
+    significant digits (8,499 -> 8,400) so daily price-sync jitter doesn't
+    churn the title Google has cached. With no active listings the whole
+    "from PKR ..." phrase drops out, leaving the plain hand-written title."""
+    title = game_category.seo_title or ''
+    if SEO_FROM_PRICE_TOKEN not in title:
+        return title
+    min_price = Listing.objects.filter(
+        game_category=game_category, status='active',
+    ).aggregate(min_price=Min('price'))['min_price']
+    if min_price is None or min_price <= 0:
+        title = re.sub(r'\s*\bfrom PKR \{from_price\}', '', title,
+                       flags=re.IGNORECASE)
+        title = title.replace(SEO_FROM_PRICE_TOKEN, '')
+        return ' '.join(title.split())
+    price = int(min_price)
+    if price >= 100:
+        step = 10 ** (len(str(price)) - 2)
+        price -= price % step
+    return title.replace(SEO_FROM_PRICE_TOKEN, f'{price:,}')
+
+
 class GameCategoryDetailView(APIView):
     """GET /api/games/{game_slug}/{category_slug}/ — Category with filters + listings."""
 
@@ -1005,6 +1036,7 @@ class GameCategoryDetailView(APIView):
         # Build category detail (filters)
         from .serializers import GameCategoryDetailSerializer
         cat_data = GameCategoryDetailSerializer(game_category).data
+        cat_data['seo_title'] = seo_title_with_from_price(game_category)
 
         # Ad-landing semantic filters: /keys game links carry ?method= and
         # ?region= (option VALUES, not filter ids) — map them onto this page's
