@@ -61,9 +61,46 @@ Pick a game from the list, choose a listing, and pay at the Buy button. Your log
     slug: 'top-ups',
     name: 'Top Ups',
     heading: 'All Top Ups',
-    title: 'Buy Game Top-Ups',
+    title: 'Game Top-Ups in Pakistan – PUBG UC, Diamonds & More',
     description:
-      'Browse every game with top-ups on GamesBazaar — PUBG Mobile UC, Free Fire Diamonds, and more. Fast delivery, PKR pricing, and easy refunds.',
+      'Top up PUBG UC, Free Fire Diamonds and more at PKR prices — no password, just your player ID. Pay with JazzCash, Easypaisa or bank transfer. Fast delivery.',
+    seoText: `## Game top-ups in Pakistan
+
+Diamonds, UC, CP, coins and gaming subscriptions — this page lists every game GamesBazaar can top up, from PUBG Mobile and Free Fire to Mobile Legends and Yalla Ludo. Prices are in rupees and start from pocket-money packs, so you can load exactly as much as you need. Pay with JazzCash, Easypaisa or bank transfer — no dollar card required.
+
+## Your account stays yours — no password needed
+
+A top-up here is a direct credit to your own game account through official channels. You give us the ID printed under your in-game nickname — a Player ID, Character ID or user ID — and the diamonds or UC land in your account at full store value. Nobody asks for your password, and you never hand over your login. Many packs are credited automatically the moment you pay: enter your ID at checkout and the top-up starts on its own. The rest are delivered by our team, with confirmation in your order chat.
+
+## Picking the right pack
+
+Some games care about region and some don't. Free Fire diamonds, for example, come in region versions — including Pakistan — so use the Region filter and match it to where your account was created. Mobile Legends needs your ID plus the Server ID shown in brackets under your name. Subscription products state their account-region requirements on the listing. Whatever you pick, the listing spells out exactly what to enter and how long delivery takes before you pay — and live PKR prices for every game are in the list above.`,
+    faq: [
+      {
+        q: 'How does a game top-up work on GamesBazaar?',
+        a: "Choose your game from the list, pick a pack, and enter your player ID at checkout (or send it in the order chat if the listing asks). We credit the amount directly to your account and confirm in the chat when it's done.",
+      },
+      {
+        q: 'Is it safe to top up my account this way?',
+        a: 'Yes — top-ups are bought from the official store and credited by ID. You never share a password or log in anywhere, so your account login never leaves your hands.',
+      },
+      {
+        q: 'Do you have Free Fire top-up for Pakistan region?',
+        a: 'Yes. Free Fire diamonds come in region versions, Pakistan included. Use the Region filter on the Free Fire page and pick the region your account was created in.',
+      },
+      {
+        q: 'How fast will I get my diamonds or UC?',
+        a: 'Many packs are credited automatically right after payment. Every listing shows its own delivery time before you buy, and most orders finish within minutes.',
+      },
+      {
+        q: 'How do I pay?',
+        a: 'In rupees, with JazzCash, Easypaisa or bank transfer. No international card, no dollar conversion.',
+      },
+      {
+        q: "What if my top-up doesn't arrive?",
+        a: "Message us in the order chat — problems get fixed fast, and if we can't deliver what you paid for, refunds are easy. The reviews on this page come from real delivered orders.",
+      },
+    ],
   },
   {
     slug: 'gift-cards',
