@@ -5,9 +5,47 @@ import { fetchCategorySectionGames } from '@/lib/api';
 import { GameIconFallback } from '@/lib/icons';
 import JsonLd from '@/components/JsonLd';
 import SectionFilters from '@/components/SectionFilters';
-import { breadcrumbJsonLd, collectionPageJsonLd } from '@/lib/seo';
+import { breadcrumbJsonLd, collectionPageJsonLd, faqPageJsonLd } from '@/lib/seo';
 import { groupGamesByAlphabet } from '@/lib/gameGroups';
 import { formatStartingPrice } from '@/lib/price';
+
+// Server-rendered SEO copy below the game list. Same conventions as the
+// game-category pages: blank lines separate paragraphs, "## " = h2. The FAQ
+// renders from section.faq so the visible answers and the FAQPage JSON-LD
+// can never diverge.
+function SectionSeoText({ section }) {
+  const blocks = String(section.seoText || '')
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const faq = section.faq || [];
+  if (!blocks.length && !faq.length) return null;
+
+  return (
+    <section className="category-seo-text">
+      {blocks.map((block, index) => {
+        if (block.startsWith('### ')) {
+          return <h3 key={index}>{block.slice(4).trim()}</h3>;
+        }
+        if (block.startsWith('## ')) {
+          return <h2 key={index}>{block.slice(3).trim()}</h2>;
+        }
+        return <p key={index}>{block}</p>;
+      })}
+      {faq.length > 0 && (
+        <>
+          <h2>Frequently asked questions</h2>
+          {faq.map((item) => (
+            <Fragment key={item.q}>
+              <h3>{item.q}</h3>
+              <p>{item.a}</p>
+            </Fragment>
+          ))}
+        </>
+      )}
+    </section>
+  );
+}
 
 // Shared body for the category View All pages (/keys, /accounts, /top-ups,
 // /gift-cards, /rentals) — same layout as /games, but each game
@@ -100,6 +138,7 @@ export default async function CategorySectionPage({
             description: section.description,
             path: `/${section.slug}`,
           }),
+          ...(section.faq?.length ? [faqPageJsonLd([{ questions: section.faq }])] : []),
         ]}
       />
       <div className="page-header">
@@ -170,6 +209,8 @@ export default async function CategorySectionPage({
           </p>
         </div>
       )}
+
+      <SectionSeoText section={section} />
     </div>
   );
 }
