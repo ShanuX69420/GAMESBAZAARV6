@@ -6,9 +6,46 @@ export const CATEGORY_SECTIONS = [
     slug: 'keys',
     name: 'Keys',
     heading: 'All Game Keys',
-    title: 'Buy Game Keys',
+    title: 'Buy Game Keys in Pakistan – Steam Keys & Gifts',
     description:
-      'Browse every game with keys for sale on GamesBazaar — Steam, PSN, Xbox and more. Buy game keys in PKR with instant delivery and easy refunds.',
+      'Official Steam keys at rupee prices, delivered instantly — plus Pakistan-region Steam gifts. Pay in PKR by JazzCash, Easypaisa or bank transfer.',
+    seoText: `## Buy game keys in Pakistan
+
+Every game in the A–Z list above has key listings with live rupee prices — no dollar conversions, no international card, and nothing to wait for: your key is delivered automatically in the order chat the moment payment goes through. Redeem it on your own Steam account and the game is yours for good.
+
+## One page, two ways to buy: keys and gifts
+
+Listings here come in two forms, and the Method filter at the top switches between them. A Digital Key is a code you redeem yourself — global, so it activates on any Steam account in any country. As a Gift sends the game straight into your Steam library instead: you drop your Steam friend invite link at checkout, you're added automatically, and the game arrives as a gift — no code to type. Gifts are for Pakistan-region Steam accounts only, so check your account region before ordering. Either way the game lands in your own library, with your progress and achievements, permanently.
+
+## Why buy from GamesBazaar
+
+Foreign key sites price in dollars and expect a card that works internationally; classified ads hand you a code with no comeback if it fails. GamesBazaar sells official keys at rupee prices — paid with JazzCash, Easypaisa or bank transfer — and stays reachable afterwards: if a key doesn't activate, message us in the order chat and we'll fix it fast or refund you. Real reviews from delivered orders appear right on this page, and the letters up top jump you straight to any game in the catalogue.`,
+    faq: [
+      {
+        q: 'How do I redeem a Steam key?',
+        a: 'Open Steam, click "Add a Game" in the bottom-left corner, choose "Activate a Product on Steam", and enter your key — the game downloads to your library. The key itself arrives in your order chat automatically after payment.',
+      },
+      {
+        q: 'What is the difference between a Steam key and a Steam gift?',
+        a: "A key is a code you activate yourself, and it works on accounts in any country. A gift skips the code: we send the game to your library through Steam's own gifting system using your friend invite link. Gifts only work on Pakistan-region accounts.",
+      },
+      {
+        q: 'Will a global key work on my Pakistani Steam account?',
+        a: 'Yes. Keys sold here are marked Global, which means they activate on any Steam account regardless of country — Pakistan included.',
+      },
+      {
+        q: 'What do I need to buy a game as a Steam gift?',
+        a: "Your Steam friend invite link (in Steam: Friends → Add a Friend → copy your invite link) and a Pakistan-region account. Enter the link at checkout — you're added automatically and the game arrives in your library as a gift.",
+      },
+      {
+        q: 'How do I pay?',
+        a: 'All prices are in rupees. JazzCash, Easypaisa and bank transfer all work — no dollar card needed.',
+      },
+      {
+        q: "What if my key doesn't activate?",
+        a: "Tell us in the order chat. Problems get fixed fast, and when we can't put a working key in your hands, refunds are easy.",
+      },
+    ],
   },
   {
     slug: 'accounts',
@@ -106,17 +143,93 @@ Some games care about region and some don't. Free Fire diamonds, for example, co
     slug: 'gift-cards',
     name: 'Gift Cards',
     heading: 'All Gift Cards',
-    title: 'Buy Gift Cards',
+    title: 'Buy Gift Cards in Pakistan – Steam, PSN, iTunes',
     description:
-      'Browse every gift card on GamesBazaar — Steam Wallet, PlayStation, Nintendo, and more across many regions. Fast delivery and PKR pricing.',
+      'Steam Wallet, PSN, iTunes, Google Play and more at rupee prices, in dozens of regions. Codes arrive in minutes — pay via JazzCash, Easypaisa or bank transfer.',
+    seoText: `## Gift cards in Pakistan, priced in rupees
+
+Steam Wallet codes, PlayStation Store cards, App Store & iTunes, Google Play, Roblox, Razer Gold — every brand in the list above is sold in rupees, with live prices on this page and denominations that start small enough to try. You don't need an international credit card for any of it: pay via JazzCash, Easypaisa or bank transfer and the code is yours.
+
+Most shops in Pakistan stock a handful of US, UK and UAE cards. GamesBazaar carries the same brands in dozens of region versions — so whether your account lives on the US store, the UAE store or somewhere less common, there's usually a card here that matches it.
+
+## The one rule: match the region
+
+Gift-card codes are region-locked. A card made for one country's store will not redeem on an account registered in another, and that single mistake causes almost every failed redemption. So before you buy, check which region your account is registered in — it's in your account settings on every platform — then use the Region filter on the brand's page to pick the matching card. Steam is the one exception worth knowing: its codes follow the store currency rather than the country, and each Steam listing spells out exactly which accounts it fits.
+
+## Codes arrive the moment you pay
+
+There's no waiting on a person for most cards: the code is delivered automatically in your order chat right after payment. You redeem it yourself on your own account — nobody ever needs your login — and the balance appears instantly. Every code is genuine and bought from official channels, the redeem steps are written on each listing, and if anything goes sideways we're one message away in the order chat. The reviews you can read on this page all come from delivered orders.`,
+    faq: [
+      {
+        q: 'How can I buy a gift card in Pakistan without a credit card?',
+        a: 'Every card here is priced in rupees and paid for with JazzCash, Easypaisa or bank transfer. No international card, no PayPal, no dollar conversion — pick a card, pay locally, and the code arrives in your order chat.',
+      },
+      {
+        q: 'Which region gift card should I buy?',
+        a: "The region your account is registered in — not the country you live in. Check your account settings on the platform first, then match it with the Region filter on the brand's page. If your PlayStation account is on the US store, buy a US card, and so on.",
+      },
+      {
+        q: 'Will a gift card work on my Pakistani account?',
+        a: "That depends on the platform and the card. The card's region (or for Steam, its currency) has to match your account, and every listing states its region clearly before you pay. Each brand's page explains which versions suit accounts commonly used in Pakistan.",
+      },
+      {
+        q: 'How fast will I get my code?',
+        a: 'Most codes are delivered automatically in the order chat seconds after payment goes through. Each listing shows its delivery time before you buy.',
+      },
+      {
+        q: 'Are the codes genuine?',
+        a: 'Yes — codes come from official channels and you redeem them yourself on your own account, so you see the balance land with your own eyes. The reviews on this page are from real delivered orders.',
+      },
+      {
+        q: "What if my code doesn't redeem?",
+        a: "Message us in the order chat and we'll work out what happened — a region mismatch is the usual cause, and we help you check. Problems get fixed fast, and refunds are easy when a code we sold is at fault.",
+      },
+    ],
   },
   {
     slug: 'rentals',
     name: 'Rentals',
     heading: 'All Game Rentals',
-    title: 'Rent PS4 & PS5 Games',
+    title: 'Rent PS4 & PS5 Games in Pakistan – Play in Minutes',
     description:
-      'Rent PlayStation games on GamesBazaar — play PS4 and PS5 titles for a week or a month at a fraction of the price of buying. PKR pricing, fast delivery, easy refunds.',
+      'Rent PS4 & PS5 games for 7 to 30 days at a fraction of the buying price — digital, no discs, set up in minutes. Pay by JazzCash, Easypaisa or bank transfer.',
+    seoText: `## Rent PlayStation games in Pakistan
+
+Why pay thousands for a game you'll finish in a week? GamesBazaar rents PS4 and PS5 games for 7 to 30 days at a fraction of the price of buying — rupee prices, paid with JazzCash, Easypaisa or bank transfer. The A–Z list above covers hundreds of titles, from this year's releases to back-catalogue classics, each with live prices and a Rental Period filter on its page.
+
+## How renting works
+
+There are no discs and nothing to collect. A rental gives you sign-in access to a PlayStation account that owns the game: log in on your own console, download the game, and play the full version for your rental period. When the time is up the game stops working — and if you rent the same game again later, your saves carry on where you left off. Need longer? Extensions are arranged in the order chat before your rental ends. Most rentals are set up and playing in well under an hour.
+
+## The fine print, upfront
+
+Rentals have rules, and we'd rather you know them before you pay. You play on the rented profile, so saves and trophies live there rather than on your own PSN profile — your own account, games and saves are never touched. An internet connection is required while playing, and rentals are single-player only: online multiplayer isn't supported. The account you're lent must stay as it is — changing its password or email ends the rental. In return, the promise is simple: if the game stops working during your rental through no fault of yours, we fix it or refund the remaining time.`,
+    faq: [
+      {
+        q: 'How does renting a PlayStation game work?',
+        a: 'You get sign-in access to a PlayStation account that owns the game. Log in on your PS4 or PS5 — rentals work on both — download the game, and play the full version for the period you paid for.',
+      },
+      {
+        q: 'How fast can I start playing?',
+        a: 'Sign-in details arrive in your order chat after payment, and most rentals are set up and playing in well under an hour.',
+      },
+      {
+        q: 'Do I keep the game or my saves?',
+        a: "The game stops working when your rental period ends — that's what makes it so much cheaper than buying. Your saves stay on the rented profile, though, so if you rent the same game again later you continue where you left off. You can also extend from the order chat before the period ends.",
+      },
+      {
+        q: 'Can I play online multiplayer?',
+        a: 'No — rentals are single-player only. You do still need an internet connection while playing.',
+      },
+      {
+        q: 'Is my own PlayStation account at risk?',
+        a: 'No. You never hand over your own account — you sign in to a separate one next to it. Your profile, your games and your saves are untouched, and when the rental ends you simply stop using the rented account.',
+      },
+      {
+        q: 'What if the game stops working during my rental?',
+        a: "Message us in the order chat. If it stopped through no fault of yours, we fix it or refund the time you had left. Just keep the rented account as you received it — changing its password or email ends the rental.",
+      },
+    ],
   },
 ];
 
