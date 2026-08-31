@@ -338,9 +338,14 @@ def _place_supplier_orders(task):
                 f'by more than {settings.FAZER_PRICE_TOLERANCE_PCT}%',
             )
             return False
-    if total_cost > settings.FAZER_MAX_ORDER_USD:
+    if task.kind == 'giftcard':
+        cap, cap_name = (settings.FAZER_MAX_GIFTCARD_ORDER_USD,
+                         'FAZER_MAX_GIFTCARD_ORDER_USD')
+    else:
+        cap, cap_name = settings.FAZER_MAX_ORDER_USD, 'FAZER_MAX_ORDER_USD'
+    if total_cost > cap:
         _fail_to_manual(
-            task, f'cost ${total_cost} exceeds FAZER_MAX_ORDER_USD ${settings.FAZER_MAX_ORDER_USD}',
+            task, f'cost ${total_cost} exceeds {cap_name} ${cap}',
         )
         return False
 

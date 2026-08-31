@@ -31,6 +31,7 @@ FAZER_TEST_SETTINGS = dict(
     FAZER_API_BASE_URL='https://api.fzr.cards/api/v2',
     FAZER_REQUEST_TIMEOUT_SECONDS=5,
     FAZER_MAX_ORDER_USD=Decimal('30'),
+    FAZER_MAX_GIFTCARD_ORDER_USD=Decimal('25'),
     FAZER_PRICE_TOLERANCE_PCT=10,
     FAZER_LOW_BALANCE_USD=10,
 )
@@ -483,11 +484,28 @@ class EngineTests(FazerTestBase):
         self.assertEqual(self.fake.created, [])
 
     def test_max_order_usd_cap(self):
-        with override_settings(FAZER_MAX_ORDER_USD=Decimal('5')):
-            order = self.buy()
+        # The general cap governs non-giftcard kinds (here: a top-up).
+        listing = self.make_topup_listing()
+        response = self.client.post('/api/orders/buy/', {
+            'listing_id': listing.pk, 'quantity': 1,
+            'checkout_fields': {'user_id': '12345678'},
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        order = Order.objects.get(pk=response.data['id'])
+        with override_settings(FAZER_MAX_ORDER_USD=Decimal('1')):
             task = self.process(order.fazer_task)
         self.assertEqual(task.status, 'manual')
         self.assertIn('FAZER_MAX_ORDER_USD', task.fail_reason)
+        self.assertEqual(self.fake.created, [])
+
+    def test_giftcard_cap_tighter_than_general(self):
+        # Gift cards get their own (lower) ceiling; the $8.50 card passes the
+        # $30 general cap but must still go manual under a $5 gift-card cap.
+        with override_settings(FAZER_MAX_GIFTCARD_ORDER_USD=Decimal('5')):
+            order = self.buy()
+            task = self.process(order.fazer_task)
+        self.assertEqual(task.status, 'manual')
+        self.assertIn('FAZER_MAX_GIFTCARD_ORDER_USD', task.fail_reason)
         self.assertEqual(self.fake.created, [])
 
     def test_insufficient_supplier_balance_goes_manual(self):

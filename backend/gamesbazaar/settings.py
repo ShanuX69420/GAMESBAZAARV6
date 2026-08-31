@@ -520,6 +520,13 @@ FAZER_REQUEST_TIMEOUT_SECONDS = env_int('FAZER_REQUEST_TIMEOUT_SECONDS', 30)
 # auto-fulfilled listing's cost so it only catches true anomalies
 # (raised 30 → 100 on 2026-07-16 for Steam gifts / deluxe editions).
 FAZER_MAX_ORDER_USD = Decimal(str(env_int('FAZER_MAX_ORDER_USD', 100)))
+# Tighter ceiling for GIFT CARD orders only. Fazer sources big-denomination
+# cards on demand AFTER payment — they can stall for hours with no cancel
+# mechanism (2026-08-31: $75 PSN US card stuck in 'processing', catalog stock
+# numbers proven decorative). Every card SKU with an instant track record
+# costs <= $25, so above this the order goes to manual fulfillment instead
+# and no supplier money moves. Keys/gifts/top-ups keep FAZER_MAX_ORDER_USD.
+FAZER_MAX_GIFTCARD_ORDER_USD = Decimal(str(env_int('FAZER_MAX_GIFTCARD_ORDER_USD', 25)))
 # Refuse to auto-buy when the live supplier price exceeds the last-synced
 # cost by more than this percentage (protects against stale sale prices).
 FAZER_PRICE_TOLERANCE_PCT = env_int('FAZER_PRICE_TOLERANCE_PCT', 10)
