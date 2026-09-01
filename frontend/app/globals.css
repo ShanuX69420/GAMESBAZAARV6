@@ -204,6 +204,15 @@ body {
 
 main {
   flex: 1;
+  /* Keep the review strip + footer below the fold on every page, not just
+     tall ones. Client-side navigation swaps the page content ~1s after the
+     click (outside Chrome's 500ms input window), and when a tall page is
+     replaced by a short one those two persistent blocks jumped up into the
+     viewport - a 0.3 layout shift on 1080p desktops, and the whole of the
+     desktop CLS "needs improvement" flag in Search Console (2026-09-02).
+     With a floor of one viewport they move from below the fold to below the
+     fold, which Chrome does not count. 60px = the navbar. */
+  min-height: calc(100vh - 60px);
 }
 
 a {
