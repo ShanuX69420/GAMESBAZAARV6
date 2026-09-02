@@ -357,6 +357,24 @@ The underlying command, if you need to run it by hand:
 python manage.py reconcile_jazzcash_payments
 ```
 
+Check the IndexNow timer (every 30 minutes; pushes changed listing and
+game-category URLs to Bing and the other IndexNow engines; no-op unless
+`INDEXNOW_KEY` is set in the backend `.env`):
+
+```bash
+systemctl status gamesbazaar-indexnow.timer
+journalctl -u gamesbazaar-indexnow.service -n 20
+```
+
+By hand — after an SEO copy reseed (which does not touch listings), submit
+the pages you changed; `--all-category-pages` is the one-off catch-up push:
+
+```bash
+python manage.py indexnow_ping --dry-run
+python manage.py indexnow_ping --paths /games/pubg/top-ups /games/steam/gift-cards
+python manage.py indexnow_ping --all-category-pages
+```
+
 ---
 
 ## JazzCash Gateway

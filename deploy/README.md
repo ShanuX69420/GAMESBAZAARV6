@@ -22,7 +22,10 @@ Timers: `reconcile-jazzcash` every 10 min, `fazer-fulfill` every 1 min (Fazer
 auto-fulfillment driver — safety net behind the in-process worker),
 `review-requests` every 15 min (post-purchase "leave a review" emails —
 top-ups/gift cards asked ~3 h after completion, accounts/keys after ~24 h),
-`db-backup` nightly at 21:30 UTC (02:30 PKT).
+`db-backup` nightly at 21:30 UTC (02:30 PKT),
+`indexnow` every 30 min (pushes changed listing + game-category URLs to Bing
+and the other IndexNow engines — needs `INDEXNOW_KEY` in the backend `.env`,
+harmless no-op without it; the key is also served as `frontend/public/<key>.txt`).
 The old `auto-confirm` and `release-holds` timers were retired with escrow in
 the 2026-08 shop conversion — orders complete on delivery, nothing is held.
 After copying units: `systemctl daemon-reload && systemctl enable --now <name>.timer`.

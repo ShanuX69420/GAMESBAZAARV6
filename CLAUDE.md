@@ -34,8 +34,8 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 ## Production
 
 - DigitalOcean VPS `178.128.127.124` (**Singapore / SGP1**, Premium AMD 1 vCPU / 2 GB
-  since 2026-08-27 — migrated off the old 4 GB droplet `68.183.184.129`, which relays
-  traffic until destroyed). Domains: gamesbazaar.pk, www, api.
+  since 2026-08-27 — the old 4 GB droplet was destroyed 2026-08-28).
+  Domains: gamesbazaar.pk, www, api.
   Migrated out of Bangalore on 2026-07-14 — see the India landmine below. **Never move it
   back to an Indian region.** DNS is Cloudflare, 3 A records (apex/www/api), TTL 300s,
   proxy OFF (grey cloud — the orange cloud made the site slower, don't re-enable).
@@ -48,6 +48,9 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   Redis stays: it backs the Django cache (CACHE_REDIS_URL/CHANNEL_REDIS_URL env).
   Timers: reconcile-jazzcash (10 min), fazer-fulfill (1 min),
   review-requests (15 min — post-purchase review emails),
+  indexnow (30 min — pushes changed listing/category URLs to Bing via IndexNow;
+  needs `INDEXNOW_KEY` in backend .env + `frontend/public/<key>.txt`, see
+  `core/indexnow.py`; no-op without the key),
   db-backup (nightly 21:30 UTC → R2 `db-backups/`). The auto-confirm and
   release-holds timers were retired with escrow (2026-08 shop conversion).
 - Deploy order matters: **frontend build BEFORE migrate, restart backend right after
