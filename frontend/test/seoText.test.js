@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseInlineLinks, splitSeoBlocks, stripInlineLinks } from '../lib/seoText';
+import { extractSeoFaq, parseInlineLinks, splitSeoBlocks, stripInlineLinks } from '../lib/seoText';
 
 describe('SEO copy inline links', () => {
   it('leaves copy without links untouched', () => {
@@ -45,5 +45,54 @@ describe('SEO copy inline links', () => {
       '## Heading', 'Para one.', 'Para two.',
     ]);
     expect(splitSeoBlocks('')).toEqual([]);
+  });
+});
+
+describe('SEO copy FAQ extraction', () => {
+  it('pairs each "### " question with the paragraph under it', () => {
+    const blocks = splitSeoBlocks([
+      '## How it works',
+      'Intro paragraph that is not an answer.',
+      '## PUBG UC FAQs',
+      '### How fast is delivery?',
+      'Most orders land within minutes.',
+      '### Do I need my password?',
+      'No. Only your Character ID.',
+    ].join('\n\n'));
+    expect(extractSeoFaq(blocks)).toEqual([
+      { q: 'How fast is delivery?', a: 'Most orders land within minutes.' },
+      { q: 'Do I need my password?', a: 'No. Only your Character ID.' },
+    ]);
+  });
+
+  it('returns nothing for copy without questions', () => {
+    expect(extractSeoFaq(splitSeoBlocks('## Heading\n\nJust a paragraph.'))).toEqual([]);
+    expect(extractSeoFaq([])).toEqual([]);
+    expect(extractSeoFaq(undefined)).toEqual([]);
+  });
+
+  it('keeps answers plain text and joins multi-paragraph answers', () => {
+    // JSON-LD answers must not carry link markup; the page still renders the
+    // links from the same blocks.
+    const blocks = splitSeoBlocks([
+      '### Where do vouchers redeem?',
+      'On our [PUBG UC page](/games/pubg-mobile/uc) or Midasbuy.',
+      'Either way the code is yours within minutes.',
+    ].join('\n\n'));
+    expect(extractSeoFaq(blocks)).toEqual([{
+      q: 'Where do vouchers redeem?',
+      a: 'On our PUBG UC page or Midasbuy.\n\nEither way the code is yours within minutes.',
+    }]);
+  });
+
+  it('ends an answer at the next heading and drops questions with no answer', () => {
+    const blocks = splitSeoBlocks([
+      '### Answered?',
+      'Yes.',
+      '## Closing section',
+      'This paragraph belongs to the section, not the question.',
+      '### Unanswered?',
+    ].join('\n\n'));
+    expect(extractSeoFaq(blocks)).toEqual([{ q: 'Answered?', a: 'Yes.' }]);
   });
 });
