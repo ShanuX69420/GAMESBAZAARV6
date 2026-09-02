@@ -637,6 +637,65 @@ img {
 
 @media (max-width: 767px) { .mobile-search-bar { display: block; } }
 
+/* ── Section Nav (Keys · Accounts · Gift Cards · Subscriptions · Rentals) ── */
+
+/* Fixed height on purpose: the strip is in the server HTML of every page and
+   must take the same room before and after fonts, hydration and client-side
+   navigation, or it would bring back the desktop layout shift fixed on
+   2026-09-02. Nothing inside may grow it. */
+.section-nav {
+  height: 41px;
+  box-sizing: border-box;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.section-nav-list {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 40px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.section-nav-list::-webkit-scrollbar { display: none; }
+
+/* Scroll edge to edge on phones instead of clipping at the container padding. */
+@media (max-width: 767px) {
+  .section-nav-list { margin: 0 -16px; padding: 0 12px; }
+}
+
+.section-nav-link {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.section-nav-link:hover {
+  color: var(--green-600);
+}
+
+.section-nav-link[aria-current="page"] {
+  color: var(--green-600);
+  border-bottom-color: var(--green-600);
+}
+
 .mobile-search-wrapper { position: relative; display: flex; align-items: center; }
 
 .mobile-search-input {
@@ -1998,7 +2057,7 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 @media (min-width: 768px) {
   .footer-top {
-    grid-template-columns: 1.2fr 1fr 1fr auto;
+    grid-template-columns: 1.2fr 1fr 1fr 1fr auto;
     text-align: left;
     gap: 40px;
   }

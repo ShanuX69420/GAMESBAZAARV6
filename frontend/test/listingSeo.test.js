@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   SEO_TITLE_MAX_LENGTH,
+  listingBreadcrumbs,
   listingDisplayName,
   listingPageTitle,
+  listingSchemaBreadcrumbs,
   singularize,
 } from '../lib/listingSeo.js';
 
@@ -138,5 +140,80 @@ describe('listingPageTitle', () => {
   it('omits the price part when there is no price', () => {
     expect(listingPageTitle({ name: 'Steam 5 USD Gift Card', price: '' }))
       .toEqual({ title: 'Steam 5 USD Gift Card', absolute: false });
+  });
+});
+
+describe('listingBreadcrumbs', () => {
+  it('links Home, the game and the category page the listing lives on', () => {
+    expect(listingBreadcrumbs({
+      game_name: 'Valorant',
+      game_slug: 'valorant',
+      category_name: 'Accounts',
+      category_slug: 'accounts',
+    })).toEqual([
+      { name: 'Home', path: '/' },
+      { name: 'Valorant', path: '/games/valorant' },
+      { name: 'Accounts', path: '/games/valorant/accounts' },
+    ]);
+  });
+
+  it('uses the renamed category slug the site URL uses', () => {
+    // A per-game rename ("Top Ups" shown as "Subscriptions") changes the
+    // URL; the API sends the buyer-facing slug and the crumb must follow it.
+    const crumbs = listingBreadcrumbs({
+      game_name: 'PlayStation',
+      game_slug: 'playstation',
+      category_name: 'Subscriptions',
+      category_slug: 'subscriptions',
+    });
+    expect(crumbs[2]).toEqual({ name: 'Subscriptions', path: '/games/playstation/subscriptions' });
+  });
+
+  it('shows names as plain text when a cached payload has no slugs', () => {
+    expect(listingBreadcrumbs({ game_name: 'Valorant', category_name: 'Accounts' })).toEqual([
+      { name: 'Home', path: '/' },
+      { name: 'Valorant', path: null },
+      { name: 'Accounts', path: null },
+    ]);
+    // A game slug alone links the game but never a half-built category URL.
+    const partial = listingBreadcrumbs({
+      game_name: 'Valorant', game_slug: 'valorant', category_name: 'Accounts',
+    });
+    expect(partial[1].path).toBe('/games/valorant');
+    expect(partial[2].path).toBeNull();
+  });
+
+  it('never builds a link out of a slug that is not a slug', () => {
+    const crumbs = listingBreadcrumbs({
+      game_name: 'Valorant', game_slug: '../admin', category_name: 'Accounts', category_slug: 'accounts',
+    });
+    expect(crumbs[1].path).toBeNull();
+    expect(crumbs[2].path).toBeNull();
+  });
+
+  it('is just Home for an empty listing', () => {
+    expect(listingBreadcrumbs(null)).toEqual([{ name: 'Home', path: '/' }]);
+  });
+});
+
+describe('listingSchemaBreadcrumbs', () => {
+  it('names the category page after its own title and leaves the redirecting game URL out', () => {
+    expect(listingSchemaBreadcrumbs({
+      game_name: 'Elden Ring',
+      game_slug: 'elden-ring',
+      category_name: 'Keys',
+      category_slug: 'keys',
+    })).toEqual([
+      { name: 'Home', path: '/' },
+      { name: 'Elden Ring Keys', path: '/games/elden-ring/keys' },
+    ]);
+  });
+
+  it('is null until the payload carries both page slugs', () => {
+    expect(listingSchemaBreadcrumbs({ game_name: 'Elden Ring', category_name: 'Keys' })).toBeNull();
+    expect(listingSchemaBreadcrumbs({
+      game_name: 'Elden Ring', game_slug: 'elden-ring', category_name: 'Keys',
+    })).toBeNull();
+    expect(listingSchemaBreadcrumbs(null)).toBeNull();
   });
 });

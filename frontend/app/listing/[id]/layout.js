@@ -2,8 +2,8 @@ import { Fragment, createElement } from 'react';
 import JsonLd from '@/components/JsonLd';
 import { getListingDetail } from '@/lib/api';
 import { listingLifecycle } from '@/lib/listingLifecycle';
-import { cleanText, listingDisplayName, listingPageTitle } from '@/lib/listingSeo';
-import { createPublicMetadata, productJsonLd } from '@/lib/seo';
+import { cleanText, listingDisplayName, listingPageTitle, listingSchemaBreadcrumbs } from '@/lib/listingSeo';
+import { breadcrumbJsonLd, createPublicMetadata, productJsonLd } from '@/lib/seo';
 
 function formatPrice(value) {
   const price = Number(value);
@@ -125,15 +125,26 @@ export default async function ListingLayout({ children, params }) {
 
   const listingReviews = listing.listing_reviews;
   const reviewCount = Number(listingReviews?.count) || 0;
+  const name = listingDisplayName(listing) || `Listing ${listingId}`;
+  const path = `/listing/${encodeURIComponent(listingId)}`;
+
+  // Home › "<Game> <Category>" › this listing (SEO fix #2). The game is
+  // left out on purpose: its URL always redirects (see listingSchemaBreadcrumbs).
+  // Skipped when a pre-fix cached payload has no slugs: a breadcrumb with
+  // dead links is worse than none.
+  const schemaCrumbs = listingSchemaBreadcrumbs(listing);
+  const breadcrumb = schemaCrumbs
+    ? breadcrumbJsonLd([...schemaCrumbs, { name, path }])
+    : null;
 
   return createElement(
     Fragment,
     null,
     createElement(JsonLd, {
-      data: productJsonLd({
-        name: listingDisplayName(listing) || `Listing ${listingId}`,
+      data: [productJsonLd({
+        name,
         description: cleanText(listing.description),
-        path: `/listing/${encodeURIComponent(listingId)}`,
+        path,
         sku: listingId,
         brand: cleanText(listing.game_name),
         category: categoryParts.join(' - '),
@@ -149,7 +160,7 @@ export default async function ListingLayout({ children, params }) {
           body: cleanText(review.comment),
           date: String(review.created_at || '').slice(0, 10),
         })),
-      }),
+      }), breadcrumb],
     }),
     children,
   );

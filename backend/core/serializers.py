@@ -523,6 +523,11 @@ class ListingSerializer(serializers.ModelSerializer):
     seller_is_official_store = serializers.SerializerMethodField()
     game_name = serializers.CharField(source='game_category.game.name', read_only=True)
     category_name = serializers.CharField(source='game_category.effective_name', read_only=True)
+    # The page the listing lives on, for the breadcrumb links on the listing
+    # page (SEO fix #2): /games/<game_slug>/<category_slug>. The category
+    # slug is the buyer-facing one (per-game rename or the category's own).
+    game_slug = serializers.CharField(source='game_category.game.slug', read_only=True)
+    category_slug = serializers.CharField(source='game_category.effective_slug', read_only=True)
     listing_mode = serializers.CharField(source='game_category.listing_mode', read_only=True)
     unit_name = serializers.CharField(source='game_category.unit_name', read_only=True)
     filter_display = serializers.SerializerMethodField()
@@ -540,7 +545,8 @@ class ListingSerializer(serializers.ModelSerializer):
             'seller_id', 'seller_name',
             'seller_avatar_url', 'seller_avg_rating', 'seller_review_count',
             'seller_is_official_store',
-            'game_name', 'category_name', 'listing_mode', 'unit_name',
+            'game_name', 'category_name', 'game_slug', 'category_slug',
+            'listing_mode', 'unit_name',
             'option_id', 'option_name',
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'instant_delivery',

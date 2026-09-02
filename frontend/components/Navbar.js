@@ -9,6 +9,7 @@ import { getUnreadCount, searchMarketplace, getNotifications, markNotificationRe
 import { notificationOrderPath } from '@/lib/orderNumbers';
 import { withUnreadCount } from '@/lib/messageAlerts';
 import { GameIconFallback } from '@/lib/icons';
+import SectionNav from '@/components/SectionNav';
 
 // Badges are polled over HTTP (no websockets); pages that need faster
 // updates (open chats) poll on their own and nudge via the chatUpdate event.
@@ -518,6 +519,10 @@ export default function Navbar() {
         </div>
       </div>
       )}
+
+      {/* Shop sections, on every page (SEO fix #2). Hidden with the search
+          while onboarding is pending, like every other way off the setup page. */}
+      {!setupPending && <SectionNav />}
     </>
   );
 }

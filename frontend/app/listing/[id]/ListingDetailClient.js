@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
@@ -13,7 +13,7 @@ import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analy
 import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
-import { listingDisplayName } from '@/lib/listingSeo';
+import { listingBreadcrumbs, listingDisplayName } from '@/lib/listingSeo';
 import { listingAlternatives, listingBrowsePath, listingLifecycle } from '@/lib/listingLifecycle';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
@@ -450,13 +450,18 @@ export default function ListingDetailClient({ initialListing = null }) {
   return (
     <div className="container">
       <div className="page-header">
-        <div className="breadcrumb">
-          <a href="/">Home</a>
-          <span className="breadcrumb-sep">›</span>
-          <span>{listing.game_name}</span>
-          <span className="breadcrumb-sep">›</span>
-          <span>{listing.category_name}</span>
-        </div>
+        {/* Home › Game › Category, each a real link to its page (SEO fix #2);
+            the layout emits the same trail as BreadcrumbList JSON-LD. */}
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          {listingBreadcrumbs(listing).map((crumb, index) => (
+            <Fragment key={`${index}-${crumb.name}`}>
+              {index > 0 && <span className="breadcrumb-sep">›</span>}
+              {crumb.path
+                ? <Link href={crumb.path}>{crumb.name}</Link>
+                : <span>{crumb.name}</span>}
+            </Fragment>
+          ))}
+        </nav>
       </div>
 
       <div className="listing-detail-layout">

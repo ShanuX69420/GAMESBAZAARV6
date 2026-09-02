@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SECTION_NAV_LINKS } from '@/lib/sectionNav';
 
 export default function Footer() {
   return (
@@ -24,14 +25,23 @@ export default function Footer() {
             </p>
           </div>
 
+          {/* Shop sections — the same five as the header strip (SEO fix #2) */}
+          <div>
+            <div className="footer-nav-title">Shop</div>
+            <ul className="footer-links">
+              {SECTION_NAV_LINKS.map(({ href, name }) => (
+                <li key={href}><Link href={href}>{name}</Link></li>
+              ))}
+            </ul>
+          </div>
+
           {/* Quick Links */}
           <div>
             <div className="footer-nav-title">Quick Links</div>
             <ul className="footer-links">
               <li><Link href="/">Home</Link></li>
               <li><Link href="/about">About</Link></li>
-              <li><Link href="/games">Games</Link></li>
-              <li><Link href="/subscriptions">Subscriptions</Link></li>
+              <li><Link href="/games">All Games</Link></li>
               <li><Link href="/reviews">Reviews</Link></li>
               <li><Link href="/support">Support</Link></li>
             </ul>

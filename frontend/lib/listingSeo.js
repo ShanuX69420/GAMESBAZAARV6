@@ -78,3 +78,52 @@ export function listingPageTitle({ name, price }) {
   const fitsTemplate = (title + TITLE_TEMPLATE_SUFFIX).length <= SEO_TITLE_MAX_LENGTH;
   return { title, absolute: !fitsTemplate };
 }
+
+function slugText(value) {
+  const slug = cleanText(value);
+  return /^[\w-]+$/.test(slug) ? slug : '';
+}
+
+/**
+ * Home › Game › Category trail for a listing page (SEO fix #2, 2026-09-02).
+ *
+ * Every crumb carries the page it points at; the listing page renders those
+ * as links and the layout folds the same trail into BreadcrumbList JSON-LD.
+ * The game and category slugs arrived with this fix — a payload cached
+ * before it carries the names only, and those crumbs come back with a null
+ * path so the page shows them as plain text instead of a broken link.
+ */
+export function listingBreadcrumbs(listing) {
+  const crumbs = [{ name: 'Home', path: '/' }];
+  const gameName = cleanText(listing?.game_name);
+  const categoryName = cleanText(listing?.category_name);
+  const gameSlug = slugText(listing?.game_slug);
+  const categorySlug = slugText(listing?.category_slug);
+  const gamePath = gameSlug ? `/games/${encodeURIComponent(gameSlug)}` : null;
+
+  if (gameName) crumbs.push({ name: gameName, path: gamePath });
+  if (categoryName) {
+    crumbs.push({
+      name: categoryName,
+      path: gamePath && categorySlug ? `${gamePath}/${encodeURIComponent(categorySlug)}` : null,
+    });
+  }
+  return crumbs;
+}
+
+/**
+ * The BreadcrumbList trail for a listing page: Home › "<Game> <Category>" ›
+ * (the listing, appended by the layout). The visible trail also links the
+ * game, but /games/<slug> always redirects to the game's busiest page and a
+ * schema URL has to be a final one — so the game item is left out and the
+ * category item is named after the page it points at ("Elden Ring Keys",
+ * that page's own title). Null until the payload carries the page slugs.
+ */
+export function listingSchemaBreadcrumbs(listing) {
+  const trail = listingBreadcrumbs(listing);
+  if (trail.length !== 3 || !trail[2].path) return null;
+  return [
+    trail[0],
+    { name: cleanText(`${trail[1].name} ${trail[2].name}`), path: trail[2].path },
+  ];
+}

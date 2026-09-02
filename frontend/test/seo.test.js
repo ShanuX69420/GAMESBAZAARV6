@@ -312,7 +312,7 @@ describe('SEO route metadata', () => {
       children: null,
       params: Promise.resolve({ id: 'GB-123' }),
     });
-    const data = element.props.children[0].props.data;
+    const [data] = element.props.children[0].props.data;
 
     expect(data.aggregateRating).toMatchObject({ ratingValue: 4.5, reviewCount: 2 });
     expect(data.review).toHaveLength(2);
@@ -320,6 +320,66 @@ describe('SEO route metadata', () => {
     // ISO datetime from the API is trimmed to the date Google expects.
     expect(data.review[0].datePublished).toBe('2026-07-01');
     expect(data.review[1]).not.toHaveProperty('reviewBody');
+  });
+
+  it('folds the listing breadcrumb trail into BreadcrumbList JSON-LD', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        title: 'Rare Valorant Account',
+        price: '12500',
+        game_name: 'Valorant',
+        game_slug: 'valorant',
+        category_name: 'Accounts',
+        category_slug: 'accounts',
+        status: 'active',
+      }),
+    }));
+
+    const { default: ListingLayout } = await importFresh('../app/listing/[id]/layout.js');
+    const element = await ListingLayout({
+      children: null,
+      params: Promise.resolve({ id: 'GB-123' }),
+    });
+    const [product, breadcrumb] = element.props.children[0].props.data;
+
+    expect(product['@type']).toBe('Product');
+    expect(breadcrumb['@type']).toBe('BreadcrumbList');
+    // No /games/valorant item: that URL always redirects to the game's
+    // busiest page, and schema URLs must be final ones.
+    expect(breadcrumb.itemListElement.map((item) => [item.position, item.name, item.item])).toEqual([
+      [1, 'Home', 'https://www.gamesbazaar.pk/'],
+      [2, 'Valorant Accounts', 'https://www.gamesbazaar.pk/games/valorant/accounts'],
+      [3, 'Rare Valorant Account', 'https://www.gamesbazaar.pk/listing/GB-123'],
+    ]);
+  });
+
+  it('skips the BreadcrumbList when a cached payload has no page slugs', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        title: 'Rare Valorant Account',
+        price: '12500',
+        game_name: 'Valorant',
+        category_name: 'Accounts',
+        status: 'active',
+      }),
+    }));
+
+    const { default: ListingLayout } = await importFresh('../app/listing/[id]/layout.js');
+    const element = await ListingLayout({
+      children: null,
+      params: Promise.resolve({ id: 'GB-123' }),
+    });
+    const [product, breadcrumb] = element.props.children[0].props.data;
+
+    expect(product['@type']).toBe('Product');
+    // A trail with dead links is worse than none; JsonLd drops the null.
+    expect(breadcrumb).toBeNull();
   });
 
   it('emits the Product fields Google requires for merchant listings', async () => {

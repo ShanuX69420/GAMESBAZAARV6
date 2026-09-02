@@ -503,3 +503,39 @@ class SitemapLifecycleTests(ListingLifecycleTestCase):
         ids = [row['id'] for row in response.data['results']]
         self.assertIn(live.pk, ids)
         self.assertNotIn(paused.pk, ids)
+
+
+class ListingDetailBreadcrumbTests(ListingLifecycleTestCase):
+    """SEO fix #2: the listing page links its breadcrumb (Home › Game ›
+    Category) to the real pages, so the payload has to say which page the
+    listing lives on — with the buyer-facing category slug, not the raw one."""
+
+    def test_detail_carries_the_page_slugs(self):
+        listing = self.make_listing()
+
+        response = self.get(listing.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['game_slug'], 'lifecycle-game')
+        self.assertEqual(response.data['category_slug'], 'keys')
+
+    def test_category_slug_is_the_renamed_one_when_the_page_is_renamed(self):
+        self.keys_page.display_name = 'Steam Keys'
+        self.keys_page.save()
+        listing = self.make_listing()
+
+        response = self.get(listing.pk)
+
+        self.assertEqual(response.data['category_name'], 'Steam Keys')
+        self.assertEqual(response.data['category_slug'], 'steam-keys')
+
+    def test_out_of_stock_page_keeps_its_breadcrumb_slugs(self):
+        # Old enough to have been indexed, off for two days: an out-of-stock
+        # page, which still shows the trail back to its category.
+        listing = self.make_listing(status='inactive', created_days_ago=10, off_days_ago=2)
+
+        response = self.get(listing.pk)
+
+        self.assertEqual(response.data['lifecycle']['state'], 'paused')
+        self.assertEqual(response.data['game_slug'], 'lifecycle-game')
+        self.assertEqual(response.data['category_slug'], 'keys')
