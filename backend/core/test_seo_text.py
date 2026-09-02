@@ -260,3 +260,62 @@ class FromPriceTitleTests(TestCase):
         self.game_category.save(update_fields=['seo_title'])
         self.add_listing('250.00')
         self.assertEqual(self.get_seo_title(), 'Buy PUBG Mobile UC in Pakistan')
+
+
+class DefaultPriceTitleTests(TestCase):
+    """Keys and accounts pages without hand-written copy get a generated
+    "<Game> <Category> in Pakistan from PKR X" title (pilot rolled out
+    sitewide 2026-09-03). Other categories keep the frontend fallback."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='dseller', password='pw12345678')
+        self.game = Game.objects.create(name='Elden Ring', slug='elden-ring')
+        self.keys = Category.objects.create(name='Keys', slug='keys')
+        self.accounts = Category.objects.create(name='Accounts', slug='accounts')
+        self.gift_cards = Category.objects.create(name='Gift Cards', slug='gift-cards')
+
+    def page(self, category, **fields):
+        return GameCategory.objects.create(game=self.game, category=category, **fields)
+
+    def add_listing(self, game_category, price, status='active'):
+        return Listing.objects.create(
+            seller=self.seller, game_category=game_category,
+            title=f'{price} listing', price=Decimal(price), status=status,
+        )
+
+    def get_seo_title(self, slug):
+        response = self.client.get(f'/api/games/elden-ring/{slug}/')
+        self.assertEqual(response.status_code, 200)
+        return response.data['seo_title']
+
+    def test_keys_page_without_copy_gets_a_priced_title(self):
+        page = self.page(self.keys)
+        self.add_listing(page, '5499.00')
+        self.add_listing(page, '8000.00')
+        self.assertEqual(self.get_seo_title('keys'), 'Elden Ring Keys in Pakistan from PKR 5,400')
+
+    def test_accounts_page_uses_the_per_game_display_name(self):
+        page = self.page(self.accounts, display_name='Steam Accounts')
+        self.add_listing(page, '12100.00')
+        self.assertEqual(
+            self.get_seo_title('accounts'),
+            'Elden Ring Steam Accounts in Pakistan from PKR 12,000',
+        )
+
+    def test_other_categories_keep_the_frontend_fallback(self):
+        page = self.page(self.gift_cards)
+        self.add_listing(page, '900.00')
+        self.assertEqual(self.get_seo_title('gift-cards'), '')
+
+    def test_no_stock_drops_the_price_phrase(self):
+        page = self.page(self.keys)
+        self.add_listing(page, '5000.00', status='inactive')
+        self.assertEqual(self.get_seo_title('keys'), 'Elden Ring Keys in Pakistan')
+
+    def test_hand_written_title_still_wins(self):
+        page = self.page(self.keys, seo_title='Buy Elden Ring in Pakistan')
+        self.add_listing(page, '5000.00')
+        self.assertEqual(self.get_seo_title('keys'), 'Buy Elden Ring in Pakistan')
+

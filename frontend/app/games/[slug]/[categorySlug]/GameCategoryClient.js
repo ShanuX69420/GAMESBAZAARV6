@@ -14,6 +14,23 @@ import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 import SoldCountBadge from '@/components/SoldCountBadge';
+import { listingDisplayName } from '@/lib/listingSeo';
+
+// Tiles show the seller's title minus the template boilerplate, the same name
+// the listing page itself uses (SEO fix #4) — "| STEAM | Elden Ring (PC) |
+// Full Access | 0H Played" reads as "Elden Ring (PC) Steam Account" here too.
+// Offer-mode listings keep their short denomination title: the page heading
+// already names the game and category.
+function tileTitle(listing, pageData) {
+  if (!listing) return '';
+  if (pageData?.listing_mode === 'offer') return listing.title;
+  return listingDisplayName({
+    ...listing,
+    listing_mode: pageData?.listing_mode,
+    game_name: pageData?.game?.name,
+    category_name: pageData?.category?.name,
+  }) || listing.title;
+}
 
 const LISTING_PAGE_SIZE = 48;
 // The listing list re-polls to refresh price/stock/rating on the cards already
@@ -1124,7 +1141,7 @@ export default function GameCategoryClient({ initialData = null }) {
               >
                 {/* Card Header - Title & Price */}
                 <div className="listing-card-header">
-                  <h3 className="listing-card-title">{listing.title}</h3>
+                  <h3 className="listing-card-title">{tileTitle(listing, data)}</h3>
                   <div className="listing-card-price">PKR {Number(listing.price).toLocaleString()}</div>
                 </div>
 

@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { API_BASE } from '@/lib/config';
-import { buildGameCategoryListingUrl } from '@/lib/marketplaceUrls';
+import { buildGameCategoryListingUrl, canonicalCategoryPath } from '@/lib/marketplaceUrls';
 import JsonLd from '@/components/JsonLd';
 import SeoTextBlocks from '@/components/SeoTextBlocks';
 import { faqPageJsonLd } from '@/lib/seo';
@@ -66,6 +66,17 @@ export default async function GameCategoryPage({ params, searchParams }) {
     }
     console.error('Failed to fetch initial category data:', error);
   }
+
+  // A renamed page also answers at the category's own slug (old links keep
+  // working), but only the buyer-facing URL should exist for search engines —
+  // otherwise Google sees two self-canonical copies of the same page.
+  const canonicalPath = canonicalCategoryPath({
+    gameSlug: slug,
+    requestedSlug: categorySlug,
+    data: initialData,
+    query,
+  });
+  if (canonicalPath) permanentRedirect(canonicalPath);
 
   return (
     <>

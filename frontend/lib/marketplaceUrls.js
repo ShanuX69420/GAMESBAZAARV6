@@ -66,3 +66,29 @@ export function buildSellerListingsPath({ gameSlug, categorySlug }) {
 export function buildSellerProfilePath(username) {
   return `/seller/${encodePathSegment(username)}`;
 }
+
+/**
+ * Renamed category pages answer at both the buyer-facing slug (e.g.
+ * /games/roblox/robux) and the category's own slug (/games/roblox/currency):
+ * the backend resolves either so old links keep working. Only the buyer-facing
+ * URL is canonical. Returns the path to send the other one to, with the query
+ * string preserved, or null when the request already uses the canonical slug
+ * (or there is no data to decide with).
+ */
+export function canonicalCategoryPath({ gameSlug, requestedSlug, data, query }) {
+  const canonicalSlug = String(data?.category?.slug || '').trim();
+  const requested = String(requestedSlug || '').trim();
+  if (!canonicalSlug || !requested || canonicalSlug === requested) return null;
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query || {})) {
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      if (item === undefined || item === null || item === '') continue;
+      params.append(key, String(item));
+    }
+  }
+  const search = params.toString();
+  return `/games/${encodeURIComponent(gameSlug)}/${encodeURIComponent(canonicalSlug)}${search ? `?${search}` : ''}`;
+}
+

@@ -1103,12 +1103,30 @@ class GameDetailView(generics.RetrieveAPIView):
 SEO_FROM_PRICE_TOKEN = '{from_price}'
 
 
+# Keys and accounts pages without hand-written copy get a generated title that
+# carries the same price token. The 2026-08-29 pilot (12 hand-titled pages) was
+# rolled out sitewide on 2026-09-03 at Shayan's call: "<game> price in pakistan"
+# is the query pattern these pages already rank for, and a title without a
+# price was drawing ~0% CTR. Other categories keep the frontend's generic
+# fallback until they get real copy.
+DEFAULT_PRICE_TITLE_CATEGORIES = ('keys', 'accounts')
+
+
+def default_seo_title(game_category):
+    if game_category.category.slug not in DEFAULT_PRICE_TITLE_CATEGORIES:
+        return ''
+    return (
+        f'{game_category.game.name} {game_category.effective_name} in Pakistan '
+        f'from PKR {SEO_FROM_PRICE_TOKEN}'
+    )
+
+
 def seo_title_with_from_price(game_category):
     """Fill the from-price token in a seo_title. The price is floored to two
     significant digits (8,499 -> 8,400) so daily price-sync jitter doesn't
     churn the title Google has cached. With no active listings the whole
     "from PKR ..." phrase drops out, leaving the plain hand-written title."""
-    title = game_category.seo_title or ''
+    title = game_category.seo_title or default_seo_title(game_category)
     if SEO_FROM_PRICE_TOKEN not in title:
         return title
     min_price = Listing.objects.filter(
