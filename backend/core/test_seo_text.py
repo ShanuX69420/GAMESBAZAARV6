@@ -133,6 +133,70 @@ class SeedSeoTextTests(TestCase):
         self.assertEqual(self.game_category.seo_title, '')
 
 
+    def test_links_must_be_site_relative(self):
+        for href in ('https://example.com/x', '//example.com/x', 'games/pubg-mobile/uc'):
+            with self.assertRaises(CommandError):
+                self.run_command([{
+                    'game': 'pubg-mobile',
+                    'category': 'uc',
+                    'seo_body': f'See [the other page]({href}) too.',
+                }])
+        self.game_category.refresh_from_db()
+        self.assertEqual(self.game_category.seo_body, '')
+
+    def test_links_are_only_allowed_in_the_body(self):
+        with self.assertRaises(CommandError):
+            self.run_command([{
+                'game': 'pubg-mobile',
+                'category': 'uc',
+                'seo_title': 'UC [here](/games/pubg-mobile/uc)',
+            }])
+
+    def test_link_to_a_missing_page_skips_that_page_until_fixed(self):
+        pages = [{
+            'game': 'pubg-mobile',
+            'category': 'uc',
+            'seo_title': 'UC title',
+            'seo_body': 'Codes are on our [gift-cards page](/games/pubg-mobile/gift-cards).',
+        }]
+        output = self.run_command(pages)
+        self.assertIn('1 page(s) skipped for dead links', output)
+        self.assertIn('pubg-mobile/uc: /games/pubg-mobile/gift-cards', output)
+        self.game_category.refresh_from_db()
+        # Nothing on the page is written, not even the title, so the copy
+        # goes live as one piece once the link is fixed.
+        self.assertEqual(self.game_category.seo_title, '')
+        self.assertEqual(self.game_category.seo_body, '')
+
+        gift_cards = Category.objects.create(name='Gift Cards', slug='gift-cards')
+        GameCategory.objects.create(game=self.game, category=gift_cards)
+        output = self.run_command(pages)
+        self.assertIn('1 updated', output)
+        self.assertIn('0 page(s) skipped', output)
+        self.game_category.refresh_from_db()
+        self.assertEqual(self.game_category.seo_title, 'UC title')
+
+    def test_links_resolve_display_slugs_game_pages_and_static_routes(self):
+        game = Game.objects.create(name='Free Fire', slug='free-fire')
+        category = Category.objects.create(name='Top Ups', slug='top-ups')
+        GameCategory.objects.create(game=game, category=category, display_name='Diamonds')
+
+        body = (
+            'Pakistan server? Use the [Free Fire Diamonds page](/games/free-fire/diamonds), '
+            'the [Free Fire hub](/games/free-fire) or browse [all top-ups](/top-ups).'
+        )
+        output = self.run_command([{
+            'game': 'pubg-mobile', 'category': 'uc', 'seo_body': body,
+        }])
+        self.assertIn('1 updated', output)
+        self.game_category.refresh_from_db()
+        self.assertEqual(self.game_category.seo_body, body)
+
+        # The API hands the markup through untouched; the frontend renders it.
+        response = self.client.get('/api/games/pubg-mobile/uc/')
+        self.assertEqual(response.data['seo_body'], body)
+
+
 class FromPriceTitleTests(TestCase):
     """The "from PKR {from_price}" token in seo_title, filled per-response."""
 

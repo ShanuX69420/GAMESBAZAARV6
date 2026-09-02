@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 import { API_BASE } from '@/lib/config';
 import { buildGameCategoryListingUrl } from '@/lib/marketplaceUrls';
+import SeoTextBlocks from '@/components/SeoTextBlocks';
+import { splitSeoBlocks } from '@/lib/seoText';
 import GameCategoryClient from './GameCategoryClient';
 
 const LISTING_PAGE_SIZE = 48;
@@ -26,28 +28,16 @@ async function fetchInitialCategoryData({ slug, categorySlug, option, method, re
   return res.json();
 }
 
-// Server-rendered so crawlers see the text without JS. Blank lines separate
-// paragraphs; "## " lines become subheadings and "### " sub-subheadings, e.g.
-// FAQ questions (matches the seo_body help text).
+// Server-rendered so crawlers see the text without JS. Copy conventions
+// (paragraphs, "## " headings, [text](/path) links) live in lib/seoText.js.
 function CategorySeoText({ text }) {
-  const blocks = String(text || '')
-    .split(/\n\s*\n/)
-    .map((block) => block.trim())
-    .filter(Boolean);
+  const blocks = splitSeoBlocks(text);
   if (!blocks.length) return null;
 
   return (
     <div className="container">
       <section className="category-seo-text">
-        {blocks.map((block, index) => {
-          if (block.startsWith('### ')) {
-            return <h3 key={index}>{block.slice(4).trim()}</h3>;
-          }
-          if (block.startsWith('## ')) {
-            return <h2 key={index}>{block.slice(3).trim()}</h2>;
-          }
-          return <p key={index}>{block}</p>;
-        })}
+        <SeoTextBlocks blocks={blocks} />
       </section>
     </div>
   );
