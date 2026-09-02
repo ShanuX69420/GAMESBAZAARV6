@@ -123,4 +123,53 @@ describe('Next configuration', () => {
       },
     ]);
   });
+
+  it('redirects retired catalog pages to their nearest live page', async () => {
+    const { default: nextConfig } = await importFreshNextConfig();
+    const redirects = await nextConfig.redirects();
+    const byPath = Object.fromEntries(redirects.map((entry) => [entry.source, entry]));
+
+    // Section-level retirements that already existed.
+    expect(byPath['/offline-activation']).toMatchObject({ destination: '/keys', permanent: true });
+    expect(byPath['/top-ups']).toMatchObject({ destination: '/subscriptions', permanent: true });
+
+    // Deleted top-up pages go to the same game's gift-card page when it exists...
+    expect(byPath['/games/pubg-mobile/uc']).toMatchObject({
+      destination: '/games/pubg-mobile/gift-cards',
+      permanent: true,
+    });
+    expect(byPath['/games/free-fire/diamonds']).toMatchObject({
+      destination: '/games/free-fire/gift-cards',
+      permanent: true,
+    });
+    // The plain category-slug alias of a renamed page follows the same rule.
+    expect(byPath['/games/pubg-mobile/top-ups']).toMatchObject({
+      destination: '/games/pubg-mobile/gift-cards',
+      permanent: true,
+    });
+    // ...and to the gift-cards section when the brand is gone entirely.
+    expect(byPath['/games/netflix/gift-cards']).toMatchObject({ destination: '/gift-cards', permanent: true });
+    expect(byPath['/games/netflix']).toMatchObject({ destination: '/gift-cards', permanent: true });
+
+    // Offline activation: per-game exceptions first, then the wildcard to keys.
+    const wildcardIndex = redirects.findIndex((entry) => entry.source === '/games/:game/offline-activation');
+    expect(wildcardIndex).toBeGreaterThan(-1);
+    expect(redirects[wildcardIndex]).toMatchObject({ destination: '/games/:game/keys', permanent: true });
+    const exceptionIndex = redirects.findIndex((entry) => entry.source === '/games/alan-wake-2/offline-activation');
+    expect(exceptionIndex).toBeGreaterThan(-1);
+    expect(exceptionIndex).toBeLessThan(wildcardIndex);
+    expect(redirects[exceptionIndex].destination).toBe('/games/alan-wake-2/rentals');
+    expect(byPath['/games/epic-games/offline-activation'].destination).toBe('/keys');
+
+    // Hygiene: every rule is permanent, site-relative, unique, and never
+    // points at another retired URL (no redirect chains).
+    const sources = redirects.map((entry) => entry.source);
+    expect(new Set(sources).size).toBe(sources.length);
+    for (const entry of redirects) {
+      expect(entry.permanent).toBe(true);
+      expect(entry.destination).toMatch(/^\//);
+      expect(entry.destination).not.toBe(entry.source);
+      expect(sources).not.toContain(entry.destination);
+    }
+  });
 });

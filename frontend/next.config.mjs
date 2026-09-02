@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { retiredRedirects } from './lib/retiredRoutes.mjs';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
@@ -71,6 +72,10 @@ const nextConfig = {
         destination: '/subscriptions',
         permanent: true,
       },
+      // Per-page fallout of the same retirements (deleted game+category
+      // pages, emptied game pages, the offline-activation category on every
+      // game) — data lives in lib/retiredRoutes.mjs.
+      ...retiredRedirects(),
     ];
   },
   images: {
