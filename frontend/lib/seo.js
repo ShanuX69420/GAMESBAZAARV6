@@ -1,3 +1,5 @@
+import { BUSINESS } from '@/lib/business';
+
 export const SITE_NAME = 'GamesBazaar';
 export const DEFAULT_SITE_URL = 'http://localhost:3000';
 export const DEFAULT_TITLE = "GamesBazaar - Pakistan's Digital Gaming Store";
@@ -71,16 +73,27 @@ export function organizationJsonLd() {
     name: SITE_NAME,
     url: absoluteUrl('/'),
     logo: absoluteUrl('/logo.png'),
-    email: 'support@gamesbazaar.pk',
+    description: DEFAULT_DESCRIPTION,
+    foundingDate: BUSINESS.foundedYear,
+    email: BUSINESS.email,
     telephone: '+92-371-2101998',
+    address: {
+      '@type': 'PostalAddress',
+      addressLocality: BUSINESS.city,
+      addressCountry: BUSINESS.countryCode,
+    },
+    areaServed: {
+      '@type': 'Country',
+      name: BUSINESS.country,
+    },
     sameAs: [
-      'https://www.instagram.com/gamesbazaar.pk/',
-      'https://www.facebook.com/profile.php?id=61593041638198',
+      BUSINESS.instagram,
+      BUSINESS.facebook,
     ],
     contactPoint: [{
       '@type': 'ContactPoint',
       contactType: 'customer support',
-      email: 'support@gamesbazaar.pk',
+      email: BUSINESS.email,
       telephone: '+92-371-2101998',
       areaServed: 'PK',
       availableLanguage: ['en', 'ur'],

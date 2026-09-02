@@ -9785,6 +9785,37 @@ html[data-auth-hint="1"] .navbar-guest-links {
   flex-shrink: 0;
 }
 
+/* ── About page (reuses the legal layout; its fact rows are sentences, not
+   icon + one-liner, so they take the body size instead of the icon slot) ── */
+.about-facts .legal-contact-row {
+  align-items: flex-start;
+}
+.about-facts .legal-contact-row span:first-child {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.about-facts .legal-contact-row strong {
+  color: var(--text-primary);
+}
+/* Inline links in the About copy follow the SEO-copy convention (.category-seo-text a). */
+.about-page .legal-section a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.about-page .legal-section a:hover,
+.about-page .legal-grid-item strong a {
+  color: var(--green-600);
+}
+.about-page .legal-grid-item strong a {
+  text-decoration: none;
+}
+.about-page .legal-grid-item strong a:hover {
+  text-decoration: underline;
+}
 /* ── Legal Page Responsive ──────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
