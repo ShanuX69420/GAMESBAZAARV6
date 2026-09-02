@@ -442,6 +442,10 @@ export default function GameCategoryClient({ initialData = null }) {
   const hasActiveFilters = Object.values(activeFilters).some(v => v)
     || instantDeliveryFilter || Boolean(searchInput);
 
+  const visibleCategories = (all_categories || []).filter(
+    (cat) => cat.slug === categorySlug || (cat.listing_count || 0) > 0,
+  );
+
   return (
     <div className="container">
       {/* Page Header */}
@@ -459,12 +463,11 @@ export default function GameCategoryClient({ initialData = null }) {
         </div>
       </div>
 
-      {/* Category Tabs — every sibling page stays in the strip, stocked or not.
-          An empty Keys/Accounts page is still the place the Fazer sync restocks
-          and buyers file item requests, so it must stay one click away. */}
-      {all_categories && all_categories.length > 1 && (
+      {/* Category Tabs — empty sibling categories stay out of the strip so a
+          page that has run dry (or was retired) is never one click away. */}
+      {visibleCategories.length > 1 && (
         <div className="category-tabs">
-          {all_categories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat.slug}
               className={`category-tab ${cat.slug === categorySlug ? 'category-tab-active' : ''}`}
