@@ -78,8 +78,10 @@ HOME_POPULAR_SECTIONS = [
     # under Top Ups — PlayStation Plus and Xbox Game Pass — moved to the
     # Subscriptions category; the old 'top-ups' category keeps its
     # deactivated listings and is no longer a section.
+    # Two games only (PlayStation, Xbox) — too thin for a home panel
+    # (Shayan 2026-09-02); the View All page stays, linked from the footer.
     {'slug': 'subscriptions', 'title': 'Popular Subscriptions',
-     'category_slugs': ('subscriptions',)},
+     'category_slugs': ('subscriptions',), 'home': False},
     {'slug': 'keys', 'title': 'Popular Keys',
      'category_slugs': ('keys',), 'facets': ('method', 'region'),
      'sortable': True},

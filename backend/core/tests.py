@@ -4194,31 +4194,33 @@ class HomePopularViewTests(TestCase):
         self.assertEqual(items[1]['listing_count'], 1)
 
     def test_category_slug_uses_per_game_display_override(self):
-        self.add_game('Xbox', 'xbox', self.subscriptions, display_name='Game Pass')
+        self.add_game('Valorant', 'valorant', self.accounts, display_name='Logins')
 
         response = self.client.get('/api/home/popular/')
 
         sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['subscriptions'])
-        self.assertEqual(sections[0]['title'], 'Popular Subscriptions')
-        self.assertEqual(sections[0]['items'][0]['category_slug'], 'game-pass')
+        self.assertEqual([s['slug'] for s in sections], ['accounts'])
+        self.assertEqual(sections[0]['items'][0]['category_slug'], 'logins')
 
-    def test_retired_top_ups_category_is_not_a_section(self):
+    def test_subscriptions_and_retired_top_ups_get_no_home_panel(self):
         # Direct top-ups were retired 2026-09-02: the category still exists
         # (it holds the deactivated listings) but no panel is built for it,
-        # whichever historical spelling of its slug is in use.
+        # whichever historical spelling of its slug is in use. Subscriptions
+        # (PlayStation, Xbox) is a registered section with a View All page
+        # but is kept off the home page — two games make a thin panel.
         for slug in ('top-up', 'top-ups', 'subscription'):
             self.add_game(f'Game {slug}', f'game-{slug}',
                           Category.objects.create(name=f'Top Ups {slug}', slug=slug))
-        self.add_game('PlayStation', 'playstation', self.subscriptions,
-                      display_name='Subscription')
+        self.add_listing(self.add_game('PlayStation', 'playstation', self.subscriptions,
+                                       display_name='Subscription'))
+        self.add_listing(self.add_game('Valorant', 'valorant', self.accounts))
 
         response = self.client.get('/api/home/popular/')
+        self.assertEqual([s['slug'] for s in response.data['sections']], ['accounts'])
 
-        sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['subscriptions'])
-        self.assertEqual(
-            [item['game_slug'] for item in sections[0]['items']], ['playstation'])
+        response = self.client.get('/api/categories/subscriptions/games/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([i['game_slug'] for i in response.data['items']], ['playstation'])
 
     def test_sections_are_capped_per_category(self):
         from .views import HOME_POPULAR_GAMES_PER_SECTION
