@@ -79,7 +79,7 @@ describe('listingDisplayName', () => {
     })).toBe('Xbox Game Pass Ultimate 1 Month');
   });
 
-  it('leaves standard and currency listings exactly as written', () => {
+  it('leaves standard and currency listings without boilerplate exactly as written', () => {
     expect(listingDisplayName({
       title: 'Elden Ring (PS4/PS5) - Rent 30 Days',
       listing_mode: 'standard',
@@ -94,12 +94,130 @@ describe('listingDisplayName', () => {
       category_name: 'Rentals',
     })).toBe('Far Cry 3 Classic Edition (PS4/PS5) - Rent 7 Days');
 
+    // Keys titles carry pipes too, but every segment there says something.
+    expect(listingDisplayName({
+      title: 'ELDEN RING (PC) | Steam Gift | Pakistan Region',
+      listing_mode: 'standard',
+      game_name: 'Elden Ring',
+      category_name: 'Keys',
+    })).toBe('ELDEN RING (PC) | Steam Gift | Pakistan Region');
+
+    expect(listingDisplayName({
+      title: 'Broforce (PC) | Steam Key | Global',
+      listing_mode: 'standard',
+      game_name: 'Steam',
+      category_name: 'Keys',
+    })).toBe('Broforce (PC) | Steam Key | Global');
+
     expect(listingDisplayName({
       title: 'Robux',
       listing_mode: 'currency',
       game_name: 'Roblox',
       category_name: 'Robux',
     })).toBe('Robux');
+  });
+
+  // SEO fix #4 (2026-09-03): 907 of 916 account titles were the seller
+  // template "| STEAM | <game> (PC) | Full Access | 0H Played | Can Change
+  // Data | Fast Delivery". Display only — the stored title never changes.
+  it('strips the seller-template boilerplate from account titles', () => {
+    expect(listingDisplayName({
+      title: '| STEAM | ELDEN RING (PC) | Full Access | 0H Played | Can Change Data | Fast Delivery',
+      listing_mode: 'standard',
+      game_name: 'Elden Ring',
+      category_name: 'Accounts',
+      filter_display: { Platform: 'PC' },
+    })).toBe('ELDEN RING (PC) Steam Account');
+
+    expect(listingDisplayName({
+      title: '| STEAM | Resident Evil 7 Gold Edition & Village Gold Edition (PC) | Full Access | 0H Played | Can Change Data | Fast Delivery',
+      listing_mode: 'standard',
+      game_name: 'Resident Evil',
+      category_name: 'Accounts',
+    })).toBe('Resident Evil 7 Gold Edition & Village Gold Edition (PC) Steam Account');
+
+    // Ubisoft's template has five segments and a different wording.
+    expect(listingDisplayName({
+      title: '| UBISOFT | Anno 1800 (PC) | Full Access | Email + Password Changeable | Fast Delivery',
+      listing_mode: 'standard',
+      game_name: 'Anno 1800',
+      category_name: 'Accounts',
+    })).toBe('Anno 1800 (PC) Ubisoft Account');
+
+    expect(listingDisplayName({
+      title: '| EPIC | Alan Wake 2 (PC) | Full Access | 0H Played | Can Change Data | Fast Delivery',
+      listing_mode: 'standard',
+      game_name: 'Alan Wake 2',
+      category_name: 'Accounts',
+    })).toBe('Alan Wake 2 (PC) Epic Games Account');
+  });
+
+  it('strips boilerplate that trails the name without a pipe', () => {
+    expect(listingDisplayName({
+      title: 'Grand Theft Auto V Enhanced + Legacy 0H Played',
+      listing_mode: 'standard',
+      game_name: 'GTA 5',
+      category_name: 'Accounts',
+    })).toBe('Grand Theft Auto V Enhanced + Legacy');
+
+    expect(listingDisplayName({
+      title: 'Hogwarts Legacy (PC) 0 Hours Played Fast Delivery',
+      listing_mode: 'standard',
+      category_name: 'Accounts',
+    })).toBe('Hogwarts Legacy (PC)');
+  });
+
+  it('does not repeat a launcher or product word the title already carries', () => {
+    expect(listingDisplayName({
+      title: 'FRESH STEAM ACCOUNT UKRAINE REGION',
+      listing_mode: 'standard',
+      game_name: 'Steam',
+      category_name: 'Accounts',
+      filter_display: { Region: 'Ukraine' },
+    })).toBe('FRESH STEAM ACCOUNT UKRAINE REGION');
+
+    expect(listingDisplayName({
+      title: '| STEAM | Fresh Steam Account (Ukraine) | Full Access | Fast Delivery',
+      listing_mode: 'standard',
+      game_name: 'Steam',
+      category_name: 'Accounts',
+    })).toBe('Fresh Steam Account (Ukraine)');
+
+    expect(listingDisplayName({
+      title: '| STEAM | Steam Deck Bundle (PC) | Fast Delivery',
+      listing_mode: 'standard',
+      category_name: 'Accounts',
+    })).toBe('Steam Deck Bundle (PC) Account');
+
+    // The product word follows the category: the same template on a keys page.
+    expect(listingDisplayName({
+      title: '| STEAM | Broforce (PC) | Fast Delivery',
+      listing_mode: 'standard',
+      category_name: 'Keys',
+    })).toBe('Broforce (PC) Steam Key');
+  });
+
+  it('drops emoji decoration but keeps text symbols', () => {
+    expect(listingDisplayName({
+      title: '💎 Atomfall + PC Game Pass ✦ 250+ Games ✦ 12 Months (PC)',
+      listing_mode: 'standard',
+      game_name: 'Atomfall',
+      category_name: 'Accounts',
+    })).toBe('Atomfall + PC Game Pass ✦ 250+ Games ✦ 12 Months (PC)');
+
+    expect(listingDisplayName({
+      title: "Assassin's Creed® Valhalla™ (PC) | Steam Gift | Pakistan Region",
+      listing_mode: 'standard',
+      category_name: 'Keys',
+    })).toBe("Assassin's Creed® Valhalla™ (PC) | Steam Gift | Pakistan Region");
+  });
+
+  it('never returns an empty name when a title is only boilerplate or pipes', () => {
+    expect(listingDisplayName({ title: '| Full Access | Fast Delivery', listing_mode: 'standard' }))
+      .toBe('| Full Access | Fast Delivery');
+    expect(listingDisplayName({ title: '| |', listing_mode: 'standard' })).toBe('| |');
+    expect(listingDisplayName({ title: '| STEAM | Fast Delivery', listing_mode: 'standard', category_name: 'Accounts' }))
+      .toBe('| STEAM | Fast Delivery');
   });
 
   it('collapses whitespace and survives missing fields', () => {

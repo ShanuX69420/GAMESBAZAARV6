@@ -471,7 +471,9 @@ export default function ListingDetailClient({ initialListing = null }) {
         <div className="listing-detail-header">
           {/* Same name as the page <title> and Product JSON-LD: brand and
               product word on gift cards / top-ups ("Steam 5 USD (Argentina)
-              Gift Card"), the bare title everywhere else. */}
+              Gift Card"), the seller-template boilerplate stripped on
+              accounts ("ELDEN RING (PC) Steam Account"), the bare title
+              everywhere else. The stored title is never changed. */}
           <h1 className="listing-detail-title">{listingDisplayName(listing) || listing.title}</h1>
 
           {/* Filter badges */}

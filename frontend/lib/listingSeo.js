@@ -29,8 +29,95 @@ function hasTypeFilter(listing) {
   return Object.keys(filters).some((name) => cleanText(name).toLowerCase() === 'type');
 }
 
+// Seller-template boilerplate on standard listings. Every account title
+// (907 of 916 on 2026-09-03) reads "| STEAM | ELDEN RING (PC) | Full Access |
+// 0H Played | Can Change Data | Fast Delivery": every segment but the game
+// says the same thing on every page and eats the 60-character title budget.
+// Matched as a whole "|" segment or as the tail of one ("... 0H Played").
+const BOILERPLATE_PHRASES = [
+  'full access',
+  'fast delivery',
+  'can change (?:all )?data',
+  'email \\+ password changeable',
+  '0\\s*h(?:ours?)?\\s+played',
+];
+const BOILERPLATE_SEGMENT = new RegExp(`^(?:${BOILERPLATE_PHRASES.join('|')})$`, 'i');
+const TRAILING_BOILERPLATE = new RegExp(`\\s+(?:${BOILERPLATE_PHRASES.join('|')})$`, 'i');
+
+// A leading "| STEAM |" segment names the launcher the account lives on. It
+// is folded into the product word instead of being dropped: "Steam Account"
+// is what people search for.
+const LAUNCHERS = {
+  steam: 'Steam',
+  ubisoft: 'Ubisoft',
+  'ubisoft connect': 'Ubisoft',
+  uplay: 'Ubisoft',
+  epic: 'Epic Games',
+  'epic games': 'Epic Games',
+  ea: 'EA',
+  'ea app': 'EA',
+  origin: 'EA',
+  rockstar: 'Rockstar',
+  gog: 'GOG',
+  'battle.net': 'Battle.net',
+  battlenet: 'Battle.net',
+  xbox: 'Xbox',
+  playstation: 'PlayStation',
+  psn: 'PlayStation',
+};
+
+// Emoji decoration ("💎 Atomfall + PC Game Pass") is not part of the name.
+// Emoji-presentation characters only: ©, ™, ★ and ✦ are text and stay.
+const EMOJI = /\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F|\uFE0F/gu;
+
+function stripTrailingBoilerplate(segment) {
+  let text = cleanText(segment);
+  while (TRAILING_BOILERPLATE.test(text)) {
+    text = cleanText(text.replace(TRAILING_BOILERPLATE, ''));
+  }
+  return text;
+}
+
 /**
- * Listing name for <title>, description and Product JSON-LD.
+ * Standard listings (accounts, keys, rentals): the seller's title with the
+ * template boilerplate removed. "| STEAM | ELDEN RING (PC) | Full Access |
+ * 0H Played | Can Change Data | Fast Delivery" becomes "ELDEN RING (PC) Steam
+ * Account" — the launcher segment and the singular category word make the
+ * product word, added only when the title does not already say them. A title
+ * with nothing to remove (keys: "ELDEN RING (PC) | Steam Gift | Pakistan
+ * Region", rentals) is returned exactly as written.
+ */
+function standardListingName(listing, title) {
+  const segments = title.split('|').map((segment) => cleanText(segment.replace(EMOJI, ''))).filter(Boolean);
+  if (!segments.length) return title;
+
+  let launcher = '';
+  if (segments.length > 1) {
+    launcher = LAUNCHERS[segments[0].toLowerCase()] || '';
+    if (launcher) segments.shift();
+  }
+
+  const kept = segments
+    .filter((segment) => !BOILERPLATE_SEGMENT.test(segment))
+    .map(stripTrailingBoilerplate)
+    .filter(Boolean);
+  const name = kept.join(' | ');
+  if (!name) return title;
+  if (!launcher && name === title) return title;
+
+  const parts = [name];
+  if (launcher) {
+    const categoryWord = singularize(listing?.category_name);
+    const words = [];
+    if (!containsIgnoringCase(name, launcher)) words.push(launcher);
+    if (categoryWord && !containsIgnoringCase(name, categoryWord)) words.push(categoryWord);
+    if (words.length) parts.push(words.join(' '));
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Listing name for <title>, H1, description and Product JSON-LD.
  *
  * Offer-mode listings (gift cards, top-ups) are titled by denomination only:
  * "5 USD (Argentina)", "60 UC". Thirteen brands share "50 USD (USA)", so the
@@ -39,13 +126,14 @@ function hasTypeFilter(listing) {
  * the singular category word: "Steam 5 USD (Argentina) Gift Card",
  * "PUBG Mobile 60 UC", "Xbox 1 Month (USA) Game Pass".
  *
- * Standard and currency listings already carry the game in their title
- * (rentals, keys, accounts) and are left exactly as written.
+ * Standard listings carry the game in their title already; they lose the
+ * seller-template boilerplate instead (see standardListingName). The stored
+ * title is never changed — this is display only.
  */
 export function listingDisplayName(listing) {
   const title = cleanText(listing?.title);
   if (!title) return '';
-  if (cleanText(listing?.listing_mode) !== 'offer') return title;
+  if (cleanText(listing?.listing_mode) !== 'offer') return standardListingName(listing, title);
 
   const game = cleanText(listing?.game_name);
   const parts = [];
