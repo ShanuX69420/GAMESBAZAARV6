@@ -225,12 +225,12 @@ class FromPriceTitleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         return response.data['seo_title']
 
-    def test_token_filled_with_min_price_floored_to_two_significant_digits(self):
+    def test_token_filled_with_the_exact_cheapest_active_price(self):
         self.add_listing('8499.00')
         self.add_listing('12000.00')
         self.assertEqual(
             self.get_seo_title(),
-            'Buy PUBG Mobile UC in Pakistan from PKR 8,400 — Top-Up',
+            'Buy PUBG Mobile UC in Pakistan from PKR 8,499 — Top-Up',
         )
 
     def test_small_prices_stay_exact(self):
@@ -294,14 +294,14 @@ class DefaultPriceTitleTests(TestCase):
         page = self.page(self.keys)
         self.add_listing(page, '5499.00')
         self.add_listing(page, '8000.00')
-        self.assertEqual(self.get_seo_title('keys'), 'Elden Ring Keys in Pakistan from PKR 5,400')
+        self.assertEqual(self.get_seo_title('keys'), 'Elden Ring Keys in Pakistan from PKR 5,499')
 
     def test_accounts_page_uses_the_per_game_display_name(self):
         page = self.page(self.accounts, display_name='Steam Accounts')
         self.add_listing(page, '12100.00')
         self.assertEqual(
             self.get_seo_title('accounts'),
-            'Elden Ring Steam Accounts in Pakistan from PKR 12,000',
+            'Elden Ring Steam Accounts in Pakistan from PKR 12,100',
         )
 
     def test_other_categories_keep_the_frontend_fallback(self):

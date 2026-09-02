@@ -1097,7 +1097,7 @@ class GameDetailView(generics.RetrieveAPIView):
 
 
 # Hand-written seo_titles may carry a "from PKR {from_price}" phrase; the token
-# is filled with the page's cheapest active listing price at response time
+# is filled with the page's cheapest active listing price (exact) at response time
 # (Search Console pilot 2026-08-29: "<game> price in pakistan" queries ranked
 # top-10 with ~0% CTR because the titles showed no price).
 SEO_FROM_PRICE_TOKEN = '{from_price}'
@@ -1122,10 +1122,13 @@ def default_seo_title(game_category):
 
 
 def seo_title_with_from_price(game_category):
-    """Fill the from-price token in a seo_title. The price is floored to two
-    significant digits (8,499 -> 8,400) so daily price-sync jitter doesn't
-    churn the title Google has cached. With no active listings the whole
-    "from PKR ..." phrase drops out, leaving the plain hand-written title."""
+    """Fill the from-price token in a seo_title with the page's cheapest active
+    price, exactly as the tile shows it. (The pilot floored it to two
+    significant digits against sync jitter; Shayan dropped that on 2026-09-03
+    when "from PKR 11,000" sat above a PKR 11,900 tile — the syncs already
+    round every price up to the next 50 / 10, so titles only move when a
+    price really moves.) With no active listings the whole "from PKR ..."
+    phrase drops out, leaving the plain hand-written title."""
     title = game_category.seo_title or default_seo_title(game_category)
     if SEO_FROM_PRICE_TOKEN not in title:
         return title
@@ -1137,11 +1140,7 @@ def seo_title_with_from_price(game_category):
                        flags=re.IGNORECASE)
         title = title.replace(SEO_FROM_PRICE_TOKEN, '')
         return ' '.join(title.split())
-    price = int(min_price)
-    if price >= 100:
-        step = 10 ** (len(str(price)) - 2)
-        price -= price % step
-    return title.replace(SEO_FROM_PRICE_TOKEN, f'{price:,}')
+    return title.replace(SEO_FROM_PRICE_TOKEN, f'{int(min_price):,}')
 
 
 class GameCategoryDetailView(APIView):
