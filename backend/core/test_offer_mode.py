@@ -52,6 +52,21 @@ class OfferModeTests(TestCase):
             **kwargs,
         )
 
+    def test_tiles_sharing_an_order_slot_sort_by_amount_not_alphabet(self):
+        # A card seeded later lands on the same `order` as its neighbour; the
+        # tie must break on the number in the name ("5 USD" before "10 USD"),
+        # never A-Z (Shayan 2026-09-02, Steam Global page).
+        late = CategoryOption.objects.create(
+            game_category=self.game_category, name='5 UC', order=0)
+        for opt in (late, self.option_small, self.option_popular):
+            self.make_offer(self.seller, opt, '100.00')
+
+        response = self.client.get('/api/games/pubg-mobile/uc/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([o['name'] for o in response.data['options']],
+                         ['5 UC', '60 UC', '325 UC'])
+
     def test_browse_returns_options_with_min_price_and_offer_count(self):
         self.make_offer(self.seller, self.option_small, '150.00')
         self.make_offer(self.other_seller, self.option_small, '120.00')

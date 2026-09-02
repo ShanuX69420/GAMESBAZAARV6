@@ -101,6 +101,17 @@ HOME_POPULAR_CACHE_SECONDS = 60
 CATEGORY_SECTION_BY_SLUG = {
     section['slug']: section for section in HOME_POPULAR_SECTIONS
 }
+
+
+_FIRST_NUMBER = re.compile(r'\d[\d,]*(?:\.\d+)?')
+
+
+def option_display_key(option):
+    """Sort key for offer-mode tiles: admin order first, then the first
+    number in the name (5 USD < 10 USD, 1 Month < 12 Months), then A-Z."""
+    match = _FIRST_NUMBER.search(option.name)
+    number = float(match.group().replace(',', '')) if match else float('inf')
+    return (option.order, number, option.name.lower())
 # Section listings with no Method value count as this method. The Steam Keys
 # page deliberately has no Method filter (2026-07-13 — everything on it IS a
 # digital key), so /keys must not drop Steam when "Digital Key" is picked.
@@ -1234,6 +1245,11 @@ class GameCategoryDetailView(APIView):
                     best_listing_id=Subquery(best_offer_subquery),
                 ).order_by('order', 'name')
             )
+            # Tiles that share an `order` (a card seeded later lands on the
+            # same slot number as its neighbour) must still read low -> high:
+            # break the tie on the number in the name, not alphabetically,
+            # or "10 USD" sorts ahead of "5 USD".
+            options.sort(key=option_display_key)
             # Buyers only see buyable options: a tile whose every offer is
             # switched off (supplier out of stock, discontinued pack) is just
             # noise, and it reappears by itself the moment an offer comes back.
