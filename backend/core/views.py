@@ -218,6 +218,7 @@ from .storage_backends import (
     R2_SIGNED_URL_MAX_SECONDS,
     cached_media_url,
     is_cloudflare_r2_name,
+    is_public_media_storage,
     media_content_type,
     public_avatar_url,
 )
@@ -650,6 +651,16 @@ def public_media_signed_url(file_field):
 def public_media_redirect(request, file_field):
     if not file_field:
         raise Http404
+    if is_public_media_storage(file_field.storage):
+        # Already on the public host: this endpoint only serves links that
+        # older cached pages still carry. Send them to the permanent address
+        # and let them keep it for a day.
+        if media_content_type(file_field.name) not in ALLOWED_IMAGE_CONTENT_TYPES:
+            raise Http404
+        response = HttpResponseRedirect(cached_media_url(file_field, request=request))
+        response['Cache-Control'] = 'public, max-age=86400'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
     if is_cloudflare_r2_name(file_field.name):
         target = public_media_signed_url(file_field)
     else:

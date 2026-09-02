@@ -127,10 +127,15 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   out of analytics).
 - **Never put a signed R2 URL in a public API payload.** Next.js caches SSR HTML
   for days (stale-while-revalidate); the signature dies first and crawlers see a
-  broken image (Ahrefs 2026-09-02: 2,017 pages, all the store avatar). Public
-  media gets a stable address via `PublicMediaView` (`/api/media/<kind>/<name>`
-  → 302 to a fresh short-lived signed URL); extend `PUBLIC_MEDIA_KINDS` rather
-  than calling `cached_media_url` for anything that lands in page HTML.
+  broken image (Ahrefs 2026-09-02: 2,017 pages, all the store avatar; Shayan's
+  "reload and no images, refresh and they're back" was the same thing). Public
+  media (avatars, game/option icons, review photos) therefore lives in a
+  SECOND, PUBLIC R2 bucket on `media.gamesbazaar.pk` — fields use
+  `storage=get_public_media_storage`, URLs are permanent and unsigned. Only the
+  private bucket (chat images, payment proofs, receipts) signs URLs. New public
+  image field = use that storage; never `cached_media_url` with a private name
+  for anything that lands in page HTML. `PublicMediaView` (`/api/media/...`) is
+  a compatibility shim for old cached avatar links.
 
 ## Payments state (2026-07-14)
 

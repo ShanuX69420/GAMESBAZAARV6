@@ -9,6 +9,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
 
 from . import steamguard
+from .storage_backends import get_public_media_storage
 
 
 ORDER_NUMBER_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -25,6 +26,7 @@ class Game(models.Model):
     slug = models.SlugField(max_length=200, unique=True, blank=True)
     description = models.TextField(blank=True, default='')
     icon = models.ImageField(upload_to='game_icons/', blank=True, null=True,
+                             storage=get_public_media_storage,
                              help_text='Small icon/logo for the game (recommended: 64x64 or 128x128)')
     search_keywords = models.TextField(
         blank=True, default='',
@@ -239,6 +241,7 @@ class CategoryOption(models.Model):
                                       related_name='options')
     name = models.CharField(max_length=200, help_text='Shown to buyers (e.g., "60 UC")')
     icon = models.ImageField(upload_to='option_icons/', blank=True, null=True,
+                             storage=get_public_media_storage,
                              help_text='Small icon for the option (recommended: 64x64 or 128x128)')
     order = models.PositiveIntegerField(default=0, help_text='Display order (lower = first)')
     is_popular = models.BooleanField(
@@ -350,6 +353,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='profile')
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True,
+                               storage=get_public_media_storage,
                                help_text='Profile picture (recommended: 256x256)')
     username_changed_at = models.DateTimeField(null=True, blank=True,
                                                help_text='Last time the username was changed')
@@ -1322,7 +1326,7 @@ class Review(models.Model):
 class ReviewImage(models.Model):
     """Buyer-uploaded photo attached to a review. Publicly visible."""
     review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='review_images/')
+    image = models.ImageField(upload_to='review_images/', storage=get_public_media_storage)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

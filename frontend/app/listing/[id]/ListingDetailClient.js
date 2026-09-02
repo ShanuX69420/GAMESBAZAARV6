@@ -13,6 +13,7 @@ import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analy
 import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
+import { listingDisplayName } from '@/lib/listingSeo';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 import ReviewPhotos from '@/components/ReviewPhotos';
@@ -446,7 +447,10 @@ export default function ListingDetailClient({ initialListing = null }) {
             seller card on the left always start on the same line no matter how
             many lines the title wraps to. */}
         <div className="listing-detail-header">
-          <h1 className="listing-detail-title">{listing.title}</h1>
+          {/* Same name as the page <title> and Product JSON-LD: brand and
+              product word on gift cards / top-ups ("Steam 5 USD (Argentina)
+              Gift Card"), the bare title everywhere else. */}
+          <h1 className="listing-detail-title">{listingDisplayName(listing) || listing.title}</h1>
 
           {/* Filter badges */}
           {listing.filter_display && Object.keys(listing.filter_display).length > 0 && (

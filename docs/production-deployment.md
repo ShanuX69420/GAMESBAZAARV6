@@ -47,6 +47,14 @@ CLOUDFLARE_R2_SECRET_ACCESS_KEY=replace-with-r2-secret-access-key
 CLOUDFLARE_R2_ENDPOINT_URL=https://replace-with-account-id.r2.cloudflarestorage.com
 CLOUDFLARE_R2_PUBLIC_URL_EXPIRATION_SECONDS=86400
 CLOUDFLARE_R2_PRIVATE_URL_EXPIRATION_SECONDS=300
+# Public media (avatars, game/option icons, review photos): a SECOND, public
+# bucket on a custom domain -> permanent unsigned URLs. Rollout: set the two
+# values with ENABLED=False, restart, `manage.py migrate_public_media`, then
+# ENABLED=True, restart, run the copy once more. The frontend must list the
+# host in NEXT_PUBLIC_IMAGE_HOSTS (CSP img-src) and be rebuilt.
+CLOUDFLARE_R2_PUBLIC_BUCKET_NAME=replace-with-public-bucket-name
+CLOUDFLARE_R2_PUBLIC_MEDIA_HOST=media.gamesbazaar.pk
+CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED=True
 
 META_PIXEL_ID=replace-with-meta-pixel-id
 META_CAPI_ACCESS_TOKEN=replace-with-conversions-api-token

@@ -245,6 +245,46 @@ if CLOUDFLARE_R2_ENABLED:
         },
     }
 
+# Public media (avatars, game/option icons, review photos) lives in a second,
+# PUBLIC R2 bucket served on a custom domain (media.gamesbazaar.pk). Its URLs
+# carry no signature and never expire, which is what page HTML and every cache
+# in between need; the private bucket above keeps chat images, payment proofs
+# and receipts behind signed, permission-checked links.
+# Rollout order: set the bucket + host with ENABLED=False, restart, run
+# `manage.py migrate_public_media` (copies existing objects across), then flip
+# ENABLED=True and restart. Run the copy once more afterwards to catch uploads
+# that landed in the gap.
+CLOUDFLARE_R2_PUBLIC_BUCKET_NAME = os.environ.get('CLOUDFLARE_R2_PUBLIC_BUCKET_NAME', '').strip()
+CLOUDFLARE_R2_PUBLIC_MEDIA_HOST = (
+    os.environ.get('CLOUDFLARE_R2_PUBLIC_MEDIA_HOST', '')
+    .strip()
+    .removeprefix('https://')
+    .removeprefix('http://')
+    .strip('/')
+)
+CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED = env_bool('CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED', False)
+
+if CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED:
+    if not CLOUDFLARE_R2_ENABLED:
+        raise ImproperlyConfigured(
+            'CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED=True requires CLOUDFLARE_R2_ENABLED=True'
+        )
+    missing_public_media_settings = [
+        name for name, value in {
+            'CLOUDFLARE_R2_PUBLIC_BUCKET_NAME': CLOUDFLARE_R2_PUBLIC_BUCKET_NAME,
+            'CLOUDFLARE_R2_PUBLIC_MEDIA_HOST': CLOUDFLARE_R2_PUBLIC_MEDIA_HOST,
+        }.items()
+        if not value
+    ]
+    if missing_public_media_settings:
+        raise ImproperlyConfigured(
+            'CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED=True requires: '
+            + ', '.join(missing_public_media_settings)
+        )
+    STORAGES['public_media'] = {
+        'BACKEND': 'core.storage_backends.CloudflareR2PublicStorage',
+    }
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Cache. DRF throttles use Django's default cache, so production must use a

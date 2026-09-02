@@ -4,9 +4,12 @@ import mimetypes
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
-from django.core.files.storage import FileSystemStorage
+from django.core.files.storage import DEFAULT_STORAGE_ALIAS, FileSystemStorage, storages
+from django.core.signals import setting_changed
+from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.deconstruct import deconstructible
+from django.utils.functional import LazyObject, empty
 
 try:
     from storages.backends.s3 import S3Storage
@@ -15,6 +18,14 @@ except ImportError:  # pragma: no cover - raised only when R2 is enabled without
 
 
 CLOUDFLARE_R2_NAME_PREFIX = 'r2/'
+# STORAGES alias of the public bucket (settings adds it when
+# CLOUDFLARE_R2_PUBLIC_MEDIA_ENABLED is on). Absent = fall back to the default
+# storage, so the code deploys safely before the bucket is switched on.
+PUBLIC_MEDIA_STORAGE_ALIAS = 'public_media'
+# Public objects are never rewritten in place (every save picks a fresh name,
+# file_overwrite is off), so browsers and Cloudflare's edge may keep them for
+# a year.
+PUBLIC_MEDIA_OBJECT_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 AVATAR_CACHE_SECONDS = 60 * 60
 # Public media served through /api/media/<kind>/<name> (see views.PublicMediaView).
 # Avatars are shown on every listing page but live in the private R2 bucket, so
@@ -91,7 +102,11 @@ def cached_media_url(file_field, *, request=None, cache_seconds=3600, cache_scop
         return None
 
     name = getattr(file_field, 'name', '')
-    if is_cloudflare_r2_name(name):
+    if is_public_media_storage(getattr(file_field, 'storage', None)):
+        # Permanent, unsigned address on the public media host. Nothing to
+        # memoise or rotate: it is the same string forever.
+        url = file_field.url
+    elif is_cloudflare_r2_name(name):
         parameters = {
             'ResponseCacheControl': f'{cache_scope}, max-age={cache_seconds}',
         }
@@ -147,6 +162,8 @@ def public_avatar_url(file_field, request=None):
     """
     if not file_field:
         return None
+    if is_public_media_storage(getattr(file_field, 'storage', None)):
+        return cached_media_url(file_field, request=request)
     media_name = public_media_name(file_field, AVATAR_MEDIA_KIND)
     if media_name is None:
         return cached_media_url(
@@ -247,3 +264,66 @@ class CloudflareR2Storage(S3Storage if S3Storage is not None else object):
         if is_cloudflare_r2_name(name):
             return super().get_created_time(name)
         return self.local_storage.get_created_time(name)
+
+
+@deconstructible
+class CloudflareR2PublicStorage(CloudflareR2Storage):
+    """The PUBLIC bucket, served unsigned on a custom domain.
+
+    Same naming scheme as the private storage (``r2/<folder>/<file>``) so a
+    row's stored name is valid in either bucket and the one-off copy
+    (``manage.py migrate_public_media``) needs no data migration. URLs are
+    plain ``https://<host>/r2/<folder>/<file>`` and never expire.
+    """
+    is_public_media = True
+
+    def __init__(self, *args, **kwargs):
+        options = {
+            'bucket_name': settings.CLOUDFLARE_R2_PUBLIC_BUCKET_NAME,
+            'custom_domain': settings.CLOUDFLARE_R2_PUBLIC_MEDIA_HOST,
+            'querystring_auth': False,
+            'object_parameters': {'CacheControl': PUBLIC_MEDIA_OBJECT_CACHE_CONTROL},
+        }
+        options.update(kwargs)
+        super().__init__(*args, **options)
+
+    def url(self, name, parameters=None, expire=None, http_method=None):
+        # Parameter-free on purpose: the address must be the same string every
+        # time so page HTML, browsers and Cloudflare's edge can hold it forever.
+        if is_cloudflare_r2_name(name):
+            return super(CloudflareR2Storage, self).url(name)
+        return self.local_storage.url(name)
+
+
+def is_public_media_storage(storage):
+    return bool(getattr(storage, 'is_public_media', False))
+
+
+class PublicMediaStorage(LazyObject):
+    """Resolves to the public bucket when it is configured, else to the
+    default storage — decided at first use, and again after settings change
+    (so tests can flip it with override_settings)."""
+
+    def _setup(self):
+        alias = (
+            PUBLIC_MEDIA_STORAGE_ALIAS
+            if PUBLIC_MEDIA_STORAGE_ALIAS in storages.backends
+            else DEFAULT_STORAGE_ALIAS
+        )
+        self._wrapped = storages[alias]
+
+
+public_media_storage = PublicMediaStorage()
+
+
+def get_public_media_storage():
+    """``storage=`` callable for the public media fields (avatar, game and
+    option icons, review photos). A callable deconstructs to this dotted path,
+    so migrations stay stable whatever the environment resolves it to."""
+    return public_media_storage
+
+
+@receiver(setting_changed)
+def _reset_public_media_storage(*, setting, **kwargs):
+    if setting == 'STORAGES':
+        public_media_storage._wrapped = empty
