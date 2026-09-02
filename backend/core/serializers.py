@@ -117,12 +117,37 @@ class FilterOptionSerializer(serializers.ModelSerializer):
         fields = ['id', 'label', 'value', 'order']
 
 
+# Region dropdowns list the handful of regions Pakistani buyers actually use
+# first (Shayan, 2026-09-02) and everything else after, in admin order then
+# A-Z. Applies to every filter named "Region" — the shared keys one and each
+# page-local gift-card / subscription one — so a 40-entry dropdown still opens
+# on the useful choices.
+REGION_PRIORITY = ('global', 'pakistan', 'usa', 'united-kingdom', 'turkiye',
+                   'europe', 'ukraine', 'indonesia')
+
+
+def region_option_sort_key(option):
+    try:
+        rank = REGION_PRIORITY.index(option.value)
+    except ValueError:
+        rank = len(REGION_PRIORITY)
+    return (rank, option.order, option.label.lower())
+
+
 class FilterSerializer(serializers.ModelSerializer):
-    options = FilterOptionSerializer(many=True, read_only=True)
+    options = serializers.SerializerMethodField()
 
     class Meta:
         model = Filter
         fields = ['id', 'name', 'filter_type', 'options']
+
+    def get_options(self, obj):
+        # .all() keeps the view's prefetch cache; the model ordering
+        # (order, label) is what non-region filters get.
+        options = list(obj.options.all())
+        if obj.name.strip().lower() == 'region':
+            options.sort(key=region_option_sort_key)
+        return FilterOptionSerializer(options, many=True).data
 
 
 class CategorySerializer(serializers.ModelSerializer):

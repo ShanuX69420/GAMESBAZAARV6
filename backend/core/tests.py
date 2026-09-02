@@ -1582,6 +1582,36 @@ class PurchaseFlowTests(TestCase):
             str(key_region.id): 'global',
         })
 
+    def test_region_dropdown_lists_the_useful_regions_first(self):
+        # Shayan 2026-09-02: Global and Pakistan lead, then USA, UK, Turkiye,
+        # Europe, Ukraine, Indonesia; everything else keeps admin order / A-Z.
+        region = Filter.objects.create(
+            name='Region', admin_label='Gift Cards - Region (Test)', filter_type='dropdown')
+        for label, value in [('Brazil', 'brazil'), ('Canada', 'canada'), ('Europe', 'europe'),
+                             ('Global', 'global'), ('Indonesia', 'indonesia'),
+                             ('Pakistan', 'pakistan'), ('Turkiye', 'turkiye'), ('UAE', 'uae'),
+                             ('Ukraine', 'ukraine'), ('United Kingdom', 'united-kingdom'),
+                             ('USA', 'usa')]:
+            FilterOption.objects.create(filter=region, label=label, value=value)
+        platform = Filter.objects.create(name='Platform', filter_type='dropdown')
+        FilterOption.objects.create(filter=platform, label='Xbox', value='xbox', order=2)
+        FilterOption.objects.create(filter=platform, label='EA App', value='ea-app', order=1)
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=region)
+        GameCategoryFilter.objects.create(game_category=self.game_category, filter=platform)
+
+        response = self.client.get('/api/games/test-game/accounts/')
+
+        self.assertEqual(response.status_code, 200)
+        by_id = {f['id']: f for f in response.data['filters']}
+        self.assertEqual(
+            [o['value'] for o in by_id[region.id]['options']],
+            ['global', 'pakistan', 'usa', 'united-kingdom', 'turkiye', 'europe',
+             'ukraine', 'indonesia', 'brazil', 'canada', 'uae'],
+        )
+        # Every other dropdown keeps its admin order.
+        self.assertEqual([o['value'] for o in by_id[platform.id]['options']],
+                         ['ea-app', 'xbox'])
+
     def test_category_detail_exposes_filter_dependency(self):
         method_filter, key_region, gift_region = self._setup_dependent_filters()
 
