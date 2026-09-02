@@ -37,7 +37,7 @@ function SectionSeoText({ section }) {
   );
 }
 
-// Shared body for the category View All pages (/keys, /accounts, /top-ups,
+// Shared body for the category View All pages (/keys, /accounts, /subscriptions,
 // /gift-cards, /rentals) — same layout as /games, but each game
 // links straight to its page for this category. Sections whose listings carry
 // Method/Region filters (keys) also get dropdowns driven by ?method=/?region=,

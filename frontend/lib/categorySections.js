@@ -1,6 +1,8 @@
 // The home "Popular" panels and their View All pages. Slugs must match
 // both the backend section registry (HOME_POPULAR_SECTIONS) and the app
-// routes: /keys, /accounts, /top-ups, /gift-cards, /rentals.
+// routes: /keys, /accounts, /subscriptions, /gift-cards, /rentals.
+// Direct game top-ups were retired 2026-09-02: /top-ups now redirects to
+// /subscriptions, the home of the PS Plus and Game Pass codes.
 export const CATEGORY_SECTIONS = [
   {
     slug: 'keys',
@@ -95,47 +97,47 @@ Pick a game from the list, choose a listing, and pay at the Buy button. Your log
     ],
   },
   {
-    slug: 'top-ups',
-    name: 'Top Ups',
-    heading: 'All Top Ups',
-    title: 'Game Top-Ups in Pakistan – PUBG UC, Diamonds & More',
+    slug: 'subscriptions',
+    name: 'Subscriptions',
+    heading: 'All Subscriptions',
+    title: 'PS Plus & Xbox Game Pass in Pakistan – Subscription Codes',
     description:
-      'Top up PUBG UC, Free Fire Diamonds and more at PKR prices — no password, just your player ID. Pay with JazzCash, Easypaisa or bank transfer. Fast delivery.',
-    seoText: `## Game top-ups in Pakistan
+      'PlayStation Plus and Xbox Game Pass membership codes at rupee prices, by tier, duration and region. Pay with JazzCash, Easypaisa or bank transfer.',
+    seoText: `## Gaming subscriptions in Pakistan, priced in rupees
 
-Diamonds, UC, CP, coins and gaming subscriptions — this page lists every game GamesBazaar can top up, from PUBG Mobile and Free Fire to Mobile Legends and Yalla Ludo. Prices are in rupees and start from pocket-money packs, so you can load exactly as much as you need. Pay with JazzCash, Easypaisa or bank transfer — no dollar card required.
+PlayStation Plus and Xbox Game Pass are sold here as membership codes. Pick the tier and duration from the brand's page, pay in rupees with JazzCash, Easypaisa or bank transfer, and redeem the code on your own account. There is no international card and no dollar conversion, and nobody ever needs your login — you enter the code yourself and the membership appears on your console.
 
-## Your account stays yours — no password needed
+## Match the code to your account's store region
 
-A top-up here is a direct credit to your own game account through official channels. You give us the ID printed under your in-game nickname — a Player ID, Character ID or user ID — and the diamonds or UC land in your account at full store value. Nobody asks for your password, and you never hand over your login. Many packs are credited automatically the moment you pay: enter your ID at checkout and the top-up starts on its own. The rest are delivered by our team, with confirmation in your order chat.
+Subscription codes are region-locked. A PlayStation Plus code redeems only on an account registered to the matching PlayStation Store, and Game Pass codes work the same way on Xbox. Check which store your account belongs to in its settings, then use the Region filter on the brand's page and pick the code that matches. Every listing states its region, tier and duration before you pay, and the PlayStation and Xbox pages explain which versions suit accounts commonly used in Pakistan.
 
-## Picking the right pack
+## Codes arrive in your order chat
 
-Some games care about region and some don't. Free Fire diamonds, for example, come in region versions — including Pakistan — so use the Region filter and match it to where your account was created. Mobile Legends needs your ID plus the Server ID shown in brackets under your name. Subscription products state their account-region requirements on the listing. Whatever you pick, the listing spells out exactly what to enter and how long delivery takes before you pay — and live PKR prices for every game are in the list above.`,
+Each listing shows its own delivery time before you buy, and most codes are delivered in the order chat within minutes of payment. Redeem it on your console or in the platform's app and the membership starts on that account straight away. If a code we sold does not redeem, message us in the order chat — we help you check the region first, fix what we can, and refund you when the code is at fault. The reviews on this page come from delivered orders.`,
     faq: [
       {
-        q: 'How does a game top-up work on GamesBazaar?',
-        a: "Choose your game from the list, pick a pack, and enter your player ID at checkout (or send it in the order chat if the listing asks). We credit the amount directly to your account and confirm in the chat when it's done.",
+        q: 'How do I redeem a PlayStation Plus code?',
+        a: 'Open the PlayStation Store on your console or in the PlayStation app, choose Redeem Codes, and enter the code. The membership starts on that account immediately. The code must match the region your account is registered in.',
       },
       {
-        q: 'Is it safe to top up my account this way?',
-        a: 'Yes — top-ups are bought from the official store and credited by ID. You never share a password or log in anywhere, so your account login never leaves your hands.',
+        q: 'How do I redeem an Xbox Game Pass code?',
+        a: 'On your Xbox open the Store and choose Redeem, or sign in at redeem.microsoft.com with the account you play on and enter the code there. Buy the region version that matches your Microsoft account.',
       },
       {
-        q: 'Do you have Free Fire top-up for Pakistan region?',
-        a: 'Yes. Free Fire diamonds come in region versions, Pakistan included. Use the Region filter on the Free Fire page and pick the region your account was created in.',
+        q: 'Which region should I buy?',
+        a: "The region your account is registered in — not the country you live in. It's in your account settings on the console. Match it with the Region filter on the PlayStation or Xbox page before you pay.",
       },
       {
-        q: 'How fast will I get my diamonds or UC?',
-        a: 'Many packs are credited automatically right after payment. Every listing shows its own delivery time before you buy, and most orders finish within minutes.',
+        q: 'Can I redeem a code if I already have a membership?',
+        a: "Usually yes: a code for the same tier adds its time to the end of your current membership. Switching tiers follows the platform's own conversion rules, so read the store's message before you confirm.",
       },
       {
         q: 'How do I pay?',
         a: 'In rupees, with JazzCash, Easypaisa or bank transfer. No international card, no dollar conversion.',
       },
       {
-        q: "What if my top-up doesn't arrive?",
-        a: "Message us in the order chat — problems get fixed fast, and if we can't deliver what you paid for, refunds are easy. The reviews on this page come from real delivered orders.",
+        q: "What if my code doesn't work?",
+        a: "Message us in the order chat and we'll work out what happened — a region mismatch is the usual cause, and we help you check. Problems get fixed fast, and refunds are easy when a code we sold is at fault.",
       },
     ],
   },

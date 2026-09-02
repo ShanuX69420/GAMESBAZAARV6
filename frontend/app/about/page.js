@@ -12,8 +12,8 @@ import {
 const PAGE_TITLE = 'About GamesBazaar';
 const PAGE_DESCRIPTION =
   `GamesBazaar is an independently owned online game store based in ${BUSINESS.city}, ` +
-  `${BUSINESS.country}, open since ${BUSINESS.foundedYear}. Game keys, accounts, top-ups, ` +
-  'gift cards and PlayStation rentals at rupee prices, paid by JazzCash, Easypaisa or bank transfer.';
+  `${BUSINESS.country}, open since ${BUSINESS.foundedYear}. Game keys, accounts, gift cards, ` +
+  'subscriptions and PlayStation rentals at rupee prices, paid by JazzCash, Easypaisa or bank transfer.';
 
 export const metadata = createPublicMetadata({
   title: 'About Us',
@@ -52,14 +52,14 @@ const CATALOG = [
     text: 'Ready-to-play accounts for PC and console games, with the login details and instructions delivered after purchase.',
   },
   {
-    href: '/top-ups',
-    name: 'Top-ups',
-    text: 'In-game currency and passes for mobile and PC games, sent straight to your player ID.',
-  },
-  {
     href: '/gift-cards',
     name: 'Gift cards',
     text: 'Steam, PlayStation, Xbox, Roblox and other store credit, sorted by region so the code redeems on your account.',
+  },
+  {
+    href: '/subscriptions',
+    name: 'Subscriptions',
+    text: 'PlayStation Plus and Xbox Game Pass membership codes by tier, duration and region, redeemed on your own account.',
   },
   {
     href: '/rentals',
@@ -93,7 +93,7 @@ export default async function AboutPage() {
       <div className="legal-header">
         <h1>About GamesBazaar</h1>
         <p className="legal-subtitle">
-          An independent Pakistani store for game keys, accounts, top-ups, gift cards and
+          An independent Pakistani store for game keys, accounts, gift cards, subscriptions and
           PlayStation rentals &mdash; priced in rupees and paid the local way.
         </p>
         <div className="legal-updated">
@@ -198,7 +198,7 @@ export default async function AboutPage() {
               <div>
                 <strong>Check it works</strong>
                 <p>
-                  If a key does not activate, a top-up does not land, or an item does not match its
+                  If a key does not activate, a code does not redeem, or an item does not match its
                   description, message us from the order page. We fix it fast or refund you to your wallet.
                 </p>
               </div>

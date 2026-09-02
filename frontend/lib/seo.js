@@ -3,7 +3,7 @@ import { BUSINESS } from '@/lib/business';
 export const SITE_NAME = 'GamesBazaar';
 export const DEFAULT_SITE_URL = 'http://localhost:3000';
 export const DEFAULT_TITLE = "GamesBazaar - Pakistan's Digital Gaming Store";
-export const DEFAULT_DESCRIPTION = "Game keys, accounts, top-ups, and gift cards at Pakistani prices. Secure local payments, instant delivery, and easy refunds.";
+export const DEFAULT_DESCRIPTION = "Game keys, accounts, gift cards, and subscriptions at Pakistani prices. Secure local payments, instant delivery, and easy refunds.";
 
 export const DEFAULT_OG_IMAGE = {
   url: '/opengraph-image',

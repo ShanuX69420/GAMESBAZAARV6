@@ -7,13 +7,13 @@ import Link from 'next/link';
 
 const HOMEPAGE_GAME_LIMIT = 18;
 
-const HOME_TITLE = 'Buy Game Keys, Accounts, Top-Ups & Gift Cards in Pakistan';
+const HOME_TITLE = 'Buy Game Keys, Accounts & Gift Cards in Pakistan';
 
 export const metadata = {
   ...createPublicMetadata({
     title: HOME_TITLE,
     description:
-      'Steam keys, game accounts, top-ups and gift cards at PKR prices. Pay with JazzCash, Easypaisa or bank transfer — instant delivery and easy refunds.',
+      'Steam keys, game accounts, gift cards and subscriptions at PKR prices. Pay with JazzCash, Easypaisa or bank transfer — instant delivery and easy refunds.',
     path: '/',
   }),
   // The layout's title template never applies to the page of its own segment,
@@ -61,7 +61,7 @@ export default async function HomePage() {
           <br />Store
         </h1>
         <p>
-          Game keys, accounts, top-ups, and gift cards — priced in PKR
+          Game keys, accounts, gift cards, and subscriptions — priced in PKR
           with safe local payments and fast delivery.
         </p>
         <div className="hero-actions">
@@ -69,8 +69,8 @@ export default async function HomePage() {
             Browse Games
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </Link>
-          <Link href="/top-ups" className="hero-btn-outline">
-            Top Up a Game
+          <Link href="/gift-cards" className="hero-btn-outline">
+            Browse Gift Cards
           </Link>
         </div>
       </section>
@@ -143,7 +143,7 @@ export default async function HomePage() {
           <div className="step-card">
             <div className="step-number">1</div>
             <h3>Browse &amp; Choose</h3>
-            <p>Find the game key, account, or top-up you need — all at Pakistani prices.</p>
+            <p>Find the game key, account, or gift card you need — all at Pakistani prices.</p>
           </div>
           <div className="step-connector" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>

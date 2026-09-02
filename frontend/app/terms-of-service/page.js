@@ -24,7 +24,7 @@ export default function TermsOfServicePage() {
         <section className="legal-section" id="tos-overview">
           <h2>What is GamesBazaar?</h2>
           <p>
-            GamesBazaar is Pakistan&rsquo;s digital gaming store. We sell game keys, accounts, top-ups, gift cards, and in-game items &mdash; delivered fast and priced in Pakistani Rupees.
+            GamesBazaar is Pakistan&rsquo;s digital gaming store. We sell game keys, accounts, gift cards, subscriptions, and in-game items &mdash; delivered fast and priced in Pakistani Rupees.
           </p>
           <p>
             By creating an account or using our platform, you agree to these Terms of Service. If you don&rsquo;t agree, please don&rsquo;t use the platform.
@@ -73,7 +73,7 @@ export default function TermsOfServicePage() {
               <div className="legal-step-number">2</div>
               <div>
                 <strong>We deliver</strong>
-                <p>We deliver what you ordered (game key, account credentials, top-up, etc.) &mdash; instantly for many items.</p>
+                <p>We deliver what you ordered (game key, account credentials, gift-card code, etc.) &mdash; instantly for many items.</p>
               </div>
             </div>
             <div className="legal-step">

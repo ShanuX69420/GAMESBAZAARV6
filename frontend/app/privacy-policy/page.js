@@ -24,7 +24,7 @@ export default function PrivacyPolicyPage() {
         <section className="legal-section" id="privacy-intro">
           <h2>Welcome</h2>
           <p>
-            GamesBazaar (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is Pakistan&rsquo;s digital gaming store where you can buy game keys, accounts, top-ups, and gift cards. This Privacy Policy explains what information we collect, why we collect it, and how we keep it safe.
+            GamesBazaar (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) is Pakistan&rsquo;s digital gaming store where you can buy game keys, accounts, gift cards, and subscriptions. This Privacy Policy explains what information we collect, why we collect it, and how we keep it safe.
           </p>
           <p>
             By using GamesBazaar, you agree to the practices described in this policy. If you have any questions, feel free to reach out to us anytime.

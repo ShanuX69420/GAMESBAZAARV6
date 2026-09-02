@@ -9,7 +9,7 @@ import { groupGamesByAlphabet } from '@/lib/gameGroups';
 export const metadata = {
   ...createPublicMetadata({
     title: 'All Games',
-    description: 'Browse all games available on GamesBazaar. Find accounts, items, top-ups, and services for your favorite games.',
+    description: 'Browse all games available on GamesBazaar. Find keys, accounts, gift cards and subscriptions for your favorite games.',
     path: '/games',
   }),
 };

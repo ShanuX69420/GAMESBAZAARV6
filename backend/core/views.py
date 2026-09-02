@@ -73,8 +73,13 @@ GAME_LIST_CACHE_SECONDS = 60
 HOME_POPULAR_SECTIONS = [
     {'slug': 'accounts', 'title': 'Popular Accounts',
      'category_slugs': ('accounts',)},
-    {'slug': 'top-ups', 'title': 'Popular Top Ups',
-     'category_slugs': ('top-up', 'top-ups', 'subscription')},
+    # Direct game top-ups were retired 2026-09-02 (unreliable supplier, no
+    # second source, ~10% margin). The two code-delivered pages that lived
+    # under Top Ups — PlayStation Plus and Xbox Game Pass — moved to the
+    # Subscriptions category; the old 'top-ups' category keeps its
+    # deactivated listings and is no longer a section.
+    {'slug': 'subscriptions', 'title': 'Popular Subscriptions',
+     'category_slugs': ('subscriptions',)},
     {'slug': 'keys', 'title': 'Popular Keys',
      'category_slugs': ('keys',), 'facets': ('method', 'region'),
      'sortable': True},
@@ -814,7 +819,7 @@ class HomePopularView(APIView):
 
 class CategorySectionGamesView(APIView):
     """GET /api/categories/{slug}/games/ — every game with active listings in
-    one home "Popular" section (keys, accounts, top-ups, gift-cards),
+    one home "Popular" section (keys, accounts, subscriptions, gift-cards),
     for that section's View All page. Same item shape as
     HomePopularView, uncapped; unlike the panels, stockless games are omitted.
 

@@ -1,7 +1,7 @@
 {
   "name": "GamesBazaar",
   "short_name": "GamesBazaar",
-  "description": "Pakistan's gaming store — game accounts, keys, top-ups and gift cards at PKR prices.",
+  "description": "Pakistan's gaming store — game accounts, keys, gift cards and subscriptions at PKR prices.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFFFFF",

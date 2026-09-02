@@ -30,9 +30,10 @@ from core.services import send_review_request_email
 QUICK_DELAY = timedelta(hours=3)
 DEFAULT_DELAY = timedelta(hours=24)
 # Category slugs whose goods are consumed immediately after delivery.
-# top-up/top-ups/subscription are all live spellings of the top-ups
-# category (see HOME_POPULAR_SECTIONS in core/views.py).
-QUICK_CATEGORY_SLUGS = {'top-up', 'top-ups', 'subscription', 'gift-cards', 'currency'}
+# 'subscriptions' is the live category (PS Plus / Game Pass codes); the
+# top-up spellings cover its retired predecessor's old orders.
+QUICK_CATEGORY_SLUGS = {'top-up', 'top-ups', 'subscription', 'subscriptions',
+                        'gift-cards', 'currency'}
 
 
 def review_email_delay(order):

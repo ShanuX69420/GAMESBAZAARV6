@@ -34,7 +34,7 @@ export default async function sitemap() {
     { url: pageUrl(siteUrl, '/games'), changeFrequency: 'daily', priority: 0.9 },
     { url: pageUrl(siteUrl, '/keys'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/accounts'), changeFrequency: 'daily', priority: 0.8 },
-    { url: pageUrl(siteUrl, '/top-ups'), changeFrequency: 'daily', priority: 0.8 },
+    { url: pageUrl(siteUrl, '/subscriptions'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/gift-cards'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/rentals'), changeFrequency: 'daily', priority: 0.8 },
     { url: pageUrl(siteUrl, '/reviews'), changeFrequency: 'daily', priority: 0.5 },

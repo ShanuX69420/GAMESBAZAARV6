@@ -64,6 +64,13 @@ const nextConfig = {
         destination: '/keys',
         permanent: true,
       },
+      // Direct game top-ups were retired 2026-09-02; the section page now
+      // hosts the PS Plus / Game Pass codes that lived under it.
+      {
+        source: '/top-ups',
+        destination: '/subscriptions',
+        permanent: true,
+      },
     ];
   },
   images: {

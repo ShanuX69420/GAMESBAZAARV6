@@ -73,7 +73,7 @@ export default function Image() {
             textAlign: 'center',
           }}
         >
-          Game keys, accounts, top-ups, and gift cards with secure checkout in PKR.
+          Game keys, accounts, gift cards, and subscriptions with secure checkout in PKR.
         </div>
       </div>
     ),

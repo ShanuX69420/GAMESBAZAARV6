@@ -2,7 +2,7 @@ import CategorySectionPage from '@/components/CategorySectionPage';
 import { createPublicMetadata } from '@/lib/seo';
 import { getCategorySection } from '@/lib/categorySections';
 
-const section = getCategorySection('top-ups');
+const section = getCategorySection('subscriptions');
 
 export const metadata = {
   ...createPublicMetadata({
@@ -12,6 +12,6 @@ export const metadata = {
   }),
 };
 
-export default function AllTopUpsPage() {
+export default function AllSubscriptionsPage() {
   return <CategorySectionPage section={section} />;
 }

@@ -4096,9 +4096,8 @@ class HomePopularViewTests(TestCase):
         self.client = APIClient()
         self.seller = User.objects.create_user(username='panel-seller', password='password123')
         self.accounts = Category.objects.create(name='Accounts', slug='accounts')
-        # Production parity: the Top Ups category kept its original
-        # "subscription" slug after a rename.
-        self.topups = Category.objects.create(name='Top Ups', slug='subscription')
+        self.subscriptions = Category.objects.create(
+            name='Subscriptions', slug='subscriptions')
 
     def tearDown(self):
         cache.clear()
@@ -4121,7 +4120,7 @@ class HomePopularViewTests(TestCase):
 
     def test_empty_categories_are_omitted_and_sections_follow_config_order(self):
         self.add_game('Valorant', 'valorant', self.accounts)
-        # Top Ups category exists but has no games — no section for it.
+        # Subscriptions category exists but has no games — no section for it.
 
         response = self.client.get('/api/home/popular/')
 
@@ -4195,30 +4194,31 @@ class HomePopularViewTests(TestCase):
         self.assertEqual(items[1]['listing_count'], 1)
 
     def test_category_slug_uses_per_game_display_override(self):
-        self.add_game('ChatGPT', 'chatgpt', self.topups, display_name='Subscriptions')
+        self.add_game('Xbox', 'xbox', self.subscriptions, display_name='Game Pass')
 
         response = self.client.get('/api/home/popular/')
 
         sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['top-ups'])
-        self.assertEqual(sections[0]['title'], 'Popular Top Ups')
-        self.assertEqual(sections[0]['items'][0]['category_slug'], 'subscriptions')
+        self.assertEqual([s['slug'] for s in sections], ['subscriptions'])
+        self.assertEqual(sections[0]['title'], 'Popular Subscriptions')
+        self.assertEqual(sections[0]['items'][0]['category_slug'], 'game-pass')
 
-    def test_top_ups_section_accepts_both_category_slug_spellings(self):
-        # Local dev uses the "top-up" slug, production kept "subscription" —
-        # games from either category land in the same panel.
-        local_topup = Category.objects.create(name='Top-Up', slug='top-up')
-        self.add_game('PUBG Mobile', 'pubg-mobile', local_topup)
-        self.add_game('ChatGPT', 'chatgpt', self.topups)
+    def test_retired_top_ups_category_is_not_a_section(self):
+        # Direct top-ups were retired 2026-09-02: the category still exists
+        # (it holds the deactivated listings) but no panel is built for it,
+        # whichever historical spelling of its slug is in use.
+        for slug in ('top-up', 'top-ups', 'subscription'):
+            self.add_game(f'Game {slug}', f'game-{slug}',
+                          Category.objects.create(name=f'Top Ups {slug}', slug=slug))
+        self.add_game('PlayStation', 'playstation', self.subscriptions,
+                      display_name='Subscription')
 
         response = self.client.get('/api/home/popular/')
 
         sections = response.data['sections']
-        self.assertEqual([s['slug'] for s in sections], ['top-ups'])
+        self.assertEqual([s['slug'] for s in sections], ['subscriptions'])
         self.assertEqual(
-            sorted(item['game_slug'] for item in sections[0]['items']),
-            ['chatgpt', 'pubg-mobile'],
-        )
+            [item['game_slug'] for item in sections[0]['items']], ['playstation'])
 
     def test_sections_are_capped_per_category(self):
         from .views import HOME_POPULAR_GAMES_PER_SECTION
@@ -4256,9 +4256,8 @@ class CategorySectionGamesViewTests(TestCase):
         self.client = APIClient()
         self.seller = User.objects.create_user(username='section-seller', password='password123')
         self.accounts = Category.objects.create(name='Accounts', slug='accounts')
-        # Production parity: the Top Ups category kept its original
-        # "subscription" slug after a rename.
-        self.topups = Category.objects.create(name='Top Ups', slug='subscription')
+        self.subscriptions = Category.objects.create(
+            name='Subscriptions', slug='subscriptions')
 
     def tearDown(self):
         cache.clear()
@@ -4346,32 +4345,28 @@ class CategorySectionGamesViewTests(TestCase):
             'min_price': '10.00',
         }])
 
-    def test_top_ups_accepts_both_category_slug_spellings(self):
-        local_topup = Category.objects.create(name='Top-Up', slug='top-up')
-        self.add_listing(self.add_game('PUBG Mobile', 'pubg-mobile', local_topup))
+    def test_subscriptions_section_links_per_game_display_slugs(self):
         self.add_listing(self.add_game(
-            'ChatGPT', 'chatgpt', self.topups, display_name='Subscriptions'))
+            'Xbox', 'xbox', self.subscriptions, display_name='Game Pass'))
+        self.add_listing(self.add_game(
+            'PlayStation', 'playstation', self.subscriptions,
+            display_name='Subscription'))
 
-        response = self.client.get('/api/categories/top-ups/games/')
+        response = self.client.get('/api/categories/subscriptions/games/')
 
         by_slug = {item['game_slug']: item for item in response.data['items']}
-        self.assertEqual(sorted(by_slug), ['chatgpt', 'pubg-mobile'])
+        self.assertEqual(sorted(by_slug), ['playstation', 'xbox'])
         # Per-game display override changes the category slug the item links to.
-        self.assertEqual(by_slug['chatgpt']['category_slug'], 'subscriptions')
+        self.assertEqual(by_slug['xbox']['category_slug'], 'game-pass')
+        self.assertEqual(by_slug['playstation']['category_slug'], 'subscription')
 
-    def test_game_with_both_top_up_spellings_appears_once(self):
-        local_topup = Category.objects.create(name='Top-Up', slug='top-up')
-        game = Game.objects.create(name='Free Fire', slug='free-fire')
-        stocked = GameCategory.objects.create(game=game, category=local_topup)
-        GameCategory.objects.create(game=game, category=self.topups)
-        self.add_listing(stocked)
+    def test_retired_top_ups_section_is_gone(self):
+        topups = Category.objects.create(name='Top Ups', slug='top-ups')
+        self.add_listing(self.add_game('PUBG Mobile', 'pubg-mobile', topups))
 
         response = self.client.get('/api/categories/top-ups/games/')
 
-        items = response.data['items']
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]['category_slug'], 'top-up')
-        self.assertEqual(items[0]['listing_count'], 1)
+        self.assertEqual(response.status_code, 404)
 
     def test_non_keys_sections_get_no_filter_dropdowns(self):
         # Gift-card/top-up/account pages carry their own Region filters, but
