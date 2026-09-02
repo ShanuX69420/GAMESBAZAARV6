@@ -1,6 +1,7 @@
 import { Fragment, createElement } from 'react';
 import JsonLd from '@/components/JsonLd';
 import { getListingDetail } from '@/lib/api';
+import { listingLifecycle } from '@/lib/listingLifecycle';
 import { cleanText, listingDisplayName, listingPageTitle } from '@/lib/listingSeo';
 import { createPublicMetadata, productJsonLd } from '@/lib/seo';
 
@@ -37,6 +38,11 @@ export async function generateMetadata({ params }) {
 
   try {
     const listing = await getListingDetail(listingId);
+    // Gone (redirecting) or never indexed: the page itself never renders, so
+    // the metadata only has to be harmless.
+    const { state } = listingLifecycle(listing);
+    if (state !== 'active' && state !== 'paused') throw new Error('listing has no page');
+
     const listingTitle = listingDisplayName(listing) || (listingId ? `Listing ${listingId}` : 'Listing');
     const price = formatPrice(listing.price);
     const { title, absolute } = listingPageTitle({ name: listingTitle, price });
@@ -46,8 +52,12 @@ export async function generateMetadata({ params }) {
       .filter(Boolean);
     const categoryText = categoryParts.length ? `${categoryParts.join(' ')} listing` : 'listing';
     const sellerText = cleanText(listing.seller_name) ? ` sold by ${cleanText(listing.seller_name)}` : '';
+    // Out of stock keeps the same title (the page keeps its ranking) but the
+    // description says so, and points at the options that are in stock.
     const description = truncateDescription(
-      `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText}${sellerText} with instant delivery and secure checkout.`
+      state === 'paused'
+        ? `${listingTitle} is out of stock on GamesBazaar right now. See the other ${categoryText.replace(/ listing$/, '')} options in stock, with instant delivery and secure checkout.`
+        : `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText}${sellerText} with instant delivery and secure checkout.`
     );
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
@@ -101,6 +111,10 @@ export default async function ListingLayout({ children, params }) {
   } catch {
     return children;
   }
+
+  // No Product schema for a page that redirects or 404s.
+  const { state } = listingLifecycle(listing);
+  if (state !== 'active' && state !== 'paused') return children;
 
   const price = Number(listing.price);
   if (!Number.isFinite(price)) return children;

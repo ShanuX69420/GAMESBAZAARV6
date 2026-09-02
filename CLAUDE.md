@@ -125,6 +125,16 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   copy filters, copy from a page that has the shape you want on the target.
 - Local dev `.env.local` deliberately has NO GA measurement id (keeps dev traffic
   out of analytics).
+- **Listing URLs follow the lifecycle in `core/listing_lifecycle.py`** (SEO fix
+  #1, 2026-09-02): off listing → out-of-stock page for 30 days (`unavailable_since`)
+  → 308 to the heir (active twin → category page → busiest page → section);
+  a `retire_reason` skips the wait; deleted listings leave a `RetiredListing`
+  (pre_delete signal) and redirect too; anything buyable for under a day 404s.
+  `GET /api/listings/<id>/` answers **200** for gone/deleted listings with a
+  `lifecycle` body ON PURPOSE — Next's fetch cache never replaces a cached 200
+  with a 404, so a non-200 would keep the dead page alive forever. Don't "fix"
+  it to 404. Bulk `QuerySet.update()` skips the stamp: the sync tools write it
+  themselves and `listing_lifecycle --backfill` catches stragglers.
 - **Never put a signed R2 URL in a public API payload.** Next.js caches SSR HTML
   for days (stale-while-revalidate); the signature dies first and crawlers see a
   broken image (Ahrefs 2026-09-02: 2,017 pages, all the store avatar; Shayan's

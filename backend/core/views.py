@@ -34,7 +34,9 @@ from .models import (
     Wallet, WalletTransaction, TopUpRequest, WithdrawRequest, Order,
     JazzCashPayment, SellerCommissionOverride, WhatsAppCheckout,
     Review, ReviewImage, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
+    RetiredListing,
 )
+from . import listing_lifecycle
 
 # Fastest delivery first; shared by the browse ordering and by the per-option
 # "best listing" pick in offer mode so the two always agree.
@@ -2453,6 +2455,22 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
     """GET /api/listings/{id}/ — Get listing detail.
     PUT /api/listings/{id}/ — Edit listing (owner only).
     DELETE /api/listings/{id}/ — Delete listing (owner only).
+
+    GET follows the listing lifecycle (core/listing_lifecycle.py). Every
+    response carries a ``lifecycle`` object:
+
+    * active  — the full listing plus ``{"state": "active"}``.
+    * paused  — the full listing (status inactive/sold) plus state ``paused``,
+      the sibling ``alternatives`` and a ``browse_path``; the frontend renders
+      it as out of stock, no buy button.
+    * gone / unindexed — ``{"id", "status": "retired", "lifecycle": {...}}``
+      with ``redirect_to`` (gone) or nothing (unindexed → 404 on the site).
+      Also what a DELETED listing answers, from its RetiredListing record.
+
+    Those last two are HTTP 200 on purpose: the frontend caches this fetch,
+    and Next never replaces a cached 200 with a 404, so a non-200 would keep
+    the dead listing's page alive indefinitely. Only an id the site has never
+    seen is a 404. Owners and staff always get the full listing.
     """
     throttle_methods = {'PUT', 'DELETE'}
     throttle_scope = 'listing_mutation'
@@ -2463,7 +2481,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
         return [HasCompletedProfile()]
 
     def get(self, request, pk):
-        listings_qs = Listing.objects.select_related(
+        listing = Listing.objects.select_related(
             'seller', 'seller__profile', 'option',
             'game_category__game', 'game_category__category'
         ).annotate(
@@ -2477,20 +2495,32 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
                 Review.objects.filter(seller=OuterRef('seller'))
                 .values('seller').annotate(cnt=Count('id')).values('cnt')[:1]
             ),
-        )
-        if request.user.is_authenticated:
-            if not request.user.is_staff:
-                listings_qs = listings_qs.filter(
-                    Q(status='active') | Q(seller=request.user)
-                )
-        else:
-            listings_qs = listings_qs.filter(status='active')
+        ).filter(pk=pk).first()
 
-        listing = get_object_or_404(
-            listings_qs,
-            pk=pk,
+        if listing is None:
+            record = RetiredListing.objects.filter(pk=pk).first()
+            if record is None:
+                raise Http404
+            return Response(listing_lifecycle.gone_payload(
+                record.listing_id, listing_lifecycle.lifecycle_for_retired(record),
+            ))
+
+        is_insider = request.user.is_authenticated and (
+            request.user.is_staff or listing.seller_id == request.user.id
         )
-        return Response(ListingSerializer(
+        lifecycle = {'state': 'active'}
+        if listing.status != 'active':
+            if listing.unavailable_since is None:
+                # Switched off by a bulk update that skipped save(): the
+                # out-of-stock clock starts at first sight.
+                listing_lifecycle.stamp_unavailable(listing)
+            lifecycle = listing_lifecycle.lifecycle_for_listing(listing)
+            if lifecycle['state'] != 'paused' and not is_insider:
+                return Response(listing_lifecycle.gone_payload(listing.pk, lifecycle))
+        elif listing.unavailable_since is not None or listing.retire_reason:
+            listing_lifecycle.clear_stale_stamp(listing)
+
+        data = ListingSerializer(
             listing,
             context={
                 'request': request,
@@ -2501,7 +2531,11 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
                 # Detail page only: per-listing reviews for Product JSON-LD.
                 'include_listing_reviews': True,
             },
-        ).data)
+        ).data
+        if lifecycle['state'] == 'paused':
+            lifecycle['alternatives'] = listing_lifecycle.alternatives(listing)
+        data['lifecycle'] = lifecycle
+        return Response(data)
 
     def put(self, request, pk):
         from .serializers import UpdateListingSerializer

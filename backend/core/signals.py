@@ -1,8 +1,20 @@
 from django.core.cache import cache
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 from django.conf import settings
 from .models import Listing, Order, Review, UserProfile, Wallet
+
+
+@receiver(pre_delete, sender=Listing)
+def record_listing_retirement(sender, instance, **kwargs):
+    """Every deleted listing leaves a RetiredListing behind so its URL can
+    redirect instead of 404. pre_delete (not post_delete) because the snapshot
+    needs the game/category rows, which a cascade removes right after. Having a
+    listener here also turns QuerySet.delete() into per-object deletes, so the
+    seeding tools' bulk deletes leave records too."""
+    from .listing_lifecycle import snapshot_retirement
+
+    snapshot_retirement(instance)
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)

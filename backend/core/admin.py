@@ -16,7 +16,7 @@ from .models import (
     JazzCashPayment, WhatsAppCheckout,
     Notification, Report, SupportTicket, ItemRequest,
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
-    OfflineAccount,
+    OfflineAccount, RetiredListing,
 )
 from .payments import dispatch_status_inquiries
 from .services import (
@@ -352,8 +352,9 @@ class SocialAccountAdmin(admin.ModelAdmin):
 
 @admin.register(Listing)
 class ListingAdmin(admin.ModelAdmin):
-    list_display = ['title', 'seller', 'game_category', 'price', 'quantity', 'status', 'created_at']
-    list_filter = ['status', 'game_category__game']
+    list_display = ['title', 'seller', 'game_category', 'price', 'quantity', 'status',
+                    'retire_reason', 'created_at']
+    list_filter = ['status', 'retire_reason', 'game_category__game']
     search_fields = ['title', 'seller__username']
     readonly_fields = ['seller', 'created_at', 'updated_at', 'auto_delivery_inventory']
     exclude = ['auto_delivery_data']
@@ -363,6 +364,27 @@ class ListingAdmin(admin.ModelAdmin):
     # ~14k queries per change form on prod (1k categories, 4k options).
     autocomplete_fields = ['game_category', 'option']
     list_select_related = ['seller', 'game_category__game', 'game_category__category']
+    actions = ['retire_by_hand']
+
+    @admin.action(description='Retire for good (switch off + redirect the page now)')
+    def retire_by_hand(self, request, queryset):
+        # Setting status to inactive in the change form only PAUSES a listing
+        # (out-of-stock page for 30 days). This is the "it is never coming
+        # back" button: the page redirects to its heir on the next request.
+        now = timezone.now()
+        updated = 0
+        for listing in queryset:
+            listing.status = 'inactive'
+            listing.retire_reason = 'hand_retired'
+            if listing.unavailable_since is None:
+                listing.unavailable_since = now
+            listing.save(update_fields=['status', 'retire_reason', 'unavailable_since'])
+            updated += 1
+        self.message_user(
+            request,
+            f'{updated} listing{"s" if updated != 1 else ""} retired for good.',
+            messages.SUCCESS,
+        )
 
     @admin.display(description='Auto-delivery inventory')
     def auto_delivery_inventory(self, obj):
@@ -372,6 +394,25 @@ class ListingAdmin(admin.ModelAdmin):
             decrypt_sensitive_text(obj.auto_delivery_data)
         ))
         return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
+
+
+@admin.register(RetiredListing)
+class RetiredListingAdmin(admin.ModelAdmin):
+    """Where a deleted listing's URL goes. Rows are written automatically
+    when a listing is deleted; edit heir_path to override the destination."""
+    list_display = ['listing_id', 'title', 'game_slug', 'category_slug', 'reason',
+                    'heir_path', 'retired_at']
+    list_filter = ['reason', 'category_kind']
+    search_fields = ['listing_id', 'title', 'game_slug', 'heir_path']
+    readonly_fields = ['listing_id', 'title', 'game_slug', 'category_slug', 'category_kind',
+                       'option_id', 'filter_values', 'listing_created_at', 'active_until',
+                       'retired_at']
+    fields = ['listing_id', 'title', 'game_slug', 'category_slug', 'category_kind',
+              'option_id', 'filter_values', 'reason', 'heir_path', 'listing_created_at',
+              'active_until', 'retired_at']
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(OfflineAccount)

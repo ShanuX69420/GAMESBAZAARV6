@@ -14,6 +14,7 @@ import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
 import { orderLabel, orderPath } from '@/lib/orderNumbers';
 import { listingDisplayName } from '@/lib/listingSeo';
+import { listingAlternatives, listingBrowsePath, listingLifecycle } from '@/lib/listingLifecycle';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
 import ReviewPhotos from '@/components/ReviewPhotos';
@@ -69,8 +70,19 @@ export default function ListingDetailClient({ initialListing = null }) {
     }
     fetch(`${API_BASE}/api/listings/${id}/`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { setListing(data); setLoading(false); })
+      .then(data => {
+        // Same lifecycle rules as the server render (lib/listingLifecycle.js):
+        // a listing that is gone for good moves the visitor to its heir.
+        const { state, redirectTo } = listingLifecycle(data);
+        if (state === 'gone') {
+          router.replace(redirectTo);
+          return;
+        }
+        setListing(state === 'active' || state === 'paused' ? data : null);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, initialListing]);
 
   useEffect(() => {
@@ -342,6 +354,11 @@ export default function ListingDetailClient({ initialListing = null }) {
   const unitName = listing.unit_name || '';
   const minQty = listing.min_quantity || 1;
   const stock = listing.quantity ?? null;
+  // Out of stock (status not active): the page stays up — same URL, title and
+  // schema — but the buy box turns into "here's what you can get instead".
+  const isOutOfStock = listing.status !== 'active';
+  const alternatives = isOutOfStock ? listingAlternatives(listing) : [];
+  const browsePath = isOutOfStock ? listingBrowsePath(listing) : null;
   const parsedQtyInput = parseInt(qtyInput, 10);
   const currencyQtyValid = !isCurrency || (
     Number.isFinite(parsedQtyInput)
@@ -565,18 +582,46 @@ export default function ListingDetailClient({ initialListing = null }) {
               )}
 
               {/* Stock */}
-              {listing.quantity !== null && listing.quantity > 0 && (
+              {!isOutOfStock && listing.quantity !== null && listing.quantity > 0 && (
                 <div className="listing-stock">
                   {isCurrency ? `${formatAmount(listing.quantity)} ${unitName}`.trim() : listing.quantity} in stock
                 </div>
               )}
-              {isCurrency && (
+              {isCurrency && !isOutOfStock && (
                 <div className="listing-stock">
                   Min. purchase: {formatAmount(minQty)} {unitName}
                 </div>
               )}
-              {listing.status === 'sold' && (
-                <div className="listing-sold-badge">Out of Stock</div>
+              {isOutOfStock && (
+                <div className="listing-unavailable">
+                  <div className="listing-sold-badge">Out of stock</div>
+                  <p className="listing-unavailable-text">
+                    This one isn&apos;t available right now.
+                    {browsePath && (
+                      <>
+                        {' '}Browse the rest of{' '}
+                        <Link href={browsePath} className="buy-topup-link">
+                          {[listing.game_name, listing.category_name].filter(Boolean).join(' ')}
+                        </Link>.
+                      </>
+                    )}
+                  </p>
+                  {alternatives.length > 0 && (
+                    <div className="listing-alternatives">
+                      <div className="listing-alternatives-title">Available now</div>
+                      <ul className="listing-alternatives-list">
+                        {alternatives.map((alt) => (
+                          <li key={alt.id}>
+                            <Link href={`/listing/${alt.id}`} className="listing-alternative">
+                              <span className="listing-alternative-name">{alt.option_name || alt.title}</span>
+                              <span className="listing-alternative-price">PKR {formatAmount(alt.price)}</span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Buy section */}

@@ -6187,6 +6187,66 @@ html[data-auth-hint="1"] .navbar-guest-links {
   font-weight: 500;
 }
 
+/* Out-of-stock listing page: what replaces the buy box while a listing is
+   paused (lib/listingLifecycle.js) — a pointer to the category page and the
+   sibling options that are in stock. */
+.listing-unavailable-text {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.listing-unavailable-text .buy-topup-link {
+  font-size: inherit;
+}
+
+.listing-alternatives {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.listing-alternatives-title {
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.listing-alternatives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listing-alternative {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.listing-alternative:hover {
+  border-color: var(--green-600);
+}
+
+.listing-alternative-price {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .qty-selector {
   display: inline-flex;
   align-items: center;

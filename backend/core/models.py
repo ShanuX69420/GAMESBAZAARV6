@@ -6,6 +6,7 @@ from django.db.models.functions import Lower, Trim, Upper
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils import timezone
 from django.utils.text import slugify
 
 from . import steamguard
@@ -451,6 +452,24 @@ class SocialAccount(models.Model):
         return f"{self.get_provider_display()} account for {self.user}"
 
 
+# Why a switched-off listing is off. Blank means "paused": the page keeps
+# serving as out of stock for a while (see listing_lifecycle.PAUSE_DAYS) in
+# case the stock comes back. Anything else means gone for good — the page
+# redirects to its heir straight away. Shared by Listing.retire_reason and the
+# RetiredListing record a deletion leaves behind.
+RETIRE_REASON_CHOICES = [
+    ('', 'Paused - may come back'),
+    ('game_gone', 'Game gone from the supplier'),
+    ('region_gone', 'Region no longer sold'),
+    ('discontinued', 'Edition or pack discontinued'),
+    ('hand_retired', 'Retired by hand'),
+    ('superseded', 'Replaced by a renamed listing'),
+]
+PERMANENT_RETIRE_REASONS = frozenset(
+    value for value, _label in RETIRE_REASON_CHOICES if value
+)
+
+
 class Listing(models.Model):
     """A seller's listing in the marketplace."""
     STATUS_CHOICES = [
@@ -518,6 +537,24 @@ class Listing(models.Model):
                   'listing (never consumed). Enables instant delivery + '
                   'on-demand login codes.',
     )
+    # Listing lifecycle (SEO fix #1, 2026-09-02). A listing that stops being
+    # buyable used to 404 at once, throwing away the page's search history
+    # every time a price sync switched it off. Now the page stays up as
+    # "out of stock" for PAUSE_DAYS, then permanently redirects to its heir;
+    # a retire_reason skips the wait. See core/listing_lifecycle.py.
+    unavailable_since = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When the listing last stopped being buyable. Starts the '
+                  'out-of-stock clock: the page keeps serving for 30 days, then '
+                  'redirects to the nearest live page. Cleared automatically '
+                  'when the listing goes active again.',
+    )
+    retire_reason = models.CharField(
+        max_length=20, blank=True, default='', choices=RETIRE_REASON_CHOICES,
+        help_text='Why an inactive listing is off. Blank = paused (shown as out '
+                  'of stock for up to 30 days, may come back). Any other value = '
+                  'gone for good: the page redirects to its heir right away.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -551,6 +588,90 @@ class Listing(models.Model):
 
     def __str__(self):
         return f"{self.title} — PKR {self.price}"
+
+    def sync_availability_stamp(self, now=None):
+        """Keep unavailable_since / retire_reason consistent with status.
+
+        Invariant: an active listing carries neither; an inactive one carries
+        the moment it went off. Because of that, "off with no stamp" can only
+        mean "just switched off", so no query for the previous status is
+        needed. Returns the field names it changed (save() adds them to
+        update_fields so a save(update_fields=['status']) still persists them).
+        Bulk QuerySet.update() calls bypass this — the sync tools stamp the
+        fields themselves and the detail view stamps stragglers lazily.
+        """
+        touched = set()
+        if self.status == 'active':
+            if self.unavailable_since is not None:
+                self.unavailable_since = None
+                touched.add('unavailable_since')
+            if self.retire_reason:
+                self.retire_reason = ''
+                touched.add('retire_reason')
+        elif self.unavailable_since is None:
+            self.unavailable_since = now or timezone.now()
+            touched.add('unavailable_since')
+        return touched
+
+    def save(self, *args, **kwargs):
+        touched = self.sync_availability_stamp()
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and touched:
+            kwargs['update_fields'] = list(set(update_fields) | touched)
+        super().save(*args, **kwargs)
+
+
+class RetiredListing(models.Model):
+    """What a deleted listing left behind: enough to send its old URL somewhere
+    useful. Written by the pre_delete signal (so admin, API and the seeding
+    tools' bulk deletes all leave a record) and by import_retired_listings for
+    the 2026 catalogue retirements. Ids are never reused, so listing_id is safe
+    as the primary key. The heir is worked out live from the snapshot unless
+    heir_path pins it — see listing_lifecycle.resolve_heir.
+    """
+    REASON_CHOICES = [
+        (value, label) for value, label in RETIRE_REASON_CHOICES if value
+    ] + [
+        ('deleted', 'Deleted'),
+        ('catalog_retired', 'Catalogue retirement'),
+    ]
+
+    listing_id = models.PositiveIntegerField(primary_key=True)
+    title = models.CharField(max_length=300, blank=True, default='')
+    game_slug = models.CharField(max_length=200, blank=True, default='')
+    category_slug = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text='Buyer-facing URL slug of the category page it sat on.',
+    )
+    category_kind = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text='The base category slug (keys, gift-cards, ...) — picks the '
+                  'section page when nothing closer is left.',
+    )
+    option_id = models.PositiveIntegerField(null=True, blank=True)
+    filter_values = models.JSONField(default=dict, blank=True)
+    heir_path = models.CharField(
+        max_length=300, blank=True, default='',
+        help_text='Where the old URL goes, e.g. /games/steam/gift-cards. Blank = '
+                  'worked out live: an active twin, else the category page, '
+                  'else the game\'s busiest page, else the section page.',
+    )
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES, default='deleted')
+    listing_created_at = models.DateTimeField(null=True, blank=True)
+    active_until = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When it stopped being buyable. A listing that was buyable for '
+                  'under a day was never indexed and answers 404 instead of a redirect.',
+    )
+    retired_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-retired_at']
+        verbose_name = 'Retired listing'
+        verbose_name_plural = 'Retired listings'
+
+    def __str__(self):
+        return f'#{self.listing_id} {self.title}'.strip()
 
 
 # ── Chat ─────────────────────────────────────────────────────────────────────

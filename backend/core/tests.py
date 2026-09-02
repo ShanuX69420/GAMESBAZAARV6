@@ -5376,12 +5376,22 @@ class AccessControlTests(TestCase):
         self.listing.status = 'sold'
         self.listing.save(update_fields=['status'])
 
+        # A listing that sold out within a day of being created was never
+        # indexed: outsiders get the bare lifecycle body (the site renders a
+        # 404 from it) and none of the listing's details. Deliberately HTTP
+        # 200 — see ListingDetailView / core/listing_lifecycle.py.
         anon_response = self.client.get(f'/api/listings/{self.listing.id}/')
-        self.assertEqual(anon_response.status_code, 404)
+        self.assertEqual(anon_response.status_code, 200)
+        self.assertEqual(anon_response.data['status'], 'retired')
+        self.assertEqual(anon_response.data['lifecycle']['state'], 'unindexed')
+        self.assertNotIn('title', anon_response.data)
+        self.assertNotIn('seller_name', anon_response.data)
 
         self.client.force_authenticate(user=self.buyer)
         outsider_response = self.client.get(f'/api/listings/{self.listing.id}/')
-        self.assertEqual(outsider_response.status_code, 404)
+        self.assertEqual(outsider_response.status_code, 200)
+        self.assertEqual(outsider_response.data['status'], 'retired')
+        self.assertNotIn('title', outsider_response.data)
 
         self.client.force_authenticate(user=self.seller)
         owner_response = self.client.get(f'/api/listings/{self.listing.id}/')
