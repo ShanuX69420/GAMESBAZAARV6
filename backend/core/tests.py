@@ -8808,7 +8808,11 @@ class AccountSecurityFlowTests(TestCase):
         avatar_url = upload_response.data['user']['avatar_url']
         self.assertTrue(avatar_url)
         if is_cloudflare_r2_name(self.user.profile.avatar.name):
-            self.assertNotIn('/media/', avatar_url)
+            # R2 avatars are handed out at their stable redirect address,
+            # never as a signed bucket URL (those expire inside cached HTML).
+            basename = self.user.profile.avatar.name.rsplit('/', 1)[-1]
+            self.assertEqual(avatar_url, f'http://testserver/api/media/avatars/{basename}')
+            self.assertNotIn('X-Amz-Signature', avatar_url)
         else:
             self.assertIn('/media/avatars/', avatar_url)
 

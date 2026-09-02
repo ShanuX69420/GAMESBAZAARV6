@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.dateparse import parse_date
 from django.utils.text import Truncator, slugify
+from django.views import View
 from .throttling import AttemptScopedRateThrottle, SuccessScopedRateThrottle
 from .models import (
     Game, GameCategory, CategoryOption, Filter, UserProfile, Listing, Conversation, Message,
@@ -34,6 +35,27 @@ from .models import (
     JazzCashPayment, SellerCommissionOverride, WhatsAppCheckout,
     Review, ReviewImage, Notification, Report, SupportTicket, SocialAccount, ItemRequest,
 )
+
+# Fastest delivery first; shared by the browse ordering and by the per-option
+# "best listing" pick in offer mode so the two always agree.
+DELIVERY_SPEED_RANK = Case(
+    When(delivery_time='Instant', then=Value(0)),
+    When(delivery_time='2-3 Minutes', then=Value(1)),
+    When(delivery_time='5 Minutes', then=Value(2)),
+    When(delivery_time='10-15 Minutes', then=Value(3)),
+    When(delivery_time='15-30 Minutes', then=Value(4)),
+    When(delivery_time='30-60 Minutes', then=Value(5)),
+    When(delivery_time='1-2 Hours', then=Value(6)),
+    When(delivery_time='2-6 Hours', then=Value(7)),
+    When(delivery_time='6-12 Hours', then=Value(8)),
+    When(delivery_time='12-24 Hours', then=Value(9)),
+    When(delivery_time='1-3 Days', then=Value(10)),
+    default=Value(11),
+    output_field=IntegerField(),
+)
+# Best offer for an option = what the buy box shows first: cheapest, then
+# fastest delivery, then newest.
+BEST_OFFER_ORDERING = ('price', 'delivery_speed_rank', '-created_at')
 
 GAME_LIST_CACHE_KEY = 'game-list:v3'
 GAME_LIST_CACHE_SECONDS = 60
@@ -186,13 +208,18 @@ from .payments import (
     start_jazzcash_payment,
 )
 from .storage_backends import (
-    AVATAR_CACHE_SECONDS,
+    AVATAR_MEDIA_KIND,
+    CLOUDFLARE_R2_NAME_PREFIX,
     GAME_ICON_CACHE_SECONDS,
+    PUBLIC_MEDIA_REDIRECT_CACHE_SECONDS,
+    PUBLIC_MEDIA_SIGNED_URL_MEMO_SECONDS,
+    PUBLIC_MEDIA_SIGNED_URL_SECONDS,
     R2_SIGNED_URL_CACHE_SAFETY_SECONDS,
     R2_SIGNED_URL_MAX_SECONDS,
     cached_media_url,
     is_cloudflare_r2_name,
     media_content_type,
+    public_avatar_url,
 )
 from .authentication import enforce_trusted_origin
 from .permissions import (
@@ -585,6 +612,76 @@ def broadcast_chat_message(message, request):
     message_data = dict(MessageSerializer(message, context={'request': request}).data)
     broadcast_chat_message_after_commit(message)
     return message_data
+
+
+# Public media that must load from server-rendered HTML long after it was
+# rendered: the payload carries a stable /api/media/<kind>/<name> address and
+# this endpoint turns it into a short-lived signed R2 URL on demand.
+# Only files referenced by a live row of the mapped model resolve, so the
+# endpoint cannot be used to sign arbitrary bucket objects (chat images,
+# payment proofs and the like stay behind their permission checks).
+PUBLIC_MEDIA_KINDS = {
+    AVATAR_MEDIA_KIND: (UserProfile, 'avatar'),
+}
+
+
+def public_media_signed_url(file_field):
+    """Signed R2 URL for a public media object, memoised briefly so repeat
+    visitors keep hitting the same URL (and their browser cache)."""
+    name = file_field.name
+    content_type = media_content_type(name)
+    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        raise Http404
+    memo_key = 'public-media-url:v1:' + hashlib.sha256(name.encode('utf-8')).hexdigest()
+    url = cache.get(memo_key)
+    if url is None:
+        url = file_field.storage.url(
+            name,
+            parameters={
+                'ResponseCacheControl': f'public, max-age={PUBLIC_MEDIA_SIGNED_URL_SECONDS}',
+                'ResponseContentType': content_type,
+            },
+            expire=PUBLIC_MEDIA_SIGNED_URL_SECONDS,
+        )
+        cache.set(memo_key, url, PUBLIC_MEDIA_SIGNED_URL_MEMO_SECONDS)
+    return url
+
+
+def public_media_redirect(request, file_field):
+    if not file_field:
+        raise Http404
+    if is_cloudflare_r2_name(file_field.name):
+        target = public_media_signed_url(file_field)
+    else:
+        if media_content_type(file_field.name) not in ALLOWED_IMAGE_CONTENT_TYPES:
+            raise Http404
+        target = request.build_absolute_uri(file_field.url)
+    response = HttpResponseRedirect(target)
+    response['Cache-Control'] = f'public, max-age={PUBLIC_MEDIA_REDIRECT_CACHE_SECONDS}'
+    response['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+class PublicMediaView(View):
+    """GET /api/media/<kind>/<name> — stable address for a public media file.
+
+    302s to a freshly signed R2 URL (or the plain /media/ path for legacy
+    local files). The redirect is cacheable for a few minutes; the signed URL
+    it points at lives much longer, so a cached redirect never dereferences
+    to an expired link.
+    """
+    http_method_names = ['get', 'head']
+
+    def get(self, request, kind, name):
+        try:
+            model, field_name = PUBLIC_MEDIA_KINDS[kind]
+        except KeyError:
+            raise Http404
+        candidates = [f'{CLOUDFLARE_R2_NAME_PREFIX}{kind}/{name}', f'{kind}/{name}']
+        row = model.objects.filter(**{f'{field_name}__in': candidates}).only(field_name).first()
+        if row is None:
+            raise Http404
+        return public_media_redirect(request, getattr(row, field_name))
 
 
 class GameListView(generics.ListAPIView):
@@ -1086,13 +1183,28 @@ class GameCategoryDetailView(APIView):
         if game_category.listing_mode == 'offer':
             # Per-option aggregates respect the active filter params (e.g., Region)
             # so "from" prices reflect what the buyer will actually see.
+            offer_filter_pairs = [
+                (key.replace('filter_', ''), value)
+                for key, value in request.query_params.items()
+                if key.startswith('filter_') and value
+            ]
+            offer_filter_pairs.extend(applied_filters.items())
             offer_stats_q = Q(listings__status='active')
-            for key, value in request.query_params.items():
-                if key.startswith('filter_') and value:
-                    filter_id = key.replace('filter_', '')
-                    offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
-            for filter_id, value in applied_filters.items():
+            best_offer_q = Q(status='active')
+            for filter_id, value in offer_filter_pairs:
                 offer_stats_q &= Q(listings__filter_values__contains={filter_id: value})
+                best_offer_q &= Q(filter_values__contains={filter_id: value})
+
+            # Each option tile links to the listing page of its best offer
+            # (the one the buy box would show). Without a real <a href> in
+            # the server-rendered HTML those listing pages are orphans,
+            # reachable only through the sitemap (Ahrefs 2026-09-02: 1,859).
+            best_offer_subquery = (
+                Listing.objects.filter(best_offer_q, option=OuterRef('pk'))
+                .annotate(delivery_speed_rank=DELIVERY_SPEED_RANK)
+                .order_by(*BEST_OFFER_ORDERING)
+                .values('id')[:1]
+            )
 
             # annotate() drops CategoryOption.Meta.ordering (Django strips
             # default ordering on aggregation) — re-apply it explicitly so
@@ -1101,6 +1213,7 @@ class GameCategoryDetailView(APIView):
                 game_category.options.annotate(
                     min_price=Min('listings__price', filter=offer_stats_q),
                     offer_count=Count('listings', filter=offer_stats_q),
+                    best_listing_id=Subquery(best_offer_subquery),
                 ).order_by('order', 'name')
             )
             # Buyers only see buyable options: a tile whose every offer is
@@ -1140,6 +1253,7 @@ class GameCategoryDetailView(APIView):
                     ) if opt.icon else None,
                     'min_price': str(opt.min_price) if opt.min_price is not None else None,
                     'offer_count': opt.offer_count,
+                    'best_listing_id': opt.best_listing_id,
                 }
                 for opt in options
             ]
@@ -1200,21 +1314,7 @@ class GameCategoryDetailView(APIView):
             listings_qs = listings_qs.filter(seller__username=seller_username)
 
         # Sorting / Ordering
-        delivery_speed_rank = Case(
-            When(delivery_time='Instant', then=Value(0)),
-            When(delivery_time='2-3 Minutes', then=Value(1)),
-            When(delivery_time='5 Minutes', then=Value(2)),
-            When(delivery_time='10-15 Minutes', then=Value(3)),
-            When(delivery_time='15-30 Minutes', then=Value(4)),
-            When(delivery_time='30-60 Minutes', then=Value(5)),
-            When(delivery_time='1-2 Hours', then=Value(6)),
-            When(delivery_time='2-6 Hours', then=Value(7)),
-            When(delivery_time='6-12 Hours', then=Value(8)),
-            When(delivery_time='12-24 Hours', then=Value(9)),
-            When(delivery_time='1-3 Days', then=Value(10)),
-            default=Value(11),
-            output_field=IntegerField(),
-        )
+        delivery_speed_rank = DELIVERY_SPEED_RANK
         ALLOWED_ORDERINGS = {
             'price_asc': (F('price').asc(), F('created_at').desc()),
             'price_desc': (F('price').desc(), F('created_at').desc()),
@@ -1231,7 +1331,7 @@ class GameCategoryDetailView(APIView):
         elif game_category.listing_mode == 'offer':
             # Best offer first: cheapest, fastest delivery as tiebreaker
             listings_qs = listings_qs.annotate(delivery_speed_rank=delivery_speed_rank)
-            listings_qs = listings_qs.order_by('price', 'delivery_speed_rank', '-created_at')
+            listings_qs = listings_qs.order_by(*BEST_OFFER_ORDERING)
         else:
             listings_qs = apply_recommended_listing_ordering(listings_qs)
 
@@ -4897,15 +4997,7 @@ class SellerProfileView(APIView):
             # Online status and avatar must be fresh
             cached['is_online'] = profile.is_online
             cached['last_active'] = profile.last_active
-            if profile.avatar:
-                cached['avatar_url'] = cached_media_url(
-                    profile.avatar,
-                    request=request,
-                    cache_seconds=AVATAR_CACHE_SECONDS,
-                    cache_scope='private',
-                )
-            else:
-                cached['avatar_url'] = None
+            cached['avatar_url'] = public_avatar_url(profile.avatar, request=request)
             return Response(cached)
 
         # Single review query: get distribution and compute count+avg from it
@@ -4985,15 +5077,7 @@ class SellerProfileView(APIView):
         # Sort games by total offers descending
         games = sorted(games_map.values(), key=lambda g: g['total_offers'], reverse=True)
 
-        # Avatar URL
-        avatar_url = None
-        if profile.avatar:
-            avatar_url = cached_media_url(
-                profile.avatar,
-                request=request,
-                cache_seconds=AVATAR_CACHE_SECONDS,
-                cache_scope='private',
-            )
+        avatar_url = public_avatar_url(profile.avatar, request=request)
 
         payload = {
             'username': seller.username,

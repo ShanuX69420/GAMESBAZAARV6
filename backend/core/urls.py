@@ -14,6 +14,10 @@ urlpatterns = [
     # Public — SEO
     path('sitemap/listings/', views.SitemapListingsView.as_view(), name='sitemap-listings'),
 
+    # Public media with a stable address (avatars): redirects to a fresh signed
+    # R2 URL so page HTML never carries a signature that can expire.
+    path('media/<slug:kind>/<str:name>', views.PublicMediaView.as_view(), name='public-media'),
+
     # Auth
     path('auth/register/', views.RegisterView.as_view(), name='register'),
     path('auth/verify-email/', views.VerifyEmailView.as_view(), name='verify-email'),

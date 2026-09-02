@@ -287,6 +287,50 @@ class OfferModeTests(TestCase):
         region_payload = next(f for f in response.data['filters'] if f['name'] == 'Region')
         self.assertTrue(region_payload['require_selection'])
 
+    def test_options_carry_the_best_listing_id_for_tile_links(self):
+        # Option tiles link to the listing page of the offer the buy box would
+        # show first (cheapest active), so listing pages stop being orphans.
+        self.make_offer(self.seller, self.option_small, '150.00')
+        cheapest = self.make_offer(self.other_seller, self.option_small, '120.00')
+        self.make_offer(self.seller, self.option_small, '90.00', status='inactive')
+        popular = self.make_offer(self.seller, self.option_popular, '500.00')
+
+        response = self.client.get('/api/games/pubg-mobile/uc/')
+
+        options = {opt['name']: opt for opt in response.data['options']}
+        self.assertEqual(options['60 UC']['best_listing_id'], cheapest.id)
+        self.assertEqual(options['325 UC']['best_listing_id'], popular.id)
+        # ...and it is the same listing the buy box leads with.
+        self.assertEqual(response.data['selected_option_id'], self.option_popular.id)
+        self.assertEqual(response.data['listings'][0]['id'], popular.id)
+
+    def test_best_listing_id_is_null_for_offerless_options(self):
+        self.make_offer(self.seller, self.option_small, '150.00')
+
+        response = self.client.get('/api/games/pubg-mobile/uc/?all_options=1')
+
+        options = {opt['name']: opt for opt in response.data['options']}
+        self.assertIsNone(options['325 UC']['best_listing_id'])
+
+    def test_best_listing_id_respects_filter_params(self):
+        region_filter = self.make_region_filter()
+        global_offer = self.make_offer(self.seller, self.option_small, '120.00')
+        global_offer.filter_values = {str(region_filter.id): 'global'}
+        global_offer.save(update_fields=['filter_values'])
+        pakistan_offer = self.make_offer(self.other_seller, self.option_small, '99.00')
+        pakistan_offer.filter_values = {str(region_filter.id): 'pakistan'}
+        pakistan_offer.save(update_fields=['filter_values'])
+
+        unfiltered = self.client.get('/api/games/pubg-mobile/uc/')
+        filtered = self.client.get(
+            f'/api/games/pubg-mobile/uc/?filter_{region_filter.id}=global'
+        )
+
+        unfiltered_opt = next(o for o in unfiltered.data['options'] if o['name'] == '60 UC')
+        self.assertEqual(unfiltered_opt['best_listing_id'], pakistan_offer.id)
+        filtered_opt = next(o for o in filtered.data['options'] if o['name'] == '60 UC')
+        self.assertEqual(filtered_opt['best_listing_id'], global_offer.id)
+
     def test_option_aggregates_respect_filter_params(self):
         region_filter = self.make_region_filter()
         global_offer = self.make_offer(self.seller, self.option_small, '120.00')

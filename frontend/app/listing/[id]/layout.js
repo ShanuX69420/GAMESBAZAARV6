@@ -1,6 +1,7 @@
 import { Fragment, createElement } from 'react';
 import JsonLd from '@/components/JsonLd';
 import { getListingDetail } from '@/lib/api';
+import { cleanText, listingDisplayName, listingPageTitle } from '@/lib/listingSeo';
 import { createPublicMetadata, productJsonLd } from '@/lib/seo';
 
 function formatPrice(value) {
@@ -11,10 +12,6 @@ function formatPrice(value) {
     minimumFractionDigits: price % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-function cleanText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 function truncateDescription(value) {
@@ -40,9 +37,9 @@ export async function generateMetadata({ params }) {
 
   try {
     const listing = await getListingDetail(listingId);
-    const listingTitle = cleanText(listing.title) || (listingId ? `Listing ${listingId}` : 'Listing');
+    const listingTitle = listingDisplayName(listing) || (listingId ? `Listing ${listingId}` : 'Listing');
     const price = formatPrice(listing.price);
-    const title = price ? `${listingTitle} - ${price}` : listingTitle;
+    const { title, absolute } = listingPageTitle({ name: listingTitle, price });
     const platform = platformFromFilters(listing.filter_display);
     const categoryParts = [listing.game_name, platform, listing.category_name]
       .map(cleanText)
@@ -54,7 +51,7 @@ export async function generateMetadata({ params }) {
     );
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
-    return createPublicMetadata({
+    const metadata = createPublicMetadata({
       title,
       description,
       path: canonicalPath,
@@ -62,6 +59,12 @@ export async function generateMetadata({ params }) {
         type: 'website',
       },
     });
+    if (absolute) {
+      // Skip the root layout's " | GamesBazaar" template when it would push
+      // the title past what search results show.
+      metadata.title = { absolute: title };
+    }
+    return metadata;
   } catch {
     const title = listingId ? `Listing ${listingId}` : 'Listing';
     const description = 'View this GamesBazaar listing with secure checkout and instant delivery.';
@@ -114,7 +117,7 @@ export default async function ListingLayout({ children, params }) {
     null,
     createElement(JsonLd, {
       data: productJsonLd({
-        name: cleanText(listing.title) || `Listing ${listingId}`,
+        name: listingDisplayName(listing) || `Listing ${listingId}`,
         description: cleanText(listing.description),
         path: `/listing/${encodeURIComponent(listingId)}`,
         sku: listingId,

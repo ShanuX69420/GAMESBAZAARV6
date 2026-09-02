@@ -30,10 +30,10 @@ from .services import (
     encrypt_sensitive_text,
 )
 from .storage_backends import (
-    AVATAR_CACHE_SECONDS,
     GAME_ICON_CACHE_SECONDS,
     REVIEW_IMAGE_CACHE_SECONDS,
     cached_media_url,
+    public_avatar_url,
 )
 from .permissions import add_profile_setup_token_claim, user_needs_profile_setup
 
@@ -398,13 +398,7 @@ class UserSerializer(serializers.ModelSerializer):
     def get_avatar_url(self, obj):
         profile = getattr(obj, 'profile', None)
         if profile and profile.avatar:
-            request = self.context.get('request')
-            return cached_media_url(
-                profile.avatar,
-                request=request,
-                cache_seconds=AVATAR_CACHE_SECONDS,
-                cache_scope='private',
-            )
+            return public_avatar_url(profile.avatar, request=self.context.get('request'))
         return None
 
 
@@ -598,13 +592,7 @@ class ListingSerializer(serializers.ModelSerializer):
     def get_seller_avatar_url(self, obj):
         profile = getattr(obj.seller, 'profile', None)
         if profile and profile.avatar:
-            request = self.context.get('request')
-            return cached_media_url(
-                profile.avatar,
-                request=request,
-                cache_seconds=AVATAR_CACHE_SECONDS,
-                cache_scope='private',
-            )
+            return public_avatar_url(profile.avatar, request=self.context.get('request'))
         return None
 
     def get_seller_is_official_store(self, obj):
@@ -1101,13 +1089,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 profile = getattr(other, 'profile', None)
                 avatar_url = None
                 if profile and profile.avatar:
-                    request = self.context.get('request')
-                    avatar_url = cached_media_url(
-                        profile.avatar,
-                        request=request,
-                        cache_seconds=AVATAR_CACHE_SECONDS,
-                        cache_scope='private',
-                    )
+                    avatar_url = public_avatar_url(profile.avatar, request=request)
                 return {
                     'id': other.id,
                     'username': other.username,
@@ -1180,13 +1162,7 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
                 profile = getattr(other, 'profile', None)
                 avatar_url = None
                 if profile and profile.avatar:
-                    request = self.context.get('request')
-                    avatar_url = cached_media_url(
-                        profile.avatar,
-                        request=request,
-                        cache_seconds=AVATAR_CACHE_SECONDS,
-                        cache_scope='private',
-                    )
+                    avatar_url = public_avatar_url(profile.avatar, request=request)
                 return {
                     'id': other.id,
                     'username': other.username,

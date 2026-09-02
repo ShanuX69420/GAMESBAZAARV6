@@ -28,6 +28,12 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
 ## Commands
 
 - Backend tests: `python manage.py test core` (JazzCash suite: `python manage.py test core.test_jazzcash`)
+  **Capture the run to a file, never pipe it through grep/tail:**
+  `python manage.py test core > test.log 2>&1; echo "exit: $?"` then grep the
+  file for `^Ran |^OK|^FAILED|^FAIL:|^ERROR:`. The summary goes to stderr and
+  management-command output to buffered stdout, so a piped run shows only the
+  stdout backlog, drops the summary and reports tail's exit code — the whole
+  6-minute suite then has to be re-run.
 - Frontend tests: `npm test` (vitest, in `frontend/`)
 - Local dev: backend `python manage.py runserver`, frontend `npm run dev`
 
@@ -119,6 +125,12 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   copy filters, copy from a page that has the shape you want on the target.
 - Local dev `.env.local` deliberately has NO GA measurement id (keeps dev traffic
   out of analytics).
+- **Never put a signed R2 URL in a public API payload.** Next.js caches SSR HTML
+  for days (stale-while-revalidate); the signature dies first and crawlers see a
+  broken image (Ahrefs 2026-09-02: 2,017 pages, all the store avatar). Public
+  media gets a stable address via `PublicMediaView` (`/api/media/<kind>/<name>`
+  → 302 to a fresh short-lived signed URL); extend `PUBLIC_MEDIA_KINDS` rather
+  than calling `cached_media_url` for anything that lands in page HTML.
 
 ## Payments state (2026-07-14)
 

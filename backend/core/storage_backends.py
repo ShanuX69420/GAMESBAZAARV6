@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import FileSystemStorage
+from django.urls import reverse
 from django.utils.deconstruct import deconstructible
 
 try:
@@ -15,6 +16,26 @@ except ImportError:  # pragma: no cover - raised only when R2 is enabled without
 
 CLOUDFLARE_R2_NAME_PREFIX = 'r2/'
 AVATAR_CACHE_SECONDS = 60 * 60
+# Public media served through /api/media/<kind>/<name> (see views.PublicMediaView).
+# Avatars are shown on every listing page but live in the private R2 bucket, so
+# they need a signed URL to load. Handing that signed URL straight to the page
+# meant it got baked into cached HTML and expired underneath crawlers (Ahrefs
+# 2026-09-02: "broken image" on ~2,000 pages). The stable address below never
+# carries a signature; the endpoint behind it redirects to a fresh one.
+AVATAR_MEDIA_KIND = 'avatars'
+# How long browsers/proxies may reuse the redirect itself.
+PUBLIC_MEDIA_REDIRECT_CACHE_SECONDS = 5 * 60
+# How long the signed URL the redirect points at stays valid. Must comfortably
+# exceed the redirect cache + memo windows so a cached redirect never lands on
+# an expired link.
+PUBLIC_MEDIA_SIGNED_URL_SECONDS = 60 * 60
+# Reuse one signed URL for this long so repeat visitors hit their browser cache
+# for the image bytes instead of re-downloading behind every fresh signature.
+PUBLIC_MEDIA_SIGNED_URL_MEMO_SECONDS = 10 * 60
+assert (
+    PUBLIC_MEDIA_REDIRECT_CACHE_SECONDS + PUBLIC_MEDIA_SIGNED_URL_MEMO_SECONDS
+    < PUBLIC_MEDIA_SIGNED_URL_SECONDS
+), 'a cached public-media redirect must never outlive the signed URL it points at'
 GAME_ICON_CACHE_SECONDS = 30 * 24 * 60 * 60
 REVIEW_IMAGE_CACHE_SECONDS = 24 * 60 * 60
 R2_SIGNED_URL_MAX_SECONDS = 7 * 24 * 60 * 60
@@ -99,6 +120,43 @@ def cached_media_url(file_field, *, request=None, cache_seconds=3600, cache_scop
         url = file_field.url
 
     if request and str(url).startswith('/'):
+        return request.build_absolute_uri(url)
+    return url
+
+
+def public_media_name(file_field, kind):
+    """The <name> segment of a stable /api/media/<kind>/<name> URL, or None
+    when the file is not an R2 object under that kind's folder."""
+    name = str(getattr(file_field, 'name', '') or '')
+    prefix = f'{CLOUDFLARE_R2_NAME_PREFIX}{kind}/'
+    if not name.startswith(prefix):
+        return None
+    rest = name[len(prefix):]
+    if not rest or '/' in rest:
+        return None
+    return rest
+
+
+def public_avatar_url(file_field, request=None):
+    """Stable, unsigned URL for a profile avatar.
+
+    R2 avatars resolve through the public-media redirect endpoint, so the
+    address embedded in API payloads (and therefore in server-rendered page
+    HTML) never expires. Legacy avatars on local disk keep their plain
+    /media/avatars/ address, which nginx serves directly.
+    """
+    if not file_field:
+        return None
+    media_name = public_media_name(file_field, AVATAR_MEDIA_KIND)
+    if media_name is None:
+        return cached_media_url(
+            file_field,
+            request=request,
+            cache_seconds=AVATAR_CACHE_SECONDS,
+            cache_scope='private',
+        )
+    url = reverse('public-media', kwargs={'kind': AVATAR_MEDIA_KIND, 'name': media_name})
+    if request:
         return request.build_absolute_uri(url)
     return url
 

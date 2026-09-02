@@ -643,36 +643,68 @@ export default function GameCategoryClient({ initialData = null }) {
                 </div>
               )}
               <div className={`offer-options-grid ${!gateSatisfied ? 'offer-options-grid-disabled' : ''}`}>
-                {options.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    className={`offer-option-card ${opt.id === selectedOption ? 'offer-option-card-selected' : ''}`}
-                    onClick={() => handleOptionSelect(opt.id)}
-                    disabled={!gateSatisfied}
-                  >
-                    {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
-                    {opt.id === selectedOption && (
-                      <span className="offer-option-check" aria-hidden="true">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                      </span>
-                    )}
-                    {opt.icon_url && (
-                      <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
-                    )}
-                    <span className="offer-option-name">{opt.name}</span>
-                    {opt.min_price !== null && opt.min_price !== undefined ? (
-                      <span className="offer-option-price">From Rs {Number(opt.min_price).toLocaleString()}</span>
-                    ) : (
-                      <span className="offer-option-price offer-option-price-empty">No offers yet</span>
-                    )}
-                    {opt.offer_count > 0 && (
-                      <span className="offer-option-count">{opt.offer_count} seller{opt.offer_count !== 1 ? 's' : ''}</span>
-                    )}
-                  </button>
-                ))}
+                {options.map((opt) => {
+                  const tileClassName = `offer-option-card ${opt.id === selectedOption ? 'offer-option-card-selected' : ''}`;
+                  const tileContent = (
+                    <>
+                      {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
+                      {opt.id === selectedOption && (
+                        <span className="offer-option-check" aria-hidden="true">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        </span>
+                      )}
+                      {opt.icon_url && (
+                        <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
+                      )}
+                      <span className="offer-option-name">{opt.name}</span>
+                      {opt.min_price !== null && opt.min_price !== undefined ? (
+                        <span className="offer-option-price">From Rs {Number(opt.min_price).toLocaleString()}</span>
+                      ) : (
+                        <span className="offer-option-price offer-option-price-empty">No offers yet</span>
+                      )}
+                      {opt.offer_count > 0 && (
+                        <span className="offer-option-count">{opt.offer_count} seller{opt.offer_count !== 1 ? 's' : ''}</span>
+                      )}
+                    </>
+                  );
+                  if (opt.best_listing_id) {
+                    // A real link to the option's best offer, so listing pages
+                    // are reachable from server-rendered HTML (they were
+                    // sitemap-only orphans for crawlers). Clicking still
+                    // selects the option in place; open-in-new-tab and
+                    // crawlers get the listing page. Plain <a>, not <Link>:
+                    // gift-card pages show 100+ tiles and Link would prefetch
+                    // every one of them.
+                    return (
+                      <a
+                        key={opt.id}
+                        href={`/listing/${opt.best_listing_id}`}
+                        className={tileClassName}
+                        aria-disabled={gateSatisfied ? undefined : 'true'}
+                        tabIndex={gateSatisfied ? undefined : -1}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          if (gateSatisfied) handleOptionSelect(opt.id);
+                        }}
+                      >
+                        {tileContent}
+                      </a>
+                    );
+                  }
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={tileClassName}
+                      onClick={() => handleOptionSelect(opt.id)}
+                      disabled={!gateSatisfied}
+                    >
+                      {tileContent}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
