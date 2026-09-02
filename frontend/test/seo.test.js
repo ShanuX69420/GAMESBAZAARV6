@@ -271,7 +271,11 @@ describe('SEO route metadata', () => {
         card: 'summary_large_image',
       },
     });
-    expect(metadata.description).toContain('Valorant PC Accounts listing sold by sellerpk');
+    expect(metadata.description).toBe(
+      'Buy Rare Valorant Account for PKR 12,500 on GamesBazaar. Valorant PC Accounts listing with instant delivery and secure checkout.'
+    );
+    // No "sold by <seller>" — the store is the seller, not a marketplace vendor.
+    expect(metadata.description).not.toContain('sold by');
   });
 
   it('wires per-listing reviews into the listing page Product JSON-LD', async () => {
@@ -317,6 +321,13 @@ describe('SEO route metadata', () => {
     expect(data.aggregateRating).toMatchObject({ ratingValue: 4.5, reviewCount: 2 });
     expect(data.review).toHaveLength(2);
     expect(data.review[0].author).toEqual({ '@type': 'Person', name: 'buyer1' });
+    // The API's seller_name never reaches the schema: the store is the seller.
+    expect(data.offers.seller).toEqual({
+      '@type': 'Organization',
+      '@id': 'https://www.gamesbazaar.pk/#organization',
+      name: 'GamesBazaar',
+      url: 'https://www.gamesbazaar.pk/',
+    });
     // ISO datetime from the API is trimmed to the date Google expects.
     expect(data.review[0].datePublished).toBe('2026-07-01');
     expect(data.review[1]).not.toHaveProperty('reviewBody');
@@ -392,12 +403,18 @@ describe('SEO route metadata', () => {
       sku: 'GB-123',
       brand: 'Valorant',
       price: '12500.00',
-      sellerName: 'sellerpk',
     });
 
     // Without an image Google marks the whole item invalid.
     expect(data.image).toBe('https://www.gamesbazaar.pk/opengraph-image');
     expect(data.brand).toEqual({ '@type': 'Brand', name: 'Valorant' });
+    // Seller = the store's own Organization, sharing the root layout's @id.
+    expect(data.offers.seller).toEqual({
+      '@type': 'Organization',
+      '@id': 'https://www.gamesbazaar.pk/#organization',
+      name: 'GamesBazaar',
+      url: 'https://www.gamesbazaar.pk/',
+    });
     expect(data.offers.hasMerchantReturnPolicy).toMatchObject({
       '@type': 'MerchantReturnPolicy',
       applicableCountry: 'PK',
@@ -570,6 +587,8 @@ describe('SEO route metadata', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(metadata.title).toBe('seller+pk Seller Profile');
     expect(metadata.description).toContain("seller+pk's seller profile");
+    // Out of the index (the store is the only seller), links still crawlable.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.openGraph).toMatchObject({
       type: 'profile',
       siteName: 'GamesBazaar',

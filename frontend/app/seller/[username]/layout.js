@@ -16,6 +16,14 @@ export async function generateMetadata({ params }) {
     title,
     description,
     path: `/seller/${encodeURIComponent(username)}`,
+    // The store sells everything itself, so a "seller profile" in search
+    // results reads as a marketplace vendor (SEO fix #3). Keep the page for
+    // buyers who click through, keep its links crawlable, keep it out of
+    // the index.
+    robots: {
+      index: false,
+      follow: true,
+    },
     openGraph: {
       type: 'profile',
     },

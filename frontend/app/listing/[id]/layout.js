@@ -51,13 +51,12 @@ export async function generateMetadata({ params }) {
       .map(cleanText)
       .filter(Boolean);
     const categoryText = categoryParts.length ? `${categoryParts.join(' ')} listing` : 'listing';
-    const sellerText = cleanText(listing.seller_name) ? ` sold by ${cleanText(listing.seller_name)}` : '';
     // Out of stock keeps the same title (the page keeps its ranking) but the
     // description says so, and points at the options that are in stock.
     const description = truncateDescription(
       state === 'paused'
         ? `${listingTitle} is out of stock on GamesBazaar right now. See the other ${categoryText.replace(/ listing$/, '')} options in stock, with instant delivery and secure checkout.`
-        : `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText}${sellerText} with instant delivery and secure checkout.`
+        : `Buy ${listingTitle}${price ? ` for ${price}` : ''} on GamesBazaar. ${categoryText} with instant delivery and secure checkout.`
     );
     const canonicalPath = listingId ? `/listing/${encodeURIComponent(listingId)}` : '/';
 
@@ -150,7 +149,6 @@ export default async function ListingLayout({ children, params }) {
         category: categoryParts.join(' - '),
         price: price.toFixed(2),
         availability: availabilityFromStatus(listing.status),
-        sellerName: cleanText(listing.seller_name),
         aggregateRating: reviewCount > 0
           ? { value: listingReviews.average, count: reviewCount }
           : null,

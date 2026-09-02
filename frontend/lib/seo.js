@@ -66,10 +66,17 @@ export function createPublicMetadata({
   };
 }
 
+// One stable @id for the store, so the Product seller on every listing page
+// resolves to the same Organization the root layout describes.
+export function organizationId() {
+  return `${absoluteUrl('/')}#organization`;
+}
+
 export function organizationJsonLd() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
+    '@id': organizationId(),
     name: SITE_NAME,
     url: absoluteUrl('/'),
     logo: absoluteUrl('/logo.png'),
@@ -134,7 +141,6 @@ export function productJsonLd({
   price,
   priceCurrency = 'PKR',
   availability = 'InStock',
-  sellerName,
   aggregateRating,
   reviews,
 }) {
@@ -229,7 +235,14 @@ export function productJsonLd({
         applicableCountry: 'PK',
         returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
       },
-      ...(sellerName ? { seller: { '@type': 'Person', name: sellerName } } : {}),
+      // Every item is sold by the store itself (direct shop since 2026-08), so
+      // the seller is the Organization — never a Person / marketplace vendor.
+      seller: {
+        '@type': 'Organization',
+        '@id': organizationId(),
+        name: SITE_NAME,
+        url: absoluteUrl('/'),
+      },
     },
   };
 }
