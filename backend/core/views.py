@@ -37,6 +37,10 @@ from .models import (
     RetiredListing,
 )
 from . import listing_lifecycle
+from .region_pages import (
+    active_region_listings, all_region_pages_payload, region_filter_for,
+    region_option_labels, region_pages_payload,
+)
 
 # Fastest delivery first; shared by the browse ordering and by the per-option
 # "best listing" pick in offer mode so the two always agree.
@@ -1121,20 +1125,17 @@ def default_seo_title(game_category):
     )
 
 
-def seo_title_with_from_price(game_category):
-    """Fill the from-price token in a seo_title with the page's cheapest active
-    price, exactly as the tile shows it. (The pilot floored it to two
+def fill_from_price(title, listings_qs):
+    """Fill the from-price token in a title with the cheapest active price in
+    `listings_qs`, exactly as the tile shows it. (The pilot floored it to two
     significant digits against sync jitter; Shayan dropped that on 2026-09-03
     when "from PKR 11,000" sat above a PKR 11,900 tile — the syncs already
     round every price up to the next 50 / 10, so titles only move when a
     price really moves.) With no active listings the whole "from PKR ..."
     phrase drops out, leaving the plain hand-written title."""
-    title = game_category.seo_title or default_seo_title(game_category)
     if SEO_FROM_PRICE_TOKEN not in title:
         return title
-    min_price = Listing.objects.filter(
-        game_category=game_category, status='active',
-    ).aggregate(min_price=Min('price'))['min_price']
+    min_price = listings_qs.aggregate(min_price=Min('price'))['min_price']
     if min_price is None or min_price <= 0:
         title = re.sub(r'\s*\bfrom PKR \{from_price\}', '', title,
                        flags=re.IGNORECASE)
@@ -1143,12 +1144,46 @@ def seo_title_with_from_price(game_category):
     return title.replace(SEO_FROM_PRICE_TOKEN, f'{int(min_price):,}')
 
 
+def seo_title_with_from_price(game_category):
+    title = game_category.seo_title or default_seo_title(game_category)
+    return fill_from_price(
+        title, Listing.objects.filter(game_category=game_category, status='active'))
+
+
+def default_region_seo_title(region_page, label):
+    """A region page without hand-written copy still gets a priced title:
+    "PlayStation Gift Cards USA in Pakistan from PKR 300"."""
+    game_category = region_page.game_category
+    return (
+        f'{game_category.game.name} {game_category.effective_name} {label} '
+        f'in Pakistan from PKR {SEO_FROM_PRICE_TOKEN}'
+    )
+
+
+def region_seo_title_with_from_price(region_page, label, region_filter):
+    """The region page's title, priced from the cheapest active listing IN
+    THAT REGION (the brand page's cheapest may be another region's card)."""
+    title = region_page.seo_title or default_region_seo_title(region_page, label)
+    return fill_from_price(
+        title,
+        active_region_listings(region_page.game_category, region_filter.id,
+                               region_page.region),
+    )
+
+
 class GameCategoryDetailView(APIView):
     """GET /api/games/{game_slug}/{category_slug}/ — Category with filters + listings."""
 
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, game_slug, category_slug):
+        return self.browse(request, game_slug, category_slug)
+
+    def browse(self, request, game_slug, category_slug, region_slug=None):
+        """The page payload. With `region_slug` (an allow-listed region page,
+        /games/<game>/<category>/<region>) the page's Region filter is pinned
+        to that value: every listing, option tile and the from-price in the
+        title belong to that region, and no query param can unpin it."""
         # Only anonymous responses are cached: authenticated payloads can
         # include owner-only fields (e.g., a seller's delivery instructions).
         browse_cache_key = None
@@ -1157,9 +1192,9 @@ class GameCategoryDetailView(APIView):
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
             )
-            browse_cache_key = 'browse:v5:' + hashlib.sha256(
+            browse_cache_key = 'browse:v6:' + hashlib.sha256(
                 f'{request_origin_cache_scope(request)}:{game_slug}:'
-                f'{category_slug}:{param_signature}'.encode('utf-8')
+                f'{category_slug}:{region_slug or ""}:{param_signature}'.encode('utf-8')
             ).hexdigest()
             cached = cache.get(browse_cache_key)
             if cached is not None:
@@ -1173,15 +1208,38 @@ class GameCategoryDetailView(APIView):
             queryset=GameCategory.objects.select_related('game', 'category').prefetch_related(
                 'assigned_filters__filter__options',
                 'assigned_filters__visible_when_options',
+                'region_pages',
             ),
         )
         if game_category is None:
             raise Http404('No game category matches the given query.')
 
+        # Region pages: allow-listed rows whose region is still an option on
+        # the page's Region filter. Anything else is a plain 404 — the
+        # frontend never links to a region it cannot fix.
+        region_filter = region_filter_for(game_category)
+        region_labels = region_option_labels(region_filter)
+        region_page = None
+        if region_slug is not None:
+            region_page = next(
+                (row for row in game_category.region_pages.all()
+                 if row.region == region_slug and region_slug in region_labels),
+                None,
+            )
+            if region_page is None:
+                raise Http404('No region page matches the given query.')
+
         # Build category detail (filters)
         from .serializers import GameCategoryDetailSerializer
         cat_data = GameCategoryDetailSerializer(game_category).data
-        cat_data['seo_title'] = seo_title_with_from_price(game_category)
+        if region_page is not None:
+            region_label = region_labels[region_page.region]
+            cat_data['seo_title'] = region_seo_title_with_from_price(
+                region_page, region_label, region_filter)
+            cat_data['seo_description'] = region_page.seo_description
+            cat_data['seo_body'] = region_page.seo_body
+        else:
+            cat_data['seo_title'] = seo_title_with_from_price(game_category)
 
         # Ad-landing semantic filters: /keys game links carry ?method= and
         # ?region= (option VALUES, not filter ids) — map them onto this page's
@@ -1189,15 +1247,19 @@ class GameCategoryDetailView(APIView):
         # dependent Region (visible_when Method=...) can accept the region;
         # explicit ?filter_<id>= params always win over semantic ones. The
         # response echoes the mapping in applied_filters so the client seeds
-        # its filter UI to match.
+        # its filter UI to match. On a region page the Region filter is pinned
+        # instead: ?region= is ignored and an explicit value for it dropped.
         explicit_values = {
             key.replace('filter_', ''): value
             for key, value in request.query_params.items()
             if key.startswith('filter_') and value
         }
+        if region_page is not None:
+            explicit_values.pop(str(region_filter.id), None)
         applied_filters = {}
         current_values = dict(explicit_values)
-        for param in ('method', 'region'):
+        semantic_params = ('method',) if region_page is not None else ('method', 'region')
+        for param in semantic_params:
             wanted = slugify(request.query_params.get(param, ''))[:50]
             if not wanted:
                 continue
@@ -1217,6 +1279,9 @@ class GameCategoryDetailView(APIView):
                 applied_filters[str(filter_payload['id'])] = wanted
                 current_values[str(filter_payload['id'])] = wanted
                 break
+        if region_page is not None:
+            applied_filters[str(region_filter.id)] = region_page.region
+            current_values[str(region_filter.id)] = region_page.region
         cat_data['applied_filters'] = applied_filters
 
         # Query listings with optional filters
@@ -1231,11 +1296,7 @@ class GameCategoryDetailView(APIView):
         if game_category.listing_mode == 'offer':
             # Per-option aggregates respect the active filter params (e.g., Region)
             # so "from" prices reflect what the buyer will actually see.
-            offer_filter_pairs = [
-                (key.replace('filter_', ''), value)
-                for key, value in request.query_params.items()
-                if key.startswith('filter_') and value
-            ]
+            offer_filter_pairs = list(explicit_values.items())
             offer_filter_pairs.extend(applied_filters.items())
             offer_stats_q = Q(listings__status='active')
             best_offer_q = Q(status='active')
@@ -1336,14 +1397,12 @@ class GameCategoryDetailView(APIView):
         )
 
         # Apply filter params from query string: ?filter_{filter_id}={option_value}
-        for key, value in request.query_params.items():
-            if key.startswith('filter_') and value:
-                filter_id = key.replace('filter_', '')
-                # Use __contains for proper dict key matching (numeric-looking keys
-                # are misinterpreted as array indices by Django's __ path lookup)
-                listings_qs = listings_qs.filter(
-                    filter_values__contains={filter_id: value}
-                )
+        for filter_id, value in explicit_values.items():
+            # Use __contains for proper dict key matching (numeric-looking keys
+            # are misinterpreted as array indices by Django's __ path lookup)
+            listings_qs = listings_qs.filter(
+                filter_values__contains={filter_id: value}
+            )
         for filter_id, value in applied_filters.items():
             listings_qs = listings_qs.filter(
                 filter_values__contains={filter_id: value}
@@ -1432,12 +1491,60 @@ class GameCategoryDetailView(APIView):
             for gc in sibling_gcs
         ]
 
+        # "Shop by region" row: the page's allow-listed region pages with live
+        # stock counts (the client hides empty ones, like empty sibling tabs).
+        # A region page also says which region it is, so the client can pin
+        # the filter and draw the Brand › Region breadcrumb, and how much
+        # stock the region has — the signal behind its noindex.
+        cat_data['region_pages'] = region_pages_payload(game_category, region_filter)
+        if region_page is not None:
+            cat_data['region_page'] = {
+                'region': region_page.region,
+                'label': region_label,
+                'filter_id': region_filter.id,
+                'path': region_page.path,
+                'brand_path': f'/games/{game_category.game.slug}/{game_category.effective_slug}',
+            }
+            cat_data['region_listing_count'] = active_region_listings(
+                game_category, region_filter.id, region_page.region).count()
+
         response = Response(cat_data)
         if browse_cache_key is not None:
             cache.set(browse_cache_key, cat_data, BROWSE_CACHE_SECONDS)
             response['Cache-Control'] = public_cache_header(BROWSE_CACHE_SECONDS)
         else:
             response['Cache-Control'] = 'private'
+        return response
+
+
+class GameCategoryRegionView(GameCategoryDetailView):
+    """GET /api/games/{game_slug}/{category_slug}/{region_slug}/ — an
+    allow-listed region page: the category payload with the Region filter
+    pinned to `region_slug`, its own SEO fields and the region's stock count.
+    404 unless a CategoryRegionPage row exists for that region."""
+
+    def get(self, request, game_slug, category_slug, region_slug):
+        return self.browse(request, game_slug, category_slug, region_slug=region_slug)
+
+
+REGION_PAGE_LIST_CACHE_KEY = 'region-pages:v1'
+REGION_PAGE_LIST_CACHE_SECONDS = 300
+
+
+class RegionPageListView(APIView):
+    """GET /api/region-pages/ — every allow-listed region page with its stock
+    count, for the sitemap (which lists only stocked ones, like empty
+    category pages) and the IndexNow catch-up push."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        payload = cache.get(REGION_PAGE_LIST_CACHE_KEY)
+        if payload is None:
+            payload = all_region_pages_payload()
+            cache.set(REGION_PAGE_LIST_CACHE_KEY, payload, REGION_PAGE_LIST_CACHE_SECONDS)
+        response = Response(payload)
+        response['Cache-Control'] = public_cache_header(REGION_PAGE_LIST_CACHE_SECONDS)
         return response
 
 

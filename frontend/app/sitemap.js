@@ -74,5 +74,24 @@ export default async function sitemap() {
     // Static pages still give crawlers a valid sitemap if the API is down.
   }
 
-  return [...staticPages, ...gamePages];
+  // Allow-listed region pages (/games/<game>/<category>/<region>): same rule
+  // as category pages — only the ones with stock, the rest are noindexed.
+  let regionPages = [];
+  try {
+    const res = await fetch(`${API_BASE}/api/region-pages/`, { next: { revalidate: SITEMAP_REVALIDATE_SECONDS } });
+    if (res.ok) {
+      const entries = await res.json();
+      regionPages = (Array.isArray(entries) ? entries : [])
+        .filter((entry) => (entry?.listing_count || 0) > 0 && entry?.path)
+        .map((entry) => ({
+          url: pageUrl(siteUrl, entry.path),
+          changeFrequency: 'daily',
+          priority: 0.7,
+        }));
+    }
+  } catch {
+    // Region pages are an extra; the sitemap stays valid without them.
+  }
+
+  return [...staticPages, ...gamePages, ...regionPages];
 }

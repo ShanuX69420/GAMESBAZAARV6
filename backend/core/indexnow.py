@@ -30,7 +30,8 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 
-from .models import GameCategory, Listing, PlatformSetting
+from .models import CategoryRegionPage, GameCategory, Listing, PlatformSetting
+from .region_pages import region_filter_for, region_option_labels, stocked_region_page_paths
 from .services import set_platform_setting
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,41 @@ def category_page_url(game_category):
     return f'{site_url()}/games/{game_category.game.slug}/{game_category.effective_slug}'
 
 
+def region_page_url(region_page):
+    return f'{site_url()}{region_page.path}'
+
+
+def changed_region_page_urls(changed_rows):
+    """Region pages touched by changed listings: a listing whose Region value
+    matches an allow-listed region page changes that page too (its stock,
+    tiles and the from-price in its title). `changed_rows` is an iterable of
+    (game_category_id, filter_values) pairs."""
+    by_category = {}
+    for game_category_id, filter_values in changed_rows:
+        by_category.setdefault(game_category_id, []).append(filter_values or {})
+    if not by_category:
+        return []
+
+    region_rows = (CategoryRegionPage.objects
+                   .filter(game_category_id__in=by_category)
+                   .select_related('game_category__game', 'game_category__category')
+                   .prefetch_related('game_category__assigned_filters__filter__options')
+                   .order_by('game_category__game__slug', 'game_category_id', 'order', 'region'))
+    urls = []
+    seen_filters = {}
+    for row in region_rows:
+        game_category = row.game_category
+        if game_category.pk not in seen_filters:
+            seen_filters[game_category.pk] = region_filter_for(game_category)
+        region_filter = seen_filters[game_category.pk]
+        if region_filter is None or row.region not in region_option_labels(region_filter):
+            continue
+        key = str(region_filter.id)
+        if any(values.get(key) == row.region for values in by_category[game_category.pk]):
+            urls.append(region_page_url(row))
+    return urls
+
+
 def last_ping_at():
     value = (PlatformSetting.objects
              .filter(key=LAST_PING_SETTING_KEY)
@@ -112,31 +148,40 @@ def changed_pages_since(since):
     rows = (Listing.objects
             .filter(updated_at__gte=since, game_category__game__is_active=True)
             .order_by('pk')
-            .values_list('pk', 'game_category_id'))
+            .values_list('pk', 'game_category_id', 'filter_values'))
     listing_ids = []
     category_ids = set()
-    for pk, game_category_id in rows:
+    changed_rows = []
+    for pk, game_category_id, filter_values in rows:
         listing_ids.append(pk)
         category_ids.add(game_category_id)
+        changed_rows.append((game_category_id, filter_values))
 
     categories = (GameCategory.objects
                   .filter(pk__in=category_ids)
                   .select_related('game', 'category')
                   .order_by('game__slug', 'order', 'pk'))
+    category_urls = [category_page_url(gc) for gc in categories]
+    # Region pages count as category pages: they rank (or should), and a
+    # changed listing moves their stock and title just like the brand page's.
+    category_urls += changed_region_page_urls(changed_rows)
     return (
-        [category_page_url(gc) for gc in categories],
+        category_urls,
         [listing_url(pk) for pk in listing_ids],
     )
 
 
 def indexable_category_page_urls():
-    """Every game+category page the sitemap lists: active game, live stock."""
+    """Every game+category page the sitemap lists: active game, live stock —
+    plus the allow-listed region pages that have stock."""
     categories = (GameCategory.objects
                   .filter(game__is_active=True, listings__status='active')
                   .distinct()
                   .select_related('game', 'category')
                   .order_by('game__slug', 'order', 'pk'))
-    return [category_page_url(gc) for gc in categories]
+    urls = [category_page_url(gc) for gc in categories]
+    urls += [absolute_url(path) for path in stocked_region_page_paths()]
+    return urls
 
 
 def _chunks(items, size):

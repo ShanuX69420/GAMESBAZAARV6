@@ -10,6 +10,7 @@ import {
   buildSellerProfilePath,
 } from '@/lib/marketplaceUrls';
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
+import { regionPageHeading, regionSwitchTarget, stockedRegionPages } from '@/lib/regionPages';
 import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
 import OfficialStoreBadge from '@/components/OfficialStoreBadge';
@@ -132,6 +133,14 @@ export default function GameCategoryClient({ initialData = null }) {
   const params = useParams();
   const router = useRouter();
   const { slug, categorySlug } = params;
+  // Allow-listed region pages (/games/<game>/<category>/<region>) read
+  // their own endpoint, which pins the Region filter server-side; every
+  // refetch below goes there too, so the page can never show another region.
+  const regionSlug = params.regionSlug ? String(params.regionSlug) : '';
+  const regionPage = regionSlug ? initialData?.region_page || null : null;
+  const pinnedFilters = regionPage
+    ? { [String(regionPage.filter_id)]: regionPage.region }
+    : {};
   const searchParams = useSearchParams();
   const filterEffectReadyRef = useRef(false);
   const [data, setData] = useState(initialData);
@@ -167,6 +176,7 @@ export default function GameCategoryClient({ initialData = null }) {
         apiBase: API_BASE,
         gameSlug: slug,
         categorySlug,
+        regionSlug,
         limit: LISTING_PAGE_SIZE,
         offset,
         filters,
@@ -197,7 +207,7 @@ export default function GameCategoryClient({ initialData = null }) {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [slug, categorySlug]);
+  }, [slug, categorySlug, regionSlug]);
 
   useEffect(() => {
     // Same object reference on first mount, so this bails out without a
@@ -237,6 +247,7 @@ export default function GameCategoryClient({ initialData = null }) {
           apiBase: API_BASE,
           gameSlug: slug,
           categorySlug,
+          regionSlug,
           limit: loadedListingCount || LISTING_PAGE_SIZE,
           offset: 0,
           filters: activeFilters,
@@ -290,7 +301,7 @@ export default function GameCategoryClient({ initialData = null }) {
       if (controller) controller.abort();
       clearInterval(interval);
     };
-  }, [hasListingData, loadedListingCount, slug, categorySlug, activeFilters, instantDeliveryFilter, searchQuery, sortBy, selectedOption]);
+  }, [hasListingData, loadedListingCount, slug, categorySlug, regionSlug, activeFilters, instantDeliveryFilter, searchQuery, sortBy, selectedOption]);
 
   // Debounce search input
   useEffect(() => {
@@ -326,20 +337,50 @@ export default function GameCategoryClient({ initialData = null }) {
       queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname);
   }
 
+  // On a region page the Region filter is the URL: changing it navigates —
+  // to that region's own page when it is allow-listed, else to the brand
+  // page pre-filtered — instead of re-filtering in place.
+  function isPinnedFilter(filterId) {
+    return Object.prototype.hasOwnProperty.call(pinnedFilters, String(filterId));
+  }
+
+  function switchRegion(value) {
+    router.push(regionSwitchTarget({
+      gameSlug: slug,
+      categorySlug,
+      regionPages: data?.region_pages || initialData?.region_pages || [],
+      value,
+    }));
+  }
+
   function handleFilterChange(filterId, value) {
+    if (isPinnedFilter(filterId)) {
+      if (value !== pinnedFilters[String(filterId)]) switchRegion(value);
+      return;
+    }
     clearLandingParams();
     // Pruning drops selections on dependent filters that the change just hid.
-    setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
-      ...prev,
-      [filterId]: prev[filterId] === value ? undefined : value,
+    setActiveFilters(prev => ({
+      ...pruneHiddenFilterValues(data?.filters || [], {
+        ...prev,
+        [filterId]: prev[filterId] === value ? undefined : value,
+      }),
+      ...pinnedFilters,
     }));
   }
 
   function handleDropdownChange(filterId, value) {
+    if (isPinnedFilter(filterId)) {
+      if (value !== pinnedFilters[String(filterId)]) switchRegion(value);
+      return;
+    }
     clearLandingParams();
-    setActiveFilters(prev => pruneHiddenFilterValues(data?.filters || [], {
-      ...prev,
-      [filterId]: value || undefined,
+    setActiveFilters(prev => ({
+      ...pruneHiddenFilterValues(data?.filters || [], {
+        ...prev,
+        [filterId]: value || undefined,
+      }),
+      ...pinnedFilters,
     }));
   }
 
@@ -439,12 +480,18 @@ export default function GameCategoryClient({ initialData = null }) {
   const gateSatisfied = missingGateFilters.length === 0;
   const hasGateSteps = gateFilters.length > 0;
   const panelFilters = isOfferMode ? visibleFilters.filter((f) => !f.require_selection) : visibleFilters;
-  const hasActiveFilters = Object.values(activeFilters).some(v => v)
+  // The pinned region on a region page is the page itself, not a filter the
+  // buyer picked, so it neither counts as "active" nor gets cleared.
+  const hasActiveFilters = Object.entries(activeFilters).some(([id, v]) => v && !isPinnedFilter(id))
     || instantDeliveryFilter || Boolean(searchInput);
 
   const visibleCategories = (all_categories || []).filter(
     (cat) => cat.slug === categorySlug || (cat.listing_count || 0) > 0,
   );
+  // "Shop by region": real links to the allow-listed region pages that have
+  // stock (empty ones are noindexed dead ends, like empty sibling tabs).
+  const regionLinks = stockedRegionPages(data.region_pages || initialData?.region_pages);
+  const showRegionRow = regionLinks.length > 0 || Boolean(regionPage);
 
   return (
     <div className="container">
@@ -453,12 +500,24 @@ export default function GameCategoryClient({ initialData = null }) {
         <div className="breadcrumb">
           <a href="/">Home</a>
           <span className="breadcrumb-sep">›</span>
-          <span>{game.name}</span>
+          {regionPage ? (
+            <>
+              <Link href={regionPage.brand_path}>{game.name} {category.name}</Link>
+              <span className="breadcrumb-sep">›</span>
+              <span>{regionPage.label}</span>
+            </>
+          ) : (
+            <span>{game.name}</span>
+          )}
         </div>
 
         <div className="game-header">
           <div className="game-header-info">
-            <h1>{game.name} {category.name}</h1>
+            <h1>
+              {regionPage
+                ? regionPageHeading({ gameName: game.name, categoryName: category.name, regionLabel: regionPage.label })
+                : `${game.name} ${category.name}`}
+            </h1>
           </div>
         </div>
       </div>
@@ -480,6 +539,30 @@ export default function GameCategoryClient({ initialData = null }) {
             </button>
           ))}
         </div>
+      )}
+
+      {/* Shop by region — plain links (no prefetch): each one is a full page
+          of its own with its own copy, and gift-card brands list several. */}
+      {showRegionRow && (
+        <nav className="region-row" aria-label="Shop by region">
+          <span className="region-row-label">Shop by region</span>
+          {regionPage && (
+            <Link href={regionPage.brand_path} prefetch={false} className="category-tab">
+              <span className="category-tab-name">All regions</span>
+            </Link>
+          )}
+          {regionLinks.map((page) => (
+            <Link
+              key={page.region}
+              href={page.path}
+              prefetch={false}
+              className={`category-tab ${regionPage?.region === page.region ? 'category-tab-active' : ''}`}
+              aria-current={regionPage?.region === page.region ? 'page' : undefined}
+            >
+              <span className="category-tab-name">{page.label}</span>
+            </Link>
+          ))}
+        </nav>
       )}
 
       {/* Filters */}
@@ -507,7 +590,7 @@ export default function GameCategoryClient({ initialData = null }) {
           {hasActiveFilters && (
             <button
               className="btn btn-sm btn-outline"
-              onClick={() => { clearLandingParams(); setActiveFilters({}); setInstantDeliveryFilter(false); setSearchInput(''); }}
+              onClick={() => { clearLandingParams(); setActiveFilters({ ...pinnedFilters }); setInstantDeliveryFilter(false); setSearchInput(''); }}
             >
               Clear All
             </button>

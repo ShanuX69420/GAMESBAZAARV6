@@ -603,7 +603,7 @@ describe('SEO route metadata', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
     const metadata = await generateMetadata({
       params: Promise.resolve({ slug: 'pubg mobile', categorySlug: 'accounts & boosts' }),
     });
@@ -632,7 +632,7 @@ describe('SEO route metadata', () => {
       json: vi.fn().mockResolvedValue({ listing_pagination: { count: 0 }, listings: [] }),
     }));
 
-    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
     const metadata = await generateMetadata({
       params: Promise.resolve({ slug: 'pubg-mobile', categorySlug: 'gift-cards' }),
     });
@@ -644,11 +644,133 @@ describe('SEO route metadata', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
 
-    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/layout.js');
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
     const metadata = await generateMetadata({
       params: Promise.resolve({ slug: 'pubg-mobile', categorySlug: 'accounts' }),
     });
 
     expect(metadata.robots).toBeUndefined();
+  });
+
+  it('gives a region page its own priced title, self-canonical and indexable state', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        seo_title: 'PSN USA Gift Cards in Pakistan from PKR 300',
+        seo_description: 'US-region PSN codes at PKR prices.',
+        listing_pagination: { count: 3 },
+        region_listing_count: 18,
+        region_page: { region: 'usa', label: 'USA', path: '/games/playstation/gift-cards/usa' },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/[regionSlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'playstation', categorySlug: 'gift-cards', regionSlug: 'usa' }),
+    });
+
+    // Reads the region endpoint, same shape the page body fetches.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/games/playstation/gift-cards/usa/?limit=48&offset=0',
+      { next: { revalidate: 120 } }
+    );
+    expect(metadata).toMatchObject({
+      title: 'PSN USA Gift Cards in Pakistan from PKR 300',
+      description: 'US-region PSN codes at PKR prices.',
+      alternates: { canonical: '/games/playstation/gift-cards/usa' },
+      openGraph: { title: 'PSN USA Gift Cards in Pakistan from PKR 300', type: 'website' },
+    });
+    expect(metadata.robots).toBeUndefined();
+  });
+
+  it('noindexes a region page with no stock in that region, even when other regions have some', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        game: { name: 'PlayStation' },
+        category: { name: 'Gift Cards' },
+        seo_title: '',
+        listing_pagination: { count: 0 },
+        region_listing_count: 0,
+        region_page: { region: 'turkiye', label: 'Turkiye', path: '/games/playstation/gift-cards/turkiye' },
+      }),
+    }));
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/[regionSlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'playstation', categorySlug: 'gift-cards', regionSlug: 'turkiye' }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.title).toBe('PlayStation Gift Cards Turkiye in Pakistan');
+  });
+
+  it('noindexes a region that is not on the allow-list', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: vi.fn() }));
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/[regionSlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'playstation', categorySlug: 'gift-cards', regionSlug: 'japan' }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+  });
+
+  it('keeps a region page indexable when the API is unreachable', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    const { generateMetadata } = await importFresh('../app/games/[slug]/[categorySlug]/[regionSlug]/layout.js');
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'google-play', categorySlug: 'gift-cards', regionSlug: 'saudi-arabia' }),
+    });
+
+    expect(metadata.robots).toBeUndefined();
+    expect(metadata.title).toBe('Google Play Gift Cards Saudi Arabia in Pakistan');
+    expect(metadata.alternates.canonical).toBe('/games/google-play/gift-cards/saudi-arabia');
+  });
+
+  it('lists stocked region pages in the sitemap and skips empty ones', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => {
+      if (url === 'https://api.gamesbazaar.pk/api/region-pages/') {
+        return {
+          ok: true,
+          json: async () => [
+            { path: '/games/playstation/gift-cards/usa', listing_count: 18 },
+            { path: '/games/playstation/gift-cards/turkiye', listing_count: 0 },
+          ],
+        };
+      }
+      return {
+        ok: true,
+        json: async () => [
+          { slug: 'playstation', categories: [{ category: { slug: 'gift-cards' }, listing_count: 355 }] },
+        ],
+      };
+    }));
+
+    const { default: sitemap } = await importFresh('../app/sitemap.js');
+    const entries = await sitemap();
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.gamesbazaar.pk/api/region-pages/',
+      { next: { revalidate: 3600 } }
+    );
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/playstation/gift-cards', priority: 0.7 }),
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/playstation/gift-cards/usa', priority: 0.7 }),
+    ]));
+    expect(entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ url: 'https://www.gamesbazaar.pk/games/playstation/gift-cards/turkiye' }),
+    ]));
   });
 });

@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.shortcuts import render
 from .models import (
     Game, Category, GameCategory, CategoryOption, Filter, FilterOption,
-    GameCategoryFilter, UserProfile, SocialAccount, Listing,
+    GameCategoryFilter, CategoryRegionPage, UserProfile, SocialAccount, Listing,
     Conversation, Message,
     Wallet, WalletTransaction, PlatformLedgerEntry,
     TopUpRequest, WithdrawRequest, Order, SellerCommissionOverride, Review, ReviewImage,
@@ -203,6 +203,17 @@ class GameCategoryFilterInline(admin.TabularInline):
     form = GameCategoryFilterForm
     extra = 1
     autocomplete_fields = ['filter', 'visible_when_options']
+
+
+class CategoryRegionPageInline(admin.TabularInline):
+    """The page's allow-listed region pages (/games/<game>/<category>/<region>).
+    Copy is normally seeded from seo_copy.json; this is for a quick look or a
+    one-off add. The region must be an option VALUE on the page's Region
+    filter (e.g. usa, united-kingdom)."""
+    model = CategoryRegionPage
+    extra = 0
+    fields = ['region', 'order', 'seo_title']
+    show_change_link = True
 
 
 
@@ -1144,7 +1155,7 @@ class GameCategoryAdmin(HiddenModelAdmin):
                      'unit_name']
     search_fields = ['game__name', 'category__name', 'display_name']
     autocomplete_fields = ['game', 'category']
-    inlines = [GameCategoryFilterInline, CategoryOptionInline]
+    inlines = [GameCategoryFilterInline, CategoryRegionPageInline, CategoryOptionInline]
     readonly_fields = ['bulk_icon_editor_link']
 
     @admin.display(description='Option icons')
@@ -1173,6 +1184,14 @@ class GameCategoryAdmin(HiddenModelAdmin):
                 if isinstance(icon, UploadedFile):
                     inline_form.instance.icon = optimize_uploaded_image(icon, preset='game_icon')
         super().save_formset(request, form, formset, change)
+
+
+@admin.register(CategoryRegionPage)
+class CategoryRegionPageAdmin(HiddenModelAdmin):
+    list_display = ['__str__', 'order', 'seo_title']
+    list_filter = ['game_category__game', 'game_category__category']
+    search_fields = ['region', 'game_category__game__name', 'seo_title']
+    autocomplete_fields = ['game_category']
 
 
 @admin.register(CategoryOption)

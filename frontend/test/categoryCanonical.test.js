@@ -29,6 +29,16 @@ describe('canonicalCategoryPath', () => {
     })).toBeNull();
   });
 
+  it('keeps the region segment when a region page is reached by the old slug', () => {
+    expect(canonicalCategoryPath({
+      gameSlug: 'roblox', requestedSlug: 'currency', data: renamed, query: { option: '3' },
+      regionSlug: 'united-kingdom',
+    })).toBe('/games/roblox/robux/united-kingdom?option=3');
+    expect(canonicalCategoryPath({
+      gameSlug: 'roblox', requestedSlug: 'robux', data: renamed, query: {}, regionSlug: 'usa',
+    })).toBeNull();
+  });
+
   it('does nothing without data to decide with', () => {
     expect(canonicalCategoryPath({ gameSlug: 'roblox', requestedSlug: 'currency', data: null, query: {} })).toBeNull();
   });

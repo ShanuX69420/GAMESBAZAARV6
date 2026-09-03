@@ -8,6 +8,10 @@ urlpatterns = [
     path('games/<slug:slug>/', views.GameDetailView.as_view(), name='game-detail'),
     path('games/<slug:game_slug>/<slug:category_slug>/',
          views.GameCategoryDetailView.as_view(), name='game-category-detail'),
+    # Allow-listed region pages: the page above with its Region filter pinned.
+    path('games/<slug:game_slug>/<slug:category_slug>/<slug:region_slug>/',
+         views.GameCategoryRegionView.as_view(), name='game-category-region'),
+    path('region-pages/', views.RegionPageListView.as_view(), name='region-page-list'),
     path('categories/<slug:slug>/games/',
          views.CategorySectionGamesView.as_view(), name='category-section-games'),
 

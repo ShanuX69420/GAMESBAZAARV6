@@ -10,6 +10,9 @@ export function buildGameCategoryListingUrl({
   apiBase,
   gameSlug,
   categorySlug,
+  // An allow-listed region page (/games/<game>/<category>/<region>) reads
+  // its own endpoint, which pins the Region filter server-side.
+  regionSlug = '',
   limit,
   offset = 0,
   filters = {},
@@ -55,7 +58,8 @@ export function buildGameCategoryListingUrl({
   }
 
   const queryString = query.toString();
-  const path = `${normalizedApiBase(apiBase)}/api/games/${encodePathSegment(gameSlug)}/${encodePathSegment(categorySlug)}/`;
+  const regionSegment = regionSlug ? `${encodePathSegment(regionSlug)}/` : '';
+  const path = `${normalizedApiBase(apiBase)}/api/games/${encodePathSegment(gameSlug)}/${encodePathSegment(categorySlug)}/${regionSegment}`;
   return queryString ? `${path}?${queryString}` : path;
 }
 
@@ -75,7 +79,7 @@ export function buildSellerProfilePath(username) {
  * string preserved, or null when the request already uses the canonical slug
  * (or there is no data to decide with).
  */
-export function canonicalCategoryPath({ gameSlug, requestedSlug, data, query }) {
+export function canonicalCategoryPath({ gameSlug, requestedSlug, data, query, regionSlug = '' }) {
   const canonicalSlug = String(data?.category?.slug || '').trim();
   const requested = String(requestedSlug || '').trim();
   if (!canonicalSlug || !requested || canonicalSlug === requested) return null;
@@ -89,6 +93,8 @@ export function canonicalCategoryPath({ gameSlug, requestedSlug, data, query }) 
     }
   }
   const search = params.toString();
-  return `/games/${encodeURIComponent(gameSlug)}/${encodeURIComponent(canonicalSlug)}${search ? `?${search}` : ''}`;
+  // A region page keeps its region segment; only the category slug changes.
+  const regionSegment = regionSlug ? `/${encodeURIComponent(regionSlug)}` : '';
+  return `/games/${encodeURIComponent(gameSlug)}/${encodeURIComponent(canonicalSlug)}${regionSegment}${search ? `?${search}` : ''}`;
 }
 

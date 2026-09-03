@@ -975,6 +975,36 @@ img {
   }
 }
 
+/* "Shop by region" row: real links to the allow-listed region pages of a
+   gift-card brand, styled like the category tabs above them. */
+.region-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 20px;
+}
+
+.region-row-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-right: 4px;
+}
+
+.region-row .category-tab {
+  text-decoration: none;
+}
+
+@media (max-width: 767px) {
+  .region-row {
+    padding: 0 0 16px;
+    gap: 6px;
+  }
+}
+
 /* ── Hero ──────────────────────────────────────────────────────────────────── */
 
 .hero {

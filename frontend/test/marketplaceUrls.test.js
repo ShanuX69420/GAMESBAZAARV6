@@ -42,6 +42,23 @@ describe('marketplace URL helpers', () => {
     );
   });
 
+  it('reads an allow-listed region page from its own endpoint', () => {
+    const url = buildGameCategoryListingUrl({
+      apiBase: 'https://api.example.test',
+      gameSlug: 'playstation',
+      categorySlug: 'gift-cards',
+      regionSlug: 'united-kingdom',
+      limit: 48,
+      offset: 0,
+      filters: { 52: 'united-kingdom' },
+      option: '17',
+    });
+
+    expect(url).toBe(
+      'https://api.example.test/api/games/playstation/gift-cards/united-kingdom/?limit=48&offset=0&option=17&filter_52=united-kingdom'
+    );
+  });
+
   it('builds encoded game category paths', () => {
     expect(
       buildSellerListingsPath({

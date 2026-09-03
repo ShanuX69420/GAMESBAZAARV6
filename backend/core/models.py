@@ -340,6 +340,57 @@ class GameCategoryFilter(models.Model):
         return f"{self.game_category} — {self.filter.name}"
 
 
+class CategoryRegionPage(models.Model):
+    """An allow-listed region page: the game+category page with its Region
+    filter fixed, at /games/<game>/<category>/<region>.
+
+    Region views used to be a ?region= query param canonicalised to the brand
+    page, so "psn gift card usa" could never rank here while competitors rank
+    with exactly such pages (SEO fix #10, 2026-09-03). Only regions buyers
+    search get a row — the full brand×region matrix would be 500+ thin pages.
+    Rows are normally created by seed_seo_text from seo_copy.json entries that
+    carry a "region" key; the region is the value of an option on the page's
+    Region filter (e.g. "usa", "united-kingdom"). Listings, syncs, checkout and
+    delivery know nothing about these rows.
+    """
+    game_category = models.ForeignKey(GameCategory, on_delete=models.CASCADE,
+                                      related_name='region_pages')
+    region = models.SlugField(
+        max_length=200,
+        help_text='Value of an option on this page\'s Region filter (e.g. "usa", '
+                  '"united-kingdom"). Becomes the last URL segment.',
+    )
+    order = models.PositiveIntegerField(default=0, help_text='Display order (lower = first)')
+    seo_title = models.CharField(
+        max_length=120, blank=True, default='',
+        help_text='Search/browser title WITHOUT the "| GamesBazaar" suffix. May carry '
+                  '"from PKR {from_price}" — filled with the cheapest active listing in '
+                  'this region. Blank = "<Game> <Category> <Region> in Pakistan from PKR ...".',
+    )
+    seo_description = models.CharField(max_length=300, blank=True, default='')
+    seo_body = models.TextField(
+        blank=True, default='',
+        help_text='Visible SEO text below the listings, same conventions as the '
+                  'category page (blank line = paragraph, "## " heading, "### " FAQ '
+                  'question).',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'region']
+        unique_together = ['game_category', 'region']
+        verbose_name = 'Category Region Page'
+        verbose_name_plural = 'Category Region Pages'
+
+    @property
+    def path(self):
+        gc = self.game_category
+        return f'/games/{gc.game.slug}/{gc.effective_slug}/{self.region}'
+
+    def __str__(self):
+        return f"{self.game_category} — {self.region}"
+
+
 # ── User & Seller ────────────────────────────────────────────────────────────
 
 class UserProfile(models.Model):
