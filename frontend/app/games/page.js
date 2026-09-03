@@ -4,7 +4,7 @@ import GameItem from '@/components/GameItem';
 import JsonLd from '@/components/JsonLd';
 import Link from 'next/link';
 import { breadcrumbJsonLd, collectionPageJsonLd, createPublicMetadata } from '@/lib/seo';
-import { groupGamesByAlphabet } from '@/lib/gameGroups';
+import { groupGamesByAlphabet, stockedGamesOrAll } from '@/lib/gameGroups';
 
 export const metadata = {
   ...createPublicMetadata({
@@ -22,7 +22,10 @@ export default async function AllGamesPage() {
     console.error('Failed to fetch games:', error);
   }
 
-  const grouped = groupGamesByAlphabet(games);
+  // Only games with something to buy make the directory — same rule as the
+  // home page and the category tab strip. Empty games stay reachable by
+  // search and direct URL.
+  const grouped = groupGamesByAlphabet(stockedGamesOrAll(games));
   const allLetters = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
   const activeLetters = new Set(grouped.map((g) => g.letter));
 

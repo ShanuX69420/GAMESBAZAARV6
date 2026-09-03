@@ -1697,9 +1697,12 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 /* ── Game List (Eldorado-style icon + name rows) ───────────────────────────── */
 
+/* Columns are minmax(0, 1fr), not bare 1fr: a bare 1fr track can never
+   shrink below its content, so one long title would widen its whole column
+   past the page edge and get clipped (SpongeBob / Assassin's Creed rows). */
 .games-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -1709,13 +1712,13 @@ html[data-auth-hint="1"] .navbar-guest-links {
 
 @media (min-width: 480px) {
   .games-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 768px) {
   .games-grid {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1724,6 +1727,7 @@ html[data-auth-hint="1"] .navbar-guest-links {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
+  min-width: 0;
   background: var(--bg-primary);
   cursor: pointer;
   transition: background var(--transition);
@@ -1761,9 +1765,13 @@ html[data-auth-hint="1"] .navbar-guest-links {
   font-size: 0.92rem;
   font-weight: 500;
   color: var(--text-primary);
-  white-space: nowrap;
+  line-height: 1.3;
+  /* Long titles wrap onto a second line, then clip with an ellipsis. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .game-meta {

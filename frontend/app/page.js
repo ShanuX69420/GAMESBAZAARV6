@@ -4,6 +4,7 @@ import GameItem from '@/components/GameItem';
 import PopularPanel from '@/components/PopularPanel';
 import HomeCTA from '@/components/HomeCTA';
 import Link from 'next/link';
+import { stockedGamesOrAll } from '@/lib/gameGroups';
 
 const HOMEPAGE_GAME_LIMIT = 18;
 
@@ -42,11 +43,9 @@ export default async function HomePage() {
   // Fallback when the popular panels are unavailable: only showcase games
   // that actually have stock — a small grid of real offers looks alive, a
   // big grid of empty games looks dead. Until any game has stock, fall back
-  // to the full catalog so the section never renders empty. Everything
-  // stays reachable via /games and search.
-  const stockedGames = games.filter((game) => (game.listing_count || 0) > 0);
-  const popularGames = (stockedGames.length > 0 ? stockedGames : games)
-    .slice(0, HOMEPAGE_GAME_LIMIT);
+  // to the full catalog so the section never renders empty. Empty games
+  // stay reachable via search and direct URL.
+  const popularGames = stockedGamesOrAll(games).slice(0, HOMEPAGE_GAME_LIMIT);
 
   return (
     <div className="container">
