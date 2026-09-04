@@ -1,0 +1,8 @@
+{
+  "_comment": "Per-brand inputs for generate_option_images, keyed by Game slug. logo = white-on-transparent PNG in core/data/brand_logos/. bg = [top-left, bottom-right] gradient colours; the card text is always white. wordmark = the two lines beside the logo.",
+  "playstation": {
+    "logo": "playstation.png",
+    "wordmark": ["PlayStation Store", "Gift Card"],
+    "bg": ["#0A72D8", "#0B3F98"]
+  }
+}

@@ -141,6 +141,14 @@ class CategoryOptionInlineForm(forms.ModelForm):
                 raise forms.ValidationError(validation_error)
         return icon
 
+    def clean_image(self):
+        image = self.cleaned_data.get('image')
+        if isinstance(image, UploadedFile):
+            validation_error = validate_uploaded_image(image)
+            if validation_error:
+                raise forms.ValidationError(validation_error)
+        return image
+
 
 class CategoryOptionBulkIconForm(forms.Form):
     icon = forms.ImageField(
@@ -162,7 +170,7 @@ class CategoryOptionInline(admin.TabularInline):
     model = CategoryOption
     form = CategoryOptionInlineForm
     extra = 1
-    fields = ['name', 'icon', 'order', 'is_popular', 'offer_count']
+    fields = ['name', 'icon', 'image', 'order', 'is_popular', 'offer_count']
     readonly_fields = ['offer_count']
 
     @admin.display(description='Active Offers')
@@ -1196,7 +1204,7 @@ class CategoryRegionPageAdmin(HiddenModelAdmin):
 
 @admin.register(CategoryOption)
 class CategoryOptionAdmin(HiddenModelAdmin):
-    list_display = ['name', 'icon_preview', 'game_category', 'order', 'is_popular']
+    list_display = ['name', 'icon_preview', 'image_preview', 'game_category', 'order', 'is_popular']
     list_filter = ['game_category__game', 'game_category__category']
     list_editable = ['order', 'is_popular']
     list_per_page = 200
@@ -1217,6 +1225,15 @@ class CategoryOptionAdmin(HiddenModelAdmin):
             return format_html(
                 '<img src="{}" style="height:24px;width:24px;object-fit:contain;" alt="">',
                 obj.icon.url,
+            )
+        return '—'
+
+    @admin.display(description='Picture')
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="height:24px;width:36px;object-fit:cover;border-radius:3px;" alt="">',
+                obj.image.url,
             )
         return '—'
 

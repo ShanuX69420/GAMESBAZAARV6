@@ -749,7 +749,11 @@ export default function GameCategoryClient({ initialData = null }) {
               )}
               <div className={`offer-options-grid ${!gateSatisfied ? 'offer-options-grid-disabled' : ''}`}>
                 {options.map((opt) => {
-                  const tileClassName = `offer-option-card ${opt.id === selectedOption ? 'offer-option-card-selected' : ''}`;
+                  const tileClassName = [
+                    'offer-option-card',
+                    opt.id === selectedOption ? 'offer-option-card-selected' : '',
+                    opt.image_url ? 'offer-option-card-pictured' : '',
+                  ].filter(Boolean).join(' ');
                   const tileContent = (
                     <>
                       {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
@@ -760,7 +764,20 @@ export default function GameCategoryClient({ initialData = null }) {
                           </svg>
                         </span>
                       )}
-                      {opt.icon_url && (
+                      {/* Product picture (3:2 card art) when the option has one;
+                          the small brand icon otherwise. width/height reserve
+                          the box before the image loads, so nothing shifts. */}
+                      {opt.image_url ? (
+                        <img
+                          src={opt.image_url}
+                          alt={`${game.name} ${category.name} — ${opt.name}`}
+                          className="offer-option-image"
+                          width="900"
+                          height="600"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : opt.icon_url && (
                         <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
                       )}
                       <span className="offer-option-name">{opt.name}</span>
@@ -829,7 +846,9 @@ export default function GameCategoryClient({ initialData = null }) {
                 <div className="offer-buybox">
                   {selectedOptionData && (
                     <div className="offer-buybox-option">
-                      {selectedOptionData.icon_url && (
+                      {selectedOptionData.image_url ? (
+                        <img src={selectedOptionData.image_url} alt="" className="offer-buybox-option-image" width="900" height="600" />
+                      ) : selectedOptionData.icon_url && (
                         <img src={selectedOptionData.icon_url} alt="" className="offer-buybox-option-icon" />
                       )}
                       <span>{selectedOptionData.name}</span>

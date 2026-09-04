@@ -11128,6 +11128,32 @@ html[data-auth-hint="1"] .navbar-guest-links {
   border-radius: var(--radius-sm);
 }
 
+/* Product picture on a tile: full width, fixed 3:2 box (reserved before the
+   file loads, so the grid never shifts), rounded like the tile. The card
+   carries its own colours, so it looks the same in both themes. */
+.offer-option-card-pictured {
+  padding: 10px 10px 12px;
+}
+
+.offer-option-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.offer-option-card-pictured .offer-option-name {
+  padding: 0 2px;
+}
+
+.offer-option-card-pictured .offer-option-price,
+.offer-option-card-pictured .offer-option-count {
+  padding: 0 2px;
+}
+
 .offer-option-name {
   font-weight: 600;
   font-size: 0.92rem;
@@ -11184,6 +11210,15 @@ html[data-auth-hint="1"] .navbar-guest-links {
   height: 32px;
   object-fit: contain;
   border-radius: var(--radius-sm);
+}
+
+.offer-buybox-option-image {
+  width: 72px;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
 
 .offer-buybox-row {

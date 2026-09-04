@@ -1192,7 +1192,7 @@ class GameCategoryDetailView(APIView):
                 f'{key}={value}'
                 for key, value in sorted(request.query_params.items())
             )
-            browse_cache_key = 'browse:v6:' + hashlib.sha256(
+            browse_cache_key = 'browse:v7:' + hashlib.sha256(
                 f'{request_origin_cache_scope(request)}:{game_slug}:'
                 f'{category_slug}:{region_slug or ""}:{param_signature}'.encode('utf-8')
             ).hexdigest()
@@ -1365,6 +1365,14 @@ class GameCategoryDetailView(APIView):
                         cache_seconds=GAME_ICON_CACHE_SECONDS,
                         cache_scope='public',
                     ) if opt.icon else None,
+                    # Product picture for the tile (3:2). Absent → the tile
+                    # falls back to the small icon above.
+                    'image_url': cached_media_url(
+                        opt.image,
+                        request=request,
+                        cache_seconds=GAME_ICON_CACHE_SECONDS,
+                        cache_scope='public',
+                    ) if opt.image else None,
                     'min_price': str(opt.min_price) if opt.min_price is not None else None,
                     'offer_count': opt.offer_count,
                     'best_listing_id': opt.best_listing_id,
