@@ -295,7 +295,10 @@ class OfferModeTests(TestCase):
         return region_filter
 
     def test_filters_payload_includes_require_selection_flag(self):
-        self.make_region_filter(require_selection=True)
+        region_filter = self.make_region_filter(require_selection=True)
+        # Buyers only see filters with stock behind them.
+        self.make_offer(self.seller, self.option_small, '100.00',
+                        filter_values={str(region_filter.id): 'global'})
 
         response = self.client.get('/api/games/pubg-mobile/uc/')
 

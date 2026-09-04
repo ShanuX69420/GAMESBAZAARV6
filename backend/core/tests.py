@@ -1598,6 +1598,15 @@ class PurchaseFlowTests(TestCase):
         FilterOption.objects.create(filter=platform, label='EA App', value='ea-app', order=1)
         GameCategoryFilter.objects.create(game_category=self.game_category, filter=region)
         GameCategoryFilter.objects.create(game_category=self.game_category, filter=platform)
+        # Buyers are only offered stocked options, so every option gets one
+        # active listing — the order is what's under test here.
+        for filter_obj in (region, platform):
+            for option in filter_obj.options.all():
+                Listing.objects.create(
+                    seller=self.seller, game_category=self.game_category,
+                    title=f'{filter_obj.name} {option.label}', price=Decimal('10.00'),
+                    quantity=1, status='active',
+                    filter_values={str(filter_obj.id): option.value})
 
         response = self.client.get('/api/games/test-game/accounts/')
 
@@ -1614,6 +1623,16 @@ class PurchaseFlowTests(TestCase):
 
     def test_category_detail_exposes_filter_dependency(self):
         method_filter, key_region, gift_region = self._setup_dependent_filters()
+        # Stock behind each filter, or the buyer payload leaves it out.
+        for title, filter_values in (
+                ('Key', {str(method_filter.id): 'digital-key',
+                         str(key_region.id): 'global'}),
+                ('Gift', {str(method_filter.id): 'as-a-gift',
+                          str(gift_region.id): 'pakistan'})):
+            Listing.objects.create(
+                seller=self.seller, game_category=self.game_category, title=title,
+                price=Decimal('10.00'), quantity=1, status='active',
+                filter_values=filter_values)
 
         response = self.client.get('/api/games/test-game/accounts/')
 

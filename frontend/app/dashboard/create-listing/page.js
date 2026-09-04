@@ -72,7 +72,8 @@ export default function CreateListingPage() {
   useEffect(() => {
     if (selectedGame && selectedCategory) {
       // all_options=1: sellers may create an offer under an option that
-      // currently has none (buyers only ever see buyable options)
+      // currently has none, or a listing for a filter value (a region, say)
+      // nothing carries yet — buyers only ever see what's buyable.
       fetch(`${API_BASE}/api/games/${selectedGame.slug}/${selectedCategory.slug}/?all_options=1`)
         .then(r => r.json())
         .then(data => {

@@ -37,6 +37,7 @@ from .models import (
     RetiredListing,
 )
 from . import listing_lifecycle
+from .filter_options import stocked_filter_values, trim_filters_to_stock
 from .region_pages import (
     active_region_listings, all_region_pages_payload, region_filter_for,
     region_option_labels, region_pages_payload,
@@ -1256,6 +1257,20 @@ class GameCategoryDetailView(APIView):
         }
         if region_page is not None:
             explicit_values.pop(str(region_filter.id), None)
+
+        # Buyers only see the options with stock on this page (a dead choice
+        # can only answer "nothing in stock" — see filter_options.py); the
+        # sell form asks for everything with all_options=1. A value the buyer
+        # already picked stays listed so the dropdown shows their choice over
+        # the empty state. Trimmed before ?region= maps below, so an ad
+        # landing on a dead region arrives unfiltered rather than empty.
+        if request.query_params.get('all_options') != '1':
+            keep = dict(explicit_values)
+            if region_page is not None:
+                keep[str(region_filter.id)] = region_page.region
+            cat_data['filters'] = trim_filters_to_stock(
+                cat_data['filters'], stocked_filter_values(game_category), keep)
+
         applied_filters = {}
         current_values = dict(explicit_values)
         semantic_params = ('method',) if region_page is not None else ('method', 'region')
