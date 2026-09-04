@@ -19,6 +19,13 @@ Money-safety invariants:
   hand, today's flow) or 'attention' (supplier money possibly spent — human
   must look). The buyer's order stays 'pending' either way and the seller is
   alerted in-app + by email.
+- The one self-healing failure is a supplier REFUND (Fazer status 'refund':
+  wrong player ID, upstream provider bounced the order, …). Fazer has given
+  our money back, so the engine cancels the order, credits the buyer's
+  wallet, tells both sides and marks the task 'refunded' — no human step.
+  Before 2026-09-05 the poller looked for 'refunded' and never saw these,
+  so every refund sat 'processing' for the full deadline and then became an
+  'attention' task with a still-pending order.
 """
 
 import json
@@ -37,6 +44,7 @@ from django.utils import timezone
 from . import fazer
 from .models import FazerFulfillmentTask, FazerProductLink, Order
 from .services import (
+    cancel_order_with_wallet_refund,
     complete_order_now,
     create_notification,
     decrypt_sensitive_text,
@@ -75,6 +83,18 @@ TIMER_POLL_INTERVAL = timedelta(seconds=30)
 BUYER_DELAY_NOTE = (
     'Automatic delivery is taking a little longer than usual — the seller '
     'will complete this order for you shortly. Thanks for your patience!'
+)
+
+# Supplier refund reasons that mean the BUYER typed a wrong player/user ID
+# (Fazer: "Player not found. Please check the player information…",
+# "game account could not be confirmed"). Those buyers are told to check the
+# ID and order again; every other refund gets a neutral note.
+PLAYER_ID_ERROR_RE = re.compile(
+    r'player (was )?not found|player information|user not found'
+    r'|(account|player|user)( id)? (could not|cannot|can.t) be '
+    r'(confirmed|verified|found)|invalid (player|user) ?id'
+    r'|wrong (player|user) ?id',
+    re.IGNORECASE,
 )
 
 # Steam gifts: what the buyer must provide at checkout. Fazer's bot friends
@@ -479,9 +499,12 @@ def _poll_once(task):
 
     statuses = {str(o.get('status', '')) for o in supplier_orders}
     failed = statuses & fazer.FAILED_STATUSES
-    completed = statuses <= fazer.COMPLETED_STATUSES
+    # Decide only once every supplier order has settled: a multi-unit top-up
+    # with one unit refunded and another still processing could still end
+    # up partially delivered, and that needs a human, not an auto-refund.
+    settled = statuses <= (fazer.COMPLETED_STATUSES | fazer.FAILED_STATUSES)
 
-    if failed:
+    if settled and failed:
         # Field casing varies by order kind (steam gifts: failReason,
         # gift cards/keys: fail_reason) — read both.
         reasons = '; '.join(
@@ -494,11 +517,13 @@ def _poll_once(task):
         _store_raw(task, supplier_orders)
         if any_completed:
             _needs_attention(task, f'some supplier orders failed: {reasons[:200]}')
+        elif statuses <= fazer.REFUNDED_STATUSES:
+            _refund_buyer(task, reasons[:200])
         else:
             _fail_to_manual(task, f'supplier order failed: {reasons[:200]}')
         return True
 
-    if completed:
+    if settled:
         _deliver(task, supplier_orders)
         return True
 
@@ -509,7 +534,8 @@ def _poll_once(task):
         _needs_attention(
             task,
             f'supplier order still processing after '
-            f'{int(limit.total_seconds() // 60)} minutes',
+            f'{int(limit.total_seconds() // 60)} minutes '
+            f'(statuses: {", ".join(sorted(statuses))})',
         )
         return True
 
@@ -592,6 +618,11 @@ def _total_charged(supplier_orders):
     total = Decimal('0')
     found = False
     for supplier_order in supplier_orders:
+        if str(supplier_order.get('status')) in fazer.REFUNDED_STATUSES:
+            # Fazer keeps the original total_usd on a refunded order even
+            # though the balance came back — it cost us nothing.
+            found = True
+            continue
         value = (supplier_order.get('chargedUsd')
                  or supplier_order.get('total_usd')
                  or supplier_order.get('charged_usd'))
@@ -692,6 +723,138 @@ def _deliver(task, supplier_orders):
         )
     task.status = 'delivered'
     logger.info('Fazer task %s delivered order #%s', task.pk, order.order_number)
+
+
+# ── Supplier refund → buyer refund ───────────────────────────────────────────
+
+def _pkr(amount):
+    text = f'{amount:,.2f}'
+    return 'PKR ' + (text[:-3] if text.endswith('.00') else text)
+
+
+def _buyer_refund_note(order, task, supplier_reason, refund_total):
+    """What the buyer reads in the order chat. Never quotes Fazer verbatim —
+    its texts talk about OUR balance ("Your balance has been refunded")."""
+    lead = (
+        f'Order #{order.order_number} was cancelled and {_pkr(refund_total)} '
+        'has been returned to your GamesBazaar wallet. '
+    )
+    if task.kind == 'topup' and PLAYER_ID_ERROR_RE.search(supplier_reason or ''):
+        fields = _checkout_info(order).get('fields') or {}
+        entered = ', '.join(str(v) for v in fields.values() if str(v).strip())
+        entered_part = f' ({entered})' if entered else ''
+        return lead + (
+            'The top-up service could not find a player with the ID you '
+            f'entered{entered_part}. Please double-check your player ID in '
+            'the game and place the order again.'
+        )
+    return lead + (
+        'Our supplier could not complete this item right now. You can spend '
+        'the balance on any other listing, or contact support if you need it '
+        'sent back another way.'
+    )
+
+
+def _refund_buyer(task, supplier_reason):
+    """Every supplier order came back refunded: Fazer has returned our
+    money, so the buyer gets theirs back too — order cancelled, wallet
+    credited, both sides told, task 'refunded'. No manual step.
+
+    The decision is taken under the order row lock; anything that talks to
+    the network (owner email with a Fazer balance lookup) happens after the
+    lock is released."""
+    order = task.order
+    reason = f'supplier refunded the order: {supplier_reason}'
+    outcome, refund_total = None, None
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().select_related(
+            'buyer', 'seller',
+        ).get(pk=order.pk)
+        if locked.status == 'cancelled':
+            # Already refunded by hand (admin action / seller refund) —
+            # nothing more to do, and never a second wallet credit.
+            outcome = 'already_cancelled'
+        elif locked.status != 'pending':
+            outcome = 'not_pending'
+        else:
+            refund_total = cancel_order_with_wallet_refund(
+                locked,
+                description=f'Refund: {locked.listing_title} (x{locked.quantity})',
+            )
+            buyer_note = _buyer_refund_note(locked, task, supplier_reason, refund_total)
+            post_order_chat_message(
+                locked, event='order_refunded', sender=None, content=buyer_note,
+            )
+            create_notification(
+                recipient=locked.buyer,
+                notification_type='order_cancelled',
+                title='Order cancelled - refund issued',
+                message=buyer_note,
+                order=locked,
+            )
+            create_notification(
+                recipient=locked.seller,
+                notification_type='order_cancelled',
+                title='Supplier refunded - buyer refunded automatically',
+                message=(
+                    f'Order #{locked.order_number} ({locked.listing_title} '
+                    f'x{task.quantity}): {reason}. {_pkr(refund_total)} went '
+                    'back to the buyer wallet. No action needed.'
+                ),
+                order=locked,
+            )
+            outcome = 'refunded'
+
+        if outcome != 'not_pending':
+            now = timezone.now()
+            FazerFulfillmentTask.objects.filter(pk=task.pk).update(
+                status='refunded', fail_reason=reason[:300], updated_at=now,
+            )
+            task.status = 'refunded'
+            task.fail_reason = reason[:300]
+
+    if outcome == 'not_pending':
+        _needs_attention(
+            task, f'{reason[:160]} — but the order is {locked.status}, not pending',
+        )
+        return
+
+    logger.warning('Fazer task %s -> refunded (%s): %s', task.pk, outcome, reason)
+    if outcome == 'refunded':
+        _email_owner_about_refund(task, locked, supplier_reason, refund_total)
+
+
+def _email_owner_about_refund(task, order, supplier_reason, refund_total):
+    """Keep Shayan informed (chronic-refund SKUs show up here) without
+    asking him to do anything."""
+    try:
+        try:
+            balance_text = f'${fazer.get_balance()}'
+        except fazer.FazerError:
+            balance_text = 'unavailable'
+        send_transactional_email(
+            order.seller,
+            subject='GamesBazaar — Supplier refund, buyer refunded automatically',
+            message_body=(
+                'Fazer refunded a supplier order, so the buyer order was '
+                'cancelled and their wallet credited automatically. Nothing '
+                'to do — this is for your records.'
+            ),
+            detail_rows=[
+                ('Order', order.order_number or f'#{order.pk}'),
+                ('Listing', order.listing_title),
+                ('Quantity', str(task.quantity)),
+                ('Supplier said', str(supplier_reason)[:200]),
+                ('Refunded to buyer', _pkr(refund_total)),
+                ('Fazer order', task.fazer_order_id or '—'),
+                ('Fazer balance', balance_text),
+            ],
+            status_text='Refunded',
+            status_class='info',
+        )
+    except Exception:  # noqa: BLE001 — the notice must never crash the task
+        logger.exception('Could not email owner about refund for task %s', task.pk)
 
 
 # ── Failure paths ────────────────────────────────────────────────────────────

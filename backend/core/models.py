@@ -1854,7 +1854,8 @@ class FazerFulfillmentTask(models.Model):
     timer for crash safety. The idempotency key is minted once per purchase
     intent and NEVER rotated, so replays of the create-order call can never
     double-charge. Terminal failure states leave the order pending — the
-    manual flow — and alert the seller.
+    manual flow — and alert the seller; the one exception is a supplier
+    refund, which cancels the order and refunds the buyer automatically.
     """
     STATUS_CHOICES = [
         ('queued', 'Queued'),            # created, supplier order not yet placed
@@ -1863,6 +1864,7 @@ class FazerFulfillmentTask(models.Model):
         ('delivered', 'Delivered'),      # codes delivered / top-up confirmed
         ('manual', 'Manual'),            # never placed or definitively failed → fulfill by hand
         ('attention', 'Needs Attention'),  # money possibly spent — human must look
+        ('refunded', 'Refunded'),        # supplier refunded us → order cancelled, buyer refunded
     ]
 
     order = models.OneToOneField(Order, on_delete=models.CASCADE,

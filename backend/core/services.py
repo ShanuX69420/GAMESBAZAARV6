@@ -760,6 +760,47 @@ def complete_order_now(order):
     )
 
 
+def cancel_order_with_wallet_refund(order, *, description=None):
+    """Cancel a not-yet-completed order and put the buyer's money back in
+    their wallet — the ONE place that knows what a refund consists of
+    (price + service fee, fee ledger reversal, stock restore, status flip).
+
+    The caller must hold the order row lock (``select_for_update``) inside a
+    transaction and send its own notifications. Safe to call twice for the
+    same order: the wallet credit is keyed on ``order_<pk>`` and a second
+    call credits nothing. Returns the PKR amount the buyer gets back.
+    """
+    refund_total = order.total_amount + order.service_fee
+    apply_wallet_delta_once(
+        order.buyer,
+        delta=refund_total,
+        transaction_type='refund',
+        amount=refund_total,
+        description=description or f'Refund: {order.listing_title}',
+        reference_id=f'order_{order.pk}',
+    )
+    if order.service_fee > 0:
+        record_platform_ledger_once(
+            entry_type='service_fee_reversed',
+            amount=-order.service_fee,
+            description=f'Service fee reversed: {order.listing_title}',
+            reference_id=f'order_{order.pk}',
+        )
+
+    # Restore stock if the listing still exists and has finite stock.
+    if order.listing_id:
+        listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
+        if listing and listing.quantity is not None and not listing.is_auto_delivery:
+            listing.quantity += order.quantity
+            if listing.status == 'sold':
+                listing.status = 'active'
+            listing.save(update_fields=['quantity', 'status'])
+
+    order.status = 'cancelled'
+    order.save(update_fields=['status', 'updated_at'])
+    return refund_total
+
+
 def order_seller_payout_has_been_released(order):
     """Return whether a completed order's seller payout is already available."""
     if order.status != 'completed':

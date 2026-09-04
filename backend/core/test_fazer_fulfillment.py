@@ -16,10 +16,12 @@ from rest_framework.test import APIClient
 from . import fazer, fulfillment
 from .models import (
     Category, FazerFulfillmentTask, FazerProductLink, Game, GameCategory,
-    JazzCashPayment, Listing, Message, Notification, Order, Wallet,
+    JazzCashPayment, Listing, Message, Notification, Order, PlatformLedgerEntry,
+    Wallet, WalletTransaction,
 )
 from .payments import finalize_jazzcash_payment
 from .services import (
+    cancel_order_with_wallet_refund,
     decrypt_sensitive_text,
     encrypt_sensitive_text,
     set_platform_setting,
@@ -466,6 +468,185 @@ class EngineTests(FazerTestBase):
         self.assertTrue(Message.objects.filter(
             order=order, content=fulfillment.BUYER_DELAY_NOTE,
         ).exists())
+
+    def _refund_get(self, statuses_by_suffix):
+        """GET /orders/<id> handler that answers per sub-order id suffix
+        ('-1', '-2') so a multi-unit top-up can settle differently per unit."""
+        def handler(method, path, **kwargs):
+            if method == 'GET' and path.startswith('/orders/'):
+                order_id = path.rsplit('/', 1)[1]
+                status = next(
+                    (st for suffix, st in statuses_by_suffix.items()
+                     if order_id.endswith(suffix)),
+                    'processing',
+                )
+                order = {'id': order_id, 'kind': 'topup', 'status': status,
+                         'total_usd': '1.8670'}
+                if status == 'refund':
+                    order['fail_reason'] = 'Provider refunded the order.'
+                return {'ok': True, 'order': order}
+            return FakeFazer.__call__(self.fake, method, path, **kwargs)
+        return handler
+
+    def test_supplier_refund_cancels_order_and_refunds_buyer(self):
+        # Fazer's real status string is 'refund' (NOT 'refunded' — the
+        # poller looked for the wrong word until 2026-09-05 and every refund
+        # sat 'processing' for 15 minutes before becoming 'attention').
+        self.fake.order_status = 'refund'
+        self.fake.fail_reason = ('Provider refunded the order. '
+                                 'Your balance has been refunded.')
+        order = self.buy()
+        task = self.process(order.fazer_task)
+        order.refresh_from_db()
+
+        self.assertEqual(task.status, 'refunded')
+        self.assertIn('Provider refunded the order', task.fail_reason)
+        self.assertEqual(task.charged_usd, Decimal('0'))  # money came back
+        self.assertEqual(order.status, 'cancelled')
+        # Buyer got the full price back, exactly once.
+        wallet = Wallet.objects.get(user=self.buyer)
+        self.assertEqual(wallet.balance, Decimal('50000.00'))
+        self.assertEqual(WalletTransaction.objects.filter(
+            wallet=wallet, transaction_type='refund',
+            reference_id=f'order_{order.pk}',
+        ).count(), 1)
+        # Buyer is told in chat + notification (which also emails them).
+        note = Message.objects.get(order=order, system_event='order_refunded')
+        self.assertIn('PKR 3,000', note.content)
+        self.assertIn('GamesBazaar wallet', note.content)
+        self.assertNotIn('Your balance has been refunded', note.content)
+        self.assertTrue(Notification.objects.filter(
+            recipient=self.buyer, notification_type='order_cancelled',
+            title__icontains='refund',
+        ).exists())
+        # No "please deliver manually" alert and no delay note.
+        self.assertFalse(Notification.objects.filter(
+            recipient=self.seller, notification_type='fulfillment_alert',
+        ).exists())
+        self.assertFalse(Message.objects.filter(
+            order=order, content=fulfillment.BUYER_DELAY_NOTE,
+        ).exists())
+        # The owner still hears about it, as information only.
+        self.assertTrue(Notification.objects.filter(
+            recipient=self.seller, notification_type='order_cancelled',
+            title__icontains='automatically',
+        ).exists())
+
+    def test_legacy_refunded_spelling_still_refunds(self):
+        self.fake.order_status = 'refunded'
+        self.fake.fail_reason = 'refunded upstream'
+        order = self.buy()
+        task = self.process(order.fazer_task)
+        order.refresh_from_db()
+        self.assertEqual(task.status, 'refunded')
+        self.assertEqual(order.status, 'cancelled')
+
+    @override_settings(CHECKOUT_SERVICE_FEE_PKR=Decimal('25.00'))
+    def test_supplier_refund_returns_service_fee_too(self):
+        self.fake.order_status = 'refund'
+        self.fake.fail_reason = 'Provider refunded the order.'
+        order = self.buy()
+        self.assertEqual(order.service_fee, Decimal('25.00'))
+        self.process(order.fazer_task)
+        wallet = Wallet.objects.get(user=self.buyer)
+        self.assertEqual(wallet.balance, Decimal('50000.00'))
+        self.assertTrue(PlatformLedgerEntry.objects.filter(
+            entry_type='service_fee_reversed', reference_id=f'order_{order.pk}',
+        ).exists())
+
+    def test_topup_refund_for_wrong_player_id_tells_buyer(self):
+        # The real 2026-09-01 case: buyer typed an email into the Player ID
+        # box; Fazer refunded in 0.1 s with "Player not found".
+        listing = self.make_topup_listing()
+        self.fake.order_status = 'refund'
+        self.fake.fail_reason = (
+            'Player not found. Please check the player information and try '
+            'again. Your balance has been refunded.'
+        )
+        order = self.buy(listing=listing, checkout_info={
+            'fields': {'user_id': 'someone@example.com'},
+        })
+        task = self.process(order.fazer_task)
+        order.refresh_from_db()
+        self.assertEqual(task.status, 'refunded')
+        self.assertEqual(order.status, 'cancelled')
+        note = Message.objects.get(order=order, system_event='order_refunded')
+        self.assertIn('could not find a player', note.content)
+        self.assertIn('someone@example.com', note.content)
+        self.assertIn('PKR 620', note.content)
+
+    def test_refund_after_hand_cancellation_never_credits_twice(self):
+        # Task reaches 'processing', Shayan refunds by hand in the meantime,
+        # then Fazer reports the refund: task closes as refunded, wallet
+        # untouched the second time.
+        self.fake.order_status = 'processing'
+        order = self.buy()
+        task = self.process(order.fazer_task, budget=0)
+        self.assertEqual(task.status, 'processing')
+
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            cancel_order_with_wallet_refund(locked)
+        self.assertEqual(Wallet.objects.get(user=self.buyer).balance,
+                         Decimal('50000.00'))
+
+        self.fake.order_status = 'refund'
+        self.fake.fail_reason = 'Provider refunded the order.'
+        FazerFulfillmentTask.objects.filter(pk=task.pk).update(
+            next_poll_at=timezone.now() - timedelta(seconds=1),
+        )
+        task = self.process(task, budget=0)
+        self.assertEqual(task.status, 'refunded')
+        self.assertEqual(Wallet.objects.get(user=self.buyer).balance,
+                         Decimal('50000.00'))
+        self.assertEqual(WalletTransaction.objects.filter(
+            wallet__user=self.buyer, transaction_type='refund',
+            reference_id=f'order_{order.pk}',
+        ).count(), 1)
+
+    def test_topup_partial_refund_needs_attention_not_auto_refund(self):
+        # Two units: one delivered, one refunded → a human must sort out the
+        # half-delivery; the buyer is NOT auto-refunded.
+        listing = self.make_topup_listing()
+        order = self.buy(listing=listing, quantity=2, checkout_info={
+            'fields': {'user_id': '12345678'},
+        })
+        with patch('core.fazer._request',
+                   new=self._refund_get({'-1': 'completed', '-2': 'refund'})):
+            task = self.process(order.fazer_task)
+        order.refresh_from_db()
+        self.assertEqual(task.status, 'attention')
+        self.assertIn('some supplier orders failed', task.fail_reason)
+        self.assertEqual(order.status, 'pending')
+        self.assertEqual(Wallet.objects.get(user=self.buyer).balance,
+                         Decimal('50000.00') - Decimal('1240.00'))
+        # One unit was charged, the refunded one was not.
+        self.assertEqual(task.charged_usd, Decimal('1.8670'))
+
+    def test_refund_waits_for_sibling_still_processing(self):
+        # One unit refunded, the other still running: no decision yet (the
+        # running one could still deliver). The deadline still applies.
+        listing = self.make_topup_listing()
+        order = self.buy(listing=listing, quantity=2, checkout_info={
+            'fields': {'user_id': '12345678'},
+        })
+        handler = self._refund_get({'-1': 'refund', '-2': 'processing'})
+        with patch('core.fazer._request', new=handler):
+            task = self.process(order.fazer_task, budget=0)
+        order.refresh_from_db()
+        self.assertEqual(task.status, 'processing')
+        self.assertEqual(order.status, 'pending')
+
+        FazerFulfillmentTask.objects.filter(pk=task.pk).update(
+            deadline_at=timezone.now() - timedelta(minutes=1),
+            next_poll_at=timezone.now() - timedelta(seconds=1),
+        )
+        with patch('core.fazer._request', new=handler):
+            task = self.process(task, budget=0)
+        self.assertEqual(task.status, 'attention')
+        self.assertIn('still processing', task.fail_reason)
+        self.assertIn('refund', task.fail_reason)
 
     def test_out_of_stock_on_fazer_goes_manual_before_spending(self):
         self.fake.giftcard_offers[0]['stock'] = 0

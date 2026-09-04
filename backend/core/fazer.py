@@ -12,7 +12,11 @@ Rules this module encodes:
   charging or fulfilling again. Callers mint one key per purchase intent and
   never rotate it — that is the money-safety invariant of the whole engine.
 - Order fulfillment is asynchronous: create returns status 'processing';
-  poll get_order() until 'completed' / 'failed' / 'refunded'.
+  poll get_order() until 'completed' / 'failed' / 'refund'. NOTE the
+  spelling: a refunded order reports status ``refund`` (verified against
+  live orders 2026-09-05 — 'refunded' never appears), with the supplier's
+  explanation in ``fail_reason`` and ``total_usd`` still showing the
+  original charge even though the money came back.
 - HTTP 429 carries Retry-After (seconds).
 
 This module only talks to the supplier; task orchestration and delivery live
@@ -41,7 +45,11 @@ VALIDATE_TOPUP_ID_PATH = '/topups/validate-id'
 # Terminal supplier order statuses. Anything else ('created', 'processing',
 # …) means keep polling.
 COMPLETED_STATUSES = {'completed'}
-FAILED_STATUSES = {'failed', 'refunded', 'cancelled'}
+# Fazer refunded our balance for the order. The live API says 'refund';
+# 'refunded' is kept as a defensive alias (the poller used to look ONLY for
+# 'refunded' and so never noticed a refund — 2026-09-02 audit bug).
+REFUNDED_STATUSES = {'refund', 'refunded'}
+FAILED_STATUSES = {'failed', 'cancelled'} | REFUNDED_STATUSES
 
 MAX_RETRY_AFTER_SECONDS = 30
 
@@ -175,7 +183,7 @@ def list_gift_offers(app_id):
 
 
 def get_order(order_id):
-    """Fetch one supplier order: {id, kind, status, failReason, …}."""
+    """Fetch one supplier order: {id, kind, status, fail_reason/failReason, …}."""
     data = _request('GET', ORDER_PATH.format(order_id=order_id))
     order = data.get('order')
     if not isinstance(order, dict):

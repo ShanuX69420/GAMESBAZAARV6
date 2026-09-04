@@ -22,12 +22,12 @@ from .payments import dispatch_status_inquiries
 from .services import (
     apply_wallet_delta_once,
     approve_topup_request,
+    cancel_order_with_wallet_refund,
     complete_order_with_seller_payout,
     complete_whatsapp_checkout,
     create_notification,
     decrypt_sensitive_text,
     notify_requester_item_fulfilled,
-    record_platform_ledger_once,
     record_withdrawal_approval_once,
     send_topup_status_email,
     send_withdraw_status_email,
@@ -990,34 +990,9 @@ class OrderAdmin(admin.ModelAdmin):
                     continue
                 was_disputed = order.status == 'disputed'
 
-                refund_total = order.total_amount + order.service_fee
-                apply_wallet_delta_once(
-                    order.buyer,
-                    delta=refund_total,
-                    transaction_type='refund',
-                    amount=refund_total,
-                    description=f'Refund: {order.listing_title}',
-                    reference_id=f'order_{order.pk}',
-                )
-                if order.service_fee > 0:
-                    record_platform_ledger_once(
-                        entry_type='service_fee_reversed',
-                        amount=-order.service_fee,
-                        description=f'Service fee reversed: {order.listing_title}',
-                        reference_id=f'order_{order.pk}',
-                    )
-
-                # Restore stock if listing still exists and has finite stock.
-                if order.listing_id:
-                    listing = Listing.objects.select_for_update().filter(pk=order.listing_id).first()
-                    if listing and listing.quantity is not None and not listing.is_auto_delivery:
-                        listing.quantity += order.quantity
-                        if listing.status == 'sold':
-                            listing.status = 'active'
-                        listing.save(update_fields=['quantity', 'status'])
-
-                order.status = 'cancelled'
-                order.save(update_fields=['status', 'updated_at'])
+                # Wallet credit, fee reversal, stock restore, status flip —
+                # shared with the Fazer auto-refund path (core.fulfillment).
+                cancel_order_with_wallet_refund(order)
                 create_notification(
                     recipient=order.buyer,
                     notification_type='order_cancelled',
