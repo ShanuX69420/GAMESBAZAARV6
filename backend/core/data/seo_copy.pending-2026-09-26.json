@@ -1,0 +1,447 @@
+{
+  "about": [
+    "HOLDING FILE - copy written before 2026-09-26 that must NOT go live yet.",
+    "Shayan is writing comprehensive money-page copy one page at a time in",
+    "September 2026 and posting all of it together after the price-in-title pilot",
+    "is judged on 2026-09-26. Keeping it here (not in seo_copy.json) means an",
+    "unrelated seo_copy.json hotfix cannot ship it early.",
+    "Same shape and rules as seo_copy.json (see its about block + the /seo-batch",
+    "skill). Validate with:",
+    "    python manage.py seed_seo_text --file core/data/seo_copy.pending-2026-09-26.json --dry-run",
+    "Posting day: for each entry here, replace the seo_copy.json entry with the",
+    "same game + category (+ region) or append it, dump with indent=2 and",
+    "ensure_ascii=False plus a trailing newline, delete this file, then do the",
+    "normal JSON-only deploy (pull + seed_seo_text on the server + indexnow_ping",
+    "for every changed /games/<game>/<category> path).",
+    "Entries (date written): minecraft/keys (2026-09-05); accounts batch of 21 Steam-account pages (2026-09-05): atomic-heart, the-first-berserker-khazan, senuas-saga-hellblade-ii, only-up, call-of-duty-ww2, tainted-grail-the-fall-of-avalon, ark-survival-evolved, star-wars-zero-company, red-dead-redemption, plants-vs-zombies-replanted, forza-horizon, batman-arkham-origins, ratchet-clank-rift-apart, no-rest-for-the-wicked, elden-ring, call-of-duty-modern-warfare-3-2011, rv-there-yet, jurassic-world-evolution-3, call-of-duty-modern-warfare-2-2022, battlefield-6, lego-batman-legacy-of-the-dark-knight; accounts batch 2 of 20 pages by listing count (2026-09-05): resident-evil-village, watch-dogs-legion, anno-1800, microsoft-flight-simulator-2020, armored-core-vi-fires-of-rubicon, batman-arkham-knight, borderlands-2, borderlands-4, call-of-duty-black-ops-3, call-of-duty-ghosts, call-of-duty-infinite-warfare, call-of-duty-modern-warfare-2-2009, dark-souls-3, dragon-ball-sparking-zero, f1-25, mortal-kombat-11, silent-hill-2, stalker-2-heart-of-chornobyl, sid-meiers-civilization-7, helldivers; accounts batch 3 of 19 pages by listing count (2026-09-05): anno-2070, anno-2205, assassins-creed-rogue, assassins-creed-syndicate, atomfall, avowed, code-vein-ii, dead-rising, divinity-original-sin-2, dragon-ball-xenoverse-2, fable, for-honor, forza-motorsport-2023, ghostrunner-2, mafia-the-old-country, metaphor-refantazio, outlast, riders-republic, scum."
+  ],
+  "pages": [
+    {
+      "game": "minecraft",
+      "category": "keys",
+      "seo_title": "Buy Minecraft in Pakistan from PKR {from_price} — Java & Bedrock Keys",
+      "seo_description": "Minecraft: Java & Bedrock Edition keys for PC at PKR prices. Pay with Easypaisa, JazzCash or bank transfer, key in minutes, redeem on your Microsoft account.",
+      "seo_body": "## Minecraft keys for PC, priced in rupees\n\nMinecraft: Java & Bedrock Edition for PC is one purchase now — Mojang stopped selling the editions separately in 2022 — and this page sells it as an official Microsoft key at a live PKR price. Pay with Easypaisa, JazzCash, a bank transfer or another Pakistani payment method, and the key lands in your order chat within minutes. It redeems on your own Microsoft account: no login sharing, no password handed to anyone, and the game stays in your library permanently with your worlds and progress. Every key here is Global, so a Pakistani Microsoft account activates it without a VPN or a region change. Real reviews from delivered orders are further down the page.\n\n## Standard, Deluxe Collection or Ultimate Collection?\n\nThree tiers share this page and the listing name tells you which is which. The standard Minecraft: Java & Bedrock Edition for PC is the full game — both editions, nothing missing — and the cheapest way in. The Deluxe Collection adds 1,600 Minecoins and a starter set of Marketplace content (maps, skin packs, a texture pack and Character Creator items); the Ultimate Collection adds 1,000 Minecoins and five gameplay add-ons instead. Two things to know before paying extra. The coins and Marketplace items only work in Bedrock Edition, because Java has no Marketplace. And the Ultimate Collection is sold through the Xbox store but is the same Windows PC bundle — Java Edition has never run on a console, so nothing on this page installs on an Xbox or PlayStation. If you simply want to play, buy the standard key; coins can be added later from our [Minecoins page](/games/minecraft/gift-cards). Playing on a PS4 or PS5? Minecraft is on our [PlayStation rentals page](/games/minecraft/rentals).\n\n## From payment to your first world\n\nPick the edition, pay in rupees, and the key is delivered automatically in the order chat (it also shows on your order page, so it is never lost in an inbox). Open redeem.microsoft.com or minecraft.net/redeem — either works — sign in with the Microsoft account you actually play on, and enter the 25-character code. Check the account name before you press Redeem: the game binds to whichever account redeems it and cannot be moved afterwards. Then download the Minecraft Launcher from minecraft.net, sign in with the same account, and choose Java or Bedrock inside the launcher — both are yours. Java Edition also runs on Mac and Linux; Bedrock is Windows only.\n\n## Minecraft FAQs\n\n### What is the Minecraft price in Pakistan?\n\nThe cheapest key on this page is in the page title, and the live PKR price of every edition is on the tiles above — we keep prices there rather than in text that goes stale. Because Mojang sells Java and Bedrock as one PC purchase, the Java Edition price and the Bedrock Edition price in Pakistan are the same key.\n\n### Can we buy Minecraft with Easypaisa?\n\nYes. Easypaisa is one of the standard ways to pay on GamesBazaar, alongside JazzCash and bank transfer, and the price is in rupees — no dollar card and no currency conversion on your side. Pay, and the Microsoft key arrives in your order chat within minutes.\n\n### How to buy Minecraft with JazzCash?\n\nChoose the edition on this page, press Buy, and pay in PKR with JazzCash (Easypaisa and bank transfer work too). The key appears in your order chat right after payment; redeem it at redeem.microsoft.com on your Microsoft account and download the launcher. The whole thing usually takes less time than the game's first download.\n\n### Will a Global Minecraft key work in Pakistan?\n\nYes — every key on this page is a Global key, which activates on a Microsoft account from any country, Pakistan included. No VPN, no foreign address, no region change; the Global tag is on each listing so you can confirm before ordering.\n\n### Do I need a Mojang account?\n\nNo. Minecraft runs on a free Microsoft account now — the one you may already use for Outlook or Xbox is enough. Old Mojang logins were migrated to Microsoft years ago, and the key redeems on that migrated account.\n\n### What if the key doesn't work?\n\nMessage us in the order chat with a screenshot of the error. A faulty key is replaced, or refunded when we can't replace it — problems get fixed fast, and you are never stuck with a dead code."
+    },
+    {
+      "game": "atomic-heart",
+      "category": "accounts",
+      "seo_title": "Atomic Heart Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Atomic Heart on a fresh Steam account with full access — change the email and password, play on PC. PKR price, JazzCash, Easypaisa or bank transfer, 10-15 min.",
+      "seo_body": "## Facility 3826, ready on a fresh Steam account\n\nEvery Atomic Heart listing here is a newly created Steam account with the game already bought on it — standard or Gold Edition, the edition in the listing name, PC only. Pay the PKR price with JazzCash, Easypaisa or a bank transfer and the login lands in your order chat, usually 10 to 15 minutes later.\n\n## Full access, and what to do first\n\nYou get the Steam login and the email behind it, both changeable — swap them straight after delivery and the account is permanently yours. Hold off adding funds or a card until Steam's store region has switched over, which takes about four weeks. Prefer the game on your existing Steam account? The [Atomic Heart keys page](/games/atomic-heart/keys) sends it as a gift to Pakistan-region accounts, and PlayStation players can rent it on the [Atomic Heart rentals page](/games/atomic-heart/rentals). Login trouble? Message us in the order chat and we fix it or refund it."
+    },
+    {
+      "game": "the-first-berserker-khazan",
+      "category": "accounts",
+      "seo_title": "The First Berserker: Khazan Account in Pakistan from PKR {from_price}",
+      "seo_description": "The First Berserker: Khazan on a fresh full-access Steam account — PC only, email and password changeable. Pay in PKR with Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Khazan without the dollar price tag\n\nThe First Berserker: Khazan comes here as a freshly created Steam account that already owns the game — standard or Deluxe Edition, PC only. You pay in rupees through Easypaisa, JazzCash, bank transfer or another Pakistani method, and the login details arrive in your order chat, typically within 10 to 15 minutes.\n\n## What full access means\n\nBoth logins are yours: the Steam account and the email attached to it, with the right to change either. Change them right after delivery and nobody else can get in. One Steam rule to respect: no funds or payment cards on the account until its store region has moved over, which takes around four weeks. Want it on your own Steam account instead? Our [Khazan keys page](/games/the-first-berserker-khazan/keys) gifts it to Pakistan-region accounts, and console players can rent it on the [Khazan rentals page](/games/the-first-berserker-khazan/rentals). Anything wrong, tell us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "senuas-saga-hellblade-ii",
+      "category": "accounts",
+      "seo_title": "Senua's Saga: Hellblade II Account in Pakistan from PKR {from_price}",
+      "seo_description": "Hellblade II on a fresh Steam account with full access, PC only. PKR price, JazzCash, Easypaisa or bank transfer, login in your order chat in 10-15 min.",
+      "seo_body": "## Senua's journey on an account you keep\n\nThis page sells Senua's Saga: Hellblade II as a new Steam account with the game already purchased — the edition is in the listing name, and it is PC only. Prices are in Pakistani rupees, paid with JazzCash, Easypaisa or a bank transfer, and the login is sent in your order chat about 10 to 15 minutes after payment.\n\n## Change the details, make it yours\n\nFull access means the Steam login plus the email login behind it, both changeable — do that first and the account is permanently yours. Steam asks one thing: leave funds and cards off the account until the store region has switched, roughly four weeks. If you would rather add the game to the Steam account you already use, the [Hellblade II keys page](/games/senuas-saga-hellblade-ii/keys) delivers it as a gift to Pakistan-region accounts; on PS5, see the [Hellblade II rentals page](/games/senuas-saga-hellblade-ii/rentals). Problems get fixed in the order chat, or refunded."
+    },
+    {
+      "game": "only-up",
+      "category": "accounts",
+      "seo_title": "Only Up Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Only Up on a fresh Steam account with full access: change the email and password and it is yours. PKR price, Pakistani payment methods, 10-15 minutes.",
+      "seo_body": "## The climb, on a Steam account of your own\n\nOnly Up was pulled from Steam's store in 2023, so an account that already owns it is the practical way to play it today. Each listing here is a freshly created Steam account with the game on it, PC only. Pay in rupees — Easypaisa, JazzCash or a bank transfer — and the login arrives in your order chat, usually within 10 to 15 minutes.\n\n## Full access, no strings\n\nYou receive the Steam login and the email login, and you can change both — do it right after delivery and the account is yours for good. Wait until the store region has switched, about four weeks, before adding funds or a card; Steam can flag accounts that add money early. If the login misbehaves, message us in the order chat: we fix it fast or refund it."
+    },
+    {
+      "game": "call-of-duty-ww2",
+      "category": "accounts",
+      "seo_title": "Call of Duty WW2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: WWII on a fresh Steam account, full access with changeable email and password. PC only, PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Boots on the ground, account in your name\n\nCall of Duty: WWII is sold here as a newly made Steam account that already owns the game — standard or Digital Deluxe, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another local method; the login shows up in your order chat within about 10 to 15 minutes.\n\n## Secure it, then play\n\nFull access is the Steam login and the email login together, both changeable — change them first and the account is permanently yours. Steam's region switch takes about four weeks; don't add funds or a card before then. The [Call of Duty WW2 keys page](/games/call-of-duty-ww2/keys) gifts the game to a Pakistan-region Steam account you already own, and PlayStation players can rent it on the [Call of Duty WW2 rentals page](/games/call-of-duty-ww2/rentals). Something off with the login? Tell us in the order chat — fixed or refunded."
+    },
+    {
+      "game": "tainted-grail-the-fall-of-avalon",
+      "category": "accounts",
+      "seo_title": "Tainted Grail: Fall of Avalon Account in Pakistan from PKR {from_price}",
+      "seo_description": "Tainted Grail: The Fall of Avalon on a fresh Steam account with full access, PC only. PKR price, paid with Easypaisa, JazzCash or bank transfer, 10-15 min.",
+      "seo_body": "## Avalon on a fresh Steam account\n\nLooking for a cheap Tainted Grail: The Fall of Avalon account? Each listing on this page is a newly created Steam account with the game already bought on it, PC only, priced in rupees. Pay with Easypaisa, JazzCash or a bank transfer and the login details arrive in your order chat, usually in 10 to 15 minutes.\n\n## Yours to keep\n\nYou get both the Steam login and the email login, and you can change both — do that immediately and nobody else can get in. Steam's rule: no funds or cards on the account until its store region has switched, about four weeks. Prefer the game on the Steam account you already use? The [Tainted Grail keys page](/games/tainted-grail-the-fall-of-avalon/keys) delivers it as a gift to Pakistan-region accounts, and the [Tainted Grail rentals page](/games/tainted-grail-the-fall-of-avalon/rentals) covers PS5. If the login fails, message us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "ark-survival-evolved",
+      "category": "accounts",
+      "seo_title": "ARK: Survival Evolved Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "ARK: Survival Evolved on a full-access Steam account, or 12 months of PC Game Pass with ARK included. PKR prices, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Two ways to tame the island\n\nThis page has two kinds of ARK: Survival Evolved account. The Steam listing is a freshly created account that owns the game outright — full access, PC only, yours forever. The cheaper listing is a Microsoft account with 12 months of PC Game Pass, where ARK is one game in a large library: you play online with your own nickname and progress, but the account details stay as they are and it is a year of subscription rather than a game you keep. Both are priced in rupees, paid with JazzCash, Easypaisa or a bank transfer, and delivered in your order chat within about 10 to 15 minutes.\n\n## Which one, and what next\n\nChoose the Steam account if you want ARK permanently: change its password and email right after delivery, and keep funds off it until the store region has switched, about four weeks. Choose Game Pass if you want a year of ARK plus a big library for less; it needs Windows 10 or 11. To add ARK to a Steam account you already use, the [ARK keys page](/games/ark-survival-evolved/keys) gifts it to Pakistan-region accounts, and PlayStation players can rent it on the [ARK rentals page](/games/ark-survival-evolved/rentals). Anything wrong, say so in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "star-wars-zero-company",
+      "category": "accounts",
+      "seo_title": "Star Wars Zero Company Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "STAR WARS Zero Company on a fresh Steam account with full access, standard or Deluxe, PC only. PKR price, paid with JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Zero Company, ready to command\n\nSTAR WARS Zero Company arrives here as a brand-new Steam account with the game already purchased — standard or Deluxe Edition per the listing name, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another Pakistani method, and the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Full access explained\n\nYou receive the Steam login and the email login, both changeable. Change them straight away and the account is permanently yours. Steam takes around four weeks to switch the store region — add no funds or cards until then. Want the game on the Steam account you already use? The [Zero Company keys page](/games/star-wars-zero-company/keys) sends it as a gift to Pakistan-region accounts. And if a login ever fails, message us in the order chat: we fix it quickly or refund you."
+    },
+    {
+      "game": "red-dead-redemption",
+      "category": "accounts",
+      "seo_title": "Red Dead Redemption PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Red Dead Redemption on a fresh Steam account with full access: PC only, change the email and password and it is yours. PKR price, Pakistani payment methods.",
+      "seo_body": "## John Marston's story on a Steam account you own\n\nThe PC version of Red Dead Redemption is sold here as a newly created Steam account with the game already bought on it. Pay in rupees with Easypaisa, JazzCash or a bank transfer — no dollar card — and the login lands in your order chat, usually within 10 to 15 minutes.\n\n## Make it yours\n\nFull access means both the Steam login and the email login, with the right to change them — change both right after delivery and the account is permanently yours. Keep funds and cards off it until Steam's store region has switched, about four weeks. If you'd rather have the game on your existing Steam account, the [Red Dead Redemption keys page](/games/red-dead-redemption/keys) gifts it to Pakistan-region accounts; PS4 and PS5 players can rent it on the [Red Dead Redemption rentals page](/games/red-dead-redemption/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "plants-vs-zombies-replanted",
+      "category": "accounts",
+      "seo_title": "Plants vs. Zombies: Replanted Account in Pakistan from PKR {from_price}",
+      "seo_description": "Plants vs. Zombies: Replanted on a fresh Steam account with full access, PC only, email and password changeable. PKR price, Pakistani payment methods.",
+      "seo_body": "## Replanted, on an account that stays yours\n\nPlants vs. Zombies: Replanted comes here as a freshly created Steam account that already owns the game, PC only. The price is in rupees and you pay with JazzCash, Easypaisa, a bank transfer or another local method; the login is delivered in your order chat, typically 10 to 15 minutes after payment.\n\n## After delivery\n\nChange the password and the email — you get both logins with full rights to alter them — and the account is permanently yours. Steam's store region takes about four weeks to switch, so leave funds and cards off the account until then. Would you rather own it on your existing Steam account, or play on Xbox? The [Plants vs. Zombies: Replanted keys page](/games/plants-vs-zombies-replanted/keys) has a Steam gift for Pakistan-region accounts and an Xbox key. If a login doesn't work, message us in the order chat and we fix it or refund it."
+    },
+    {
+      "game": "forza-horizon",
+      "category": "accounts",
+      "seo_title": "Forza Horizon 5 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Forza Horizon 5 on a fresh Steam account with full access: Standard, Deluxe or Premium, PC only. PKR price, paid with Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Mexico's roads, on a Steam account of your own\n\nEvery Forza Horizon 5 listing on this page is a newly created Steam account with the game already bought — Standard, Deluxe or Premium Edition, named on the listing, PC only. You pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login details arrive in your order chat within around 10 to 15 minutes.\n\n## Full access, then the open road\n\nThe Steam login and its email login both come with the account and both can be changed — do that first and it is permanently yours. Steam needs about four weeks to switch the store region; add no funds or card before then. Prefer the game on your existing Steam account? The [Forza Horizon keys page](/games/forza-horizon/keys) gifts it to Pakistan-region accounts. Any login trouble, message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "batman-arkham-origins",
+      "category": "accounts",
+      "seo_title": "Batman: Arkham Origins Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Batman: Arkham Origins on a fresh Steam account with full access, PC only: change the email and password and keep it. PKR price, Pakistani payment methods.",
+      "seo_body": "## Gotham's early years, ready to play\n\nBatman: Arkham Origins is sold here as a freshly created Steam account that already owns the game, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another Pakistani method and the login is posted in your order chat, usually 10 to 15 minutes after payment.\n\n## Keep it, or key it\n\nWith full access you get the Steam login and the email login and can change both — do it right after delivery and the account is permanently yours. Steam's region switch takes roughly four weeks; keep funds and cards off the account until it completes. If you'd rather activate the game on the Steam account you already use, the [Arkham Origins keys page](/games/batman-arkham-origins/keys) has both a Global key and a gift for Pakistan-region accounts. Login not working? Tell us in the order chat — fixed or refunded."
+    },
+    {
+      "game": "ratchet-clank-rift-apart",
+      "category": "accounts",
+      "seo_title": "Ratchet & Clank: Rift Apart PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Ratchet & Clank: Rift Apart on a fresh Steam account with full access, PC only, email and password changeable. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Dimension-hopping on PC, paid in rupees\n\nRatchet & Clank: Rift Apart comes here as a newly created Steam account with the game already purchased — the PC port, not a console copy. Pay in Pakistani rupees with Easypaisa, JazzCash or a bank transfer; the login details arrive in your order chat, typically within 10 to 15 minutes.\n\n## What you can change\n\nEverything. Full access gives you the Steam login and the email login behind it, and once you have changed both the account is yours alone. One rule from Steam: wait about four weeks for the store region to switch before adding any funds or a card. Want Rift Apart on the Steam account you already use instead? The [Rift Apart keys page](/games/ratchet-clank-rift-apart/keys) delivers it as a gift to Pakistan-region accounts. If the login fails, message us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "no-rest-for-the-wicked",
+      "category": "accounts",
+      "seo_title": "No Rest for the Wicked Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "No Rest for the Wicked on a fresh Steam account with full access, PC only: change the email and password and keep it. PKR price, Pakistani payment methods.",
+      "seo_body": "## Isola Sacra on a fresh Steam account\n\nNo Rest for the Wicked is offered here as a brand-new Steam account with the game already bought on it, PC only. The price is in rupees, paid with JazzCash, Easypaisa, bank transfer or another local method, and the login reaches your order chat around 10 to 15 minutes after payment.\n\n## Full access, permanently\n\nYou get the Steam login and the email login, both changeable — change them as soon as the account arrives and it is yours for good. Steam takes about four weeks to switch the store region, so no funds or cards on the account until then. If you'd prefer the game on your existing Steam account, the [No Rest for the Wicked keys page](/games/no-rest-for-the-wicked/keys) gifts it to Pakistan-region accounts. Trouble logging in? Tell us in the order chat — fixed fast, or refunded."
+    },
+    {
+      "game": "elden-ring",
+      "category": "accounts",
+      "seo_title": "Elden Ring Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Cheap Elden Ring accounts: fresh Steam login with full access, base game or Shadow of the Erdtree editions, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Elden Ring on an account you own\n\nEach listing here is a freshly created Steam account with Elden Ring already bought on it — the base game or a Shadow of the Erdtree edition, as named on the listing, PC only. Pay in rupees with JazzCash, Easypaisa or a bank transfer and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, co-op included\n\nThe Steam login and the email login are both yours to change — do it right after delivery and the account is permanently yours, with online co-op and invasions working like any other copy. Steam's store region takes about four weeks to switch; add no funds or card before then. To put Elden Ring on the Steam account you already use, the [Elden Ring keys page](/games/elden-ring/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Elden Ring rentals page](/games/elden-ring/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "call-of-duty-modern-warfare-3-2011",
+      "category": "accounts",
+      "seo_title": "Modern Warfare 3 (2011) Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Modern Warfare 3 (2011) on a fresh Steam account with full access, single game or bundles, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## The 2011 Modern Warfare 3, on Steam\n\nThis page is for the original Call of Duty: Modern Warfare 3 from 2011, not the 2023 game. Each listing is a newly created Steam account that owns it — the game alone, or bundles that add more Modern Warfare titles, as named on the listing, PC only. Pay the rupee price with Easypaisa, JazzCash or a bank transfer; the login lands in your order chat within about 10 to 15 minutes.\n\n## Change the details, keep the account\n\nFull access means the Steam login and the email login, both changeable — change them first and the account is permanently yours. Steam's rule: no funds or cards until the store region has switched, roughly four weeks. If anything about the login is wrong, message us in the order chat and we fix it fast or refund it."
+    },
+    {
+      "game": "rv-there-yet",
+      "category": "accounts",
+      "seo_title": "RV There Yet Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "RV There Yet? on a fresh Steam account with full access, PC only, email and password changeable. PKR price, JazzCash, Easypaisa or bank transfer, 10-15 min.",
+      "seo_body": "## Road-trip chaos, on your own Steam account\n\nRV There Yet? is sold here as a freshly created Steam account with the game already on it, PC only. Prices are in rupees, paid with JazzCash, Easypaisa, bank transfer or another Pakistani method, and the login details arrive in your order chat about 10 to 15 minutes after payment.\n\n## Full access and co-op\n\nYou get the Steam login plus the email login and can change both — do that first and the account is yours for good, with online co-op working normally. Steam takes about four weeks to switch the store region; leave funds and cards off the account until then. To add the game to the Steam account you already use, the [RV There Yet keys page](/games/rv-there-yet/keys) gifts it to Pakistan-region accounts. Login not working? Say so in the order chat — fixed or refunded."
+    },
+    {
+      "game": "jurassic-world-evolution-3",
+      "category": "accounts",
+      "seo_title": "Jurassic World Evolution 3 Account in Pakistan from PKR {from_price}",
+      "seo_description": "Jurassic World Evolution 3 on a fresh Steam account with full access, standard or Deluxe, PC only. PKR price, paid with Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Build the park on a fresh Steam account\n\nJurassic World Evolution 3 arrives here as a newly created Steam account with the game already bought — standard or Deluxe Edition per the listing, PC only. Pay in rupees with Easypaisa, JazzCash or a bank transfer, and the login details are posted in your order chat, usually within 10 to 15 minutes.\n\n## Full access, then the fences\n\nBoth the Steam login and the email login are included and changeable — change them right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so add no funds or card before then. Prefer it on your existing Steam account? The [Jurassic World Evolution 3 keys page](/games/jurassic-world-evolution-3/keys) gifts it to Pakistan-region accounts; on PS5, see the [Jurassic World Evolution 3 rentals page](/games/jurassic-world-evolution-3/rentals). Any login issue, message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "call-of-duty-modern-warfare-2-2022",
+      "category": "accounts",
+      "seo_title": "Modern Warfare II (2022) Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Modern Warfare II (2022) on a fresh Steam account with full access, PC only, email and password changeable. PKR price, local payment methods.",
+      "seo_body": "## Modern Warfare II on an account you keep\n\nCall of Duty: Modern Warfare II (2022) is sold here as a freshly created Steam account with the game already purchased, PC only — this is the 2022 reboot, not the [2009 original](/games/call-of-duty-modern-warfare-2-2009/accounts). Pay the rupee price with JazzCash, Easypaisa, bank transfer or another local method; the login arrives in your order chat within about 10 to 15 minutes. The first launch asks for an Activision account — use your own.\n\n## Full access, permanently\n\nYou receive the Steam login and the email login and can change both — do it straight away and the account is permanently yours. Steam takes around four weeks to switch the store region; no funds or cards until then. To have the game on the Steam account you already use, the [Modern Warfare II keys page](/games/call-of-duty-modern-warfare-2-2022/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Modern Warfare II rentals page](/games/call-of-duty-modern-warfare-2-2022/rentals). Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "battlefield-6",
+      "category": "accounts",
+      "seo_title": "Battlefield 6 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Battlefield 6 account for sale in Pakistan: fresh Steam login with full access, standard or Phantom Edition, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Battlefield 6 on a fresh Steam account\n\nEach Battlefield 6 listing here is a newly created Steam account with the game already bought — standard or Phantom Edition, named on the listing, PC only. You pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login details arrive in your order chat, usually within 10 to 15 minutes. On first launch the game links to an EA account — sign in with your own.\n\n## Full access, and the fine print\n\nBoth the Steam login and the email login come with the account and both can be changed — do that immediately and it is permanently yours. Steam's store region takes about four weeks to switch, so keep funds and cards off the account until then. Want Battlefield 6 on the Steam account you already use? The [Battlefield 6 keys page](/games/battlefield-6/keys) gifts it to Pakistan-region accounts. Battlefield Coins for the battle pass are on the [Battlefield 6 gift cards page](/games/battlefield-6/gift-cards), and PS5 players can rent the game on the [Battlefield 6 rentals page](/games/battlefield-6/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "lego-batman-legacy-of-the-dark-knight",
+      "category": "accounts",
+      "seo_title": "LEGO Batman: Legacy of the Dark Knight Account in Pakistan from PKR {from_price}",
+      "seo_description": "LEGO Batman: Legacy of the Dark Knight on a fresh Steam account with full access, standard or Deluxe, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Brick Gotham on a Steam account you own\n\nLEGO Batman: Legacy of the Dark Knight comes here as a freshly created Steam account that already owns the game — standard or Deluxe Edition per the listing name, PC only. Pay in rupees with JazzCash, Easypaisa, bank transfer or another Pakistani method; the login details land in your order chat within roughly 10 to 15 minutes.\n\n## Full access for the whole family\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours, couch co-op included. Steam needs about four weeks to switch the store region; add no funds or cards before that. To put the game on the Steam account you already use, the [LEGO Batman keys page](/games/lego-batman-legacy-of-the-dark-knight/keys) gifts it to Pakistan-region accounts; PS5 players can rent it on the [LEGO Batman rentals page](/games/lego-batman-legacy-of-the-dark-knight/rentals). Login trouble? Message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "resident-evil-village",
+      "category": "accounts",
+      "seo_title": "Resident Evil Village Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Resident Evil Village on a fresh Steam account with full access: standard, Gold or the RE7 bundle, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Village on a Steam account you own\n\nResident Evil Village is sold here as a freshly created Steam account with the game already bought on it — the standard game, the Gold Edition with the Winters' Expansion, or a bundle that pairs it with Resident Evil 7 Gold, all PC only. Listings titled BIOHAZARD are the same game under its Japanese name. Pay in rupees with JazzCash, Easypaisa or a bank transfer and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, and the four-week rule\n\nYou receive the Steam login and the email login behind it, both changeable — change them right after delivery and the account is permanently yours. Steam takes about four weeks to switch the store region; add no funds or card before then. Want Village on the Steam account you already use? The [Resident Evil Village keys page](/games/resident-evil-village/keys) gifts it to Pakistan-region accounts. Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "watch-dogs-legion",
+      "category": "accounts",
+      "seo_title": "Watch Dogs: Legion Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Watch Dogs: Legion on a fresh Steam account with full access: Standard, Deluxe, Gold or Ultimate, PC only. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Recruit London on a fresh Steam account\n\nEvery Watch Dogs: Legion listing here is a newly created Steam account with the game already purchased — Standard, Deluxe, Gold or Ultimate Edition, named on the listing, PC only. You pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login lands in your order chat within about 10 to 15 minutes. The game runs through Ubisoft Connect, so sign in with your own Ubisoft account when it asks on first launch.\n\n## Make the account yours\n\nFull access means the Steam login and the email login, both changeable — do that first and it is permanently yours. Keep funds and cards off the account until Steam's store region has switched, roughly four weeks. Prefer the game on your existing Steam account? The [Watch Dogs: Legion keys page](/games/watch-dogs-legion/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Watch Dogs: Legion rentals page](/games/watch-dogs-legion/rentals). Anything wrong with the login, tell us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "anno-1800",
+      "category": "accounts",
+      "seo_title": "Anno 1800 PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Anno 1800 on a full-access account: Ubisoft Connect login or a Steam account, PC only, email and password changeable. PKR price, Pakistani payment methods.",
+      "seo_body": "## Two launchers, one game\n\nAnno 1800 comes here in two forms, both full access and PC only. The cheapest listing is a Ubisoft Connect account with the game on it; the others are freshly created Steam accounts with the standard game, the Year 5 Gold Edition or the Definitive Annoversary bundle, which launch through Ubisoft Connect as well. Either way you pay in rupees — JazzCash, Easypaisa, bank transfer or another local method — and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access on both\n\nWhichever you pick, you get the launcher login and the email login and can change both; do it right after delivery and the account is permanently yours. On the Steam accounts, leave funds and cards off until the store region has switched, about four weeks. To add Anno 1800 to the Steam account you already use, the [Anno 1800 keys page](/games/anno-1800/keys) gifts it to Pakistan-region accounts, and console players can rent it on the [Anno 1800 rentals page](/games/anno-1800/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "microsoft-flight-simulator-2020",
+      "category": "accounts",
+      "seo_title": "Microsoft Flight Simulator 2020 Account in Pakistan from PKR {from_price}",
+      "seo_description": "Microsoft Flight Simulator (2020) 40th Anniversary editions on a fresh Steam account with full access, PC only. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Wheels up on a Steam account of your own\n\nMicrosoft Flight Simulator (2020) is sold here as a newly created Steam account with the 40th Anniversary edition already bought — Standard, Deluxe, Premium Deluxe or Aviator, named on the listing, PC only. Pay the rupee price with Easypaisa, JazzCash or a bank transfer; the login details are posted in your order chat within about 10 to 15 minutes. The sim signs in to Xbox services on launch, so use your own Microsoft account there.\n\n## Full access, then the long download\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so add no funds or card before then. Would you rather have it on the Steam account you already use? The [Flight Simulator 2020 keys page](/games/microsoft-flight-simulator-2020/keys) gifts it to Pakistan-region accounts. If a login fails, message us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "armored-core-vi-fires-of-rubicon",
+      "category": "accounts",
+      "seo_title": "Armored Core VI Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Armored Core VI: Fires of Rubicon on a fresh Steam account with full access, standard or Deluxe, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Rubicon on a fresh Steam account\n\nArmored Core VI: Fires of Rubicon arrives here as a freshly created Steam account that already owns the game — standard or Deluxe Edition per the listing name, PC only. Pay in rupees with JazzCash, Easypaisa, bank transfer or another Pakistani method, and the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Yours to keep\n\nFull access is the Steam login plus the email login behind it, both changeable — swap them straight away and the account is permanently yours, online duels included. Steam needs about four weeks to switch the store region; add no funds or cards before that. Prefer the game on the Steam account you already use? The [Armored Core VI keys page](/games/armored-core-vi-fires-of-rubicon/keys) sends it as a gift to Pakistan-region accounts. Login not working? Tell us in the order chat — fixed or refunded."
+    },
+    {
+      "game": "batman-arkham-knight",
+      "category": "accounts",
+      "seo_title": "Batman: Arkham Knight Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Batman: Arkham Knight on a fresh Steam account with full access — the game, Premium Edition or the Arkham Collection, PC only. PKR price, local payment methods.",
+      "seo_body": "## Gotham's last night on an account you own\n\nBatman: Arkham Knight is sold here as a newly created Steam account with the game already bought — the base game, the Premium Edition with its season pass, or the Arkham Collection that bundles Asylum, City and Knight, as named on the listing, PC only. Pay the rupee price with Easypaisa, JazzCash or a bank transfer and the login lands in your order chat, usually within 10 to 15 minutes.\n\n## Full access explained\n\nYou receive the Steam login and the email login and can change both — do it right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so leave funds and cards off the account until then. To put the game on the Steam account you already use, the [Arkham Knight keys page](/games/batman-arkham-knight/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Arkham Knight rentals page](/games/batman-arkham-knight/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "borderlands-2",
+      "category": "accounts",
+      "seo_title": "Borderlands 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Borderlands 2 on a fresh Steam account with full access: base game or Game of the Year, PC only. PKR price, paid with JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Pandora on a fresh Steam account\n\nEach Borderlands 2 listing here is a freshly created Steam account with the game already purchased — the base game or a Game of the Year version with the DLC included, as named on the listing, PC only. Pay in Pakistani rupees through JazzCash, Easypaisa or a bank transfer, and the login details arrive in your order chat within about 10 to 15 minutes.\n\n## Full access, co-op ready\n\nThe Steam login and the email login are both yours to change — do that first and the account is permanently yours, online co-op included. Steam takes around four weeks to switch the store region; no funds or cards until then. Want Borderlands 2 on the Steam account you already use? The [Borderlands 2 keys page](/games/borderlands-2/keys) gifts it to Pakistan-region accounts. If a login misbehaves, message us in the order chat — we fix it fast or refund it."
+    },
+    {
+      "game": "borderlands-4",
+      "category": "accounts",
+      "seo_title": "Borderlands 4 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Borderlands 4 on a fresh Steam account with full access: standard, Deluxe or Super Deluxe, PC only. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Kairos on an account you keep\n\nBorderlands 4 comes here as a newly created Steam account with the game already bought on it — standard, Deluxe or Super Deluxe Edition, named on the listing, PC only. The price is in rupees, paid with Easypaisa, JazzCash, bank transfer or another Pakistani method, and the login is delivered in your order chat, typically 10 to 15 minutes after payment.\n\n## Full access and the four-week rule\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so keep funds and cards off the account until then. Prefer it on your existing Steam account? The [Borderlands 4 keys page](/games/borderlands-4/keys) has a Global key and a gift for Pakistan-region accounts; PS5 players can rent the game on the [Borderlands 4 rentals page](/games/borderlands-4/rentals). Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "call-of-duty-black-ops-3",
+      "category": "accounts",
+      "seo_title": "Call of Duty: Black Ops 3 Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Black Ops III on a fresh Steam account with full access, Zombies Chronicles and Zombies Deluxe editions, PC only. PKR price, local payments.",
+      "seo_body": "## Black Ops III, Zombies and all\n\nCall of Duty: Black Ops III is sold here as a freshly created Steam account with the game already on it. Every listing is a Zombies-focused edition — Zombies Chronicles or Zombies Deluxe, as named on the tile — and all are PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer; the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, permanently\n\nYou receive the Steam login and the email login and can change both — do it straight after delivery and the account is yours for good. Steam takes about four weeks to switch the store region; add no funds or cards before then. To have Black Ops III on the Steam account you already use, the [Black Ops 3 keys page](/games/call-of-duty-black-ops-3/keys) gifts it to Pakistan-region accounts. If the login fails, message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "call-of-duty-ghosts",
+      "category": "accounts",
+      "seo_title": "Call of Duty: Ghosts Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Ghosts on a fresh Steam account with full access: Gold, Digital Hardened or Complete Bundle, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Ghosts on a Steam account of your own\n\nCall of Duty: Ghosts comes here as a newly created Steam account with the game already bought — the Gold Edition, the Digital Hardened Edition or the Complete Bundle with every map pack, as named on the listing, PC only. Pay in rupees through Easypaisa, JazzCash, bank transfer or another local method, and the login lands in your order chat within about 10 to 15 minutes.\n\n## What you can change\n\nBoth logins: the Steam account and the email attached to it. Change them right after delivery and the account is permanently yours. Steam's store region takes around four weeks to switch, so keep funds and cards off the account until it does. Prefer the game on the Steam account you already use? The [Call of Duty: Ghosts keys page](/games/call-of-duty-ghosts/keys) gifts it to Pakistan-region accounts. Login not working? Tell us in the order chat — fixed or refunded."
+    },
+    {
+      "game": "call-of-duty-infinite-warfare",
+      "category": "accounts",
+      "seo_title": "Call of Duty: Infinite Warfare Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Infinite Warfare on a fresh Steam account with full access: standard, Digital Deluxe or Legacy, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Infinite Warfare on an account you keep\n\nCall of Duty: Infinite Warfare is sold here as a freshly created Steam account with the game already purchased — the standard game, the Digital Deluxe Edition, or the Digital Legacy Edition that adds Modern Warfare Remastered, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer; the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Full access, then the campaign\n\nYou get the Steam login and the email login, both changeable — change them first and the account is permanently yours. Steam needs about four weeks to switch the store region; no funds or cards until then. To put Infinite Warfare on the Steam account you already use, the [Infinite Warfare keys page](/games/call-of-duty-infinite-warfare/keys) gifts it to Pakistan-region accounts. Anything wrong with the login, say so in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "call-of-duty-modern-warfare-2-2009",
+      "category": "accounts",
+      "seo_title": "Modern Warfare 2 (2009) Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Call of Duty: Modern Warfare 2 (2009) on a fresh Steam account with full access, game alone or bundles, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## The original Modern Warfare 2, on Steam\n\nThis page is for the 2009 Call of Duty: Modern Warfare 2. The 2022 reboot has its own [Modern Warfare II accounts page](/games/call-of-duty-modern-warfare-2-2022/accounts). Each listing here is a newly created Steam account that owns the original — the game alone, a Modern Warfare 2 bundle, or the franchise bundle that adds the other classic Modern Warfare titles, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash or a bank transfer; the login lands in your order chat within about 10 to 15 minutes.\n\n## Change the details, keep the account\n\nFull access means the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours. Steam's rule: no funds or cards until the store region has switched, roughly four weeks. Prefer the game on the Steam account you already use? The [Modern Warfare 2 (2009) keys page](/games/call-of-duty-modern-warfare-2-2009/keys) gifts it to Pakistan-region accounts. Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "dark-souls-3",
+      "category": "accounts",
+      "seo_title": "Dark Souls 3 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Dark Souls III on a fresh Steam account with full access: standard, Deluxe or The Fire Fades Edition, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Lothric on a fresh Steam account\n\nDark Souls III arrives here as a freshly created Steam account with the game already bought on it — the standard game, the Deluxe Edition with the season pass, or The Fire Fades Edition with both expansions, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another Pakistani method, and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, invasions included\n\nYou receive the Steam login and the email login and can change both — do that immediately and the account is permanently yours, with online co-op and invasions working like any other copy. Steam's store region takes about four weeks to switch; add no funds or card before then. To have Dark Souls III on the Steam account you already use, the [Dark Souls 3 keys page](/games/dark-souls-3/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Dark Souls 3 rentals page](/games/dark-souls-3/rentals). Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "dragon-ball-sparking-zero",
+      "category": "accounts",
+      "seo_title": "Dragon Ball Sparking Zero Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Dragon Ball: Sparking! Zero on a fresh Steam account with full access: standard, NEO or Legendary, PC only. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Sparking! Zero on an account you own\n\nDragon Ball: Sparking! Zero is sold here as a newly created Steam account with the game already purchased — the standard game, the Super Limit-Breaking NEO Edition or the Legendary Edition, as named on the listing, PC only. Pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login details are posted in your order chat within about 10 to 15 minutes.\n\n## Full access, ranked included\n\nThe Steam login and the email login are both yours to change — do it right after delivery and the account is permanently yours, online battles included. Steam takes around four weeks to switch the store region; keep funds and cards off the account until then. If anything about the login is wrong, message us in the order chat and we fix it fast or refund it."
+    },
+    {
+      "game": "f1-25",
+      "category": "accounts",
+      "seo_title": "F1 25 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "F1 25 on a fresh Steam account with full access: standard, Iconic or 2026 Season Edition, PC only. PKR price, JazzCash, Easypaisa or bank transfer, 10-15 min.",
+      "seo_body": "## Lights out on a fresh Steam account\n\nF1 25 comes here as a freshly created Steam account with the game already bought — the standard game, the Iconic Edition or the 2026 Season Edition, named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer and the login lands in your order chat, usually within 10 to 15 minutes. As an EA title it asks for an EA account on first launch — sign in with your own.\n\n## Full access, then the grid\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so add no funds or card before then. Prefer F1 25 on the Steam account you already use? The [F1 25 keys page](/games/f1-25/keys) gifts it to Pakistan-region accounts; PS5 players can rent it on the [F1 25 rentals page](/games/f1-25/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "mortal-kombat-11",
+      "category": "accounts",
+      "seo_title": "Mortal Kombat 11 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Mortal Kombat 11 on a fresh Steam account with full access: standard, Ultimate, or the MK11 + Injustice 2 bundle, PC only. PKR price, local payment methods.",
+      "seo_body": "## Kombat on a Steam account you keep\n\nMortal Kombat 11 is sold here as a newly created Steam account with the game already on it — the standard game, Mortal Kombat 11 Ultimate with every fighter pack, or the bundle that adds Injustice 2 Legendary Edition, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash, bank transfer or another Pakistani method; the login details arrive in your order chat within about 10 to 15 minutes.\n\n## Full access, online ready\n\nBoth the Steam login and the email login come with the account and both can be changed — do that first and it is permanently yours, online matches included. Steam needs about four weeks to switch the store region; add no funds or cards before that. To put MK11 on the Steam account you already use, the [Mortal Kombat 11 keys page](/games/mortal-kombat-11/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Mortal Kombat 11 rentals page](/games/mortal-kombat-11/rentals). Login trouble? Message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "silent-hill-2",
+      "category": "accounts",
+      "seo_title": "Silent Hill 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Silent Hill 2 remake on a fresh Steam account with full access: standard, Digital Deluxe or the Silent Hill f dual pack, PC only. PKR price, local payments.",
+      "seo_body": "## The remake, on a fresh Steam account\n\nThe 2024 Silent Hill 2 remake comes here as a freshly created Steam account with the game already bought — the standard game, the Digital Deluxe, or the dual pack that adds Silent Hill f, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer, and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, permanently\n\nYou receive the Steam login and the email login and can change both — do it right after delivery and the account is yours for good. Steam's store region takes about four weeks to switch, so leave funds and cards off the account until then. Prefer the game on your existing Steam account? The [Silent Hill 2 keys page](/games/silent-hill-2/keys) gifts it to Pakistan-region accounts; PS5 players can rent it on the [Silent Hill 2 rentals page](/games/silent-hill-2/rentals). If a login fails, message us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "stalker-2-heart-of-chornobyl",
+      "category": "accounts",
+      "seo_title": "S.T.A.L.K.E.R. 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "S.T.A.L.K.E.R. 2: Heart of Chornobyl on a fresh Steam account with full access, standard, Deluxe or Ultimate, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## The Zone on an account you own\n\nS.T.A.L.K.E.R. 2: Heart of Chornobyl is sold here as a newly created Steam account with the game already purchased — standard, Deluxe or Ultimate Edition, named on the listing, PC only. Pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer; the login lands in your order chat within about 10 to 15 minutes.\n\n## Full access, then the long walk\n\nThe Steam login and the email login are both yours to change — do that immediately and the account is permanently yours. Steam takes around four weeks to switch the store region; no funds or cards until then. To have STALKER 2 on the Steam account you already use, the [S.T.A.L.K.E.R. 2 keys page](/games/stalker-2-heart-of-chornobyl/keys) gifts it to Pakistan-region accounts; PS5 players can rent it on the [S.T.A.L.K.E.R. 2 rentals page](/games/stalker-2-heart-of-chornobyl/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "sid-meiers-civilization-7",
+      "category": "accounts",
+      "seo_title": "Civilization 7 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Sid Meier's Civilization VII on a fresh Steam account with full access: standard, Deluxe or Settler's Edition, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## One more turn, on a Steam account of your own\n\nSid Meier's Civilization VII arrives here as a freshly created Steam account with the game already bought — standard, Deluxe or the Settler's Edition, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another local method, and the login details reach your order chat about 10 to 15 minutes after payment. Online features ask for a 2K account — use your own.\n\n## Full access explained\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so add no funds or card before then. Want Civilization VII on the Steam account you already use? The [Civilization 7 keys page](/games/sid-meiers-civilization-7/keys) gifts it to Pakistan-region accounts; console players can rent it on the [Civilization 7 rentals page](/games/sid-meiers-civilization-7/rentals). Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "helldivers",
+      "category": "accounts",
+      "seo_title": "Helldivers 1 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "The original Helldivers (2015) on a fresh Steam account with full access: Dive Harder, Digital Deluxe or Reinforcements, PC only. PKR price, local payments.",
+      "seo_body": "## The first Helldivers, on a fresh Steam account\n\nThis page is for the original top-down Helldivers from 2015, not Helldivers 2. Each listing is a newly created Steam account with the game already on it — the Dive Harder Edition, the Digital Deluxe Edition or the Reinforcements Mega Bundle, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash or a bank transfer, and the login details arrive in your order chat within about 10 to 15 minutes.\n\n## Full access, co-op included\n\nYou receive the Steam login and the email login and can change both — do it right after delivery and the account is permanently yours, four-player co-op included. Steam needs about four weeks to switch the store region; keep funds and cards off the account until then. To add the game to the Steam account you already use, the [Helldivers keys page](/games/helldivers/keys) sells a Global Steam key and a gift for Pakistan-region accounts; PlayStation players can rent it on the [Helldivers rentals page](/games/helldivers/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "anno-2070",
+      "category": "accounts",
+      "seo_title": "Anno 2070 PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Anno 2070 on a full-access PC account: a Ubisoft Connect login or a Steam account with the Complete Edition. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Anno 2070, two ways in\n\nThe cheapest Anno 2070 listing here is a Ubisoft Connect account with the game on it; the other two are freshly created Steam accounts with the base game or the Complete Edition, which still launch through Ubisoft Connect. All are full access and PC only. Pay in rupees — JazzCash, Easypaisa or a bank transfer — and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, whichever launcher\n\nYou get the launcher login and the email login and can change both; change them right after delivery and the account is permanently yours. On a Steam account, keep funds and cards off until the store region has switched, about four weeks. Want it on the Steam account you already use? The [Anno 2070 keys page](/games/anno-2070/keys) gifts it to Pakistan-region accounts. Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "anno-2205",
+      "category": "accounts",
+      "seo_title": "Anno 2205 PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Anno 2205 on a full-access PC account: a Ubisoft Connect login, or a Steam account with the game or Ultimate Edition. PKR price, Easypaisa, JazzCash or bank.",
+      "seo_body": "## Build on the Moon, on an account you own\n\nAnno 2205 is sold here as a full-access account in two flavours: a Ubisoft Connect account, which is the cheapest listing, or a freshly created Steam account with the base game or the Ultimate Edition. Both are PC only and both are priced in rupees, paid with Easypaisa, JazzCash, bank transfer or another Pakistani method; the login lands in your order chat within about 10 to 15 minutes.\n\n## Secure it, then play\n\nWhichever you choose, the launcher login and the email login are yours to change — do that first and the account is permanently yours. Steam accounts need about four weeks for the store region to switch; add no funds or card before then. To add Anno 2205 to the Steam account you already use, the [Anno 2205 keys page](/games/anno-2205/keys) gifts it to Pakistan-region accounts. Anything wrong, say so in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "assassins-creed-rogue",
+      "category": "accounts",
+      "seo_title": "Assassin's Creed Rogue PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Assassin's Creed Rogue on a full-access PC account: Ubisoft Connect login or a Steam account, standard or Deluxe. PKR price, JazzCash, Easypaisa or bank.",
+      "seo_body": "## Shay Cormac's story, on your own account\n\nAssassin's Creed Rogue comes here two ways, both full access and PC only. The cheapest listing is a Ubisoft Connect account with the game already on it; the others are freshly created Steam accounts with the standard or Deluxe edition, which run through Ubisoft Connect as well. Pay the rupee price with JazzCash, Easypaisa or a bank transfer and the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Make it yours\n\nYou receive the launcher login and the email login and can change both — do it right after delivery and nobody else can get in. On Steam accounts, wait about four weeks for the store region to switch before adding funds or a card. Prefer the game on the Steam account you already use? The [Assassin's Creed Rogue keys page](/games/assassins-creed-rogue/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Assassin's Creed Rogue rentals page](/games/assassins-creed-rogue/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "assassins-creed-syndicate",
+      "category": "accounts",
+      "seo_title": "Assassin's Creed Syndicate PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Assassin's Creed Syndicate on a full-access PC account: Ubisoft Connect login, or a Steam account with the game or Gold Edition. PKR price, local payments.",
+      "seo_body": "## Victorian London, paid in rupees\n\nAssassin's Creed Syndicate is offered here as a Ubisoft Connect account — the cheapest listing — or as a freshly created Steam account with the standard game or the Gold Edition, all full access and PC only. Whichever you pick, you pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login details are posted in your order chat within about 10 to 15 minutes.\n\n## Full access explained\n\nBoth the launcher login and the email login come with the account and both can be changed — change them straight away and it is permanently yours. On a Steam account, keep funds and cards off until the store region has switched, roughly four weeks. To put Syndicate on the Steam account you already use, the [Assassin's Creed Syndicate keys page](/games/assassins-creed-syndicate/keys) gifts it to Pakistan-region accounts; console players can rent it on the [Assassin's Creed Syndicate rentals page](/games/assassins-creed-syndicate/rentals). Login trouble? Message us in the order chat — fixed or refunded."
+    },
+    {
+      "game": "atomfall",
+      "category": "accounts",
+      "seo_title": "Atomfall PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Atomfall on a fresh full-access Steam account, or 12 months of PC Game Pass with Atomfall included. PKR price, JazzCash, Easypaisa or bank transfer, 10-15 min.",
+      "seo_body": "## Atomfall: own it, or subscribe to it\n\nTwo kinds of Atomfall account share this page. The Steam listings are freshly created accounts with the game bought outright — standard or Deluxe Edition, full access, PC only, yours for good. The cheaper listing is a Microsoft account with 12 months of PC Game Pass, where Atomfall sits alongside a large library: you play with your own progress, but the account details cannot be changed and it is a year of access rather than a game you own. Both are priced in rupees, paid with JazzCash, Easypaisa or a bank transfer, and delivered in your order chat within about 10 to 15 minutes.\n\n## Picking and securing\n\nTake the Steam account if you want Atomfall permanently — change its password and email on delivery and keep funds off it until the store region switches, about four weeks. Take Game Pass for a year of Atomfall and much more on Windows 10 or 11. The [Atomfall keys page](/games/atomfall/keys) gifts the game to a Pakistan-region Steam account you already use, and PlayStation players can rent it on the [Atomfall rentals page](/games/atomfall/rentals). Problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "avowed",
+      "category": "accounts",
+      "seo_title": "Avowed PC Account in Pakistan from PKR {from_price}",
+      "seo_description": "Avowed on a fresh full-access Steam account, Standard or Premium, or 12 months of PC Game Pass with Avowed included. PKR price, local payment methods.",
+      "seo_body": "## The Living Lands, two ways\n\nAvowed comes here either as a freshly created Steam account with the Standard or Premium Edition bought on it — full access, PC only, permanently yours — or as the cheapest listing: a Microsoft account with 12 months of PC Game Pass that includes Avowed and a large library. The Game Pass route keeps its account details fixed and ends after the year; the Steam route is a game you own. Pay either in rupees with Easypaisa, JazzCash or a bank transfer, and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## After delivery\n\nOn a Steam account, change the password and the email first — both are yours to change — and leave funds and cards off until the store region has switched, about four weeks. Game Pass needs Windows 10 or 11. Prefer Avowed on the Steam account you already use? The [Avowed keys page](/games/avowed/keys) gifts it to Pakistan-region accounts. If a login fails, message us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "code-vein-ii",
+      "category": "accounts",
+      "seo_title": "Code Vein II Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Code Vein II on a fresh Steam account with full access: standard, Deluxe or Ultimate Edition, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Code Vein II on a fresh Steam account\n\nEach Code Vein II listing here is a newly created Steam account with the game already bought — standard, Deluxe or Ultimate Edition, named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another Pakistani method, and the login lands in your order chat within about 10 to 15 minutes.\n\n## Full access, co-op included\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours, online co-op working like any other copy. Steam's store region takes about four weeks to switch; add no funds or card before then. To have Code Vein II on the Steam account you already use, the [Code Vein II keys page](/games/code-vein-ii/keys) gifts it to Pakistan-region accounts. Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "dead-rising",
+      "category": "accounts",
+      "seo_title": "Dead Rising Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Dead Rising on a fresh Steam account with full access: the original PC port or the Deluxe Remaster, PC only. PKR price, Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Willamette Mall, original or remastered\n\nDead Rising is sold here as a freshly created Steam account with the game already on it — the original Dead Rising PC port, the Deluxe Remaster, or the remaster's Digital Deluxe, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash or a bank transfer; the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Full access, permanently\n\nThe Steam login and the email login both come with the account and both can be changed — do it straight away and it is yours for good. Steam needs about four weeks to switch the store region; keep funds and cards off the account until then. Prefer the game on your existing Steam account? The [Dead Rising keys page](/games/dead-rising/keys) gifts it to Pakistan-region accounts. Login not working? Tell us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "divinity-original-sin-2",
+      "category": "accounts",
+      "seo_title": "Divinity: Original Sin 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Divinity: Original Sin 2 on a fresh Steam account with full access: standard, Divine or Eternal Edition, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Rivellon on an account you keep\n\nDivinity: Original Sin 2 arrives here as a newly created Steam account with the game already purchased — the standard game or the Divine and Eternal editions with their extras, as named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer, and the login details arrive in your order chat, usually within 10 to 15 minutes.\n\n## Full access, four-player co-op\n\nYou receive the Steam login and the email login and can change both — change them right after delivery and the account is permanently yours, online co-op included. Steam's store region takes about four weeks to switch, so add no funds or card before then. To put the game on the Steam account you already use, the [Divinity: Original Sin 2 keys page](/games/divinity-original-sin-2/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Divinity: Original Sin 2 rentals page](/games/divinity-original-sin-2/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "dragon-ball-xenoverse-2",
+      "category": "accounts",
+      "seo_title": "Dragon Ball Xenoverse 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Dragon Ball Xenoverse 2 on a fresh Steam account with full access: standard, Deluxe or Special Edition, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Xenoverse 2 on a fresh Steam account\n\nDragon Ball Xenoverse 2 comes here as a freshly created Steam account with the game already bought — standard, Deluxe or Special Edition, named on the listing, PC only. Pay in Pakistani rupees through Easypaisa, JazzCash, bank transfer or another local method, and the login lands in your order chat within about 10 to 15 minutes.\n\n## Full access, online ready\n\nBoth the Steam login and the email login are yours to change — do that first and the account is permanently yours, online play included. Steam takes around four weeks to switch the store region; no funds or cards until then. Playing on PlayStation instead? Rent it on the [Dragon Ball Xenoverse 2 rentals page](/games/dragon-ball-xenoverse-2/rentals). If a login fails, message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "fable",
+      "category": "accounts",
+      "seo_title": "Fable Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Fable on a fresh Steam account with full access: the new Fable in Standard or Premium, or Fable Anniversary, PC only. PKR price, local payment methods.",
+      "seo_body": "## Albion, old and new\n\nThis page covers two games. The new Fable comes as a freshly created Steam account with the Standard or Premium Edition; Fable Anniversary, the remaster of the 2004 original, is the cheapest listing. All are full access and PC only, with the edition in the listing name. Pay the rupee price with JazzCash, Easypaisa or a bank transfer and the login details arrive in your order chat, usually within 10 to 15 minutes. The new Fable signs in to Xbox services on launch — use your own Microsoft account there.\n\n## Full access, permanently\n\nYou get the Steam login and the email login and can change both — do it right after delivery and the account is yours for good. Steam's store region takes about four weeks to switch, so keep funds and cards off the account until then. Prefer either game on the Steam account you already use? The [Fable keys page](/games/fable/keys) gifts it to Pakistan-region accounts. Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "for-honor",
+      "category": "accounts",
+      "seo_title": "For Honor Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "For Honor on a fresh Steam account with full access: standard, Gold or Ultimate Edition, PC only. PKR price, paid with Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Knights, Vikings and Samurai on your own account\n\nFor Honor is sold here as a newly created Steam account with the game already purchased — standard, Gold or Ultimate Edition, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash, bank transfer or another Pakistani method; the login details are posted in your order chat within about 10 to 15 minutes. The game runs through Ubisoft Connect, so sign in with your own Ubisoft account on first launch.\n\n## Full access, then the battlefield\n\nThe Steam login and the email login are both changeable — change them right after delivery and the account is permanently yours, multiplayer included. Steam needs about four weeks to switch the store region; add no funds or cards before that. To put For Honor on the Steam account you already use, the [For Honor keys page](/games/for-honor/keys) gifts it to Pakistan-region accounts. Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "forza-motorsport-2023",
+      "category": "accounts",
+      "seo_title": "Forza Motorsport (2023) Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Forza Motorsport (2023) on a fresh Steam account with full access: Standard, Deluxe or Premium, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Forza Motorsport on a fresh Steam account\n\nForza Motorsport (2023) comes here as a freshly created Steam account with the game already bought — Standard, Deluxe or Premium Edition, named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer and the login lands in your order chat, usually within 10 to 15 minutes. The game signs in to Xbox services on launch, so use your own Microsoft account there.\n\n## Full access explained\n\nYou receive the Steam login and the email login and can change both — do that first and the account is permanently yours. Steam's store region takes about four weeks to switch; keep funds and cards off the account until then. Prefer it on the Steam account you already use? The [Forza Motorsport keys page](/games/forza-motorsport-2023/keys) gifts it to Pakistan-region accounts. Login trouble? Message us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "ghostrunner-2",
+      "category": "accounts",
+      "seo_title": "Ghostrunner 2 Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Ghostrunner 2 on a fresh Steam account with full access: standard, Deluxe or Brutal Edition, PC only. PKR price, paid with Easypaisa, JazzCash or bank transfer.",
+      "seo_body": "## Dharma Tower on an account you own\n\nGhostrunner 2 arrives here as a newly created Steam account with the game already on it — standard, Deluxe or Brutal Edition, as named on the listing, PC only. Pay in Pakistani rupees through Easypaisa, JazzCash or a bank transfer, and the login details reach your order chat about 10 to 15 minutes after payment.\n\n## Yours to keep\n\nFull access means the Steam login and the email login, both changeable — change them straight away and the account is permanently yours. Steam takes around four weeks to switch the store region; no funds or cards until then. Want Ghostrunner 2 on the Steam account you already use? The [Ghostrunner 2 keys page](/games/ghostrunner-2/keys) gifts it to Pakistan-region accounts; PS5 players can rent it on the [Ghostrunner 2 rentals page](/games/ghostrunner-2/rentals). If the login fails, tell us in the order chat — we fix it or refund it."
+    },
+    {
+      "game": "mafia-the-old-country",
+      "category": "accounts",
+      "seo_title": "Mafia: The Old Country Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Mafia: The Old Country on a fresh Steam account with full access: standard, Deluxe or Definitive Edition, PC only. PKR price, Pakistani payment methods.",
+      "seo_body": "## Sicily on a fresh Steam account\n\nMafia: The Old Country is sold here as a freshly created Steam account with the game already bought — standard, Deluxe or Definitive Edition, named on the listing, PC only. Pay the rupee price with JazzCash, Easypaisa, bank transfer or another local method; the login details arrive in your order chat within about 10 to 15 minutes.\n\n## Full access, and the other routes\n\nBoth the Steam login and the email login can be changed — do it right after delivery and the account is permanently yours. Steam's store region takes about four weeks to switch, so add no funds or card before then. Want the game on the Steam account you already use, or on Xbox? The [Mafia: The Old Country keys page](/games/mafia-the-old-country/keys) has a Steam gift for Pakistan-region accounts and an Xbox key; PS5 players can rent it on the [Mafia: The Old Country rentals page](/games/mafia-the-old-country/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "metaphor-refantazio",
+      "category": "accounts",
+      "seo_title": "Metaphor: ReFantazio Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Metaphor: ReFantazio on a fresh Steam account with full access: standard, Guidebook or Atlus 35th Anniversary Edition, PC only. PKR price, local payments.",
+      "seo_body": "## Euchronia on an account you keep\n\nMetaphor: ReFantazio comes here as a newly created Steam account with the game already purchased — the standard game, the Guidebook Edition or the Atlus 35th Anniversary Edition, as named on the listing, PC only. Pay in rupees with Easypaisa, JazzCash or a bank transfer, and the login lands in your order chat, usually within 10 to 15 minutes.\n\n## Full access, permanently\n\nYou get the Steam login and the email login, both changeable — change them right after delivery and the account is yours for good. Steam needs about four weeks to switch the store region; keep funds and cards off the account until then. Prefer it on your existing Steam account? The [Metaphor: ReFantazio keys page](/games/metaphor-refantazio/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Metaphor: ReFantazio rentals page](/games/metaphor-refantazio/rentals). Login trouble is fixed in the order chat, or refunded."
+    },
+    {
+      "game": "outlast",
+      "category": "accounts",
+      "seo_title": "Outlast, Outlast 2 & Trials Accounts in Pakistan from PKR {from_price}",
+      "seo_description": "Outlast, Outlast 2 and The Outlast Trials on fresh Steam accounts with full access, PC only, email and password changeable. PKR price, local payment methods.",
+      "seo_body": "## Three Outlast games, one page\n\nUse the dropdown above to pick the game: the original Outlast, Outlast 2, or The Outlast Trials. Each listing is a freshly created Steam account with that game already bought on it — full access, PC only. Pay the rupee price with JazzCash, Easypaisa or a bank transfer and the login details arrive in your order chat within about 10 to 15 minutes.\n\n## Full access on every one\n\nThe Steam login and the email login are both yours to change — do it right after delivery and the account is permanently yours; for The Outlast Trials that includes online co-op. Steam's store region takes about four weeks to switch, so add no funds or card before then. Prefer a copy on the Steam account you already use? The [Outlast keys page](/games/outlast/keys) has Global keys and gifts for Pakistan-region accounts. Login not working? Tell us in the order chat — fixed fast or refunded."
+    },
+    {
+      "game": "riders-republic",
+      "category": "accounts",
+      "seo_title": "Riders Republic Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "Riders Republic on a fresh Steam account with full access: standard, Deluxe or Premium Edition, PC only. PKR price, JazzCash, Easypaisa or bank transfer.",
+      "seo_body": "## Riders Republic on a Steam account of your own\n\nRiders Republic is sold here as a freshly created Steam account with the game already on it — standard, Deluxe or Premium Edition, named on the listing, PC only. Pay in Pakistani rupees through JazzCash, Easypaisa, bank transfer or another local method, and the login details are posted in your order chat within about 10 to 15 minutes. It runs through Ubisoft Connect, so sign in with your own Ubisoft account on first launch.\n\n## Full access, then the mountain\n\nYou receive the Steam login and the email login and can change both — do that first and the account is permanently yours. Steam takes around four weeks to switch the store region; no funds or cards until then. To have the game on the Steam account you already use, the [Riders Republic keys page](/games/riders-republic/keys) gifts it to Pakistan-region accounts; PlayStation players can rent it on the [Riders Republic rentals page](/games/riders-republic/rentals). Login problems are fixed in the order chat, or refunded."
+    },
+    {
+      "game": "scum",
+      "category": "accounts",
+      "seo_title": "SCUM Steam Account in Pakistan from PKR {from_price}",
+      "seo_description": "SCUM on a fresh Steam account with full access: base game or Deluxe Edition, PC only, email and password changeable. PKR price, Easypaisa, JazzCash or bank.",
+      "seo_body": "## SCUM on a fresh Steam account\n\nEach SCUM listing here is a newly created Steam account with the game already bought — the base game or a Deluxe Edition, as named on the listing, PC only. Pay the rupee price with Easypaisa, JazzCash or a bank transfer; the login lands in your order chat, usually within 10 to 15 minutes.\n\n## Full access, servers included\n\nFull access means the Steam login and the email login, both changeable — change them right after delivery and the account is permanently yours, official and community servers included. Steam's store region takes about four weeks to switch; keep funds and cards off the account until then. Want SCUM on the Steam account you already use? The [SCUM keys page](/games/scum/keys) gifts it to Pakistan-region accounts. If a login misbehaves, message us in the order chat — we fix it fast or refund it."
+    }
+  ]
+}
