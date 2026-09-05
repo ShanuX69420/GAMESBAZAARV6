@@ -74,6 +74,7 @@ from .storage_backends import (
     R2_SIGNED_URL_MAX_SECONDS,
     is_cloudflare_r2_name,
 )
+from .views import STOCK_NOT_SUPPORTED_ERROR
 
 
 def make_image_file(name='proof.png', image_format='PNG', content_type='image/png', size=(2, 2)):
@@ -1886,7 +1887,7 @@ class PurchaseFlowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'Only automated delivery listings can be restocked here.')
+        self.assertEqual(response.data['error'], STOCK_NOT_SUPPORTED_ERROR)
 
     def test_seller_can_view_auto_delivery_stock_with_masked_previews(self):
         listing = Listing.objects.create(
@@ -2113,7 +2114,7 @@ class PurchaseFlowTests(TestCase):
         response = self.client.get(f'/api/listings/{listing.id}/stock/')
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['error'], 'This is not an automated delivery listing.')
+        self.assertEqual(response.data['error'], STOCK_NOT_SUPPORTED_ERROR)
 
     def test_auto_delivery_stock_endpoint_is_owner_scoped(self):
         other_seller = User.objects.create_user(username='other_seller', password='password123')

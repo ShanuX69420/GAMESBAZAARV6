@@ -2480,10 +2480,17 @@ class MyListingsView(generics.ListAPIView):
     permission_classes = [HasCompletedProfile]
 
     def get_queryset(self):
+        # fazer_link rides along for the own-stock fields (a reverse
+        # OneToOne select_related costs nothing when the row is missing).
         return Listing.objects.filter(
             seller=self.request.user
-        ).select_related('seller', 'seller__profile', 'option',
+        ).select_related('seller', 'seller__profile', 'option', 'fazer_link',
                          'game_category__game', 'game_category__category')
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['include_own_stock'] = True
+        return context
 
     def list(self, request, *args, **kwargs):
         all_qs = self.get_queryset()
@@ -2697,8 +2704,26 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
         return Response({'message': 'Listing deleted.'}, status=204)
 
 
+STOCK_NOT_SUPPORTED_ERROR = (
+    'Stock can only be held by automated delivery listings and by supplier-'
+    'linked key / gift card listings.'
+)
+
+
+def _holds_stock(listing):
+    """Listings the stock endpoints may touch: pre-stocked auto-delivery
+    listings (stock IS the listing) and own-stock listings (codes sold ahead
+    of the supplier, see fulfillment.own_stock_supported)."""
+    return listing.is_auto_delivery or fulfillment.own_stock_supported(listing)
+
+
 class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
-    """POST /api/listings/{id}/restock/ - Append automated delivery stock."""
+    """POST /api/listings/{id}/restock/ - Append delivery stock.
+
+    Two kinds of listing hold stock. A pre-stocked auto-delivery listing's
+    quantity IS its line count, so it is kept in step here. An own-stock
+    listing (Fazer-linked keys / gift cards) keeps its supplier-managed
+    quantity and delivery time; the lines are just sold first."""
     permission_classes = [HasCompletedProfile]
     throttle_scope = 'listing_restock'
 
@@ -2714,11 +2739,8 @@ class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
                 pk=pk,
                 seller=request.user,
             )
-            if not listing.is_auto_delivery:
-                return Response(
-                    {'error': 'Only automated delivery listings can be restocked here.'},
-                    status=400,
-                )
+            if not _holds_stock(listing):
+                return Response({'error': STOCK_NOT_SUPPORTED_ERROR}, status=400)
 
             existing_lines = get_auto_delivery_inventory_lines(
                 decrypt_sensitive_text(listing.auto_delivery_data)
@@ -2733,9 +2755,11 @@ class AutoDeliveryRestockView(ScopedPostThrottleMixin, APIView):
                 }, status=400)
 
             listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(combined_lines))
-            listing.quantity = len(combined_lines)
-            listing.delivery_time = 'Instant'
-            update_fields = ['auto_delivery_data', 'quantity', 'delivery_time', 'updated_at']
+            update_fields = ['auto_delivery_data', 'updated_at']
+            if listing.is_auto_delivery:
+                listing.quantity = len(combined_lines)
+                listing.delivery_time = 'Instant'
+                update_fields += ['quantity', 'delivery_time']
             if serializer.validated_data['activate']:
                 if (
                     listing.option_id and listing.status != 'active' and
@@ -2778,11 +2802,8 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
         if lock:
             qs = qs.select_for_update()
         listing = get_object_or_404(qs, pk=pk, seller=request.user)
-        if not listing.is_auto_delivery:
-            return None, Response(
-                {'error': 'This is not an automated delivery listing.'},
-                status=400,
-            )
+        if not _holds_stock(listing):
+            return None, Response({'error': STOCK_NOT_SUPPORTED_ERROR}, status=400)
         return listing, None
 
     @staticmethod
@@ -2892,8 +2913,11 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
                 items[idx] = content
 
             listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(items))
-            listing.quantity = len(items)
-            listing.save(update_fields=['auto_delivery_data', 'quantity', 'updated_at'])
+            update_fields = ['auto_delivery_data', 'updated_at']
+            if listing.is_auto_delivery:
+                listing.quantity = len(items)
+                update_fields.append('quantity')
+            listing.save(update_fields=update_fields)
 
         return Response({
             'message': f'Updated {len(updates)} item(s).',
@@ -2943,7 +2967,9 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
                     )
                 seen.add(idx)
 
-            if len(seen) >= total:
+            # A pre-stocked listing IS its lines; an own-stock listing just
+            # falls back to the supplier when the last code goes.
+            if listing.is_auto_delivery and len(seen) >= total:
                 return Response(
                     {'error': 'Cannot remove all items. Delete the listing instead, or leave at least one item.'},
                     status=400,
@@ -2952,12 +2978,17 @@ class AutoDeliveryStockView(ScopedPostThrottleMixin, APIView):
             # Remove items (highest indices first so earlier indices stay valid)
             remaining_items = [item for i, item in enumerate(items) if i not in seen]
 
-            listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(remaining_items))
-            listing.quantity = len(remaining_items)
-            update_fields = ['auto_delivery_data', 'quantity', 'updated_at']
-            if listing.quantity == 0 and listing.status == 'active':
-                listing.status = 'sold'
-                update_fields.append('status')
+            listing.auto_delivery_data = (
+                encrypt_sensitive_text('\n'.join(remaining_items))
+                if remaining_items else ''
+            )
+            update_fields = ['auto_delivery_data', 'updated_at']
+            if listing.is_auto_delivery:
+                listing.quantity = len(remaining_items)
+                update_fields.append('quantity')
+                if listing.quantity == 0 and listing.status == 'active':
+                    listing.status = 'sold'
+                    update_fields.append('status')
             listing.save(update_fields=update_fields)
 
         return Response({
@@ -3964,12 +3995,23 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         buyer_charge = total + service_fee
 
         is_auto = listing.is_auto_delivery
+        all_lines = []
+        if listing.auto_delivery_data:
+            all_lines = get_auto_delivery_inventory_lines(
+                decrypt_sensitive_text(listing.auto_delivery_data)
+            )
+        # Own stock in front of the supplier (2026-09-06): a Fazer-linked (or
+        # manual) listing may hold Shayan's own codes in the same store.
+        # They sell first, instantly; an order they cannot cover in full goes
+        # down the usual supplier/manual path with the codes left untouched.
+        from_own_stock = False
         if is_auto:
-            auto_delivery_data = decrypt_sensitive_text(listing.auto_delivery_data)
-            all_lines = get_auto_delivery_inventory_lines(auto_delivery_data)
             if len(all_lines) < qty:
                 item_label = 'item' if len(all_lines) == 1 else 'items'
                 return None, f'Only {len(all_lines)} {item_label} remaining for auto-delivery.'
+        elif all_lines and len(all_lines) >= qty:
+            from_own_stock = True
+        if is_auto or from_own_stock:
             delivered_lines = all_lines[:qty]
             remaining_lines = all_lines[qty:]
             delivery_note = '\n'.join(delivered_lines)
@@ -3985,14 +4027,14 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
         # over instantly on every purchase (evergreen — nothing consumed);
         # the buyer can then request Steam Guard codes on demand.
         offline_account = None
-        if not is_auto and listing.offline_account_id:
+        if initial_status == 'pending' and listing.offline_account_id:
             account = listing.offline_account
             if account.enabled:
                 offline_account = account
                 delivery_note = encrypt_sensitive_text(account.delivery_text())
                 initial_status = 'delivered'
                 delivered_at = timezone.now()
-        delivered_instantly = is_auto or offline_account is not None
+        delivered_instantly = is_auto or from_own_stock or offline_account is not None
 
         # Fazer auto-fulfillment: linked listing + global toggle on. The
         # link is fetched with its own query — a nullable reverse OneToOne
@@ -4028,13 +4070,24 @@ def execute_listing_purchase(*, buyer, listing_id, quantity, checkout_info=None,
                 listing.status = 'sold'
             listing.save(update_fields=['auto_delivery_data', 'quantity', 'status'])
         else:
+            update_fields = []
+            if from_own_stock:
+                # Own codes consumed; the listing's quantity/status stay the
+                # supplier's business (unlimited for Fazer-linked listings).
+                listing.auto_delivery_data = (
+                    encrypt_sensitive_text('\n'.join(remaining_lines))
+                    if remaining_lines else ''
+                )
+                update_fields.append('auto_delivery_data')
             # Reduce listing stock only if not evergreen (quantity is not null)
             if listing.quantity is not None:
                 listing.quantity -= qty
                 if listing.quantity <= 0:
                     listing.quantity = 0
                     listing.status = 'sold'
-                listing.save(update_fields=['quantity', 'status'])
+                update_fields += ['quantity', 'status']
+            if update_fields:
+                listing.save(update_fields=update_fields)
 
         # Snapshot the buyer's first-touch source so the admin order list
         # answers "where did this sale come from?" without a profile join

@@ -397,14 +397,18 @@ class ListingAdmin(admin.ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.display(description='Auto-delivery inventory')
+    @admin.display(description='Stock lines (auto-delivery / own stock)')
     def auto_delivery_inventory(self, obj):
-        if not obj or not obj.is_auto_delivery:
+        # Pre-stocked auto-delivery listings AND supplier-linked listings
+        # holding Shayan's own codes (sold ahead of Fazer) both keep their
+        # lines here. Managed from My Listings, never edited raw in admin.
+        if not obj or not (obj.is_auto_delivery or obj.auto_delivery_data):
             return 'N/A'
         item_count = len(get_auto_delivery_inventory_lines(
             decrypt_sensitive_text(obj.auto_delivery_data)
         ))
-        return f'{item_count} encrypted item{"s" if item_count != 1 else ""} stored'
+        label = 'auto-delivery' if obj.is_auto_delivery else 'own-stock'
+        return f'{item_count} encrypted {label} item{"s" if item_count != 1 else ""} stored'
 
 
 @admin.register(RetiredListing)

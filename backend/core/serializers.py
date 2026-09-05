@@ -537,6 +537,8 @@ class ListingSerializer(serializers.ModelSerializer):
     instant_delivery = serializers.SerializerMethodField()
     required_checkout_fields = serializers.SerializerMethodField()
     listing_reviews = serializers.SerializerMethodField()
+    own_stock_supported = serializers.SerializerMethodField()
+    own_stock_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -551,7 +553,7 @@ class ListingSerializer(serializers.ModelSerializer):
             'filter_values', 'filter_display', 'delivery_time',
             'delivery_instructions', 'is_auto_delivery', 'instant_delivery',
             'required_checkout_fields', 'listing_reviews', 'created_at',
-            'sales_count',
+            'sales_count', 'own_stock_supported', 'own_stock_count',
         ]
 
     def get_option_name(self, obj):
@@ -562,6 +564,27 @@ class ListingSerializer(serializers.ModelSerializer):
         platform fulfills automatically (delivery_time flipped to 'Instant'
         while Fazer auto-fulfillment is on)."""
         return obj.is_auto_delivery or obj.delivery_time == 'Instant'
+
+    def get_own_stock_supported(self, obj):
+        """Seller-only (My Listings): may this supplier-linked listing hold
+        the seller's own codes to sell ahead of the supplier? None on public
+        payloads — the seller's inventory is nobody else's business."""
+        if not self.context.get('include_own_stock'):
+            return None
+        from .fulfillment import own_stock_supported
+        return own_stock_supported(obj)
+
+    def get_own_stock_count(self, obj):
+        """Seller-only (My Listings): lines currently held — the seller's own
+        codes on a supplier-linked listing, or the remaining stock of a
+        pre-stocked auto-delivery listing."""
+        if not self.context.get('include_own_stock'):
+            return None
+        if not obj.auto_delivery_data:
+            return 0
+        return len(get_auto_delivery_inventory_lines(
+            decrypt_sensitive_text(obj.auto_delivery_data)
+        ))
 
     def get_required_checkout_fields(self, obj):
         """Checkout inputs the buyer must fill (auto-fulfilled top-ups and

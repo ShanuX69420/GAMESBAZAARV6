@@ -1220,3 +1220,234 @@ class ProcessTimerCommandTests(FazerTestBase):
         call_command('process_fazer_fulfillments', verbosity=0)
         order.refresh_from_db()
         self.assertEqual(order.fazer_task.status, 'queued')
+
+
+# ── Own stock in front of the supplier ───────────────────────────────────────
+
+class OwnStockFirstTests(FazerTestBase):
+    """Shayan's own codes on a Fazer-linked listing sell before Fazer does.
+    The lines live in Listing.auto_delivery_data (same store as pre-stocked
+    auto-delivery listings) while is_auto_delivery stays False, so the
+    listing's quantity/status remain the supplier sync's business."""
+
+    def stock(self, listing, *codes):
+        listing.auto_delivery_data = encrypt_sensitive_text('\n'.join(codes))
+        listing.save(update_fields=['auto_delivery_data'])
+
+    def remaining(self, listing):
+        listing.refresh_from_db()
+        return decrypt_sensitive_text(listing.auto_delivery_data)
+
+    def as_seller(self):
+        self.client.force_authenticate(user=self.seller)
+
+    def test_own_codes_sell_first_then_supplier_takes_over(self):
+        self.stock(self.listing, 'OWN-1', 'OWN-2')
+
+        first = self.buy()
+        self.assertEqual(first.status, 'completed')
+        self.assertTrue(first.was_auto_delivery)
+        self.assertEqual(decrypt_sensitive_text(first.delivery_note), 'OWN-1')
+        self.assertFalse(FazerFulfillmentTask.objects.filter(order=first).exists())
+        self.assertEqual(self.fake.created, [])  # supplier never asked
+        self.assertTrue(Message.objects.filter(
+            order=first, message_type='delivery').exists())
+        self.assertTrue(Message.objects.filter(
+            order=first, content__contains='delivered automatically').exists())
+        self.assertEqual(self.remaining(self.listing), 'OWN-2')
+        self.assertIsNone(self.listing.quantity)      # still unlimited
+        self.assertEqual(self.listing.status, 'active')
+        self.assertFalse(self.listing.is_auto_delivery)
+
+        second = self.buy()
+        self.assertEqual(decrypt_sensitive_text(second.delivery_note), 'OWN-2')
+        self.assertEqual(self.remaining(self.listing), '')
+        self.assertEqual(self.listing.status, 'active')  # never 'sold'
+
+        # Own stock gone: the usual supplier path takes over unchanged.
+        third = self.buy()
+        self.assertEqual(third.status, 'pending')
+        self.assertEqual(third.fazer_task.status, 'queued')
+        self.assertEqual(third.fazer_task.idempotency_key, f'gb-{third.pk}')
+
+    def test_quantity_two_hands_out_two_own_codes(self):
+        self.stock(self.listing, 'OWN-1', 'OWN-2', 'OWN-3')
+        order = self.buy(quantity=2)
+        self.assertEqual(order.status, 'completed')
+        self.assertEqual(decrypt_sensitive_text(order.delivery_note), 'OWN-1\nOWN-2')
+        self.assertEqual(self.remaining(self.listing), 'OWN-3')
+
+    def test_order_own_stock_cannot_cover_goes_whole_to_supplier(self):
+        # One code, two wanted: no splitting across sources — Fazer fills the
+        # whole order and the code waits for the next buyer.
+        self.stock(self.listing, 'OWN-1')
+        order = self.buy(quantity=2)
+        self.assertEqual(order.status, 'pending')
+        self.assertEqual(order.fazer_task.quantity, 2)
+        self.assertEqual(self.remaining(self.listing), 'OWN-1')
+
+    def test_own_stock_sells_even_with_autofulfill_off(self):
+        set_platform_setting(fulfillment.AUTOFULFILL_SETTING_KEY, '0')
+        self.stock(self.listing, 'OWN-1')
+        order = self.buy()
+        self.assertEqual(order.status, 'completed')
+        self.assertEqual(decrypt_sensitive_text(order.delivery_note), 'OWN-1')
+        self.assertFalse(FazerFulfillmentTask.objects.filter(order=order).exists())
+
+    def test_own_stock_on_unlinked_listing_sells_then_falls_back_to_manual(self):
+        plain = Listing.objects.create(
+            seller=self.seller, game_category=self.game_category,
+            title='Hand-fulfilled card', price=Decimal('1000.00'),
+            quantity=None, status='active',
+        )
+        self.stock(plain, 'OWN-1')
+        first = self.buy(listing=plain)
+        self.assertEqual(first.status, 'completed')
+        second = self.buy(listing=plain)
+        self.assertEqual(second.status, 'pending')
+        self.assertFalse(FazerFulfillmentTask.objects.filter(order=second).exists())
+        self.assertTrue(Message.objects.filter(
+            order=second, content__contains='please deliver').exists())
+
+    def test_finite_quantity_still_counts_down_when_own_code_sells(self):
+        self.listing.quantity = 5
+        self.listing.save(update_fields=['quantity'])
+        self.stock(self.listing, 'OWN-1')
+        self.buy()
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.quantity, 4)
+        self.assertEqual(self.remaining(self.listing), '')
+
+    def test_prestocked_auto_delivery_mode_unchanged(self):
+        # A true auto-delivery listing still refuses to oversell and still
+        # goes 'sold' at zero — it never falls through to the supplier.
+        self.listing.is_auto_delivery = True
+        self.listing.quantity = 2  # deliberately out of step with one line
+        self.listing.save(update_fields=['is_auto_delivery', 'quantity'])
+        self.stock(self.listing, 'OLD-1')
+        _order, error = execute_listing_purchase(
+            buyer=self.buyer, listing_id=self.listing.pk, quantity=2)
+        self.assertEqual(error, 'Only 1 item remaining for auto-delivery.')
+        self.buy()
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, 'sold')
+        self.assertEqual(self.listing.quantity, 0)
+
+    # ── seller endpoints ────────────────────────────────────────────────
+
+    def test_restock_adds_own_codes_without_touching_supplier_fields(self):
+        self.as_seller()
+        self.listing.delivery_time = 'Instant'
+        self.listing.save(update_fields=['delivery_time'])
+        response = self.client.post(
+            f'/api/listings/{self.listing.pk}/restock/',
+            {'auto_delivery_data': 'OWN-1\nOWN-2'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.remaining(self.listing), 'OWN-1\nOWN-2')
+        self.assertIsNone(self.listing.quantity)
+        self.assertFalse(self.listing.is_auto_delivery)
+        self.assertEqual(self.listing.delivery_time, 'Instant')
+
+        # Appends, never replaces.
+        response = self.client.post(
+            f'/api/listings/{self.listing.pk}/restock/',
+            {'auto_delivery_data': 'OWN-3'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.remaining(self.listing), 'OWN-1\nOWN-2\nOWN-3')
+
+    def test_restock_revives_a_listing_the_sync_switched_off(self):
+        self.as_seller()
+        self.listing.status = 'inactive'
+        self.listing.retire_reason = 'discontinued'
+        self.listing.save()
+        self.listing.refresh_from_db()
+        self.assertIsNotNone(self.listing.unavailable_since)
+
+        response = self.client.post(
+            f'/api/listings/{self.listing.pk}/restock/',
+            {'auto_delivery_data': 'OWN-1'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, 'active')
+        self.assertIsNone(self.listing.unavailable_since)
+        self.assertEqual(self.listing.retire_reason, '')
+
+    def test_restock_rejected_where_a_code_makes_no_sense(self):
+        self.as_seller()
+        for listing in (self.make_topup_listing(), self.make_gift_listing()):
+            response = self.client.post(
+                f'/api/listings/{listing.pk}/restock/',
+                {'auto_delivery_data': 'OWN-1'}, format='json',
+            )
+            self.assertEqual(response.status_code, 400, listing.title)
+            listing.refresh_from_db()
+            self.assertEqual(listing.auto_delivery_data, '')
+        plain = Listing.objects.create(
+            seller=self.seller, game_category=self.game_category,
+            title='No supplier link', price=Decimal('1000.00'), status='active',
+        )
+        response = self.client.post(
+            f'/api/listings/{plain.pk}/restock/',
+            {'auto_delivery_data': 'OWN-1'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_disabled_link_still_lets_leftover_codes_be_managed(self):
+        self.as_seller()
+        self.stock(self.listing, 'OWN-1')
+        self.link.enabled = False
+        self.link.save(update_fields=['enabled'])
+        response = self.client.get(f'/api/listings/{self.listing.pk}/stock/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['total_items'], 1)
+
+    def test_stock_endpoints_view_edit_and_clear_own_codes(self):
+        self.as_seller()
+        self.stock(self.listing, 'OWN-CODE-1', 'OWN-CODE-2', 'OWN-CODE-3')
+        url = f'/api/listings/{self.listing.pk}/stock/'
+
+        listed = self.client.get(url)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data['total_items'], 3)
+        self.assertNotIn('OWN-CODE-1', listed.data['items'][0]['preview'])
+
+        one = self.client.get(f'{url}?view=1')
+        self.assertEqual(one.data['content'], 'OWN-CODE-2')
+
+        edited = self.client.put(
+            url, {'updates': [{'index': 0, 'content': 'OWN-CODE-X'}]}, format='json',
+        )
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(self.remaining(self.listing),
+                         'OWN-CODE-X\nOWN-CODE-2\nOWN-CODE-3')
+        self.assertIsNone(self.listing.quantity)
+
+        # Unlike a pre-stocked listing, every own code may go: the listing
+        # simply sells from the supplier again.
+        cleared = self.client.delete(url, {'indices': [0, 1, 2]}, format='json')
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        self.assertEqual(self.remaining(self.listing), '')
+        self.assertIsNone(self.listing.quantity)
+        self.assertEqual(self.listing.status, 'active')
+
+    def test_my_listings_exposes_own_stock_fields_public_payload_does_not(self):
+        self.stock(self.listing, 'OWN-1', 'OWN-2')
+        topup = self.make_topup_listing()
+
+        self.as_seller()
+        response = self.client.get('/api/listings/mine/')
+        self.assertEqual(response.status_code, 200)
+        by_id = {row['id']: row for row in response.data['listings']}
+        self.assertTrue(by_id[self.listing.pk]['own_stock_supported'])
+        self.assertEqual(by_id[self.listing.pk]['own_stock_count'], 2)
+        self.assertFalse(by_id[topup.pk]['own_stock_supported'])
+        self.assertEqual(by_id[topup.pk]['own_stock_count'], 0)
+
+        self.client.force_authenticate(user=self.buyer)
+        public = self.client.get(f'/api/listings/{self.listing.pk}/')
+        self.assertEqual(public.status_code, 200)
+        self.assertIsNone(public.data['own_stock_supported'])
+        self.assertIsNone(public.data['own_stock_count'])

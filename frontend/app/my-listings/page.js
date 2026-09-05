@@ -231,7 +231,10 @@ export default function MyListingsPage() {
 
   async function handleRemoveStockItems() {
     if (selectedStockItems.size === 0) return;
-    if (selectedStockItems.size === stockItems.length) {
+    // A pre-stocked listing IS its items; own stock on a supplier-linked
+    // listing may be cleared out — the supplier simply takes over again.
+    const stockListing = listings.find((l) => l.id === stockModal);
+    if (stockListing?.is_auto_delivery && selectedStockItems.size === stockItems.length) {
       setError('Cannot remove all items. Delete the listing instead, or leave at least one item.');
       return;
     }
@@ -325,6 +328,9 @@ export default function MyListingsPage() {
       setActionLoading(null);
     }
   }
+
+  const restockListing = restockModal ? listings.find((l) => l.id === restockModal) : null;
+  const restockIsOwnStock = Boolean(restockListing && !restockListing.is_auto_delivery && restockListing.own_stock_supported);
 
   if (loading || !user) {
     return (
@@ -543,6 +549,12 @@ export default function MyListingsPage() {
                     Stock: {listing.quantity === null ? '∞' : listing.quantity}
                     {listing.listing_mode === 'currency' && listing.unit_name ? ` ${listing.unit_name}` : ''}
                   </span>
+                  {!listing.is_auto_delivery && listing.own_stock_supported && (
+                    <span className="ml-card-meta-item" title="Your own codes are delivered first; the supplier fills orders once they run out">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/></svg>
+                      Own stock: {listing.own_stock_count ?? 0}
+                    </span>
+                  )}
                   {listing.listing_mode === 'currency' && (
                     <span className="ml-card-meta-item">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
@@ -574,7 +586,7 @@ export default function MyListingsPage() {
                       )}
                     </button>
                   )}
-                  {listing.is_auto_delivery && (
+                  {(listing.is_auto_delivery || listing.own_stock_supported) && (
                     <>
                       <button
                         className="ml-action-btn ml-action-stock"
@@ -766,10 +778,15 @@ export default function MyListingsPage() {
         <div className="image-preview-overlay" onClick={() => setRestockModal(null)}>
           <div className="image-preview-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
             <div className="image-preview-header">
-              <span>Restock Auto Delivery</span>
+              <span>{restockIsOwnStock ? 'Add Own Stock' : 'Restock Auto Delivery'}</span>
               <button className="image-preview-close" onClick={() => setRestockModal(null)}>x</button>
             </div>
             <div style={{ padding: '20px' }}>
+              {restockIsOwnStock && (
+                <p className="form-hint" style={{ marginBottom: '14px' }}>
+                  Your codes are delivered first, instantly. Once they run out, orders go to the supplier as usual.
+                </p>
+              )}
               <div className="form-group">
                 <label className="form-label">Delivery items</label>
                 <textarea

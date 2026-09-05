@@ -138,6 +138,34 @@ def get_active_link(listing):
     return link
 
 
+# ── Own stock in front of the supplier (2026-09-06) ─────────────────────────
+#
+# A supplier-linked listing may also hold Shayan's OWN codes in
+# Listing.auto_delivery_data (the same encrypted one-code-per-line store the
+# pre-stocked auto-delivery listings use). The purchase flow hands those out
+# first — instantly, order completed on the spot — and only asks Fazer once
+# they are gone, so his inventory always sells before supplier money is spent.
+# Only code products qualify: a top-up or Steam gift cannot be a line of text.
+OWN_STOCK_LINK_KINDS = ('gamekey', 'giftcard')
+
+
+def own_stock_supported(listing):
+    """Can this listing hold own stock in front of its supplier? True for a
+    listing linked to a Fazer code product (enabled or not — a pruned link
+    still leaves codes worth selling) and for any listing that already holds
+    lines, so leftover codes can always be seen and removed. Pre-stocked
+    auto-delivery listings are a separate mode and answer False here."""
+    if listing.is_auto_delivery:
+        return False
+    if listing.auto_delivery_data:
+        return True
+    try:
+        link = listing.fazer_link
+    except FazerProductLink.DoesNotExist:
+        return False
+    return link.kind in OWN_STOCK_LINK_KINDS
+
+
 def build_task_for_order(order, link):
     """Create the fulfillment task inside the purchase transaction."""
     deadline = (GIFT_FULFILLMENT_DEADLINE if link.kind == 'gift'
