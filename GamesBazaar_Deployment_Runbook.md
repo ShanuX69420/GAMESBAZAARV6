@@ -135,6 +135,9 @@ sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py migrate --noinput
 systemctl restart gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend
 
 systemctl is-active gamesbazaar-web gamesbazaar-backend gamesbazaar-frontend nginx postgresql redis-server
+
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py warm_page_cache
 ```
 
 If all services say `active`, the deploy probably worked.
@@ -154,7 +157,45 @@ sudo -u gamesbazaar npm run build
 
 systemctl restart gamesbazaar-frontend
 systemctl is-active gamesbazaar-frontend
+
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py warm_page_cache
 ```
+
+---
+
+## Warm The Page Cache
+
+Always run this after a frontend build, once `gamesbazaar-frontend` is back up:
+
+```bash
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py warm_page_cache
+```
+
+Why: game and category pages are cached copies that the site builds the first
+time somebody opens them. `npm run build` throws every one of those copies
+away, so after a deploy the next visitor to each page waits for the whole page
+to be built from scratch (about 0.6 seconds) instead of getting the ready-made
+copy (under 0.1 seconds). This command opens every page that has stock once, so
+the ready-made copies exist before any real visitor arrives.
+
+It takes a few minutes and prints a summary. Useful options:
+
+```bash
+# See which pages it would open, without opening any of them.
+manage.py warm_page_cache --dry-run
+
+# Gentler on the server (one page at a time instead of three).
+manage.py warm_page_cache --concurrency 1
+
+# Warm a handful of pages by hand, e.g. after re-seeding SEO copy.
+manage.py warm_page_cache --paths /games/pubg/top-ups /games/valorant/vp
+```
+
+`rendered now (MISS)` counts pages it actually built; `already warm (HIT)`
+counts pages that were fine already. Skipping this step is not dangerous — the
+site just feels slow for whoever clicks each page first.
 
 ---
 
@@ -472,6 +513,9 @@ If you change frontend `.env.production`, rebuild and restart frontend:
 cd /opt/gamesbazaar/app/frontend
 sudo -u gamesbazaar npm run build
 systemctl restart gamesbazaar-frontend
+
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py warm_page_cache
 ```
 
 ---
@@ -502,6 +546,9 @@ Run:
 cd /opt/gamesbazaar/app/frontend
 sudo -u gamesbazaar npm run build
 systemctl restart gamesbazaar-frontend
+
+cd /opt/gamesbazaar/app/backend
+sudo -u gamesbazaar /opt/gamesbazaar/venv/bin/python manage.py warm_page_cache
 ```
 
 Then hard refresh browser:
@@ -545,6 +592,7 @@ Use this checklist after every deploy:
 [ ] Backend restarted
 [ ] Frontend restarted
 [ ] Services are active
+[ ] Page cache warmed (manage.py warm_page_cache)
 [ ] Frontend URL returns 200
 [ ] API URL returns 200
 [ ] No scary errors in logs
