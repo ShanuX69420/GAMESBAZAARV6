@@ -5,7 +5,7 @@ import { formatStartingPrice } from '@/lib/price';
 
 export default function GameItem({ game }) {
   return (
-    <Link href={`/games/${game.slug}`} className="game-item">
+    <Link href={`/games/${game.slug}`} prefetch={false} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
           <Image

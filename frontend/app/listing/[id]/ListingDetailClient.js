@@ -619,7 +619,7 @@ export default function ListingDetailClient({ initialListing = null }) {
                       <ul className="listing-alternatives-list">
                         {alternatives.map((alt) => (
                           <li key={alt.id}>
-                            <Link href={`/listing/${alt.id}`} className="listing-alternative">
+                            <Link href={`/listing/${alt.id}`} prefetch={false} className="listing-alternative">
                               <span className="listing-alternative-name">{alt.option_name || alt.title}</span>
                               <span className="listing-alternative-price">PKR {formatAmount(alt.price)}</span>
                             </Link>

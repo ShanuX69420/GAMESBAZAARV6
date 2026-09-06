@@ -71,7 +71,7 @@ export default async function SiteReviews() {
             </span>
           </p>
         )}
-        <Link href="/reviews" className="site-reviews-all-link">
+        <Link href="/reviews" prefetch={false} className="site-reviews-all-link">
           View all reviews
         </Link>
       </div>

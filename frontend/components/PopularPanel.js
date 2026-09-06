@@ -8,7 +8,7 @@ export default function PopularPanel({ section }) {
     <div className="popular-panel">
       <div className="popular-panel-header">
         <h3 className="popular-panel-title">{section.title}</h3>
-        <Link href={`/${section.slug}`} className="popular-panel-link">
+        <Link href={`/${section.slug}`} prefetch={false} className="popular-panel-link">
           View All →
         </Link>
       </div>
@@ -17,6 +17,7 @@ export default function PopularPanel({ section }) {
           <li key={`${item.game_slug}-${item.category_slug}`}>
             <Link
               href={`/games/${item.game_slug}/${item.category_slug}`}
+              prefetch={false}
               className="popular-panel-item"
             >
               <span className="popular-panel-icon">

@@ -82,10 +82,13 @@ export default async function CategorySectionPage({
   const allLetters = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
   const activeLetters = new Set(grouped.map((g) => g.letter));
 
+  // prefetch={false}: /keys lists 800+ rows and every row scrolled into view
+  // would otherwise cost a server render (2026-09-06 slow-click diagnosis).
   const gameRow = (item) => (
     <Link
       key={`${item.game_slug}-${item.category_slug}`}
       href={`/games/${item.game_slug}/${item.category_slug}${linkSuffix}`}
+      prefetch={false}
       className="game-item"
     >
       <div className="game-icon">

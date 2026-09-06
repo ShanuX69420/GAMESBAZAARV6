@@ -875,7 +875,7 @@ export default function GameCategoryClient({ initialData = null }) {
                     <span className="offer-buybox-price">PKR {Number(bestOffer.price).toLocaleString()}</span>
                   </div>
 
-                  <Link href={`/listing/${bestOffer.id}?buy=1`} className="btn btn-primary btn-full buy-now-btn">
+                  <Link href={`/listing/${bestOffer.id}?buy=1`} prefetch={false} className="btn btn-primary btn-full buy-now-btn">
                     Buy Now
                   </Link>
 
@@ -934,7 +934,7 @@ export default function GameCategoryClient({ initialData = null }) {
                           <DeliveryTimeBadge listing={offer} />
                         </div>
                         <div className="offer-seller-row-price">PKR {Number(offer.price).toLocaleString()}</div>
-                        <Link href={`/listing/${offer.id}?buy=1`} className="btn btn-outline offer-seller-row-buy">
+                        <Link href={`/listing/${offer.id}?buy=1`} prefetch={false} className="btn btn-outline offer-seller-row-buy">
                           Buy now
                         </Link>
                         {offer.delivery_instructions ? (
@@ -1099,6 +1099,7 @@ export default function GameCategoryClient({ initialData = null }) {
                 {qtyValid ? (
                   <Link
                     href={`/listing/${currentOffer.id}?buy=1&qty=${parsedQty}`}
+                    prefetch={false}
                     className="btn btn-primary btn-full buy-now-btn"
                   >
                     PKR {formatUnitPrice(currencyTotal)} | Buy now
@@ -1215,11 +1216,15 @@ export default function GameCategoryClient({ initialData = null }) {
         </div>
 
         {listings && listings.length > 0 ? (
+          {/* prefetch={false}: every card in view would otherwise trigger a server
+              render of its page (2026-09-06 slow-click diagnosis). Listing and category
+              pages are dynamic, so the prefetch caches nothing useful anyway. */}
           <div className="listing-cards-grid">
             {listings.map((listing) => (
               <Link
                 key={listing.id}
                 href={`/listing/${listing.id}`}
+                prefetch={false}
                 className="listing-card"
               >
                 {/* Card Header - Title & Price */}

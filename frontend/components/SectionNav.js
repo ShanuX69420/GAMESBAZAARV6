@@ -19,6 +19,7 @@ export default function SectionNav() {
             <li key={href}>
               <Link
                 href={href}
+                prefetch={false}
                 className="section-nav-link"
                 aria-current={isSectionPath(pathname, href) ? 'page' : undefined}
               >
