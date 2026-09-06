@@ -1216,10 +1216,10 @@ export default function GameCategoryClient({ initialData = null }) {
         </div>
 
         {listings && listings.length > 0 ? (
-          {/* prefetch={false}: every card in view would otherwise trigger a server
-              render of its page (2026-09-06 slow-click diagnosis). Listing and category
-              pages are dynamic, so the prefetch caches nothing useful anyway. */}
           <div className="listing-cards-grid">
+            {/* prefetch={false}: every card in view would otherwise trigger a server
+                render of its page (2026-09-06 slow-click diagnosis). Listing and category
+                pages are dynamic, so the prefetch caches nothing useful anyway. */}
             {listings.map((listing) => (
               <Link
                 key={listing.id}
