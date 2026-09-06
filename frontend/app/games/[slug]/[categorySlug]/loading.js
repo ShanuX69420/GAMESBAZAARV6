@@ -1,15 +1,39 @@
+'use client';
+
+import { useEffect } from 'react';
+
 // Instant loading state for /games/<game>/<category> (brand and region
 // pages). Shown the moment a buyer clicks a game or a category tab, while the
 // server renders the real page — before this, the old page sat frozen for the
 // whole round trip (0.5–1 s cold, 2026-09-06 slow-click diagnosis). Mirrors
 // the page's own chrome (breadcrumb, title, tab strip, filter row, section
 // header, card grid) with the real class names, so the swap to live content
-// barely moves anything. Server component, no data, no params.
+// barely moves anything. React skips the fallback entirely when the payload
+// arrives fast, so warm pages never flash it.
 
 const CARD_COUNT = 6;
 const TAB_WIDTHS = [96, 112, 88];
 
+// Back/forward navigations must keep the browser-restored scroll position;
+// everything else should start at the top (see the effect below).
+let lastHistoryNavigation = 0;
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    lastHistoryNavigation = Date.now();
+  });
+}
+
 export default function Loading() {
+  // The router scrolls to the top only when the real page commits. Until
+  // then the viewport stays wherever the link was clicked, and because this
+  // skeleton is shorter than the page it replaces, a link clicked below the
+  // first screen would show the reviews strip and footer instead of the
+  // skeleton (measured 2026-09-06). Scroll now, the way the commit will.
+  useEffect(() => {
+    if (Date.now() - lastHistoryNavigation < 1500) return;
+    if (window.scrollY > 0) window.scrollTo(0, 0);
+  }, []);
+
   return (
     <div className="container category-skeleton" role="status" aria-live="polite" aria-label="Loading listings">
       <div className="page-header" aria-hidden="true">
