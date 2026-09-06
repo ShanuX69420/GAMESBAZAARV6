@@ -12029,7 +12029,10 @@ html[data-auth-hint="1"] .navbar-guest-links {
 .skeleton-heading {
   display: block;
   height: 28px;
-  width: min(60%, 420px);
+  /* Fixed, not a percentage: the header is a flex row whose info column is
+     content-sized, so a percentage width resolves to nothing. */
+  width: 320px;
+  max-width: 100%;
   margin: 4px 0;
 }
 
