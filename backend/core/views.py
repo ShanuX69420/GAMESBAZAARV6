@@ -2636,9 +2636,24 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
     throttle_scope = 'listing_mutation'
 
     def get_permissions(self):
-        if self.request.method == 'GET':
+        if self.request.method in ('GET', 'HEAD'):
             return [permissions.AllowAny()]
         return [HasCompletedProfile()]
+
+    @staticmethod
+    def _respond(request, data):
+        """An anonymous answer is the same for every visitor, so nginx keeps it
+        for a while (the api_cache location in deploy/nginx/gamesbazaar.conf
+        stores strictly per this header) — a listing page's second view within
+        the window never reaches Django. A logged-in caller's answer can differ
+        (the owner and staff see a listing past its lifecycle, the owner their
+        own delivery instructions), so it stays private."""
+        response = Response(data)
+        response['Cache-Control'] = (
+            'private' if request.user.is_authenticated
+            else public_cache_header(BROWSE_CACHE_SECONDS)
+        )
+        return response
 
     def get(self, request, pk):
         listing = Listing.objects.select_related(
@@ -2661,7 +2676,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
             record = RetiredListing.objects.filter(pk=pk).first()
             if record is None:
                 raise Http404
-            return Response(listing_lifecycle.gone_payload(
+            return self._respond(request, listing_lifecycle.gone_payload(
                 record.listing_id, listing_lifecycle.lifecycle_for_retired(record),
             ))
 
@@ -2676,7 +2691,9 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
                 listing_lifecycle.stamp_unavailable(listing)
             lifecycle = listing_lifecycle.lifecycle_for_listing(listing)
             if lifecycle['state'] != 'paused' and not is_insider:
-                return Response(listing_lifecycle.gone_payload(listing.pk, lifecycle))
+                return self._respond(
+                    request, listing_lifecycle.gone_payload(listing.pk, lifecycle),
+                )
         elif listing.unavailable_since is not None or listing.retire_reason:
             listing_lifecycle.clear_stale_stamp(listing)
 
@@ -2695,7 +2712,7 @@ class ListingDetailView(ScopedPostThrottleMixin, APIView):
         if lifecycle['state'] == 'paused':
             lifecycle['alternatives'] = listing_lifecycle.alternatives(listing)
         data['lifecycle'] = lifecycle
-        return Response(data)
+        return self._respond(request, data)
 
     def put(self, request, pk):
         from .serializers import UpdateListingSerializer

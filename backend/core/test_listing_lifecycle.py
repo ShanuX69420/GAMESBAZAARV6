@@ -248,6 +248,62 @@ class ListingDetailLifecycleTests(ListingLifecycleTestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class ListingDetailCacheHeaderTests(ListingLifecycleTestCase):
+    """nginx keeps anonymous listing-detail answers (the api_cache location in
+    deploy/nginx/gamesbazaar.conf caches strictly per Cache-Control), so every
+    anonymous answer must carry the public header and no logged-in answer may."""
+    PUBLIC = 'public, max-age=30, s-maxage=300'
+
+    def test_anonymous_answers_are_public_in_every_lifecycle_state(self):
+        # Distinct titles: an off listing with an active twin of the same
+        # title is superseded (gone), not paused.
+        active = self.make_listing('Lifecycle Game (PC) | Steam Key | Global')
+        paused = self.make_listing(
+            'Lifecycle Game Deluxe (PC) | Steam Key | Global',
+            status='inactive', created_days_ago=20, off_days_ago=5,
+        )
+        gone = self.make_listing(
+            'Lifecycle Game Gold (PC) | Steam Key | Global',
+            status='inactive', created_days_ago=90, off_days_ago=PAUSE_DAYS + 1,
+        )
+        unindexed = self.make_listing(
+            'Lifecycle Game Ultimate (PC) | Steam Key | Global', status='inactive',
+        )
+        deleted = self.make_listing('Lifecycle Game Bundle (PC) | Steam Key | Global', created_days_ago=10)
+        deleted_id = deleted.pk
+        deleted.delete()
+
+        for listing_id, state in (
+            (active.pk, 'active'), (paused.pk, 'paused'), (gone.pk, 'gone'),
+            (unindexed.pk, 'unindexed'), (deleted_id, 'gone'),
+        ):
+            response = self.get(listing_id)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['lifecycle']['state'], state)
+            self.assertEqual(response['Cache-Control'], self.PUBLIC)
+
+    def test_logged_in_answers_stay_private(self):
+        listing = self.make_listing()
+
+        for user in (self.buyer, self.seller, self.staff):
+            response = self.get(listing.pk, user=user)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Cache-Control'], 'private')
+
+    def test_head_is_answered_like_get(self):
+        # nginx caches HEAD too; the view used to answer it 401 because only
+        # GET was on the anonymous list.
+        listing = self.make_listing()
+        self.client.force_authenticate(user=None)
+
+        response = self.client.head(f'/api/listings/{listing.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], self.PUBLIC)
+
+
 class ListingAvailabilityStampTests(ListingLifecycleTestCase):
     def test_switching_off_stamps_even_with_update_fields(self):
         listing = self.make_listing()
