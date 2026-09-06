@@ -1,24 +1,15 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import Select from '@/components/Select';
 
 // Method + Region + Sort dropdowns on a View All section page (/keys).
-// Picking a value reloads the page with ?method= / ?region= / ?sort= so the
-// server component refetches the section narrowed and ordered to match.
+// Picking a value hands the whole selection back to SectionGameList, which
+// refetches the section in place and rewrites the URL — the page itself is a
+// cached copy that never varies by query, so there is nothing to navigate to.
 export default function SectionFilters({
-  basePath, methods, regions, sorts = [], method, region, sort = '',
+  methods, regions, sorts = [], method, region, sort = '', onChange,
 }) {
-  const router = useRouter();
-
-  const navigate = (nextMethod, nextRegion, nextSort) => {
-    const params = new URLSearchParams();
-    if (nextMethod) params.set('method', nextMethod);
-    if (nextRegion) params.set('region', nextRegion);
-    if (nextSort) params.set('sort', nextSort);
-    const query = params.toString();
-    router.push(query ? `${basePath}?${query}` : basePath, { scroll: false });
-  };
+  const select = (next) => onChange({ method, region, sort, ...next });
 
   return (
     <div className="section-filter-bar">
@@ -31,7 +22,7 @@ export default function SectionFilters({
             <Select
               id="section-method-filter"
               value={method || ''}
-              onChange={(next) => navigate(next, region, sort)}
+              onChange={(next) => select({ method: next })}
               options={[
                 { value: '', label: 'All Methods' },
                 ...methods.map((choice) => ({ value: choice.value, label: choice.label })),
@@ -50,7 +41,7 @@ export default function SectionFilters({
             <Select
               id="section-region-filter"
               value={region || ''}
-              onChange={(next) => navigate(method, next, sort)}
+              onChange={(next) => select({ region: next })}
               options={[
                 { value: '', label: 'All Regions' },
                 ...regions.map((choice) => ({ value: choice.value, label: choice.label })),
@@ -69,7 +60,7 @@ export default function SectionFilters({
             <Select
               id="section-sort-filter"
               value={sort || ''}
-              onChange={(next) => navigate(method, region, next)}
+              onChange={(next) => select({ sort: next })}
               options={sorts.map((choice) => ({
                 value: choice.value, label: choice.label,
               }))}
@@ -82,7 +73,7 @@ export default function SectionFilters({
         <button
           type="button"
           className="btn btn-sm btn-outline"
-          onClick={() => router.push(basePath, { scroll: false })}
+          onClick={() => onChange({ method: '', region: '', sort: '' })}
         >
           Reset filters
         </button>

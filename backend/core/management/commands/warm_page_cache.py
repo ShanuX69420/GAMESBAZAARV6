@@ -12,10 +12,12 @@ to the Next server on 127.0.0.1:3000 (nginx caches `/api/` and `/_next/image`,
 never page HTML) and sends the public Host header, so what gets cached is
 byte-for-byte what a visitor would have rendered.
 
-Only two routes are cacheable today: `/games/<game>/<category>` and
+Only the two dynamic routes need warming: `/games/<game>/<category>` and
 `/games/<game>/<category>/<region>`, which declare `generateStaticParams()`
-returning `[]`. Section pages (/keys, /accounts, ...) and /listing/<id> still
-render per request, so asking for them here would only burn CPU.
+returning `[]`. The section pages (/keys, /accounts, ...) and /games take no
+route params, so `npm run build` prerenders them itself and they are already
+warm when the server starts. /listing/<id> still renders per request, so
+asking for those here would only burn CPU.
 """
 
 import threading

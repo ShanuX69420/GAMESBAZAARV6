@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { GameIconFallback } from '@/lib/icons';
+import { optimizedImageUrl } from '@/lib/imageUrl';
 import { formatStartingPrice } from '@/lib/price';
 import { gameTilePath } from '@/lib/marketplaceUrls';
 
@@ -9,12 +9,16 @@ export default function GameItem({ game }) {
     <Link href={gameTilePath(game)} prefetch={false} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
-          <Image
-            src={game.icon_url}
+          // A plain <img> at one fixed optimizer URL rather than next/image's
+          // src + 1x/2x srcSet — see lib/imageUrl.js. /games lists 700+ rows,
+          // where that was ~250 KB of the HTML.
+          <img
+            src={optimizedImageUrl(game.icon_url)}
             alt={game.name}
             width={40}
             height={40}
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <GameIconFallback size={24} />

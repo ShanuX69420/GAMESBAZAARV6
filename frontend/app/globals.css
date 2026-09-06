@@ -1664,6 +1664,15 @@ html[data-auth-hint="1"] .navbar-guest-links {
   }
 }
 
+/* A filter change refetches the list in place. The old rows stay put and fade
+   rather than collapsing to a spinner, so the page keeps its height and the
+   dropdown you just used does not jump away under the cursor. */
+.section-list-busy {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
 /* ── Alphabetical Inline Dividers ──────────────────────────────────────────── */
 
 .games-grid-alpha {

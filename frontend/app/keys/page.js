@@ -12,12 +12,10 @@ export const metadata = {
   }),
 };
 
-export default async function AllKeysPage({ searchParams }) {
-  const query = await searchParams;
-  const method = typeof query?.method === 'string' ? query.method : '';
-  const region = typeof query?.region === 'string' ? query.region : '';
-  const sort = typeof query?.sort === 'string' ? query.sort : '';
-  return (
-    <CategorySectionPage section={section} method={method} region={region} sort={sort} />
-  );
+// No searchParams: reading them made this the one section page Next had to
+// render per request (no-store, ~0.5 s of server time on the 1-vCPU box while
+// /accounts and friends were served prerendered). ?method=/?region=/?sort= are
+// applied in the browser instead — see components/SectionGameList.js.
+export default function AllKeysPage() {
+  return <CategorySectionPage section={section} />;
 }
