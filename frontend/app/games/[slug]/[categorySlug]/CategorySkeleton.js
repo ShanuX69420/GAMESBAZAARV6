@@ -2,14 +2,17 @@
 
 import { useEffect } from 'react';
 
-// Instant loading state for /games/<game>/<category> (brand and region
-// pages). Shown the moment a buyer clicks a game or a category tab, while the
-// server renders the real page — before this, the old page sat frozen for the
-// whole round trip (0.5–1 s cold, 2026-09-06 slow-click diagnosis). Mirrors
-// the page's own chrome (breadcrumb, title, tab strip, filter row, section
-// header, card grid) with the real class names, so the swap to live content
-// barely moves anything. React skips the fallback entirely when the payload
-// arrives fast, so warm pages never flash it.
+// Loading state for /games/<game>/<category> (brand and region pages),
+// mounted as loading.js in the (brand) and [regionSlug] segments — BELOW
+// their layouts on purpose: a loading boundary above a layout lets its
+// notFound() fire after the shell has gone out, and the not-found screen
+// then ships with a 200 (the cached page would store it that way too).
+// Shown while a clicked page's payload is on its way; since fix D that
+// payload is a cached copy that arrives in one piece in ~0.2 s, so a warm
+// click rarely sees it, and a first visit (cold cache) waits for the render
+// the same way it did before. Mirrors the page's own chrome (breadcrumb,
+// title, tab strip, filter row, section header, card grid) with the real
+// class names, so the swap to live content barely moves anything.
 
 const CARD_COUNT = 6;
 const TAB_WIDTHS = [96, 112, 88];
@@ -23,7 +26,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export default function Loading() {
+export default function CategorySkeleton() {
   // The router scrolls to the top only when the real page commits. Until
   // then the viewport stays wherever the link was clicked, and because this
   // skeleton is shorter than the page it replaces, a link clicked below the

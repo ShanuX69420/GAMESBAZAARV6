@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
 import {
@@ -10,6 +10,7 @@ import {
   buildSellerProfilePath,
 } from '@/lib/marketplaceUrls';
 import { isFilterVisible, pruneHiddenFilterValues } from '@/lib/filterDependencies';
+import { landingParamsFromSearch } from '@/lib/categoryLanding';
 import { regionPageHeading, regionSwitchTarget, stockedRegionPages } from '@/lib/regionPages';
 import ItemRequestForm from '@/components/ItemRequestForm';
 import Select from '@/components/Select';
@@ -141,7 +142,10 @@ export default function GameCategoryClient({ initialData = null }) {
   const pinnedFilters = regionPage
     ? { [String(regionPage.filter_id)]: regionPage.region }
     : {};
-  const searchParams = useSearchParams();
+  // No useSearchParams here: the page is a static copy of its bare URL and
+  // that hook would push this whole tree behind a Suspense boundary, leaving
+  // the listings out of the server HTML. The query string is read from
+  // window.location after mount instead (see the mount effect below).
   const filterEffectReadyRef = useRef(false);
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(!initialData);
@@ -165,7 +169,10 @@ export default function GameCategoryClient({ initialData = null }) {
   const hasListingData = Boolean(data);
   const loadedListingCount = data?.listings?.length || 0;
 
-  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, search = '', ordering = '', option = null) => {
+  // `landing` carries the URL's ?method=/?region= (lib/categoryLanding.js):
+  // the backend maps them onto this page's real filters and echoes the
+  // result in applied_filters, which then seeds the filter UI.
+  const fetchData = useCallback(async (filters = {}, offset = 0, append = false, instantOnly = false, search = '', ordering = '', option = null, landing = null) => {
     if (append) {
       setLoadingMore(true);
     } else {
@@ -184,6 +191,8 @@ export default function GameCategoryClient({ initialData = null }) {
         search,
         ordering,
         option: option || '',
+        method: landing?.method || '',
+        region: landing?.region || '',
       });
       const res = await fetch(url);
       if (res.ok) {
@@ -195,7 +204,13 @@ export default function GameCategoryClient({ initialData = null }) {
             listings: [...(prev.listings || []), ...(nextData.listings || [])],
           };
         });
-        if (!append && nextData.listing_mode === 'offer' && !option) {
+        if (landing) {
+          // Seed the filter UI with what the backend applied, without the
+          // filter effect below fetching the same listings a second time.
+          filterEffectReadyRef.current = false;
+          setActiveFilters({ ...(nextData.applied_filters || {}) });
+          setSelectedOption(nextData.selected_option_id ?? null);
+        } else if (!append && nextData.listing_mode === 'offer' && !option) {
           // First fetch without an explicit option: the backend picked the
           // default option for us — adopt it so option cards highlight.
           setSelectedOption(nextData.selected_option_id ?? null);
@@ -211,22 +226,28 @@ export default function GameCategoryClient({ initialData = null }) {
 
   useEffect(() => {
     // Same object reference on first mount, so this bails out without a
-    // re-render (and without a duplicate fetch — the SSR data already
-    // reflects applied_filters); on category switches it resets properly.
+    // re-render (and without a duplicate fetch — the server payload's
+    // applied_filters is the pinned region or nothing); on category
+    // switches it resets properly.
     setActiveFilters(initialData?.applied_filters || {});
     setInstantDeliveryFilter(false);
     setSearchInput('');
     setSearchQuery('');
     setSortBy('');
     filterEffectReadyRef.current = false;
+    // The server payload is always the bare page (it is cached per URL and
+    // never sees the query string). A shared ?option= link or a /keys ad
+    // landing (?method=/?region=) is applied here with one more fetch — the
+    // same in-place refresh a filter change makes.
+    const landing = landingParamsFromSearch(window.location.search);
     if (initialData) {
       setData(initialData);
       setSelectedOption(initialData.selected_option_id ?? null);
       setLoading(false);
       setLoadingMore(false);
-      return;
+      if (!landing) return;
     }
-    fetchData({}, 0, false, false, '', '');
+    fetchData({}, 0, false, false, '', '', landing?.option || null, landing);
   }, [fetchData, initialData]);
 
   // Background polling for listing price/stock updates
@@ -427,7 +448,7 @@ export default function GameCategoryClient({ initialData = null }) {
     setBuyboxInstructionsOpen(false);
     setExpandedInstructions(new Set());
     // Shallow URL update so the selection is shareable without a navigation
-    const query = new URLSearchParams(searchParams.toString());
+    const query = new URLSearchParams(window.location.search);
     query.set('option', String(optionId));
     window.history.replaceState(null, '', `${window.location.pathname}?${query.toString()}`);
     fetchData(activeFilters, 0, false, instantDeliveryFilter, searchQuery, sortBy, optionId);
@@ -1218,8 +1239,8 @@ export default function GameCategoryClient({ initialData = null }) {
         {listings && listings.length > 0 ? (
           <div className="listing-cards-grid">
             {/* prefetch={false}: every card in view would otherwise trigger a server
-                render of its page (2026-09-06 slow-click diagnosis). Listing and category
-                pages are dynamic, so the prefetch caches nothing useful anyway. */}
+                render of its page (2026-09-06 slow-click diagnosis). Listing pages are
+                dynamic, so the prefetch caches nothing useful anyway. */}
             {listings.map((listing) => (
               <Link
                 key={listing.id}

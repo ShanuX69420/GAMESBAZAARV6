@@ -10,38 +10,30 @@ import GameCategoryClient from '../GameCategoryClient';
 // from seo_copy.json), so anything else is a plain 404 — never a thin
 // auto-generated page for every region in the dropdown. Metadata + JSON-LD
 // live in ./layout.js.
+//
+// Cached the same way as the brand page (see ../(brand)/page.js): no
+// request-time reads, generateStaticParams present, ?option=/?method=
+// applied by GameCategoryClient after mount.
+export async function generateStaticParams() {
+  return [];
+}
 
-async function fetchInitialRegionData({ slug, categorySlug, regionSlug, option, method }) {
-  const res = await fetchCategoryPage(
-    categoryPageApiUrl({ slug, categorySlug, regionSlug, option, method }),
-  );
+async function fetchInitialRegionData({ slug, categorySlug, regionSlug }) {
+  const res = await fetchCategoryPage(categoryPageApiUrl({ slug, categorySlug, regionSlug }));
   if (res.status === 404) notFound();
   if (!res.ok) throw new Error('Failed to fetch game category region');
   return res.json();
 }
 
-export default async function GameCategoryRegionPage({ params, searchParams }) {
+export default async function GameCategoryRegionPage({ params }) {
   const { slug, categorySlug, regionSlug } = await params;
-  const query = await searchParams;
-  const option = String(query?.option || '');
-  const method = String(query?.method || '');
-  let initialData = null;
-
-  try {
-    initialData = await fetchInitialRegionData({ slug, categorySlug, regionSlug, option, method });
-  } catch (error) {
-    if (error?.digest?.startsWith?.('NEXT_HTTP_ERROR_FALLBACK;404')) {
-      throw error;
-    }
-    console.error('Failed to fetch initial region page data:', error);
-  }
+  const initialData = await fetchInitialRegionData({ slug, categorySlug, regionSlug });
 
   // Renamed categories: only the buyer-facing slug is canonical, here too.
   const canonicalPath = canonicalCategoryPath({
     gameSlug: slug,
     requestedSlug: categorySlug,
     data: initialData,
-    query,
     regionSlug,
   });
   if (canonicalPath) permanentRedirect(canonicalPath);
