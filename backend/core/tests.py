@@ -9701,3 +9701,73 @@ class ShopOrderCompletionTests(TestCase):
         self.assertEqual(Order.objects.filter(status='delivered').count(), 1)
         self.seller_wallet.refresh_from_db()
         self.assertEqual(self.seller_wallet.balance, Decimal('0.00'))
+
+
+class GameListDefaultCategoryTests(TestCase):
+    """/api/games/ names the category a game tile should land on, so tiles can
+    skip the /games/<slug> redirect hop (2026-09-06 slow-click diagnosis)."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='shelf-seller', password='pw-shelf-12345')
+        self.game = Game.objects.create(name='Shelf Game', slug='shelf-game')
+        self.accounts = Category.objects.create(name='Accounts', slug='accounts')
+        self.keys = Category.objects.create(name='Keys', slug='keys')
+        self.accounts_gc = GameCategory.objects.create(game=self.game, category=self.accounts, order=0)
+        self.keys_gc = GameCategory.objects.create(game=self.game, category=self.keys, order=1)
+
+    def tearDown(self):
+        cache.clear()
+
+    def _listing(self, game_category, status='active'):
+        return Listing.objects.create(
+            seller=self.seller,
+            game_category=game_category,
+            title='Shelf item',
+            price=Decimal('10.00'),
+            quantity=1,
+            status=status,
+        )
+
+    def _game_payload(self, slug):
+        response = self.client.get('/api/games/')
+        self.assertEqual(response.status_code, 200)
+        return next(item for item in response.data if item['slug'] == slug)
+
+    def test_points_at_the_busiest_category(self):
+        self._listing(self.accounts_gc)
+        self._listing(self.keys_gc)
+        self._listing(self.keys_gc)
+        # Switched-off stock does not count.
+        self._listing(self.accounts_gc, status='inactive')
+        self._listing(self.accounts_gc, status='inactive')
+
+        self.assertEqual(self._game_payload('shelf-game')['default_category_slug'], 'keys')
+
+    def test_ties_break_by_admin_order_and_use_the_buyer_facing_slug(self):
+        self._listing(self.accounts_gc)
+        self._listing(self.keys_gc)
+        GameCategory.objects.filter(pk=self.accounts_gc.pk).update(
+            display_name='Fresh Accounts', display_slug='fresh-accounts',
+        )
+
+        self.assertEqual(self._game_payload('shelf-game')['default_category_slug'], 'fresh-accounts')
+
+    def test_missing_for_a_game_without_categories(self):
+        Game.objects.create(name='Empty Game', slug='empty-game')
+
+        self.assertIsNone(self._game_payload('empty-game')['default_category_slug'])
+
+    def test_agrees_with_the_game_page_redirect_target(self):
+        # /games/<slug> redirects to the busiest category of the detail
+        # payload; the tile must land on the same page.
+        self._listing(self.keys_gc)
+        self._listing(self.keys_gc)
+        self._listing(self.accounts_gc)
+
+        detail = self.client.get('/api/games/shelf-game/').data['categories']
+        busiest = max(detail, key=lambda item: item['listing_count'])
+
+        self.assertEqual(busiest['category']['slug'], 'keys')
+        self.assertEqual(self._game_payload('shelf-game')['default_category_slug'], 'keys')

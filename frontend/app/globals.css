@@ -12011,3 +12011,70 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: var(--green-600);
   white-space: nowrap;
 }
+
+/* ── Category page loading skeleton ─────────────────────────────────────────
+   app/games/[slug]/[categorySlug]/loading.js — the instant state a click
+   shows while the real page streams in. Neutral tokens only (works in both
+   themes); the real layout classes carry the geometry. */
+.skeleton-line {
+  display: inline-block;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg-tertiary) 0%, var(--border-color) 50%, var(--bg-tertiary) 100%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.6s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+.skeleton-heading {
+  display: block;
+  height: 28px;
+  width: min(60%, 420px);
+  margin: 4px 0;
+}
+
+.category-skeleton .breadcrumb .skeleton-line {
+  height: 12px;
+}
+
+.skeleton-tab,
+.skeleton-card {
+  pointer-events: none;
+}
+
+.skeleton-tab .skeleton-line {
+  height: 16px;
+}
+
+.skeleton-filter-row {
+  display: flex;
+  gap: 12px;
+  padding: 0 0 20px;
+}
+
+.skeleton-filter-row .skeleton-line {
+  height: 38px;
+  border-radius: var(--radius-md);
+}
+
+.skeleton-card {
+  min-height: 164px;
+  gap: 14px;
+}
+
+.skeleton-button {
+  width: 76px;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}

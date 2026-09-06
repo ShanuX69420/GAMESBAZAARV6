@@ -1,0 +1,64 @@
+// Instant loading state for /games/<game>/<category> (brand and region
+// pages). Shown the moment a buyer clicks a game or a category tab, while the
+// server renders the real page — before this, the old page sat frozen for the
+// whole round trip (0.5–1 s cold, 2026-09-06 slow-click diagnosis). Mirrors
+// the page's own chrome (breadcrumb, title, tab strip, filter row, section
+// header, card grid) with the real class names, so the swap to live content
+// barely moves anything. Server component, no data, no params.
+
+const CARD_COUNT = 6;
+const TAB_WIDTHS = [96, 112, 88];
+
+export default function Loading() {
+  return (
+    <div className="container category-skeleton" role="status" aria-live="polite" aria-label="Loading listings">
+      <div className="page-header" aria-hidden="true">
+        <div className="breadcrumb">
+          <span className="skeleton-line" style={{ width: 44 }} />
+          <span className="breadcrumb-sep">›</span>
+          <span className="skeleton-line" style={{ width: 120 }} />
+        </div>
+        <div className="game-header">
+          <div className="game-header-info">
+            <div className="skeleton-line skeleton-heading" />
+          </div>
+        </div>
+      </div>
+
+      <div className="category-tabs" aria-hidden="true">
+        {TAB_WIDTHS.map((width) => (
+          <div key={width} className="category-tab skeleton-tab">
+            <span className="skeleton-line" style={{ width }} />
+          </div>
+        ))}
+      </div>
+
+      <div className="skeleton-filter-row" aria-hidden="true">
+        <span className="skeleton-line" style={{ width: 150 }} />
+        <span className="skeleton-line" style={{ width: 130 }} />
+      </div>
+
+      <section className="section" style={{ paddingTop: 0 }} aria-hidden="true">
+        <div className="section-header">
+          <span className="skeleton-line" style={{ width: 150 }} />
+          <span className="skeleton-line" style={{ width: 110 }} />
+        </div>
+        <div className="listing-cards-grid">
+          {Array.from({ length: CARD_COUNT }, (_, index) => (
+            <div key={index} className="listing-card skeleton-card">
+              <div className="listing-card-header">
+                <span className="skeleton-line" style={{ width: '68%' }} />
+                <span className="skeleton-line" style={{ width: 64 }} />
+              </div>
+              <span className="skeleton-line" style={{ width: '42%' }} />
+              <div className="listing-card-footer">
+                <span className="skeleton-line" style={{ width: 96 }} />
+                <span className="skeleton-line skeleton-button" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

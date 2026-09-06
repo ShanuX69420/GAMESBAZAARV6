@@ -2,10 +2,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { GameIconFallback } from '@/lib/icons';
 import { formatStartingPrice } from '@/lib/price';
+import { gameTilePath } from '@/lib/marketplaceUrls';
 
 export default function GameItem({ game }) {
   return (
-    <Link href={`/games/${game.slug}`} prefetch={false} className="game-item">
+    <Link href={gameTilePath(game)} prefetch={false} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
           <Image

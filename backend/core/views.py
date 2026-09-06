@@ -728,7 +728,19 @@ class GameListView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Game.objects.filter(is_active=True)
-            .prefetch_related('game_categories')
+            # Per-category counts ride along so the serializer can name the
+            # category a tile should land on (see default_category_slug);
+            # explicit ordering because annotate() drops Meta.ordering.
+            .prefetch_related(
+                Prefetch(
+                    'game_categories',
+                    queryset=GameCategory.objects.select_related('category').annotate(
+                        active_listing_count=Count(
+                            'listings', filter=Q(listings__status='active'),
+                        )
+                    ).order_by('order', 'id'),
+                )
+            )
             .annotate(
                 active_listing_count=Count(
                     'game_categories__listings',
@@ -1087,11 +1099,13 @@ class GameDetailView(generics.RetrieveAPIView):
     queryset = Game.objects.filter(is_active=True).prefetch_related(
         Prefetch(
             'game_categories',
+            # Same ordering as the list endpoint, so the tile link and the
+            # game page's own redirect break count ties the same way.
             queryset=GameCategory.objects.select_related('category').annotate(
                 active_listing_count=Count(
                     'listings', filter=Q(listings__status='active'),
                 )
-            ),
+            ).order_by('order', 'id'),
         )
     )
 

@@ -186,10 +186,26 @@ class GameListSerializer(serializers.ModelSerializer):
     listing_count = serializers.SerializerMethodField()
     min_price = serializers.SerializerMethodField()
     icon_url = serializers.SerializerMethodField()
+    default_category_slug = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
-        fields = ['id', 'name', 'slug', 'description', 'icon_url', 'category_count', 'listing_count', 'min_price']
+        fields = [
+            'id', 'name', 'slug', 'description', 'icon_url', 'category_count',
+            'listing_count', 'min_price', 'default_category_slug',
+        ]
+
+    def get_default_category_slug(self, obj):
+        # The category the game page itself lands on (the busiest shelf, ties
+        # broken by admin order — the same rule as the frontend's redirect), so
+        # game tiles can link straight there and skip the redirect round trip
+        # (2026-09-06 slow-click diagnosis). Relies on GameListView's prefetch
+        # for the counts and ordering; None for a game without categories.
+        categories = list(obj.game_categories.all())
+        if not categories:
+            return None
+        busiest = max(categories, key=lambda gc: getattr(gc, 'active_listing_count', 0))
+        return busiest.effective_slug
 
     def get_category_count(self, obj):
         # Use len() to leverage the prefetched cache instead of .count()

@@ -3,6 +3,7 @@ import {
   buildGameCategoryListingUrl,
   buildSellerListingsPath,
   buildSellerProfilePath,
+  gameTilePath,
 } from '../lib/marketplaceUrls';
 
 describe('marketplace URL helpers', () => {
@@ -70,5 +71,21 @@ describe('marketplace URL helpers', () => {
 
   it('builds encoded seller profile paths', () => {
     expect(buildSellerProfilePath('seller+pk@example.com')).toBe('/seller/seller%2Bpk%40example.com');
+  });
+});
+
+describe('game tile links', () => {
+  it('goes straight to the landing category the API names', () => {
+    expect(gameTilePath({ slug: 'elden-ring', default_category_slug: 'keys' })).toBe('/games/elden-ring/keys');
+  });
+
+  it('encodes both segments', () => {
+    expect(gameTilePath({ slug: 'test game', default_category_slug: 'gift cards' }))
+      .toBe('/games/test%20game/gift%20cards');
+  });
+
+  it('falls back to the redirecting game URL when no category is named', () => {
+    expect(gameTilePath({ slug: 'new-game', default_category_slug: null })).toBe('/games/new-game');
+    expect(gameTilePath({ slug: 'older-payload' })).toBe('/games/older-payload');
   });
 });

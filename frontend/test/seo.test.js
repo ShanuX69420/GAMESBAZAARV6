@@ -56,6 +56,9 @@ describe('SEO route metadata', () => {
           '/order/',
         ]),
       }),
+      // Load-only crawlers stay out entirely; Google/Bing keep the '*' rule.
+      { userAgent: 'MJ12bot', disallow: '/' },
+      { userAgent: 'PetalBot', disallow: '/' },
     ]);
   });
 

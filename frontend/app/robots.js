@@ -29,6 +29,11 @@ export default function robots() {
           '/order/',
         ],
       },
+      // Crawlers that send no visitors but were ~7% of all requests on the
+      // single-CPU server (2026-09-06 slow-click diagnosis). Google and Bing
+      // rules stay exactly as they are.
+      { userAgent: 'MJ12bot', disallow: '/' },
+      { userAgent: 'PetalBot', disallow: '/' },
     ],
     // Static + game-category pages in the first, every listing page in the
     // second (an index that fans out into as many chunks as the catalogue needs).

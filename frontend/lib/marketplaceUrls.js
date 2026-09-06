@@ -67,6 +67,16 @@ export function buildSellerListingsPath({ gameSlug, categorySlug }) {
   return `/games/${encodePathSegment(gameSlug)}/${encodePathSegment(categorySlug)}`;
 }
 
+// Where a game tile points. The bare game URL only redirects (server-side)
+// to the busiest category, costing a second round trip per click, so tiles
+// link straight to that category when the games API names it
+// (default_category_slug) and fall back to the redirect otherwise.
+export function gameTilePath(game) {
+  const gamePath = `/games/${encodePathSegment(game.slug)}`;
+  if (!game.default_category_slug) return gamePath;
+  return `${gamePath}/${encodePathSegment(game.default_category_slug)}`;
+}
+
 export function buildSellerProfilePath(username) {
   return `/seller/${encodePathSegment(username)}`;
 }
