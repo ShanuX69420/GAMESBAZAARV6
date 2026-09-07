@@ -27,6 +27,10 @@ export const FAQ_ITEMS = [
         a: 'You don\'t need a wallet balance to buy — checkout can charge your JazzCash account directly. To add funds anyway, go to your Wallet page and click "Add Funds" — pay instantly with JazzCash, or message us on WhatsApp (0371 2101998) to pay via Easypaisa or bank transfer. Your wallet is credited within minutes.',
       },
       {
+        q: 'How do I approve a JazzCash payment?',
+        a: 'Enter your JazzCash mobile number at checkout and press Pay — JazzCash sends a request to that number, and how it arrives depends on your SIM. Jazz or Warid SIM: a JazzCash pop-up appears on your phone screen itself (not in the app) — unlock your phone and type your 4-digit MPIN. Telenor, Zong, Ufone or any other SIM: you get a JazzCash app notification instead — tap it, or open the JazzCash app and go to Account → Payment Requests → Pending, then approve with your MPIN. Approve within a couple of minutes and keep the checkout page open; your order goes through automatically. If nothing arrives, unlock your phone and check Payment Requests in the app. If the request expires, simply try again — nothing is charged until you approve.',
+      },
+      {
         q: 'How do I withdraw money from my wallet?',
         a: 'Go to your Wallet page and request a withdrawal (minimum PKR 500). Provide your account details and we\'ll process it within 1-2 business days.',
       },

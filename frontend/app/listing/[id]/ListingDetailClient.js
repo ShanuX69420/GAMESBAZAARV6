@@ -9,6 +9,7 @@ import {
   initiateJazzCashPurchase, initiateGuestJazzCashPurchase, pollJazzCashPayment,
 } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
+import JazzCashApprovalSteps from '@/components/JazzCashApprovalSteps';
 import { trackBeginCheckout, trackPurchase, trackViewListing } from '@/lib/analytics';
 import { openWhatsAppChat } from '@/lib/whatsapp';
 import { loginHref } from '@/lib/loginRedirect';
@@ -1073,6 +1074,8 @@ export default function ListingDetailClient({ initialListing = null }) {
                   />
                   <span className="form-hint">
                     PKR {formatPKR(jazzCashCharge)} will be charged to this JazzCash account.
+                    You approve it on your phone with your MPIN — a pop-up on Jazz SIMs,
+                    a JazzCash app notification on other networks.
                   </span>
                   <div className="form-hint" style={{ marginTop: '8px' }}>
                     {user ? (
@@ -1089,13 +1092,11 @@ export default function ListingDetailClient({ initialListing = null }) {
                     )}
                   </div>
                   {jazzCashInFlight && (
-                    <div className="alert alert-success" style={{ marginTop: '8px', marginBottom: 0 }}>
-                      <strong>Approve the payment on your phone</strong>
-                      <div style={{ marginTop: '4px' }}>
-                        Open your JazzCash app and approve the PKR {formatPKR(jazzCashCharge)} request.
-                        Keep this page open — it updates automatically once you approve.
-                      </div>
-                    </div>
+                    <JazzCashApprovalSteps
+                      mobile={jazzCashMobile}
+                      amountLabel={`PKR ${formatPKR(jazzCashCharge)}`}
+                      style={{ marginTop: '8px', marginBottom: 0 }}
+                    />
                   )}
                 </div>
               )}

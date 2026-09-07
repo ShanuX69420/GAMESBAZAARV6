@@ -1420,8 +1420,10 @@ class JazzCashPaymentSerializer(serializers.ModelSerializer):
             return ''
         if obj.status == 'pending':
             return (
-                'Still waiting for you to approve this payment in your JazzCash '
-                'app. It goes through automatically as soon as you approve it.'
+                'Still waiting for you to approve this payment on your phone — '
+                'the JazzCash pop-up on a Jazz SIM, or the JazzCash app '
+                'notification on other networks. It goes through automatically '
+                'as soon as you approve it.'
             )
         outcome = (
             'Your order was not placed.' if obj.purpose == 'purchase'

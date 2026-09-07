@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import Select from '@/components/Select';
+import JazzCashApprovalSteps from '@/components/JazzCashApprovalSteps';
 import {
   getWallet, getTopUpRequests, requestWithdraw, getWithdrawRequests,
   initiateJazzCashTopUp, pollJazzCashPayment,
@@ -342,8 +343,9 @@ export default function WalletPage() {
           {activeTopUpMethod === 'jazzcash' && (
             <>
               <p className="card-text">
-                Enter your JazzCash mobile number and approve the payment request
-                in your JazzCash app. Your wallet is credited instantly.
+                Enter your JazzCash mobile number, then approve the request on your
+                phone with your MPIN — a pop-up on Jazz SIMs, a JazzCash app
+                notification on other networks. Your wallet is credited instantly.
               </p>
               <form onSubmit={handleJazzCashTopUp} className="topup-form">
                 <div className="form-group">
@@ -379,13 +381,7 @@ export default function WalletPage() {
                   <span className="form-hint">The JazzCash account that will be charged.</span>
                 </div>
                 {submitting && (
-                  <div className="alert alert-success" style={{ marginBottom: '12px' }}>
-                    <strong>Approve the payment on your phone</strong>
-                    <div style={{ marginTop: '4px' }}>
-                      Open your JazzCash app and approve the request. Keep this page
-                      open — it updates automatically once you approve.
-                    </div>
-                  </div>
+                  <JazzCashApprovalSteps mobile={jazzCashMobile} style={{ marginBottom: '12px' }} />
                 )}
                 <button type="submit" className="btn btn-primary" disabled={submitting || amountOverLimit || topUpBelowMin}>
                   {submitting ? 'Waiting for your approval...' : 'Pay with JazzCash'}
