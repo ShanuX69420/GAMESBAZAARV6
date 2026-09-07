@@ -48,13 +48,37 @@ def _sha256(value):
 
 def normalize_phone(raw):
     """Digits only, with the country code and no leading zero (Meta's ``ph``
-    format): '0300 1234567' → '923001234567'. Returns '' if unusable."""
+    format). Every way people type a Pakistani mobile lands on the same 12
+    digits — '0300 1234567', '300 1234567', '+92 300 1234567',
+    '0092 300 1234567' and '+92 0300 1234567' all become '923001234567'.
+    Returns '' if unusable (Meta rejects an event whose only identifier is
+    the country, so a number this can't read must never be relied on)."""
     digits = ''.join(ch for ch in str(raw or '') if ch.isdigit())
     if digits.startswith('00'):
         digits = digits[2:]
+    if digits.startswith('920') and len(digits) == 13:
+        digits = '92' + digits[3:]  # '+92 0300 1234567' — stray trunk zero
     elif digits.startswith('0'):
-        digits = '92' + digits[1:]
+        digits = '92' + digits[1:]  # '0300 1234567' — local format
+    elif len(digits) == 10 and digits.startswith('3'):
+        digits = '92' + digits  # '300 1234567' — leading zero left off
     return digits if len(digits) >= 11 else ''
+
+
+# Identifiers Meta accepts on their own. ``country`` is deliberately absent:
+# an event carrying only broad keys (country, gender, city...) is rejected
+# with error 2804050 "insufficient customer information".
+_STRONG_MATCH_KEYS = ('em', 'ph', 'external_id', 'fbp', 'fbc')
+
+
+def has_match_keys(user_data):
+    """Whether Meta will accept this ``user_data`` block for matching: a
+    hashed email/phone, an external id, a pixel cookie, or the browser's
+    IP address + user agent pair."""
+    user_data = user_data or {}
+    if any(user_data.get(key) for key in _STRONG_MATCH_KEYS):
+        return True
+    return bool(user_data.get('client_ip_address') and user_data.get('client_user_agent'))
 
 
 def tracking_from_request(request):
@@ -198,23 +222,19 @@ def queue_whatsapp_contact_event(checkout, *, user=None, tracking=None):
     _queue(event)
 
 
-def queue_whatsapp_purchase_event(checkout):
-    """Register a Purchase that closed inside WhatsApp (``action_source``
-    'chat').
-
-    There is no browser counterpart — the buyer paid in a chat, not on a
-    page — so nothing to deduplicate. Matching comes from the cookie
-    snapshot stored on the checkout row at click time plus the buyer's
-    WhatsApp number; ad attribution rides on the snapshotted ``_fbc``.
-    """
+def build_whatsapp_purchase_event(checkout, *, event_time=None):
+    """The Purchase event for a sale that closed inside WhatsApp
+    (``action_source`` 'chat'). ``event_time`` defaults to now; the resend
+    command passes the row's completion time instead (Meta accepts events
+    up to seven days old)."""
     try:
         tracking = json.loads(checkout.meta_tracking)
     except (TypeError, ValueError):
         tracking = {}
     tracking['phone'] = checkout.buyer_phone
-    event = {
+    return {
         'event_name': 'Purchase',
-        'event_time': int(time.time()),
+        'event_time': int(event_time if event_time is not None else time.time()),
         'event_id': f'wa-purchase-{checkout.ref}',
         'action_source': 'chat',
         'user_data': _user_data(user=checkout.user, tracking=tracking),
@@ -227,18 +247,45 @@ def queue_whatsapp_purchase_event(checkout):
             'num_items': checkout.quantity,
         },
     }
-    _queue(event)
 
 
-def _queue(event):
-    if not is_configured():
-        return
+def queue_whatsapp_purchase_event(checkout):
+    """Register a Purchase that closed inside WhatsApp.
+
+    There is no browser counterpart — the buyer paid in a chat, not on a
+    page — so nothing to deduplicate. Matching comes from the cookie
+    snapshot stored on the checkout row at click time plus the buyer's
+    WhatsApp number; ad attribution rides on the snapshotted ``_fbc``. A
+    hand-added row (no click, no snapshot) matches by phone ALONE, which is
+    why the admin insists on a number ``normalize_phone`` can read.
+    """
+    _queue(build_whatsapp_purchase_event(checkout))
+
+
+def build_payload(event):
     payload = {
         'data': [event],
         'access_token': settings.META_CAPI_ACCESS_TOKEN,
     }
     if settings.META_CAPI_TEST_EVENT_CODE:
         payload['test_event_code'] = settings.META_CAPI_TEST_EVENT_CODE
+    return payload
+
+
+def _queue(event):
+    if not is_configured():
+        return
+    if not has_match_keys(event.get('user_data')):
+        # Meta would answer HTTP 400 (2804050) — say why locally instead of
+        # burning a request. Reached only when a row has neither a readable
+        # phone nor a click-time browser snapshot.
+        logger.warning(
+            'Meta CAPI event [%s] not sent: no usable match keys (needs a '
+            'phone, email, pixel cookie, or IP + user agent)',
+            event.get('event_id', '?'),
+        )
+        return
+    payload = build_payload(event)
     transaction.on_commit(lambda: _dispatch(payload))
 
 

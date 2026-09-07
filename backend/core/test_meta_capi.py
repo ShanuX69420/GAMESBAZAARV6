@@ -33,10 +33,57 @@ class NormalizePhoneTests(TestCase):
     def test_double_zero_prefix_is_dropped(self):
         self.assertEqual(meta_capi.normalize_phone('00923001234567'), '923001234567')
 
+    def test_leading_zero_left_off_still_gains_country_code(self):
+        # The WA-4CUF5J shape (2026-09-07): '327 5980619' — ten digits, no
+        # trunk zero — used to normalise to '' and the Purchase went to Meta
+        # with nothing but the country.
+        self.assertEqual(meta_capi.normalize_phone('327 5980619'), '923275980619')
+        self.assertEqual(meta_capi.normalize_phone('300-1234567'), '923001234567')
+
+    def test_country_code_followed_by_stray_zero_is_fixed(self):
+        self.assertEqual(meta_capi.normalize_phone('+92 0300 1234567'), '923001234567')
+        self.assertEqual(meta_capi.normalize_phone('0092 0300 1234567'), '923001234567')
+
+    def test_foreign_numbers_pass_through(self):
+        self.assertEqual(meta_capi.normalize_phone('+44 7700 900123'), '447700900123')
+
     def test_garbage_and_short_numbers_are_rejected(self):
         self.assertEqual(meta_capi.normalize_phone('not a phone'), '')
         self.assertEqual(meta_capi.normalize_phone('12345'), '')
+        self.assertEqual(meta_capi.normalize_phone('1234567890'), '')  # 10 digits, not a PK mobile
         self.assertEqual(meta_capi.normalize_phone(None), '')
+
+
+class MatchKeyGuardTests(TestCase):
+    def test_country_alone_is_not_enough(self):
+        self.assertFalse(meta_capi.has_match_keys({'country': [sha256('pk')]}))
+        self.assertFalse(meta_capi.has_match_keys({}))
+        self.assertFalse(meta_capi.has_match_keys(None))
+
+    def test_ip_or_user_agent_alone_is_not_enough(self):
+        self.assertFalse(meta_capi.has_match_keys({'client_ip_address': '39.50.1.2'}))
+        self.assertFalse(meta_capi.has_match_keys({'client_user_agent': 'TestBrowser/1.0'}))
+        self.assertTrue(meta_capi.has_match_keys({
+            'client_ip_address': '39.50.1.2', 'client_user_agent': 'TestBrowser/1.0',
+        }))
+
+    def test_any_strong_key_is_enough(self):
+        for key in ('em', 'ph', 'external_id', 'fbp', 'fbc'):
+            self.assertTrue(meta_capi.has_match_keys({'country': ['x'], key: ['y']}), key)
+
+    @override_settings(**META_TEST_SETTINGS)
+    def test_queue_drops_unmatchable_events_with_a_warning(self):
+        event = {
+            'event_name': 'Purchase', 'event_id': 'wa-purchase-WA-TEST01',
+            'user_data': {'country': [sha256('pk')]},
+        }
+        with patch('core.meta_capi._dispatch') as dispatch:
+            with self.assertLogs('core.meta_capi', level='WARNING') as logs:
+                with self.captureOnCommitCallbacks(execute=True):
+                    meta_capi._queue(event)
+        dispatch.assert_not_called()
+        self.assertIn('wa-purchase-WA-TEST01', logs.output[0])
+        self.assertIn('no usable match keys', logs.output[0])
 
 
 @override_settings(**META_TEST_SETTINGS)

@@ -7,11 +7,16 @@ action_source 'chat'.
 """
 
 import json
+from datetime import timedelta
 from decimal import Decimal
+from io import StringIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
+from django.utils import timezone
 
 from . import meta_capi
 from .models import Listing, WhatsAppCheckout
@@ -204,6 +209,25 @@ class WhatsAppCompletionTests(PurchaseFixtureMixin, TestCase):
             'ph': [sha256('923001234567')],
         })
 
+    def test_completion_reads_a_number_typed_without_the_leading_zero(self):
+        # WA-4CUF5J (2026-09-07): hand-added row, number typed '327 5980619'.
+        # The phone normalised to nothing and Meta rejected a Purchase that
+        # carried only the country (error 2804050).
+        checkout = self._make_checkout(meta_tracking='', buyer_phone='327 5980619')
+        _, dispatch = self._complete(checkout)
+
+        (event,) = dispatch.call_args.args[0]['data']
+        self.assertEqual(event['user_data']['ph'], [sha256('923275980619')])
+
+    def test_unmatchable_completion_records_the_sale_but_sends_nothing(self):
+        checkout = self._make_checkout(meta_tracking='', buyer_phone='12345')
+        with self.assertLogs('core.meta_capi', level='WARNING'):
+            _, dispatch = self._complete(checkout)
+
+        dispatch.assert_not_called()
+        checkout.refresh_from_db()
+        self.assertEqual(checkout.status, 'completed')
+
     def test_completed_sales_reach_the_admin_dashboard(self):
         # WhatsApp sales create no Order rows, so the dashboard reads them
         # from WhatsAppCheckout directly — clicked rows must not count.
@@ -224,3 +248,119 @@ class WhatsAppCompletionTests(PurchaseFixtureMixin, TestCase):
             kpis['all_channels_revenue'],
             kpis['total_revenue'] + 500.0,
         )
+
+
+@override_settings(**META_TEST_SETTINGS)
+class WhatsAppAdminTests(PurchaseFixtureMixin, TestCase):
+    """The admin change form is the only place a buyer number is typed, so it
+    is where an unreadable one has to be caught."""
+
+    def setUp(self):
+        self._make_marketplace()
+        staff = User.objects.create_user(
+            username='wastaff', password='password123',
+            is_staff=True, is_superuser=True,
+        )
+        self.web = Client()
+        self.web.force_login(staff)
+        self.checkout = WhatsAppCheckout.objects.create(
+            listing=self.listing, listing_title=self.listing.title,
+            quantity=1, amount=Decimal('150.00'),
+        )
+
+    def _save(self, **fields):
+        data = {
+            'status': 'clicked', 'listing': self.listing.pk, 'quantity': 1,
+            'amount': '150.00', 'buyer_phone': '', '_save': 'Save',
+        }
+        data.update(fields)
+        with patch('core.meta_capi._dispatch') as dispatch:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.web.post(
+                    f'/admin/core/whatsappcheckout/{self.checkout.pk}/change/', data,
+                )
+        self.checkout.refresh_from_db()
+        return response, dispatch
+
+    def test_unreadable_number_is_refused_before_the_sale_completes(self):
+        response, dispatch = self._save(status='completed', buyer_phone='12345')
+
+        self.assertEqual(response.status_code, 200)  # form shown again
+        self.assertContains(response, 'Enter the full WhatsApp number')
+        self.assertEqual(self.checkout.status, 'clicked')
+        self.assertEqual(self.checkout.buyer_phone, '')
+        dispatch.assert_not_called()
+
+    def test_number_without_leading_zero_completes_and_matches(self):
+        response, dispatch = self._save(status='completed', buyer_phone='327 5980619')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.checkout.status, 'completed')
+        (event,) = dispatch.call_args.args[0]['data']
+        self.assertEqual(event['event_id'], f'wa-purchase-{self.checkout.ref}')
+        self.assertEqual(event['user_data']['ph'], [sha256('923275980619')])
+
+    def test_blank_number_is_still_allowed_while_the_row_is_open(self):
+        response, dispatch = self._save(buyer_phone='', amount='175.00')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.checkout.amount, Decimal('175.00'))
+        self.assertEqual(self.checkout.status, 'clicked')
+        dispatch.assert_not_called()
+
+
+@override_settings(**META_TEST_SETTINGS)
+class ResendWhatsAppPurchaseCommandTests(PurchaseFixtureMixin, TestCase):
+    def setUp(self):
+        self._make_marketplace()
+        self.checkout = WhatsAppCheckout.objects.create(
+            listing=self.listing, listing_title=self.listing.title, quantity=1,
+            amount=Decimal('1940.00'), buyer_phone='327 5980619',
+            status='completed', completed_at=timezone.now() - timedelta(hours=3),
+        )
+
+    def _run(self, *args):
+        out, err = StringIO(), StringIO()
+        with patch('core.meta_capi.deliver', return_value=True) as deliver:
+            call_command('resend_whatsapp_purchase', *args, stdout=out, stderr=err)
+        return deliver, out.getvalue(), err.getvalue()
+
+    def test_resends_with_the_completion_time_and_readable_phone(self):
+        deliver, out, _ = self._run(self.checkout.ref)
+
+        deliver.assert_called_once()
+        payload = deliver.call_args.args[0]
+        self.assertEqual(payload['access_token'], 'test-access-token')
+        (event,) = payload['data']
+        self.assertEqual(event['event_id'], f'wa-purchase-{self.checkout.ref}')
+        self.assertEqual(event['action_source'], 'chat')
+        self.assertEqual(event['event_time'], int(self.checkout.completed_at.timestamp()))
+        self.assertEqual(event['user_data']['ph'], [sha256('923275980619')])
+        self.assertEqual(event['custom_data']['value'], 1940.0)
+        self.assertIn('Sent', out)
+
+    def test_dry_run_sends_nothing(self):
+        deliver, out, _ = self._run(self.checkout.ref, '--dry-run')
+
+        deliver.assert_not_called()
+        self.assertIn('[dry-run]', out)
+        self.assertIn('ph', out)
+
+    def test_refuses_rows_meta_would_not_take(self):
+        clicked = WhatsAppCheckout.objects.create(listing=self.listing, quantity=1)
+        stale = WhatsAppCheckout.objects.create(
+            listing=self.listing, quantity=1, amount=Decimal('10.00'),
+            buyer_phone='03001234567', status='completed',
+            completed_at=timezone.now() - timedelta(days=8),
+        )
+        unmatchable = WhatsAppCheckout.objects.create(
+            listing=self.listing, quantity=1, amount=Decimal('10.00'),
+            buyer_phone='12345', status='completed', completed_at=timezone.now(),
+        )
+
+        for ref in (clicked.ref, stale.ref, unmatchable.ref, 'WA-NOPE00'):
+            with patch('core.meta_capi.deliver') as deliver:
+                with self.assertRaises(CommandError, msg=ref):
+                    call_command('resend_whatsapp_purchase', ref,
+                                 stdout=StringIO(), stderr=StringIO())
+            deliver.assert_not_called()

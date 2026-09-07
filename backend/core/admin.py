@@ -18,6 +18,7 @@ from .models import (
     PlatformSetting, FazerProductLink, FazerFulfillmentTask,
     OfflineAccount, RetiredListing,
 )
+from .meta_capi import normalize_phone
 from .payments import dispatch_status_inquiries
 from .services import (
     apply_wallet_delta_once,
@@ -596,6 +597,26 @@ class TopUpRequestAdmin(admin.ModelAdmin):
         self.message_user(request, f'{count} top-up(s) rejected.')
 
 
+class WhatsAppCheckoutAdminForm(forms.ModelForm):
+    class Meta:
+        model = WhatsAppCheckout
+        fields = '__all__'
+
+    def clean_buyer_phone(self):
+        # The number is the ONLY match key Meta gets for a hand-added sale
+        # (no click, no browser snapshot). A number normalize_phone cannot
+        # read — e.g. '327 5980619', the leading 0 left off — used to slip
+        # through and Meta rejected the Purchase (error 2804050, 2026-09-07).
+        raw = (self.cleaned_data.get('buyer_phone') or '').strip()
+        if raw and not normalize_phone(raw):
+            raise forms.ValidationError(
+                'Enter the full WhatsApp number with its 0 or country prefix, '
+                'e.g. 03001234567 or +923001234567 — Meta matches the sale by '
+                'this number.'
+            )
+        return raw
+
+
 @admin.register(WhatsAppCheckout)
 class WhatsAppCheckoutAdmin(admin.ModelAdmin):
     """Buy-on-WhatsApp clicks, and the place WhatsApp sales get recorded.
@@ -607,8 +628,10 @@ class WhatsAppCheckoutAdmin(admin.ModelAdmin):
     status to Completed — that reduces listing stock and sends Meta the
     Purchase event with the click-time attribution data. Sales that never
     touched the site (buyer messaged directly) can be added by hand; Meta
-    then matches them by phone number alone.
+    then matches them by phone number alone. If Meta rejected a sale's
+    event, ``manage.py resend_whatsapp_purchase <ref>`` sends it again.
     """
+    form = WhatsAppCheckoutAdminForm
     list_display = ['ref', 'listing_title', 'amount', 'buyer_phone', 'status',
                     'from_ad_click', 'created_at']
     list_filter = ['status']
@@ -663,7 +686,14 @@ class WhatsAppCheckoutAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         if obj is None:
             return []
-        if obj.status == 'completed':
+        # Judge by the SAVED row, not the in-memory one: after a rejected
+        # "complete" submission the bound form has already copied
+        # status='completed' onto obj, and locking the fields at that point
+        # would hide the very error (bad phone number) being reported.
+        saved_completed = WhatsAppCheckout.objects.filter(
+            pk=obj.pk, status='completed',
+        ).exists()
+        if saved_completed:
             return self.readonly_fields + ['status', 'listing', 'quantity',
                                            'amount', 'buyer_phone']
         return self.readonly_fields
