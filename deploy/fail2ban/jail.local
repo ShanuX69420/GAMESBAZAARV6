@@ -1,0 +1,48 @@
+# fail2ban jails for the GamesBazaar droplet. Deployed to /etc/fail2ban/jail.local.
+#
+# Added 2026-09-08 after a four-hour SQL-injection scan (45.152.227.86,
+# ~54,800 requests, 2,766 "sleep 15 seconds" payloads, 55 fake Buy-on-WhatsApp
+# clicks, 477 Sentry alerts). Nothing was breached, but nothing stopped it
+# either. Two custom jails read the nginx access log:
+#
+#   gamesbazaar-scanner  — injection / probe signatures in the request line
+#                          (filter.d/gamesbazaar-scanner.conf). Six hits in ten
+#                          minutes = 24 h ban. Real browsers never send these.
+#                          Would have cut that scan from 4 hours to ~12 minutes.
+#   gamesbazaar-flood    — 100 rate-limit rejections (429, from the nginx
+#                          limit_req in deploy/nginx/rate-limit.conf) in five
+#                          minutes = 30 min ban. High on purpose: Pakistani
+#                          ISPs put many buyers behind one CGNAT address.
+#
+# Bans are ufw rules (banaction = ufw), so `ufw status` shows them and they
+# survive `ufw reload`. Useful commands:
+#   fail2ban-client status gamesbazaar-scanner
+#   fail2ban-client set gamesbazaar-scanner unbanip 1.2.3.4
+#   fail2ban-regex /var/log/nginx/access.log /etc/fail2ban/filter.d/gamesbazaar-scanner.conf
+#
+# The sshd jail is the Ubuntu package default (jail.d/defaults-debian.conf)
+# and stays on. SSH is key-only, so it never bans anyone real.
+
+[DEFAULT]
+# Never ban the droplet itself (Next's SSR fetches arrive from its public IP).
+# Keep in step with the geo block in deploy/nginx/rate-limit.conf.
+ignoreip = 127.0.0.1/8 ::1 178.128.127.124
+banaction = ufw
+banaction_allports = ufw
+backend = auto
+
+[gamesbazaar-scanner]
+enabled  = true
+port     = http,https
+logpath  = /var/log/nginx/access.log
+findtime = 10m
+maxretry = 6
+bantime  = 24h
+
+[gamesbazaar-flood]
+enabled  = true
+port     = http,https
+logpath  = /var/log/nginx/access.log
+findtime = 5m
+maxretry = 100
+bantime  = 30m
