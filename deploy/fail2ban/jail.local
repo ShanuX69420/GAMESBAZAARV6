@@ -14,11 +14,33 @@
 #                          minutes = 30 min ban. High on purpose: Pakistani
 #                          ISPs put many buyers behind one CGNAT address.
 #
+# Crawler safety (Google and the AI search bots are a sales channel — losing
+# them is not an option):
+#   - Search engines that publish reverse-DNS verification (Google, Bing,
+#     Apple, Yandex) are exempt from EVERY jail via ignorecommand
+#     (verify-crawler.sh: reverse + forward DNS, the way Google documents it).
+#     The user agent is never trusted on its own: the busiest "Googlebot" in
+#     the logs was a probe bot at 94.154.46.242 doing 300 req/s against /.env.
+#   - The AI crawlers (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot,
+#     PerplexityBot, Amazonbot, Meta) have no reverse-DNS scheme. They never
+#     sent a scanner signature in the logs (every "crawler" signature hit was
+#     a spoofer on a rented VM), and they are exempt from the flood jail by
+#     user agent (filter.d/gamesbazaar-flood.conf ignoreregex) — a spoofer
+#     wearing their name is still throttled by nginx and still banned by the
+#     scanner jail on signatures. Measured peaks on limiter-counted paths
+#     (5 days, per IP): real Googlebot 4/s and 37/min, ClaudeBot 17/s and
+#     300/min, OAI-SearchBot 13/s and 102/min, against a limit of 15/s
+#     sustained with a burst of 60.
+#
 # Bans are ufw rules (banaction = ufw), so `ufw status` shows them and they
-# survive `ufw reload`. Useful commands:
+# survive `ufw reload`. The two nginx jails ban ports 80/443 only (ufw app
+# profile "gamesbazaar-web", deploy/ufw/applications.d) — a mistaken web ban,
+# e.g. a load test from Shayan's own PC tripping the flood jail, never blocks
+# SSH. Useful commands:
 #   fail2ban-client status gamesbazaar-scanner
 #   fail2ban-client set gamesbazaar-scanner unbanip 1.2.3.4
 #   fail2ban-regex /var/log/nginx/access.log /etc/fail2ban/filter.d/gamesbazaar-scanner.conf
+#   /etc/fail2ban/verify-crawler.sh 66.249.65.42; echo $?    # 0 = verified search engine
 #
 # The sshd jail is the Ubuntu package default (jail.d/defaults-debian.conf)
 # and stays on. SSH is key-only, so it never bans anyone real.
@@ -27,22 +49,27 @@
 # Never ban the droplet itself (Next's SSR fetches arrive from its public IP).
 # Keep in step with the geo block in deploy/nginx/rate-limit.conf.
 ignoreip = 127.0.0.1/8 ::1 178.128.127.124
+# Verified search engines are never banned; the answer is cached per IP for a day.
+ignorecommand = /etc/fail2ban/verify-crawler.sh <ip>
+ignorecache = key="<ip>",max=3000,time=1d
 banaction = ufw
 banaction_allports = ufw
 backend = auto
 
 [gamesbazaar-scanner]
-enabled  = true
-port     = http,https
-logpath  = /var/log/nginx/access.log
-findtime = 10m
-maxretry = 6
-bantime  = 24h
+enabled   = true
+port      = http,https
+logpath   = /var/log/nginx/access.log
+findtime  = 10m
+maxretry  = 6
+bantime   = 24h
+banaction = ufw[application=gamesbazaar-web]
 
 [gamesbazaar-flood]
-enabled  = true
-port     = http,https
-logpath  = /var/log/nginx/access.log
-findtime = 5m
-maxretry = 100
-bantime  = 30m
+enabled   = true
+port      = http,https
+logpath   = /var/log/nginx/access.log
+findtime  = 5m
+maxretry  = 100
+bantime   = 30m
+banaction = ufw[application=gamesbazaar-web]

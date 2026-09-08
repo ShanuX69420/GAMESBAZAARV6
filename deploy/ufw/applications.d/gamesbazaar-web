@@ -1,0 +1,4 @@
+[gamesbazaar-web]
+title=GamesBazaar web (nginx)
+description=HTTP and HTTPS only. Used by the fail2ban nginx jails (deploy/fail2ban/jail.local) so a web ban never blocks SSH.
+ports=80,443/tcp
