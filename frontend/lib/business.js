@@ -4,7 +4,9 @@
 // the business is identified as a business.
 export const BUSINESS = {
   name: 'GamesBazaar',
+  streetAddress: 'Block 1, Nazimabad',
   city: 'Karachi',
+  region: 'Sindh',
   country: 'Pakistan',
   countryCode: 'PK',
   foundedYear: '2026',
@@ -15,6 +17,11 @@ export const BUSINESS = {
   instagram: 'https://www.instagram.com/gamesbazaar.pk/',
   facebook: 'https://www.facebook.com/profile.php?id=61593041638198',
 };
+
+// One-line head-office address for footers and contact blocks.
+export function headOfficeAddress() {
+  return `${BUSINESS.streetAddress}, ${BUSINESS.city}, ${BUSINESS.region}, ${BUSINESS.country}`;
+}
 
 export function whatsappUrl() {
   return `https://wa.me/${BUSINESS.whatsappNumber}`;

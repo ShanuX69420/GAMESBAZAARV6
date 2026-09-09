@@ -2184,6 +2184,17 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: var(--green-400);
 }
 
+.footer-address {
+  font-size: 0.85rem;
+  font-style: normal;
+  line-height: 1.5;
+  color: #9ca3af;
+}
+
+.footer-address-label {
+  color: #d1d5db;
+}
+
 .footer-social {
   display: flex;
   flex-direction: column;

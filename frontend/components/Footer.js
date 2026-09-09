@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SECTION_NAV_LINKS } from '@/lib/sectionNav';
+import { headOfficeAddress } from '@/lib/business';
 
 export default function Footer() {
   return (
@@ -53,6 +54,11 @@ export default function Footer() {
             <ul className="footer-links">
               <li><a href="mailto:support@gamesbazaar.pk">support@gamesbazaar.pk</a></li>
               <li><a href="tel:+923712101998">+92 371 2101998</a></li>
+              <li>
+                <address className="footer-address">
+                  <span className="footer-address-label">Head Office:</span> {headOfficeAddress()}
+                </address>
+              </li>
             </ul>
           </div>
 

@@ -86,7 +86,9 @@ export function organizationJsonLd() {
     telephone: '+92-371-2101998',
     address: {
       '@type': 'PostalAddress',
+      streetAddress: BUSINESS.streetAddress,
       addressLocality: BUSINESS.city,
+      addressRegion: BUSINESS.region,
       addressCountry: BUSINESS.countryCode,
     },
     areaServed: {
