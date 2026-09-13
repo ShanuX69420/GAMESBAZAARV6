@@ -3728,13 +3728,13 @@ class RegistrationPasswordValidationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('username', response.data)
 
-    def test_register_uses_django_username_validator(self):
+    def _register(self, username, email):
         strong_password = 'S3cure!Passphrase42'
-        response = self.client.post(
+        return self.client.post(
             '/api/auth/register/',
             {
-                'username': 'bad/name',
-                'email': 'bad-name@example.com',
+                'username': username,
+                'email': email,
                 'password': strong_password,
                 'password2': strong_password,
                 'accepted_terms': True,
@@ -3742,6 +3742,44 @@ class RegistrationPasswordValidationTests(TestCase):
             format='json',
             HTTP_ORIGIN='http://testserver',
         )
+
+    def test_register_normalizes_a_display_name_into_a_username(self):
+        # Used to be a 400 with Django's "letters, numbers, and @/./+/-/_"
+        # message; the form calls the field "Display name", so convert instead.
+        response = self._register('bad/name', 'bad-name@example.com')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['username'], 'bad_name')
+        self.assertTrue(User.objects.filter(username='bad_name').exists())
+
+    def test_register_turns_spaces_into_underscores(self):
+        response = self._register('  Ali   Khan ', 'ali-khan@example.com')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['username'], 'Ali_Khan')
+
+    def test_register_suffixes_a_converted_name_that_clashes(self):
+        User.objects.create_user(
+            username='ali_khan', email='first-ali@example.com', password='password123',
+        )
+
+        response = self._register('Ali Khan', 'second-ali@example.com')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['username'], 'Ali_Khan_2')
+
+    def test_register_exact_clash_suggests_a_free_name(self):
+        User.objects.create_user(
+            username='ali', email='ali@example.com', password='password123',
+        )
+
+        response = self._register('ali', 'ali-2@example.com')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['username'], ['That name is already taken. Try ali_2.'])
+
+    def test_register_rejects_a_name_with_nothing_usable(self):
+        response = self._register('!!! ???', 'symbols@example.com')
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('username', response.data)
@@ -8804,6 +8842,35 @@ class AccountSecurityFlowTests(TestCase):
         self.assertEqual(google_user.username, 'chosen_name')
         self.assertTrue(google_user.profile.has_accepted_terms)
         self.assertIsNotNone(google_user.profile.username_changed_at)
+
+    def test_complete_profile_converts_spaces_and_suffixes_a_clash(self):
+        User.objects.create_user(
+            username='Chosen_Name', email='taken-name@example.com', password='password123',
+        )
+        google_user = User.objects.create_user(
+            username='generated_name_2',
+            email='new-google-2@example.com',
+            password=None,
+        )
+        SocialAccount.objects.create(
+            user=google_user,
+            provider=SocialAccount.PROVIDER_GOOGLE,
+            uid='new-google-user-2',
+            email=google_user.email,
+        )
+        self.client.force_authenticate(user=google_user)
+
+        response = self.client.post(
+            '/api/auth/complete-profile/',
+            {'username': 'Chosen Name', 'accepted_terms': True},
+            format='json',
+            HTTP_ORIGIN=self.origin,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        google_user.refresh_from_db()
+        self.assertEqual(google_user.username, 'Chosen_Name_2')
+        self.assertTrue(google_user.profile.has_accepted_terms)
 
     def test_email_change_rejects_current_or_existing_email(self):
         User.objects.create_user(

@@ -13,6 +13,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Avg, Q
 from django.urls import reverse
 from django.utils import timezone
+from .usernames import UsernameError, resolve_signup_username
 from .models import (
     Game, Category, GameCategory, CategoryOption, Filter, FilterOption,
     GameCategoryFilter, UserProfile, Listing,
@@ -326,15 +327,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_username(self, value):
+        # The form asks for a display name; turn it into a username instead
+        # of refusing spaces (core/usernames.py explains the numbers).
         value = User.normalize_username(value.strip())
-        if not value:
-            raise serializers.ValidationError('Username cannot be blank.')
+        try:
+            value = resolve_signup_username(value)
+        except UsernameError as exc:
+            raise serializers.ValidationError(str(exc))
         try:
             User._meta.get_field('username').run_validators(value)
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
-        if User.objects.filter(username__iexact=value).exists():
-            raise serializers.ValidationError('This username is already taken.')
         return value
 
     def validate(self, attrs):
@@ -462,11 +465,17 @@ class UpdateProfileSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
 
+        self._enforce_change_cooldown(user)
+
+        if User.objects.filter(username__iexact=value).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('This username is already taken.')
+        return value
+
+    def _enforce_change_cooldown(self, user):
         # 90-day cooldown
         from .services import USERNAME_CHANGE_COOLDOWN_DAYS
         profile = self.context.get('profile') or user.profile
         if profile.username_changed_at:
-            from django.utils import timezone
             days_since = (timezone.now() - profile.username_changed_at).days
             if days_since < USERNAME_CHANGE_COOLDOWN_DAYS:
                 remaining = USERNAME_CHANGE_COOLDOWN_DAYS - days_since
@@ -474,10 +483,6 @@ class UpdateProfileSerializer(serializers.Serializer):
                     f'You can only change your username once every {USERNAME_CHANGE_COOLDOWN_DAYS} days. '
                     f'Try again in {remaining} day{"s" if remaining != 1 else ""}.'
                 )
-
-        if User.objects.filter(username__iexact=value).exclude(pk=user.pk).exists():
-            raise serializers.ValidationError('This username is already taken.')
-        return value
 
 
 class RequestEmailChangeSerializer(serializers.Serializer):
@@ -521,6 +526,27 @@ class ChangePasswordSerializer(serializers.Serializer):
 class CompleteProfileSerializer(UpdateProfileSerializer):
     """Set username and accept terms for Google-linked accounts."""
     accepted_terms = serializers.BooleanField(required=True)
+
+    def validate_username(self, value):
+        # Same treatment as sign-up: a typed display name becomes a username,
+        # a clash gets a suffix or a suggestion. The change cooldown still
+        # applies — an account that linked Google after a recent rename must
+        # not get a second rename through this step.
+        user = self.context.get('user')
+        value = User.normalize_username(value.strip())
+        if value and value == user.username:
+            return value
+        try:
+            value = resolve_signup_username(value, exclude_pk=user.pk)
+        except UsernameError as exc:
+            raise serializers.ValidationError(str(exc))
+        try:
+            User._meta.get_field('username').run_validators(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        if value != user.username:
+            self._enforce_change_cooldown(user)
+        return value
 
     def validate_accepted_terms(self, value):
         if not value:

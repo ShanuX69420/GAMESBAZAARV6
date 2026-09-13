@@ -45,6 +45,16 @@ export default function RegisterPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    // Catch the two cheapest mistakes before a round trip: each rejected
+    // request also counts against the sign-up attempt throttle.
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (formData.password !== formData.password2) {
+      setError('Passwords do not match.');
+      return;
+    }
     setSubmitting(true);
     try {
       const data = await register(
@@ -115,6 +125,11 @@ export default function RegisterPage() {
                 placeholder="Choose your public name"
                 required
               />
+              {/* Usernames cannot contain spaces; the backend now converts
+                  them instead of rejecting the form (core/usernames.py). */}
+              <span className="form-hint">
+                Spaces become underscores, so Ali Khan is shown as Ali_Khan.
+              </span>
             </div>
 
             <div className="form-group">

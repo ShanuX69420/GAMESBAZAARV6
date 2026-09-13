@@ -1789,6 +1789,9 @@ class RegisterView(SuccessCountedThrottleMixin, generics.CreateAPIView):
         return Response({
             'message': 'Account created. Please check your email for a verification code.',
             'verification_token': token,
+            # The name they will see in the navbar — may differ from what
+            # they typed (spaces -> underscores, suffix on a clash).
+            'username': user.username,
         }, status=status.HTTP_201_CREATED)
 
 

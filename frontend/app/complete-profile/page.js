@@ -90,7 +90,8 @@ export default function CompleteProfilePage() {
                 required
               />
               <p className="setup-info-text">
-                This is how other users will see you on GamesBazaar
+                This is how other users will see you on GamesBazaar. Spaces
+                become underscores, so Ali Khan is shown as Ali_Khan.
               </p>
             </div>
 
