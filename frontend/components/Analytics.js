@@ -36,6 +36,14 @@ function installStubs() {
     fbq.queue = [];
     window.fbq = fbq;
     if (!window._fbq) window._fbq = fbq;
+    // No automatic configuration: with it on, fbevents.js pulls a ~500 KB
+    // config script that opts the pixel into inferred button-click events,
+    // form-field scraping and microdata scanning — measured at 60–100 ms of
+    // main-thread work on EVERY tap on a phone (the last big mobile INP cost
+    // after the 2026-09-13 fixes; Shayan chose to drop it). Explicit events,
+    // the manual match key below and the server-side Conversions API are
+    // unaffected. Must be set before init.
+    window.fbq('set', 'autoConfig', false, PIXEL_ID);
     // Advanced matching: PKR-only Pakistani marketplace, so country is a
     // constant match key. fbevents.js hashes it before sending.
     window.fbq('init', PIXEL_ID, { country: 'pk' });
