@@ -465,6 +465,60 @@ def send_review_request_email(order):
     )
 
 
+def rental_rent_again_url(order):
+    """Where "Rent Again" should land: the same listing while it is still
+    for sale, otherwise the game's rentals page (all periods, always exists)."""
+    from .listing_lifecycle import category_path, listing_path, section_path
+    listing = order.listing
+    if listing is None:
+        return f'{settings.PUBLIC_SITE_URL}{section_path("rentals")}'
+    if listing.status == 'active':
+        return f'{settings.PUBLIC_SITE_URL}{listing_path(listing.id)}'
+    game_category = listing.game_category
+    return (
+        f'{settings.PUBLIC_SITE_URL}'
+        f'{category_path(game_category.game.slug, game_category.category.slug)}'
+    )
+
+
+def send_rental_expiry_email(order, *, expires_at, days, stage):
+    """Queue the "your rental ends soon" reminder for a delivered rental.
+
+    `stage` is '72h' (three days out) or '24h' (last day). The email names
+    the exact end time in Pakistan time and offers a one-click Rent Again
+    link so a buyer who wants more time can act before access stops.
+    """
+    from .rentals import format_pakistan_time
+    listing = order.listing
+    game_name = listing.game_category.game.name if listing else order.listing_title
+    ends_in = 'in 3 days' if stage == '72h' else 'in 24 hours'
+    when = format_pakistan_time(expires_at)
+    return send_transactional_email(
+        order.buyer,
+        subject=f'Your {game_name} rental ends {ends_in}',
+        message_body=(
+            f'Your {days}-day rental of "{order.listing_title}" ends on {when}. '
+            'After that the game stops working on the rented account. '
+            'Want more time? Rent again now and your saves carry on where '
+            'you left off.'
+        ),
+        detail_rows=[
+            ('Order', _order_reference(order)),
+            ('Game', game_name),
+            ('Rental ends', when),
+        ],
+        status_text='Ends in 3 days' if stage == '72h' else 'Ends in 24 hours',
+        status_class='warning',
+        extra_message=(
+            'Rent again before the end time to keep playing without a gap. '
+            'If you already extended this rental with us, ignore this email. '
+            'Questions? Message us on WhatsApp or from your order page.'
+        ),
+        cta_url=rental_rent_again_url(order),
+        cta_label='Rent Again',
+    )
+
+
 def send_topup_request_received_email(topup):
     return send_transactional_email(
         topup.user,

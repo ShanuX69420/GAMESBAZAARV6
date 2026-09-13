@@ -1,0 +1,10 @@
+[Unit]
+Description=GamesBazaar send rental "ends in 3 days / 24 hours" reminder emails
+
+[Service]
+Type=oneshot
+User=gamesbazaar
+Group=gamesbazaar
+WorkingDirectory=/opt/gamesbazaar/app/backend
+Environment=PATH=/opt/gamesbazaar/venv/bin
+ExecStart=/opt/gamesbazaar/venv/bin/python manage.py send_rental_expiry_emails

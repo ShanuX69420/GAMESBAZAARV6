@@ -416,6 +416,17 @@ python manage.py indexnow_ping --paths /games/pubg/top-ups /games/steam/gift-car
 python manage.py indexnow_ping --all-category-pages
 ```
 
+Check the rental expiry reminder timer (hourly; emails rental buyers when
+about 3 days and about 24 hours remain — end time is delivery time plus the
+listing's Rental Period, each reminder stamped on the order so it is never
+repeated):
+
+```bash
+systemctl status gamesbazaar-rental-expiry.timer
+journalctl -u gamesbazaar-rental-expiry.service -n 20
+python manage.py send_rental_expiry_emails --dry-run   # who would be emailed right now
+```
+
 ---
 
 ## JazzCash Gateway

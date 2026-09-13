@@ -54,6 +54,9 @@ PKR only. Solo developer (Shayan). Live in production, pre-public-launch.
   Redis stays: it backs the Django cache (CACHE_REDIS_URL/CHANNEL_REDIS_URL env).
   Timers: reconcile-jazzcash (10 min), fazer-fulfill (1 min),
   review-requests (15 min — post-purchase review emails),
+  rental-expiry (1 h — "ends in 3 days" / "ends in 24 hours" emails to rental
+  buyers; `send_rental_expiry_emails`, end time = delivered_at + Rental Period,
+  see `core/rentals.py`),
   indexnow (30 min — pushes changed listing/category URLs to Bing via IndexNow;
   needs `INDEXNOW_KEY` in backend .env + `frontend/public/<key>.txt`, see
   `core/indexnow.py`; no-op without the key),

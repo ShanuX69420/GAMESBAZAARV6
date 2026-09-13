@@ -27,6 +27,9 @@ Timers: `reconcile-jazzcash` every 10 min, `fazer-fulfill` every 1 min (Fazer
 auto-fulfillment driver — safety net behind the in-process worker),
 `review-requests` every 15 min (post-purchase "leave a review" emails —
 top-ups/gift cards asked ~3 h after completion, accounts/keys after ~24 h),
+`rental-expiry` every 1 h (rental buyers get an "ends in 3 days" and an
+"ends in 24 hours" email — end time = delivery time + the listing's Rental
+Period; each reminder stamped on the order so it never repeats),
 `db-backup` nightly at 21:30 UTC (02:30 PKT),
 `indexnow` every 30 min (pushes changed listing + game-category URLs to Bing
 and the other IndexNow engines — needs `INDEXNOW_KEY` in the backend `.env`,

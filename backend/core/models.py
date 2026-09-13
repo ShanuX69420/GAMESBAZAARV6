@@ -1352,6 +1352,16 @@ class Order(models.Model):
         help_text='When the review-request email was queued. Stamped in the '
                   'same transaction so the timer never emails a buyer twice.',
     )
+    rental_expiry_email_72h_sent_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Rentals only: when the "ends in 3 days" reminder was queued '
+                  '(send_rental_expiry_emails timer). Stays empty if the rental '
+                  'was already inside its last 24 hours when first seen.',
+    )
+    rental_expiry_email_24h_sent_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Rentals only: when the "ends in 24 hours" reminder was queued.',
+    )
     buyer_protection_enabled = models.BooleanField(
         default=False,
         help_text='Snapshot of whether this order uses the 14-day buyer protection payout hold.',
