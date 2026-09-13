@@ -957,6 +957,17 @@ button.review-photo-thumb {
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
   overflow: hidden;
+  /* The strip is on every page and always below the fold (main's min-height
+     keeps it there), yet its 28+ cards were half of the home page's first
+     layout and part of every later relayout (font swap, theme toggle).
+     content-visibility: auto lets the browser skip laying out and painting
+     it until the visitor scrolls near. The intrinsic size is the measured
+     rendered height MINUS padding and border (322 - 32 - 36 - 1): the
+     property sizes the content box even under border-box, and an estimate
+     that forgets that shifts everything below when the strip renders
+     (mobile INP work, 2026-09-13). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 253px;
 }
 
 /* The footer supplies its own top spacing; the strip already ends in padding,
@@ -1125,6 +1136,8 @@ button.review-photo-thumb {
   .site-reviews {
     margin-top: 40px;
     padding: 26px 0 30px;
+    /* 303px rendered - 26 - 30 - 1 (see the base rule). */
+    contain-intrinsic-size: auto 246px;
   }
 
   .site-reviews-title {

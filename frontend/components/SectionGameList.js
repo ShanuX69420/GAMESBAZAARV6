@@ -1,16 +1,81 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { Fragment, memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/config';
 import { GameIconFallback } from '@/lib/icons';
 import { groupGamesByAlphabet } from '@/lib/gameGroups';
 import { optimizedImageUrl } from '@/lib/imageUrl';
+import { useListClickNavigation } from '@/lib/listNavigation';
 import { formatStartingPrice } from '@/lib/price';
 import { sectionParamsFromSearch, sectionUrl } from '@/lib/sectionLanding';
 import SectionFilters from '@/components/SectionFilters';
 
 const ALL_LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+
+// One game row. Two things keep 400+ of these cheap on a phone (Search
+// Console mobile INP > 200 ms, 2026-09-13):
+// - memo: a dropdown tap only flips the list's busy flag, and without memo
+//   that flip re-rendered every row inside the tap's own frame (200–300 ms at
+//   4x CPU throttle);
+// - a plain <a> instead of next/link: the grid's delegated click handler
+//   (lib/listNavigation.js) does the client-side navigation, so hydration
+//   has no per-row component to set up. Prefetch was already off here — every
+//   row scrolled into view would otherwise cost a server render (2026-09-06).
+const GameRow = memo(function GameRow({ item, linkSuffix }) {
+  return (
+    <a
+      href={`/games/${item.game_slug}/${item.category_slug}${linkSuffix}`}
+      className="game-item"
+    >
+      <div className="game-icon">
+        {item.icon_url ? (
+          // A plain <img> at one fixed optimizer URL — see lib/imageUrl.js.
+          <img
+            src={optimizedImageUrl(item.icon_url)}
+            alt={item.game_name}
+            width={40}
+            height={40}
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <GameIconFallback size={24} />
+        )}
+      </div>
+      <div className="game-info">
+        <div className="game-name">{item.game_name}</div>
+        <div className="game-meta">
+          {item.listing_count > 0 && formatStartingPrice(item.min_price)
+            ? `Starting from ${formatStartingPrice(item.min_price)}`
+            : item.listing_count > 0
+              ? `${item.listing_count} ${item.listing_count === 1 ? 'offer' : 'offers'}`
+              : 'No offers yet'}
+        </div>
+      </div>
+      <div className="game-arrow">›</div>
+    </a>
+  );
+});
+
+const rowKey = (item) => `${item.game_slug}-${item.category_slug}`;
+
+// One letter of the A–Z list. Memoised so the busy flip above does not
+// re-render its rows either.
+const LetterGroup = memo(function LetterGroup({ letter, games, linkSuffix }) {
+  return (
+    <>
+      <div
+        className="alpha-divider"
+        id={`section-${letter === '#' ? 'other' : letter}`}
+      >
+        <span className="alpha-divider-letter">{letter}</span>
+      </div>
+      {games.map((item) => (
+        <GameRow key={rowKey(item)} item={item} linkSuffix={linkSuffix} />
+      ))}
+    </>
+  );
+});
 
 // The filtered game list of a section page, and the dropdowns that drive it.
 //
@@ -26,6 +91,7 @@ export default function SectionGameList({ slug, basePath, initialData }) {
   // Only the newest request may write to state: dropdowns are quick to click
   // and a slow earlier answer must not overwrite a fast later one.
   const requestRef = useRef(0);
+  const onRowClick = useListClickNavigation();
 
   const load = useCallback(async (selection) => {
     const ticket = requestRef.current + 1;
@@ -43,12 +109,17 @@ export default function SectionGameList({ slug, basePath, initialData }) {
       if (!res.ok) throw new Error('Failed to fetch section games');
       const fresh = await res.json();
       if (requestRef.current !== ticket) return;
-      setData(fresh);
+      // Swapping 400+ rows is the one expensive render here. As a transition
+      // React renders it in slices and lets a tap that lands meanwhile go
+      // first instead of queueing behind the whole list.
+      startTransition(() => {
+        setData(fresh);
+        setBusy(false);
+      });
     } catch (error) {
       // Leave the list that is already on screen: a filter that fails to load
       // should not blank the page.
       console.error(`Failed to filter ${slug} games:`, error);
-    } finally {
       if (requestRef.current === ticket) setBusy(false);
     }
   }, [slug]);
@@ -96,49 +167,17 @@ export default function SectionGameList({ slug, basePath, initialData }) {
   const linkSuffix = linkParams.toString() ? `?${linkParams.toString()}` : '';
 
   // A-Z letter groups only make sense in the default (name) order; any other
-  // sort would scatter the chosen order across the dividers.
-  const grouped = activeSort
-    ? []
-    : groupGamesByAlphabet(items.map((item) => ({ ...item, name: item.game_name })));
-  const activeLetters = new Set(grouped.map((g) => g.letter));
-
-  // prefetch={false}: /keys lists 400+ rows and every row scrolled into view
-  // would otherwise cost a server render (2026-09-06 slow-click diagnosis).
-  const gameRow = (item) => (
-    <Link
-      key={`${item.game_slug}-${item.category_slug}`}
-      href={`/games/${item.game_slug}/${item.category_slug}${linkSuffix}`}
-      prefetch={false}
-      className="game-item"
-    >
-      <div className="game-icon">
-        {item.icon_url ? (
-          // A plain <img> at one fixed optimizer URL — see lib/imageUrl.js.
-          <img
-            src={optimizedImageUrl(item.icon_url)}
-            alt={item.game_name}
-            width={40}
-            height={40}
-            loading="lazy"
-            decoding="async"
-          />
-        ) : (
-          <GameIconFallback size={24} />
-        )}
-      </div>
-      <div className="game-info">
-        <div className="game-name">{item.game_name}</div>
-        <div className="game-meta">
-          {item.listing_count > 0 && formatStartingPrice(item.min_price)
-            ? `Starting from ${formatStartingPrice(item.min_price)}`
-            : item.listing_count > 0
-              ? `${item.listing_count} ${item.listing_count === 1 ? 'offer' : 'offers'}`
-              : 'No offers yet'}
-        </div>
-      </div>
-      <div className="game-arrow">›</div>
-    </Link>
+  // sort would scatter the chosen order across the dividers. Memoised so the
+  // groups (and the row objects inside them) keep their identity between
+  // renders that did not change the data — that is what lets GameRow and
+  // LetterGroup skip.
+  const grouped = useMemo(
+    () => (activeSort
+      ? []
+      : groupGamesByAlphabet(items.map((item) => ({ ...item, name: item.game_name })))),
+    [items, activeSort],
   );
+  const activeLetters = new Set(grouped.map((g) => g.letter));
 
   const methods = data?.methods || [];
   const regions = data?.regions || [];
@@ -162,8 +201,10 @@ export default function SectionGameList({ slug, basePath, initialData }) {
         {items.length > 0 ? (
           activeSort ? (
             /* Sorted: one flat list, letter dividers would break the order */
-            <div className="games-grid">
-              {items.map((item) => gameRow(item))}
+            <div className="games-grid" onClick={onRowClick}>
+              {items.map((item) => (
+                <GameRow key={rowKey(item)} item={item} linkSuffix={linkSuffix} />
+              ))}
             </div>
           ) : (
             <>
@@ -182,16 +223,14 @@ export default function SectionGameList({ slug, basePath, initialData }) {
               </nav>
 
               {/* Single continuous list with inline letter dividers */}
-              <div className="games-grid games-grid-alpha">
+              <div className="games-grid games-grid-alpha" onClick={onRowClick}>
                 {grouped.map(({ letter, games: sectionGames }) => (
                   <Fragment key={letter}>
-                    <div
-                      className="alpha-divider"
-                      id={`section-${letter === '#' ? 'other' : letter}`}
-                    >
-                      <span className="alpha-divider-letter">{letter}</span>
-                    </div>
-                    {sectionGames.map((item) => gameRow(item))}
+                    <LetterGroup
+                      letter={letter}
+                      games={sectionGames}
+                      linkSuffix={linkSuffix}
+                    />
                   </Fragment>
                 ))}
               </div>

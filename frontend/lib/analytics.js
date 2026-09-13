@@ -18,6 +18,15 @@ function fbq(...args) {
   }
 }
 
+// Runs `fn` in its own task, after the tap that triggered it has painted.
+// gtag() and fbq() each do real work synchronously (build + send a beacon),
+// and inside a click handler that work is charged to the tap's INP. Nothing
+// here needs to happen before the next frame.
+function afterPaint(fn) {
+  if (typeof window === 'undefined') return;
+  setTimeout(fn, 0);
+}
+
 function gaItem(listing, quantity) {
   return {
     item_id: String(listing.id),
@@ -39,28 +48,32 @@ function pixelContents(listing) {
 }
 
 export function trackViewListing(listing) {
-  const value = Number(listing.price);
-  gtag('event', 'view_item', { currency: CURRENCY, value, items: [gaItem(listing, 1)] });
-  // window.fbq exists whenever the pixel is configured (the Analytics stub
-  // installs it even when an ad blocker stops fbevents.js from loading) —
-  // so gating on it skips unconfigured environments but still reports
-  // ad-blocked views. The backend sends the same ViewContent via the
-  // Conversions API with this exact eventID, so Meta deduplicates the pair.
-  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
-  const eventID =
-    `vc-${listing.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-  window.fbq('track', 'ViewContent', { ...pixelContents(listing), currency: CURRENCY, value }, { eventID });
-  reportListingView(listing.id, eventID);
+  afterPaint(() => {
+    const value = Number(listing.price);
+    gtag('event', 'view_item', { currency: CURRENCY, value, items: [gaItem(listing, 1)] });
+    // window.fbq exists whenever the pixel is configured (the Analytics stub
+    // installs it even when an ad blocker stops fbevents.js from loading) —
+    // so gating on it skips unconfigured environments but still reports
+    // ad-blocked views. The backend sends the same ViewContent via the
+    // Conversions API with this exact eventID, so Meta deduplicates the pair.
+    if (typeof window.fbq !== 'function') return;
+    const eventID =
+      `vc-${listing.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    window.fbq('track', 'ViewContent', { ...pixelContents(listing), currency: CURRENCY, value }, { eventID });
+    reportListingView(listing.id, eventID);
+  });
 }
 
 export function trackBeginCheckout(listing, quantity) {
-  const value = Number(listing.price) * quantity;
-  gtag('event', 'begin_checkout', { currency: CURRENCY, value, items: [gaItem(listing, quantity)] });
-  fbq('track', 'InitiateCheckout', {
-    ...pixelContents(listing),
-    currency: CURRENCY,
-    value,
-    num_items: quantity,
+  afterPaint(() => {
+    const value = Number(listing.price) * quantity;
+    gtag('event', 'begin_checkout', { currency: CURRENCY, value, items: [gaItem(listing, quantity)] });
+    fbq('track', 'InitiateCheckout', {
+      ...pixelContents(listing),
+      currency: CURRENCY,
+      value,
+      num_items: quantity,
+    });
   });
 }
 

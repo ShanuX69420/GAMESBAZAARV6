@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { API_BASE } from '@/lib/config';
@@ -87,6 +87,148 @@ function DeliveryTimeBadge({ listing }) {
     </span>
   );
 }
+
+// A listing card, memoised on its listing object: opening the Filters panel
+// or a sort dropdown re-renders this component's state, and without memo that
+// meant re-rendering all 48 cards (title cleaner, star SVGs and all) inside
+// the tap's own frame — ~100 ms at 4x CPU throttle, the mobile INP problem
+// (2026-09-13). Listing objects only change when the data itself refetches.
+//
+// prefetch={false}: every card in view would otherwise trigger a server render
+// of its page (2026-09-06 slow-click diagnosis). Listing pages are dynamic, so
+// the prefetch caches nothing useful anyway.
+const ListingCard = memo(function ListingCard({ listing, listingMode, gameName, categoryName }) {
+  const title = tileTitle(listing, {
+    listing_mode: listingMode,
+    game: { name: gameName },
+    category: { name: categoryName },
+  });
+  const instant = listing.is_auto_delivery || listing.instant_delivery;
+  return (
+    <Link
+      href={`/listing/${listing.id}`}
+      prefetch={false}
+      className="listing-card"
+    >
+      {/* Card Header - Title & Price */}
+      <div className="listing-card-header">
+        <h3 className="listing-card-title">{title}</h3>
+        <div className="listing-card-price">PKR {Number(listing.price).toLocaleString()}</div>
+      </div>
+
+      {/* Filter Tags + sold count */}
+      {(Number(listing.sales_count) > 0 || (listing.filter_display && Object.keys(listing.filter_display).length > 0)) && (
+        <div className="listing-card-tags">
+          <SoldCountBadge count={listing.sales_count} />
+          {listing.filter_display && Object.entries(listing.filter_display).map(([name, value]) => (
+            <span key={name} className="listing-card-tag">{value}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Card Footer - Store Info & Delivery */}
+      <div className="listing-card-footer">
+        <div className="listing-card-seller">
+          <div className="listing-card-avatar-wrap">
+            <div className="listing-card-avatar">
+              <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            </div>
+          </div>
+          <div className="listing-card-seller-info">
+            <span className="seller-name-row">
+              <span className="listing-card-seller-name">{listing.seller_name}</span>
+              {listing.seller_is_official_store && <OfficialStoreBadge />}
+            </span>
+            <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
+          </div>
+        </div>
+        <div className={`listing-card-delivery ${instant ? 'listing-card-delivery-instant' : ''}`}>
+          {instant ? (
+            <>
+              <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
+              </svg>
+              Instant
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              {listing.delivery_time || '10-15 Minutes'}
+            </>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+});
+
+// An option tile on an offer-mode page (denominations, gift-card values).
+// Memoised for the same reason as ListingCard: gift-card brands show 100+
+// tiles, and selecting one must not re-render every other one. `onSelect`
+// is a stable callback (see the ref in GameCategoryClient), so only the
+// two tiles whose `selected` flips actually render.
+//
+// A tile with a best listing is a real link to that offer, so listing pages
+// are reachable from server-rendered HTML (they were sitemap-only orphans for
+// crawlers). Tapping still selects the option in place; open-in-new-tab and
+// crawlers get the listing page. Plain <a>, not <Link>: gift-card pages show
+// 100+ tiles and Link would prefetch every one of them.
+const OfferOptionTile = memo(function OfferOptionTile({ opt, selected, gateSatisfied, onSelect }) {
+  const tileClassName = `offer-option-card ${selected ? 'offer-option-card-selected' : ''}`;
+  const tileContent = (
+    <>
+      {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
+      {selected && (
+        <span className="offer-option-check" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </span>
+      )}
+      {opt.icon_url && (
+        <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
+      )}
+      <span className="offer-option-name">{opt.name}</span>
+      {opt.min_price !== null && opt.min_price !== undefined ? (
+        <span className="offer-option-price">From Rs {Number(opt.min_price).toLocaleString()}</span>
+      ) : (
+        <span className="offer-option-price offer-option-price-empty">No offers yet</span>
+      )}
+      {opt.offer_count > 0 && (
+        <span className="offer-option-count">{opt.offer_count} seller{opt.offer_count !== 1 ? 's' : ''}</span>
+      )}
+    </>
+  );
+  if (opt.best_listing_id) {
+    return (
+      <a
+        href={`/listing/${opt.best_listing_id}`}
+        className={tileClassName}
+        aria-disabled={gateSatisfied ? undefined : 'true'}
+        tabIndex={gateSatisfied ? undefined : -1}
+        onClick={(event) => {
+          event.preventDefault();
+          if (gateSatisfied) onSelect(opt.id);
+        }}
+      >
+        {tileContent}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={tileClassName}
+      onClick={() => onSelect(opt.id)}
+      disabled={!gateSatisfied}
+    >
+      {tileContent}
+    </button>
+  );
+});
 
 function StarRating({ rating, count }) {
   if (rating === null || rating === undefined) return null;
@@ -454,6 +596,15 @@ export default function GameCategoryClient({ initialData = null }) {
     fetchData(activeFilters, 0, false, instantDeliveryFilter, searchQuery, sortBy, optionId);
   }
 
+  // handleOptionSelect closes over this render's state, so it is a new
+  // function every render; the memoised tiles get this stable wrapper
+  // instead, which always calls the latest one.
+  const handleOptionSelectRef = useRef(handleOptionSelect);
+  useEffect(() => {
+    handleOptionSelectRef.current = handleOptionSelect;
+  });
+  const selectOption = useCallback((optionId) => handleOptionSelectRef.current(optionId), []);
+
   if (loading && !data) {
     return (
       <div className="container">
@@ -769,68 +920,15 @@ export default function GameCategoryClient({ initialData = null }) {
                 </div>
               )}
               <div className={`offer-options-grid ${!gateSatisfied ? 'offer-options-grid-disabled' : ''}`}>
-                {options.map((opt) => {
-                  const tileClassName = `offer-option-card ${opt.id === selectedOption ? 'offer-option-card-selected' : ''}`;
-                  const tileContent = (
-                    <>
-                      {opt.is_popular && <span className="offer-option-popular">★ Popular</span>}
-                      {opt.id === selectedOption && (
-                        <span className="offer-option-check" aria-hidden="true">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                        </span>
-                      )}
-                      {opt.icon_url && (
-                        <img src={opt.icon_url} alt="" className="offer-option-icon" loading="lazy" />
-                      )}
-                      <span className="offer-option-name">{opt.name}</span>
-                      {opt.min_price !== null && opt.min_price !== undefined ? (
-                        <span className="offer-option-price">From Rs {Number(opt.min_price).toLocaleString()}</span>
-                      ) : (
-                        <span className="offer-option-price offer-option-price-empty">No offers yet</span>
-                      )}
-                      {opt.offer_count > 0 && (
-                        <span className="offer-option-count">{opt.offer_count} seller{opt.offer_count !== 1 ? 's' : ''}</span>
-                      )}
-                    </>
-                  );
-                  if (opt.best_listing_id) {
-                    // A real link to the option's best offer, so listing pages
-                    // are reachable from server-rendered HTML (they were
-                    // sitemap-only orphans for crawlers). Clicking still
-                    // selects the option in place; open-in-new-tab and
-                    // crawlers get the listing page. Plain <a>, not <Link>:
-                    // gift-card pages show 100+ tiles and Link would prefetch
-                    // every one of them.
-                    return (
-                      <a
-                        key={opt.id}
-                        href={`/listing/${opt.best_listing_id}`}
-                        className={tileClassName}
-                        aria-disabled={gateSatisfied ? undefined : 'true'}
-                        tabIndex={gateSatisfied ? undefined : -1}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          if (gateSatisfied) handleOptionSelect(opt.id);
-                        }}
-                      >
-                        {tileContent}
-                      </a>
-                    );
-                  }
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={tileClassName}
-                      onClick={() => handleOptionSelect(opt.id)}
-                      disabled={!gateSatisfied}
-                    >
-                      {tileContent}
-                    </button>
-                  );
-                })}
+                {options.map((opt) => (
+                  <OfferOptionTile
+                    key={opt.id}
+                    opt={opt}
+                    selected={opt.id === selectedOption}
+                    gateSatisfied={gateSatisfied}
+                    onSelect={selectOption}
+                  />
+                ))}
               </div>
             </div>
 
@@ -1238,68 +1336,14 @@ export default function GameCategoryClient({ initialData = null }) {
 
         {listings && listings.length > 0 ? (
           <div className="listing-cards-grid">
-            {/* prefetch={false}: every card in view would otherwise trigger a server
-                render of its page (2026-09-06 slow-click diagnosis). Listing pages are
-                dynamic, so the prefetch caches nothing useful anyway. */}
             {listings.map((listing) => (
-              <Link
+              <ListingCard
                 key={listing.id}
-                href={`/listing/${listing.id}`}
-                prefetch={false}
-                className="listing-card"
-              >
-                {/* Card Header - Title & Price */}
-                <div className="listing-card-header">
-                  <h3 className="listing-card-title">{tileTitle(listing, data)}</h3>
-                  <div className="listing-card-price">PKR {Number(listing.price).toLocaleString()}</div>
-                </div>
-
-                {/* Filter Tags + sold count */}
-                {(Number(listing.sales_count) > 0 || (listing.filter_display && Object.keys(listing.filter_display).length > 0)) && (
-                  <div className="listing-card-tags">
-                    <SoldCountBadge count={listing.sales_count} />
-                    {listing.filter_display && Object.entries(listing.filter_display).map(([name, value]) => (
-                      <span key={name} className="listing-card-tag">{value}</span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Card Footer - Store Info & Delivery */}
-                <div className="listing-card-footer">
-                  <div className="listing-card-seller">
-                    <div className="listing-card-avatar-wrap">
-                      <div className="listing-card-avatar">
-                        <img src={listing.seller_avatar_url || '/avatar-default.svg'} alt={listing.seller_name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                      </div>
-                    </div>
-                    <div className="listing-card-seller-info">
-                      <span className="seller-name-row">
-                        <span className="listing-card-seller-name">{listing.seller_name}</span>
-                        {listing.seller_is_official_store && <OfficialStoreBadge />}
-                      </span>
-                      <StarRating rating={listing.seller_avg_rating} count={listing.seller_review_count} />
-                    </div>
-                  </div>
-                  <div className={`listing-card-delivery ${(listing.is_auto_delivery || listing.instant_delivery) ? 'listing-card-delivery-instant' : ''}`}>
-                    {(listing.is_auto_delivery || listing.instant_delivery) ? (
-                      <>
-                        <svg className="instant-delivery-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M13 2L3 14h9l-1 10 10-12h-9l1-10z"/>
-                        </svg>
-                        Instant
-                      </>
-                    ) : (
-                      <>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10"/>
-                          <polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                        {listing.delivery_time || '10-15 Minutes'}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </Link>
+                listing={listing}
+                listingMode={data.listing_mode}
+                gameName={game?.name}
+                categoryName={category?.name}
+              />
             ))}
             {pagination?.next_offset !== null && pagination?.next_offset !== undefined && (
               <div className="listing-cards-load-more">

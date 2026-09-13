@@ -1740,6 +1740,24 @@ html[data-auth-hint="1"] .navbar-guest-links {
   background: var(--bg-primary);
   cursor: pointer;
   transition: background var(--transition);
+  /* /keys, /accounts, /games list 400–500 of these; only the first screen is
+     ever visible at once. Skipping layout/paint of the off-screen rows
+     halved the page's first layout and dropped the font-swap relayout
+     (mobile INP work, 2026-09-13). The intrinsic size is the measured row
+     height (69px) MINUS the 28px of vertical padding: the property sizes the
+     content box even under border-box, and a placeholder that forgets that
+     is 28px too tall until the row renders — a layout shift. `auto` keeps
+     the real height once a row has rendered, so the A–Z jump links and
+     scroll position stay accurate. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 41px;
+}
+
+/* Two narrow columns: long names wrap, rows run taller (89px rendered). */
+@media (min-width: 480px) and (max-width: 1023px) {
+  .game-item {
+    contain-intrinsic-size: auto 61px;
+  }
 }
 
 .game-item:hover {
@@ -6869,6 +6887,11 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: inherit;
   transition: all 0.2s ease;
   gap: 12px;
+  /* Same idea as .game-item: up to 48 cards per page, a handful on screen.
+     131px = the measured 169px card height minus 18px padding top and
+     bottom and the 1px borders (content-box, see .game-item). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 131px;
 }
 
 .listing-card:hover {

@@ -1,6 +1,7 @@
 import { fetchGames, fetchHomePopular } from '@/lib/api';
 import { SITE_NAME, createPublicMetadata } from '@/lib/seo';
 import GameItem from '@/components/GameItem';
+import ListNav from '@/components/ListNav';
 import PopularPanel from '@/components/PopularPanel';
 import HomeCTA from '@/components/HomeCTA';
 import Link from 'next/link';
@@ -121,11 +122,11 @@ export default async function HomePage() {
             ))}
           </div>
         ) : popularGames.length > 0 ? (
-          <div className="games-grid">
+          <ListNav className="games-grid">
             {popularGames.map((game) => (
               <GameItem key={game.id} game={game} />
             ))}
-          </div>
+          </ListNav>
         ) : (
           <div className="empty-state">
             <p>No games available yet. Check back soon!</p>

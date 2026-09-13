@@ -1,12 +1,16 @@
-import Link from 'next/link';
 import { GameIconFallback } from '@/lib/icons';
 import { optimizedImageUrl } from '@/lib/imageUrl';
 import { formatStartingPrice } from '@/lib/price';
 import { gameTilePath } from '@/lib/marketplaceUrls';
 
+// A plain <a>, not next/link: the grid around these tiles (components/ListNav.js)
+// turns a tap into a client-side navigation for every row at once, so /games'
+// 500+ tiles add no per-row component to hydrate (mobile INP, 2026-09-13).
+// Prefetch was already off — each tile scrolled into view would otherwise
+// have cost a server render (2026-09-06 slow-click diagnosis).
 export default function GameItem({ game }) {
   return (
-    <Link href={gameTilePath(game)} prefetch={false} className="game-item">
+    <a href={gameTilePath(game)} className="game-item">
       <div className="game-icon">
         {game.icon_url ? (
           // A plain <img> at one fixed optimizer URL rather than next/image's
@@ -35,6 +39,6 @@ export default function GameItem({ game }) {
         </div>
       </div>
       <div className="game-arrow">›</div>
-    </Link>
+    </a>
   );
 }

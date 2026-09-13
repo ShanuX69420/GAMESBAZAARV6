@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import Script from 'next/script';
 import { captureFirstTouch } from '@/lib/attribution';
+import { runWhenIdle } from '@/lib/idle';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
@@ -35,16 +36,26 @@ function installStubs() {
     fbq.queue = [];
     window.fbq = fbq;
     if (!window._fbq) window._fbq = fbq;
-    const script = document.createElement('script');
-    script.async = true;
-    script.src = 'https://connect.facebook.net/en_US/fbevents.js';
-    document.head.appendChild(script);
     // Advanced matching: PKR-only Pakistani marketplace, so country is a
     // constant match key. fbevents.js hashes it before sending.
     window.fbq('init', PIXEL_ID, { country: 'pk' });
     window.fbq('track', 'PageView');
+    runWhenIdle(() => {
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+      document.head.appendChild(script);
+    });
   }
 }
+
+// Third-party tag scripts run only once the page has loaded AND the browser
+// is idle (lib/idle.js). Evaluating gtag.js + fbevents.js (+ the pixel's
+// config script) is ~550 ms of main-thread time on a 4x-throttled phone, and
+// it used to land 1-3 s after load - exactly when visitors start tapping, so
+// a tap could wait behind it (Search Console mobile INP > 200 ms,
+// 2026-09-13). Nothing is lost by waiting: every gtag()/fbq() call queues in
+// the stubs above and is replayed when the real script arrives.
 installStubs();
 // Same module-eval timing: document.referrer still holds the external
 // referrer here; by the first route change it would be meaningless.
@@ -74,10 +85,12 @@ function MetaPixelRouteTracker() {
 export default function Analytics() {
   return (
     <>
+      {/* lazyOnload = injected during browser idle time after load, for the
+          same reason fbevents.js waits above. */}
       {GA_ID && (
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
       )}
       {PIXEL_ID && (

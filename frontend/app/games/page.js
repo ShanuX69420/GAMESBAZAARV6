@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import { fetchGames } from '@/lib/api';
 import GameItem from '@/components/GameItem';
 import JsonLd from '@/components/JsonLd';
+import ListNav from '@/components/ListNav';
 import Link from 'next/link';
 import { breadcrumbJsonLd, collectionPageJsonLd, createPublicMetadata } from '@/lib/seo';
 import { groupGamesByAlphabet, stockedGamesOrAll } from '@/lib/gameGroups';
@@ -69,8 +70,11 @@ export default async function AllGamesPage() {
             ))}
           </nav>
 
-          {/* Single continuous list with inline letter dividers */}
-          <div className="games-grid games-grid-alpha">
+          {/* Single continuous list with inline letter dividers. ListNav
+              gives the 500+ plain-anchor tiles client-side navigation with
+              one handler instead of a next/link each (mobile INP,
+              2026-09-13; see components/GameItem.js). */}
+          <ListNav className="games-grid games-grid-alpha">
             {grouped.map(({ letter, games: sectionGames }) => (
               <Fragment key={letter}>
                 <div
@@ -84,7 +88,7 @@ export default async function AllGamesPage() {
                 ))}
               </Fragment>
             ))}
-          </div>
+          </ListNav>
         </>
       ) : (
         <div className="empty-state">
