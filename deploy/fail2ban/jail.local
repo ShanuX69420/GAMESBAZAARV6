@@ -9,10 +9,17 @@
 #                          (filter.d/gamesbazaar-scanner.conf). Six hits in ten
 #                          minutes = 24 h ban. Real browsers never send these.
 #                          Would have cut that scan from 4 hours to ~12 minutes.
-#   gamesbazaar-flood    — 100 rate-limit rejections (429, from the nginx
+#   gamesbazaar-flood    — 300 rate-limit rejections (429, from the nginx
 #                          limit_req in deploy/nginx/rate-limit.conf) in five
 #                          minutes = 30 min ban. High on purpose: Pakistani
 #                          ISPs put many buyers behind one CGNAT address.
+#                          Was 100 until 2026-09-13, when ONE desktop Firefox
+#                          browsing normally (store page → ~100 Next prefetch
+#                          requests in a second, 62 of them 429) reached 107
+#                          in four minutes and banned Shayan's own PC. A real
+#                          flood (the 300 req/s probe bot below) still hits
+#                          300 within seconds; a browser or a CGNAT cluster
+#                          of shoppers does not.
 #
 # Crawler safety (Google and the AI search bots are a sales channel — losing
 # them is not an option):
@@ -70,6 +77,6 @@ enabled   = true
 port      = http,https
 logpath   = /var/log/nginx/access.log
 findtime  = 5m
-maxretry  = 100
+maxretry  = 300
 bantime   = 30m
 banaction = ufw[application=gamesbazaar-web]

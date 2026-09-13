@@ -194,6 +194,14 @@ export default function SellerProfileClient({
           {profile.games && profile.games.length > 0 ? (
             <div className="sp-games-grid">
               {profile.games.map((game) => (
+                // prefetch={false}: a desktop viewport shows every game tile at once
+                // and each one links to a different dynamic game+category route, so
+                // Next 16's per-segment prefetch fired ~100 requests in one second on
+                // page load — past the nginx per-IP limit (deploy/nginx/rate-limit.conf).
+                // The 429s piled up until fail2ban's flood jail banned the visitor's IP
+                // (2026-09-13, Shayan's own PC). Category routes are dynamic and cache
+                // nothing useful from a prefetch anyway (same reasoning as
+                // GameCategoryClient).
                 <Link
                   key={game.game_slug}
                   href={buildSellerListingsPath({
@@ -201,6 +209,7 @@ export default function SellerProfileClient({
                     categorySlug: game.categories[0]?.slug || '',
                   })}
                   className="sp-game-tile"
+                  prefetch={false}
                 >
                   <div className="sp-game-tile-header">
                     <h3 className="sp-game-tile-name">{game.game_name}</h3>

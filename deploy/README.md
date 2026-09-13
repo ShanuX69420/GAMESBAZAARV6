@@ -60,7 +60,9 @@ Two layers, added after a four-hour SQL-injection scan from one IP
 - **fail2ban** (`fail2ban/`): `gamesbazaar-scanner` bans for 24 h after six
   injection/probe signatures in ten minutes (`sleep(`, `waitfor delay`,
   `union select`, `' or 1=1`, `<script`, `wp-login.php`, `.env`, …);
-  `gamesbazaar-flood` bans for 30 min after 100 `429`s in five minutes. Bans
+  `gamesbazaar-flood` bans for 30 min after 300 `429`s in five minutes (was
+  100 until 2026-09-13, when one desktop browser's Next prefetch burst on the
+  store page banned Shayan's own PC). Bans
   are ufw rules (`ufw status` lists them) limited to ports 80/443. Real
   browsers never trip the first; the second needs a sustained flood. Both
   ignore the droplet's own IP.
@@ -79,7 +81,7 @@ any jail; the AI crawlers are exempt from the flood jail by user agent; the
 scanner jail trusts no user agent at all.
 
 **Your own load tests will trip the flood jail.** A Lighthouse or parallel
-curl run from an outside PC that collects 100 `429`s in five minutes bans that
+curl run from an outside PC that collects 300 `429`s in five minutes bans that
 IP from ports 80/443 for 30 minutes (SSH stays open). Undo it with the
 `unbanip` command below, or run load tests from the droplet itself.
 
