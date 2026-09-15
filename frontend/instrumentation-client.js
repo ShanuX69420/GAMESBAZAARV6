@@ -29,12 +29,21 @@ function initSentry(Sentry) {
     // Dropping the integration is what turns that off; `tracesSampleRate: 0`
     // alone did not.
     integrations: (defaults) => defaults.filter((integration) => integration.name !== 'BrowserTracing'),
-    // Android in-app browsers (Google/Facebook/Instagram WebViews) inject a
-    // Java-JS bridge into every page; it throws these when the host app is
-    // torn down mid-call. Third-party noise, not our code.
     ignoreErrors: [
+      // Android in-app browsers (Google/Facebook/Instagram WebViews) inject a
+      // Java-JS bridge into every page; it throws these when the host app is
+      // torn down mid-call. Third-party noise, not our code.
       'Java object is gone',
       'Java exception was raised during method invocation',
+      // The browser fires this on `window` when a ResizeObserver callback
+      // changes layout and would need another pass in the same frame; it
+      // defers that pass to the next frame and reports the deferral as an
+      // error. Nothing fails and nothing is lost. Neither our code nor our
+      // shipped dependencies create a ResizeObserver, so it comes from an
+      // extension, a WebView or a third-party script. First seen 2026-09-15
+      // (older Chromium wording); the second string is the current wording.
+      'ResizeObserver loop limit exceeded',
+      'ResizeObserver loop completed with undelivered notifications',
     ],
   });
   sentry = Sentry;
