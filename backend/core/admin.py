@@ -4,6 +4,7 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
 from django.db import transaction
+from django.db.models import Case, Value, When
 from django.core.exceptions import PermissionDenied
 from django.core.files.uploadedfile import UploadedFile
 from django.shortcuts import render
@@ -367,7 +368,14 @@ class ListingAdmin(admin.ModelAdmin):
     list_display = ['title', 'seller', 'game_category', 'price', 'quantity', 'status',
                     'retire_reason', 'created_at']
     list_filter = ['status', 'retire_reason', 'game_category__game']
-    search_fields = ['title', 'seller__username']
+    # Also the search behind every listing autocomplete (WhatsApp sales).
+    # "psn usa 10" has to reach the game and page names: many listings
+    # share a title like "10 USD (USA)" across pages.
+    search_fields = ['title', 'seller__username',
+                     'game_category__game__name',
+                     'game_category__game__search_keywords',
+                     'game_category__category__name',
+                     'game_category__display_name']
     readonly_fields = ['seller', 'created_at', 'updated_at', 'auto_delivery_inventory']
     exclude = ['auto_delivery_data']
     raw_id_fields = ['offline_account']
@@ -377,6 +385,49 @@ class ListingAdmin(admin.ModelAdmin):
     autocomplete_fields = ['game_category', 'option']
     list_select_related = ['seller', 'game_category__game', 'game_category__category']
     actions = ['retire_by_hand']
+
+    def get_queryset(self, request):
+        # autocomplete_label walks game_category -> game/category for every
+        # dropdown row; fetch them in the same query.
+        return super().get_queryset(request).select_related(
+            'game_category__game', 'game_category__category',
+        )
+
+    def get_search_results(self, request, queryset, search_term):
+        qs, use_distinct = super().get_search_results(request, queryset, search_term)
+        term = search_term.strip()
+        if term.isdigit() and len(term) <= 9:
+            # A pasted listing id (the number in the /listing/<id> URL) is
+            # the surest way to name one listing among lookalikes.
+            qs = qs | queryset.filter(pk=int(term))
+        # Live listings first in the autocomplete dropdown. The changelist
+        # re-applies its own column ordering after this, so it only shapes
+        # the dropdown.
+        qs = qs.order_by(
+            Case(When(status='active', then=Value(0)), default=Value(1)),
+            '-created_at',
+        )
+        return qs, use_distinct
+
+    def autocomplete_label(self, obj):
+        """Dropdown row text: title, price, page, stock and id.
+
+        str(listing) is just "title — PKR price", which repeats across
+        pages, so the picker needs the page and stock to tell twins apart.
+        """
+        gc = obj.game_category
+        if obj.status == 'active':
+            stock = 'unlimited' if obj.quantity is None else f'{obj.quantity} in stock'
+        elif obj.status == 'sold':
+            stock = 'sold out'
+        else:
+            stock = 'switched off'
+        price = obj.price
+        price_text = f'{price:,.0f}' if price == price.to_integral_value() else f'{price:,.2f}'
+        return (
+            f'{obj.title} — PKR {price_text} · {gc.game.name} › {gc.effective_name}'
+            f' · {stock} · #{obj.pk}'
+        )
 
     @admin.action(description='Retire for good (switch off + redirect the page now)')
     def retire_by_hand(self, request, queryset):
@@ -632,16 +683,32 @@ class WhatsAppCheckoutAdmin(admin.ModelAdmin):
     event, ``manage.py resend_whatsapp_purchase <ref>`` sends it again.
     """
     form = WhatsAppCheckoutAdminForm
-    list_display = ['ref', 'listing_title', 'amount', 'buyer_phone', 'status',
-                    'from_ad_click', 'created_at']
+    list_display = ['ref', 'listing_title', 'listing_page', 'amount', 'buyer_phone',
+                    'status', 'from_ad_click', 'created_at']
     list_filter = ['status']
+    list_select_related = ['listing__game_category__game',
+                           'listing__game_category__category']
     search_fields = ['ref', 'listing_title', 'buyer_phone']
     autocomplete_fields = ['listing']
-    fields = ['ref', 'status', 'listing', 'listing_title', 'quantity', 'amount',
-              'buyer_phone', 'page_url', 'user', 'from_ad_click',
+    fields = ['ref', 'status', 'listing', 'listing_page', 'listing_title', 'quantity',
+              'amount', 'buyer_phone', 'page_url', 'user', 'from_ad_click',
               'review_link', 'created_at', 'completed_at']
-    readonly_fields = ['ref', 'listing_title', 'page_url', 'user',
+    readonly_fields = ['ref', 'listing_page', 'listing_title', 'page_url', 'user',
                        'from_ad_click', 'review_link', 'created_at', 'completed_at']
+
+    @admin.display(description='Listing page')
+    def listing_page(self, obj):
+        # Which page the picked listing lives on: the title alone repeats
+        # across pages ("10 USD (USA)" on PlayStation and on PSN USA).
+        listing = obj.listing if obj else None
+        if listing is None:
+            return '—'
+        gc = listing.game_category
+        return format_html(
+            '<a href="{}">{} › {}</a> · #{}',
+            reverse('admin:core_listing_change', args=[listing.pk]),
+            gc.game.name, gc.effective_name, listing.pk,
+        )
 
     @admin.display(description='Review link')
     def review_link(self, obj):

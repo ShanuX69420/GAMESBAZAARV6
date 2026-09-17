@@ -19,7 +19,7 @@ from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from . import meta_capi
-from .models import Listing, WhatsAppCheckout
+from .models import Game, GameCategory, Listing, WhatsAppCheckout
 from .services import complete_whatsapp_checkout
 from .test_meta_capi import META_TEST_SETTINGS, PurchaseFixtureMixin, sha256
 
@@ -253,7 +253,8 @@ class WhatsAppCompletionTests(PurchaseFixtureMixin, TestCase):
 @override_settings(**META_TEST_SETTINGS)
 class WhatsAppAdminTests(PurchaseFixtureMixin, TestCase):
     """The admin change form is the only place a buyer number is typed, so it
-    is where an unreadable one has to be caught."""
+    is where an unreadable one has to be caught. Its listing picker also has
+    to tell apart listings that share a title and price across pages."""
 
     def setUp(self):
         self._make_marketplace()
@@ -307,6 +308,71 @@ class WhatsAppAdminTests(PurchaseFixtureMixin, TestCase):
         self.assertEqual(self.checkout.amount, Decimal('175.00'))
         self.assertEqual(self.checkout.status, 'clicked')
         dispatch.assert_not_called()
+
+    # ── Listing picker ──────────────────────────────────────────────────
+
+    def _lookalike_listing(self, game_name, keywords='', **overrides):
+        # Same title and price on another page — "10 USD (USA)" exists on
+        # the PlayStation page and again on the PSN USA page.
+        game = Game.objects.create(name=game_name, search_keywords=keywords)
+        page = GameCategory.objects.create(
+            game=game, category=self.game_category.category,
+        )
+        fields = dict(
+            seller=self.seller, game_category=page, title=self.listing.title,
+            price=self.listing.price, quantity=None, status='active',
+        )
+        fields.update(overrides)
+        return Listing.objects.create(**fields)
+
+    def _pick(self, term):
+        response = self.web.get('/admin/autocomplete/', {
+            'app_label': 'core', 'model_name': 'whatsappcheckout',
+            'field_name': 'listing', 'term': term,
+        })
+        self.assertEqual(response.status_code, 200)
+        return response.json()['results']
+
+    def test_listing_picker_names_the_page_stock_and_id_of_lookalikes(self):
+        twin = self._lookalike_listing('PSN USA')
+
+        results = self._pick('CAPI item')
+
+        self.assertCountEqual(
+            [r['text'] for r in results],
+            [
+                f'CAPI item — PKR 150 · CAPI Game › CAPI Accounts · 2 in stock · #{self.listing.pk}',
+                f'CAPI item — PKR 150 · PSN USA › CAPI Accounts · unlimited · #{twin.pk}',
+            ],
+        )
+
+    def test_listing_picker_searches_the_page_name_and_keywords(self):
+        twin = self._lookalike_listing('PSN USA', keywords='psn')
+
+        self.assertEqual([r['id'] for r in self._pick('psn usa item')], [str(twin.pk)])
+        self.assertEqual(
+            [r['id'] for r in self._pick('capi game item')], [str(self.listing.pk)],
+        )
+
+    def test_listing_picker_lists_live_listings_before_switched_off_ones(self):
+        # The twin is newer, so plain newest-first would put it on top.
+        twin = self._lookalike_listing('PSN USA', status='inactive')
+
+        results = self._pick('CAPI item')
+
+        self.assertEqual([r['id'] for r in results], [str(self.listing.pk), str(twin.pk)])
+        self.assertIn('switched off', results[1]['text'])
+
+    def test_listing_picker_accepts_a_pasted_listing_id(self):
+        twin = self._lookalike_listing('PSN USA')
+
+        self.assertEqual([r['id'] for r in self._pick(str(twin.pk))], [str(twin.pk)])
+
+    def test_change_list_and_form_show_the_listing_page(self):
+        for url in ('/admin/core/whatsappcheckout/',
+                    f'/admin/core/whatsappcheckout/{self.checkout.pk}/change/'):
+            response = self.web.get(url)
+            self.assertContains(response, 'CAPI Game › CAPI Accounts')
 
 
 @override_settings(**META_TEST_SETTINGS)

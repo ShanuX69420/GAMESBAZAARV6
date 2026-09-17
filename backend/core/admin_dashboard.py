@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from django.contrib import admin
 from django.contrib.admin import AdminSite
+from django.contrib.admin.views.autocomplete import AutocompleteJsonView
 from django.db.models import Count, Sum, Avg, Q, F
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
@@ -15,11 +16,32 @@ from django.urls import path
 from django.utils import timezone
 
 
+class LabelledAutocompleteJsonView(AutocompleteJsonView):
+    """Autocomplete rows labelled by the target ModelAdmin, not by __str__.
+
+    A ModelAdmin that defines ``autocomplete_label(obj)`` decides the text
+    of every dropdown row that points at its model. ListingAdmin uses it to
+    add the page, stock and id: dozens of listings share a title and price
+    ("10 USD (USA)" on the PlayStation page and on the PSN USA page), so
+    the WhatsApp-sale picker was a guess.
+    """
+
+    def serialize_result(self, obj, to_field_name):
+        result = super().serialize_result(obj, to_field_name)
+        label = getattr(self.model_admin, 'autocomplete_label', None)
+        if label is not None:
+            result['text'] = label(obj)
+        return result
+
+
 class GamesBazaarAdminSite(AdminSite):
     site_header = '🎮 GamesBazaar Admin'
     site_title = 'GamesBazaar'
     index_title = 'Dashboard'
     index_template = 'admin/dashboard_index.html'
+
+    def autocomplete_view(self, request):
+        return LabelledAutocompleteJsonView.as_view(admin_site=self)(request)
 
     def get_urls(self):
         custom = [
