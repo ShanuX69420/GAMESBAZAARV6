@@ -16,7 +16,7 @@ export default function TermsOfServicePage() {
         <p className="legal-subtitle">
           These are the rules of our store. We&rsquo;ve kept them as straightforward as possible &mdash; no 50-page legalese.
         </p>
-        <div className="legal-updated">Last updated: August 22, 2026</div>
+        <div className="legal-updated">Last updated: September 20, 2026</div>
       </div>
 
       <div className="legal-content">
@@ -110,7 +110,7 @@ export default function TermsOfServicePage() {
             <li>All transactions on GamesBazaar use our internal wallet system in <strong>Pakistani Rupees (PKR)</strong>.</li>
             <li>When you place an order, you can pay from your wallet balance or directly at checkout. Approved refunds are credited straight back to your wallet.</li>
             <li>Checkout may include a flat <strong>service fee</strong>, always shown as its own line before you pay. If your order is refunded, the service fee is refunded with it.</li>
-            <li>The <strong>minimum withdrawal amount is PKR 500</strong>.</li>
+            <li>There is <strong>no minimum withdrawal amount</strong> — you can withdraw any balance in your wallet.</li>
             <li>Withdrawals are processed to Pakistani bank accounts. You must provide accurate bank details (account title, account number, and bank name).</li>
             <li>Withdrawal requests are reviewed and processed by our team. Processing times may vary.</li>
             <li>GamesBazaar is not responsible for delays caused by your bank.</li>

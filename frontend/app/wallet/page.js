@@ -18,7 +18,7 @@ const MIN_TOP_UP_AMOUNT = 500;
 const MIN_TOP_UP_MESSAGE = 'Minimum top-up is PKR 500.';
 const MAX_TOP_UP_AMOUNT = 10000;
 const MAX_TOP_UP_MESSAGE = 'Max is 10000. Please contact support if you want to add more.';
-const MIN_WITHDRAW_AMOUNT = 500;
+const MIN_WITHDRAW_AMOUNT = 1;
 const JAZZCASH_MOBILE_REGEX = /^03\d{9}$/;
 const JAZZCASH_MOBILE_MESSAGE = 'Enter a valid JazzCash mobile number (e.g., 03001234567).';
 const WHATSAPP_NUMBER = '923712101998';
@@ -455,7 +455,7 @@ export default function WalletPage() {
           <h2 className="card-title">Request Withdrawal</h2>
           <p className="card-text">
             Enter the amount and your payment details. Your balance will be held until
-            admin processes the withdrawal. Minimum withdrawal is <strong>PKR {MIN_WITHDRAW_AMOUNT}</strong>.
+            admin processes the withdrawal. You can withdraw any amount up to your balance.
           </p>
           <form onSubmit={handleWithdraw} className="topup-form">
             <div className="form-group">
@@ -465,7 +465,7 @@ export default function WalletPage() {
                 className="form-input"
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
-                placeholder={`Min. ${MIN_WITHDRAW_AMOUNT}`}
+                placeholder="Enter amount"
                 min={MIN_WITHDRAW_AMOUNT}
                 step="0.01"
                 required

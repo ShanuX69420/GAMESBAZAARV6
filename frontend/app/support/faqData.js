@@ -32,7 +32,7 @@ export const FAQ_ITEMS = [
       },
       {
         q: 'How do I withdraw money from my wallet?',
-        a: 'Go to your Wallet page and request a withdrawal (minimum PKR 500). Provide your account details and we\'ll process it within 1-2 business days.',
+        a: 'Go to your Wallet page and request a withdrawal — any amount, no minimum. Provide your account details and we\'ll process it within 1-2 business days.',
       },
       {
         q: 'Are my payments secure?',

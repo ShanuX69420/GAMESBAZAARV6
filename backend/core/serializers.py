@@ -1494,9 +1494,9 @@ class CreateWithdrawRequestSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
-        min_value=Decimal('500.00'),
+        min_value=Decimal('1.00'),
         error_messages={
-            'min_value': 'Minimum withdrawal amount is PKR 500.',
+            'min_value': 'Minimum withdrawal amount is PKR 1.',
         },
     )
     payment_method = serializers.CharField(max_length=200, required=True, allow_blank=False)

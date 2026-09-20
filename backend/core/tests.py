@@ -2499,6 +2499,39 @@ class WithdrawalRequestTests(TestCase):
         self.assertEqual(transaction.amount, Decimal('500.00'))
         self.assertEqual(transaction.balance_after, Decimal('700.00'))
 
+    def test_withdrawal_allows_small_refund_amounts(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '150.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Buyer Account',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal('1050.00'))
+
+    def test_withdrawal_rejects_zero_amount(self):
+        response = self.client.post(
+            '/api/wallet/withdraw/',
+            {
+                'amount': '0.00',
+                'payment_method': 'JazzCash',
+                'account_title': 'Buyer Account',
+                'account_details': '03001234567',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(WithdrawRequest.objects.filter(user=self.user).exists())
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal('1200.00'))
+
     def test_withdrawal_rejects_insufficient_balance_without_side_effects(self):
         response = self.client.post(
             '/api/wallet/withdraw/',

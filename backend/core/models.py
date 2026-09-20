@@ -1036,7 +1036,7 @@ class WithdrawRequest(models.Model):
     amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('500.00'))],
+        validators=[MinValueValidator(Decimal('1.00'))],
     )
     payment_method = models.CharField(max_length=200, blank=True, default='',
                                        help_text='e.g., JazzCash, EasyPaisa, Bank Transfer')
@@ -1069,8 +1069,8 @@ class WithdrawRequest(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(amount__gte=Decimal('500.00')),
-                name='withdraw_amount_min_500',
+                check=models.Q(amount__gte=Decimal('1.00')),
+                name='withdraw_amount_min_1',
             ),
         ]
 
