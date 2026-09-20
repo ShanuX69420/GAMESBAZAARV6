@@ -44,6 +44,12 @@ function initSentry(Sentry) {
       // (older Chromium wording); the second string is the current wording.
       'ResizeObserver loop limit exceeded',
       'ResizeObserver loop completed with undelivered notifications',
+      // Snapchat's iOS in-app browser injects a script into every page that
+      // calls its own native bridge (their typo, not ours) and throws when
+      // the bridge is not there. The page is unaffected: first seen
+      // 2026-09-20, twice, both at the exact second a buyer in that browser
+      // completed a JazzCash purchase.
+      'SCDynimacBridge',
     ],
   });
   sentry = Sentry;
