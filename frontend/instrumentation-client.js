@@ -51,6 +51,22 @@ function initSentry(Sentry) {
       // completed a JazzCash purchase.
       'SCDynimacBridge',
     ],
+    // Matched against the file the error was thrown in (the newest stack
+    // frame), so an error that surfaces in our own code is never dropped.
+    denyUrls: [
+      // A Chrome extension's script that replaces `window.fetch` on every page
+      // it runs in, which makes it the throwing frame of any request that
+      // fails in that visitor's browser. We ship no such file. First seen
+      // 2026-09-20 as "TypeError: Failed to fetch" on /gift-cards: the
+      // request was Meta's pixel script phoning home, not one of ours.
+      /frame_ant\/frame_ant\.js/,
+      // Meta's pixel scripts (fbevents.js and the per-pixel config it pulls
+      // in). Their requests get blocked by ad blockers and privacy browsers
+      // and they do not catch the rejection. The page is unaffected, and
+      // purchases still reach Meta server-side through CAPI.
+      /\/signals\/config\/\d+/,
+      /\/fbevents\.js/,
+    ],
   });
   sentry = Sentry;
   window.removeEventListener('error', bufferError);
