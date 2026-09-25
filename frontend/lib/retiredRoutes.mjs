@@ -2,8 +2,8 @@
 //
 // Built from the deletion backups in tools/archive (offline-activation
 // category removed 2026-08-23; direct top-ups + six gift-card brands removed
-// 2026-09-02) and every destination was checked against the production API
-// on 2026-09-02. Kept as plain data so next.config.mjs stays readable and the
+// 2026-09-02; Mobile Legends gift cards removed 2026-09-25) and every
+// destination was checked against the production API on 2026-09-02. Kept as plain data so next.config.mjs stays readable and the
 // vitest suite can assert on it. Redirects are matched in array order, so the
 // per-game offline-activation exceptions must stay ABOVE the wildcard rule.
 //
@@ -34,7 +34,9 @@ export const RETIRED_PAGE_REDIRECTS = [
   { source: '/games/ludo-club/top-ups', destination: '/gift-cards' },
   { source: '/games/mangatoon/top-ups', destination: '/gift-cards' },
   { source: '/games/marvel-rivals/top-ups', destination: '/gift-cards' },
-  { source: '/games/mobile-legends-bang-bang/top-ups', destination: '/games/mobile-legends-bang-bang/gift-cards' },
+  { source: '/games/mobile-legends-bang-bang/top-ups', destination: '/gift-cards' },
+  // Deleted later, on 2026-09-25 (Fazer kept filling its orders wrongly).
+  { source: '/games/mobile-legends-bang-bang/gift-cards', destination: '/gift-cards' },
   { source: '/games/netflix/gift-cards', destination: '/gift-cards' },
   { source: '/games/oxide-survival-island/top-ups', destination: '/gift-cards' },
   { source: '/games/pubg-mobile/uc', destination: '/games/pubg-mobile/gift-cards' },
@@ -59,8 +61,8 @@ export const RETIRED_PAGE_ALIAS_REDIRECTS = [
   { source: '/games/call-of-duty-mobile/top-ups', destination: '/gift-cards' },
 ];
 
-// Games whose only pages were among the 32 above; /games/<slug> now renders
-// an empty "no categories" shell, so send it to the section page instead.
+// Games whose only pages were among the deleted ones above; /games/<slug> now
+// renders an empty "no categories" shell, so send it to the section page instead.
 export const EMPTY_GAME_REDIRECTS = [
   { source: '/games/8-ball-pool', destination: '/gift-cards' },
   { source: '/games/age-of-empires-mobile', destination: '/gift-cards' },
@@ -72,6 +74,7 @@ export const EMPTY_GAME_REDIRECTS = [
   { source: '/games/honkai-star-rail', destination: '/gift-cards' },
   { source: '/games/ludo-club', destination: '/gift-cards' },
   { source: '/games/mangatoon', destination: '/gift-cards' },
+  { source: '/games/mobile-legends-bang-bang', destination: '/gift-cards' },
   { source: '/games/netflix', destination: '/gift-cards' },
   { source: '/games/oxide-survival-island', destination: '/gift-cards' },
   { source: '/games/rainbow-six-mobile', destination: '/gift-cards' },
