@@ -655,6 +655,77 @@ describe('SEO route metadata', () => {
     expect(metadata.robots).toBeUndefined();
   });
 
+  describe('renamed-page twins', () => {
+    // xbox/subscriptions is the same page as xbox/game-pass (the category's
+    // own slug vs its per-game display slug). The redirect must come from the
+    // layout: thrown in the page it arrived after the streamed shell and went
+    // out as a 200 + meta refresh with a self-canonical (2026-09-26).
+    function stubCategoryApi(payload) {
+      vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(payload),
+      }));
+    }
+
+    const gamePass = {
+      category: { slug: 'game-pass', name: 'Game Pass' },
+      game: { name: 'Xbox' },
+      listing_pagination: { count: 36 },
+    };
+
+    it('308s the brand page twin to the buyer-facing slug from the layout', async () => {
+      stubCategoryApi(gamePass);
+      const { default: Layout } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
+
+      await expect(Layout({
+        children: null,
+        params: Promise.resolve({ slug: 'xbox', categorySlug: 'subscriptions' }),
+      })).rejects.toMatchObject({ digest: expect.stringContaining(';/games/xbox/game-pass;308;') });
+    });
+
+    it('renders the buyer-facing slug itself', async () => {
+      stubCategoryApi(gamePass);
+      const { default: Layout } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
+
+      const element = await Layout({
+        children: null,
+        params: Promise.resolve({ slug: 'xbox', categorySlug: 'game-pass' }),
+      });
+      expect(element).toBeTruthy();
+    });
+
+    it('keeps the region segment when a region page twin redirects', async () => {
+      stubCategoryApi({
+        category: { slug: 'subscription', name: 'Subscription' },
+        game: { name: 'PlayStation' },
+        region_page: { label: 'USA' },
+        region_listing_count: 4,
+      });
+      const { default: Layout } = await importFresh('../app/games/[slug]/[categorySlug]/[regionSlug]/layout.js');
+
+      await expect(Layout({
+        children: null,
+        params: Promise.resolve({ slug: 'playstation', categorySlug: 'subscriptions', regionSlug: 'usa' }),
+      })).rejects.toMatchObject({
+        digest: expect.stringContaining(';/games/playstation/subscription/usa;308;'),
+      });
+    });
+
+    it('never redirects when the API is unreachable', async () => {
+      vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+      const { default: Layout } = await importFresh('../app/games/[slug]/[categorySlug]/(brand)/layout.js');
+
+      const element = await Layout({
+        children: null,
+        params: Promise.resolve({ slug: 'xbox', categorySlug: 'subscriptions' }),
+      });
+      expect(element).toBeTruthy();
+    });
+  });
+
   it('gives a region page its own priced title, self-canonical and indexable state', async () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.gamesbazaar.pk');
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.gamesbazaar.pk');

@@ -1,6 +1,5 @@
-import { notFound, permanentRedirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import CategorySeoText from '@/components/CategorySeoText';
-import { canonicalCategoryPath } from '@/lib/marketplaceUrls';
 import { categoryPageApiUrl, fetchCategoryPage } from '@/lib/categoryPageSeo';
 import GameCategoryClient from '../GameCategoryClient';
 
@@ -36,17 +35,8 @@ export default async function GameCategoryPage({ params }) {
   const { slug, categorySlug } = await params;
   const initialData = await fetchInitialCategoryData({ slug, categorySlug });
 
-  // A renamed page also answers at the category's own slug (old links keep
-  // working), but only the buyer-facing URL should exist for search engines —
-  // otherwise Google sees two self-canonical copies of the same page. The
-  // query string is not carried over: the page never sees it (see above).
-  const canonicalPath = canonicalCategoryPath({
-    gameSlug: slug,
-    requestedSlug: categorySlug,
-    data: initialData,
-  });
-  if (canonicalPath) permanentRedirect(canonicalPath);
-
+  // Renamed-page twins (the category's own slug) are redirected by
+  // ./layout.js, above the loading boundary, so they get a real 308.
   return (
     <>
       <GameCategoryClient initialData={initialData} />

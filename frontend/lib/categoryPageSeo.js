@@ -49,6 +49,9 @@ export async function fetchCategorySeoSummary(url) {
     regionLabel: data?.region_page?.label || '',
     gameName: data?.game?.name || '',
     categoryName: data?.category?.name || '',
+    // The buyer-facing slug: a renamed page reached at the category's own
+    // slug redirects here (see the category layouts).
+    categorySlug: data?.category?.slug || '',
   };
 }
 

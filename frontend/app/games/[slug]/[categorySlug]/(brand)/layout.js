@@ -1,6 +1,7 @@
 import { Fragment, createElement } from 'react';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import JsonLd from '@/components/JsonLd';
+import { canonicalCategoryPath } from '@/lib/marketplaceUrls';
 import { breadcrumbJsonLd, collectionPageJsonLd } from '@/lib/seo';
 import {
   categoryPageApiUrl,
@@ -47,6 +48,20 @@ export default async function GameCategoryLayout({ children, params }) {
   // status (and, now that the route is cached, would be stored that way).
   // An unreachable API (seo === null) is not a 404.
   if (seo?.notFound) notFound();
+
+  // A renamed page also answers at the category's own slug (old links keep
+  // working), but only the buyer-facing URL should exist for search engines.
+  // Redirected from here for the same reason as the 404 above: thrown in the
+  // page it arrived after the shell, so the twin answered 200 with a
+  // self-canonical and a meta refresh instead of a 308 (seen 2026-09-26 on
+  // xbox/subscriptions, playstation/subscriptions, roblox/currency). The
+  // query string is not carried over: this route never sees it.
+  const canonicalPath = canonicalCategoryPath({
+    gameSlug: slug,
+    requestedSlug: categorySlug,
+    data: { category: { slug: seo?.categorySlug } },
+  });
+  if (canonicalPath) permanentRedirect(canonicalPath);
 
   const title = seo?.seoTitle || fallbackTitle(slug, categorySlug);
   const description = seo?.seoDescription || fallbackDescription(slug, categorySlug);

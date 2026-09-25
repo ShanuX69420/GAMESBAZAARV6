@@ -1,6 +1,5 @@
-import { notFound, permanentRedirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import CategorySeoText from '@/components/CategorySeoText';
-import { canonicalCategoryPath } from '@/lib/marketplaceUrls';
 import { categoryPageApiUrl, fetchCategoryPage } from '@/lib/categoryPageSeo';
 import GameCategoryClient from '../GameCategoryClient';
 
@@ -29,15 +28,7 @@ export default async function GameCategoryRegionPage({ params }) {
   const { slug, categorySlug, regionSlug } = await params;
   const initialData = await fetchInitialRegionData({ slug, categorySlug, regionSlug });
 
-  // Renamed categories: only the buyer-facing slug is canonical, here too.
-  const canonicalPath = canonicalCategoryPath({
-    gameSlug: slug,
-    requestedSlug: categorySlug,
-    data: initialData,
-    regionSlug,
-  });
-  if (canonicalPath) permanentRedirect(canonicalPath);
-
+  // Renamed-page twins are redirected by ./layout.js (a real 308).
   return (
     <>
       <GameCategoryClient initialData={initialData} />

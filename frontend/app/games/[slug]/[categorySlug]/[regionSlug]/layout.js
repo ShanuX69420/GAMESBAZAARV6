@@ -1,6 +1,7 @@
 import { Fragment, createElement } from 'react';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import JsonLd from '@/components/JsonLd';
+import { canonicalCategoryPath } from '@/lib/marketplaceUrls';
 import { breadcrumbJsonLd, collectionPageJsonLd } from '@/lib/seo';
 import {
   categoryPageApiUrl,
@@ -44,6 +45,16 @@ export default async function GameCategoryRegionLayout({ children, params }) {
   // status (and, now that the route is cached, would be stored that way).
   // An unreachable API (seo === null) is not a 404.
   if (seo?.notFound) notFound();
+
+  // Renamed categories: only the buyer-facing slug is canonical, here too —
+  // redirected from the layout so it is a real 308 (see ../(brand)/layout.js).
+  const canonicalPath = canonicalCategoryPath({
+    gameSlug: slug,
+    requestedSlug: categorySlug,
+    data: { category: { slug: seo?.categorySlug } },
+    regionSlug,
+  });
+  if (canonicalPath) permanentRedirect(canonicalPath);
 
   const title = seo?.seoTitle || fallbackRegionTitle(slug, categorySlug, regionSlug, seo);
   const description = seo?.seoDescription || fallbackRegionDescription(slug, categorySlug, regionSlug, seo);
