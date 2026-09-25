@@ -2,9 +2,10 @@
 //
 // Built from the deletion backups in tools/archive (offline-activation
 // category removed 2026-08-23; direct top-ups + six gift-card brands removed
-// 2026-09-02; Mobile Legends gift cards removed 2026-09-25) and every
-// destination was checked against the production API on 2026-09-02. Kept as plain data so next.config.mjs stays readable and the
-// vitest suite can assert on it. Redirects are matched in array order, so the
+// 2026-09-02; Mobile Legends + Google Play gift cards removed 2026-09-25) and
+// every destination was checked against the production API on 2026-09-02.
+// Kept as plain data so next.config.mjs stays readable and the vitest suite
+// can assert on it. Redirects are matched in array order, so the
 // per-game offline-activation exceptions must stay ABOVE the wildcard rule.
 //
 // Rule of thumb for the destination: the same game's gift-cards page for a
@@ -35,8 +36,12 @@ export const RETIRED_PAGE_REDIRECTS = [
   { source: '/games/mangatoon/top-ups', destination: '/gift-cards' },
   { source: '/games/marvel-rivals/top-ups', destination: '/gift-cards' },
   { source: '/games/mobile-legends-bang-bang/top-ups', destination: '/gift-cards' },
-  // Deleted later, on 2026-09-25 (Fazer kept filling its orders wrongly).
+  // Deleted later, on 2026-09-25 (Fazer kept filling their orders wrongly).
+  // Google Play also had five region pages (usa, turkiye, india,
+  // united-kingdom, saudi-arabia) under its brand page.
   { source: '/games/mobile-legends-bang-bang/gift-cards', destination: '/gift-cards' },
+  { source: '/games/google-play/gift-cards', destination: '/gift-cards' },
+  { source: '/games/google-play/gift-cards/:region', destination: '/gift-cards' },
   { source: '/games/netflix/gift-cards', destination: '/gift-cards' },
   { source: '/games/oxide-survival-island/top-ups', destination: '/gift-cards' },
   { source: '/games/pubg-mobile/uc', destination: '/games/pubg-mobile/gift-cards' },
@@ -71,6 +76,7 @@ export const EMPTY_GAME_REDIRECTS = [
   { source: '/games/asphalt-9-legends', destination: '/gift-cards' },
   { source: '/games/blood-strike', destination: '/gift-cards' },
   { source: '/games/garena-undawn', destination: '/gift-cards' },
+  { source: '/games/google-play', destination: '/gift-cards' },
   { source: '/games/honkai-star-rail', destination: '/gift-cards' },
   { source: '/games/ludo-club', destination: '/gift-cards' },
   { source: '/games/mangatoon', destination: '/gift-cards' },

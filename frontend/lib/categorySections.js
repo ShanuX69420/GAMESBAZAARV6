@@ -147,10 +147,10 @@ Each listing shows its own delivery time before you buy, and most codes are deli
     heading: 'All Gift Cards',
     title: 'Buy Gift Cards in Pakistan – Steam, PSN, iTunes',
     description:
-      'Steam Wallet, PSN, iTunes, Google Play and more at rupee prices, in dozens of regions. Codes arrive in minutes — pay via JazzCash, Easypaisa or bank transfer.',
+      'Steam Wallet, PSN, iTunes, Roblox and more at rupee prices, in dozens of regions. Codes arrive in minutes — pay via JazzCash, Easypaisa or bank transfer.',
     seoText: `## Gift cards in Pakistan, priced in rupees
 
-Steam Wallet codes, PlayStation Store cards, App Store & iTunes, Google Play, Roblox, Razer Gold — every brand in the list above is sold in rupees, with live prices on this page and denominations that start small enough to try. You don't need an international credit card for any of it: pay via JazzCash, Easypaisa or bank transfer and the code is yours.
+Steam Wallet codes, PlayStation Store cards, App Store & iTunes, Roblox, Razer Gold — every brand in the list above is sold in rupees, with live prices on this page and denominations that start small enough to try. You don't need an international credit card for any of it: pay via JazzCash, Easypaisa or bank transfer and the code is yours.
 
 Most shops in Pakistan stock a handful of US, UK and UAE cards. GamesBazaar carries the same brands in dozens of region versions — so whether your account lives on the US store, the UAE store or somewhere less common, there's usually a card here that matches it.
 
