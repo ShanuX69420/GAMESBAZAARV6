@@ -119,6 +119,22 @@ class RegionPageApiTests(RegionPageFixture):
         # Brand copy stays on the brand page only.
         self.assertEqual(brand['seo_description'], 'Brand description')
 
+    def test_region_page_price_table_lists_only_that_region(self):
+        self.page_uk.seo_body = '## UK prices\n\n{price_table}'
+        self.page_uk.seo_description = '{price_list}. UK codes.'
+        self.page_uk.save()
+
+        uk = self.client.get('/api/games/playstation/gift-cards/united-kingdom/').data
+
+        self.assertEqual(uk['seo_body'], '\n'.join([
+            '## UK prices',
+            '',
+            '| Pack | Price | Per GBP |',
+            '|---|---|---|',
+            '| 20 GBP (United Kingdom) | PKR 4,000 | PKR 200.00 |',
+        ]))
+        self.assertEqual(uk['seo_description'], '20 GBP PKR 4,000. UK codes.')
+
     def test_region_page_without_copy_gets_a_default_priced_title(self):
         data = self.client.get('/api/games/playstation/gift-cards/usa/').data
 

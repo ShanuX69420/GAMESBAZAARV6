@@ -11925,6 +11925,43 @@ html[data-auth-hint="1"] .navbar-guest-links {
   color: var(--green-600);
 }
 
+/* The live price list ({price_table} in the copy — see lib/seoText.js). The
+   wrapper scrolls a wide table on its own so the page never scrolls sideways. */
+.category-seo-text .seo-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+
+.category-seo-text table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 520px;
+}
+
+.category-seo-text th,
+.category-seo-text td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.category-seo-text th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.category-seo-text th + th,
+.category-seo-text td + td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.category-seo-text th:last-child,
+.category-seo-text td:last-child {
+  padding-right: 0;
+}
+
 /* ── Floating WhatsApp contact button ─────────────────────────────────────── */
 
 .wa-float {

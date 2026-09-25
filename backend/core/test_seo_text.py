@@ -11,7 +11,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Category, Game, GameCategory, Listing
+from .models import Category, CategoryOption, Game, GameCategory, Listing
 
 
 def write_copy_file(directory, pages):
@@ -319,3 +319,140 @@ class DefaultPriceTitleTests(TestCase):
         self.add_listing(page, '5000.00')
         self.assertEqual(self.get_seo_title('keys'), 'Buy Elden Ring in Pakistan')
 
+
+
+class PriceListTokenTests(TestCase):
+    """{price_table} in seo_body and {price_list} in seo_description, filled
+    per-response from the offer tiles (Search Console 2026-09-26: "1000 robux
+    in pkr" / "1 uc to pkr" queries found nothing on the page answering them)."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.seller = User.objects.create_user(username='tseller', password='pw12345678')
+        game = Game.objects.create(name='Roblox', slug='roblox')
+        category = Category.objects.create(name='Robux', slug='robux')
+        self.page = GameCategory.objects.create(
+            game=game, category=category, listing_mode='offer',
+            seo_description='{price_list}. Global codes, paid with JazzCash.',
+            seo_body='## Robux to PKR price list\n\n{price_table}\n\n## FAQs',
+        )
+        self.order = 0
+
+    def offer(self, name, price, status='active'):
+        option = CategoryOption.objects.create(
+            game_category=self.page, name=name, order=self.order)
+        self.order += 1
+        Listing.objects.create(
+            seller=self.seller, game_category=self.page, option=option,
+            title=name, price=Decimal(price), status=status,
+        )
+        return option
+
+    def get(self):
+        response = self.client.get('/api/games/roblox/robux/')
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_table_lists_every_pack_with_a_per_unit_price(self):
+        self.offer('50 Robux (Global)', '320.00')
+        self.offer('1000 Robux (Global)', '3530.00')
+        self.offer('10000 Robux (Global)', '31300.00')
+        self.offer('1000 Robux (USA)', '2950.00')
+
+        self.assertEqual(self.get()['seo_body'], '\n'.join([
+            '## Robux to PKR price list',
+            '',
+            '| Pack | Price | Per Robux |',
+            '|---|---|---|',
+            '| 50 Robux (Global) | PKR 320 | PKR 6.40 |',
+            '| 1,000 Robux (Global) | PKR 3,530 | PKR 3.53 |',
+            '| 10,000 Robux (Global) | PKR 31,300 | PKR 3.13 |',
+            '| 1,000 Robux (USA) | PKR 2,950 | PKR 2.95 |',
+            '',
+            '## FAQs',
+        ]))
+
+    def test_a_named_region_lists_only_that_regions_packs(self):
+        # Robux sells 44 packs over three regions; Shayan wanted Global only.
+        self.page.seo_body = '{price_table:Global}'
+        self.page.seo_description = '{price_list:global}. Global codes.'
+        self.page.save(update_fields=['seo_body', 'seo_description'])
+        self.offer('100 Robux (Global)', '510.00')
+        self.offer('200 Robux (Russia)', '920.00')
+        self.offer('1000 Robux (USA)', '2950.00')
+        self.offer('1000 Robux (Global)', '3530.00')
+
+        data = self.get()
+        self.assertEqual(data['seo_body'], '\n'.join([
+            '| Pack | Price | Per Robux |',
+            '|---|---|---|',
+            '| 100 Robux (Global) | PKR 510 | PKR 5.10 |',
+            '| 1,000 Robux (Global) | PKR 3,530 | PKR 3.53 |',
+        ]))
+        self.assertEqual(data['seo_description'],
+                         '100 Robux PKR 510 · 1,000 Robux PKR 3,530. Global codes.')
+
+    def test_a_region_with_no_packs_leaves_the_empty_note(self):
+        self.page.seo_body = '{price_table:Turkey}'
+        self.page.save(update_fields=['seo_body'])
+        self.offer('100 Robux (Global)', '510.00')
+
+        self.assertEqual(self.get()['seo_body'], 'No packs are in stock right now.')
+
+    def test_description_names_the_first_packs_once_per_amount(self):
+        self.offer('50 Robux (Global)', '320.00')
+        self.offer('100 Robux (Global)', '510.00')
+        self.offer('100 Robux (USA)', '490.00')  # region twin of 100 Robux
+        self.offer('800 Robux (Global)', '2890.00')
+        self.offer('1000 Robux (Global)', '3530.00')
+        self.offer('2000 Robux (Global)', '7060.00')  # past the limit of four
+
+        self.assertEqual(
+            self.get()['seo_description'],
+            '50 Robux PKR 320 · 100 Robux PKR 510 · 800 Robux PKR 2,890 · '
+            '1,000 Robux PKR 3,530. Global codes, paid with JazzCash.',
+        )
+
+    def test_packs_without_an_active_offer_are_left_out(self):
+        self.offer('50 Robux (Global)', '320.00', status='inactive')
+        self.offer('100 Robux (Global)', '510.00')
+
+        data = self.get()
+        self.assertNotIn('50 Robux', data['seo_body'])
+        self.assertIn('| 100 Robux (Global) | PKR 510 | PKR 5.10 |', data['seo_body'])
+        self.assertTrue(data['seo_description'].startswith('100 Robux PKR 510. '))
+
+    def test_mixed_packs_get_no_per_unit_column(self):
+        self.offer('10 USD', '2900.00')
+        self.offer('Premium 1 Month', '1500.00')
+
+        body = self.get()['seo_body']
+        self.assertIn('| Pack | Price |\n|---|---|\n| 10 USD | PKR 2,900 |', body)
+        self.assertNotIn('Per ', body)
+
+    def test_no_stock_leaves_a_note_and_drops_the_list(self):
+        self.offer('50 Robux (Global)', '320.00', status='inactive')
+
+        data = self.get()
+        self.assertIn('No packs are in stock right now.', data['seo_body'])
+        self.assertNotIn('{price_table}', data['seo_body'])
+        self.assertEqual(data['seo_description'], 'Global codes, paid with JazzCash.')
+
+    def test_standard_pages_have_no_tiles_so_tokens_resolve_empty(self):
+        self.page.listing_mode = 'standard'
+        self.page.save(update_fields=['listing_mode'])
+        self.offer('50 Robux (Global)', '320.00')
+
+        data = self.get()
+        self.assertNotIn('{price', data['seo_body'] + data['seo_description'])
+
+    def test_copy_without_tokens_is_untouched(self):
+        self.page.seo_description = 'Plain description.'
+        self.page.seo_body = '## Plain body'
+        self.page.save(update_fields=['seo_description', 'seo_body'])
+        self.offer('50 Robux (Global)', '320.00')
+
+        data = self.get()
+        self.assertEqual(data['seo_description'], 'Plain description.')
+        self.assertEqual(data['seo_body'], '## Plain body')

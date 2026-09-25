@@ -8,8 +8,26 @@
 // literal text. The "### " headings double as the page's FAQ: each one is a
 // question and the paragraphs that follow it (up to the next heading) are
 // its answer, which is what extractSeoFaq feeds into the FAQPage JSON-LD.
+// A block of "| a | b |" rows is a table (parseSeoTable).
 
 const LINK_PATTERN = /\[([^[\]\n]+)\]\((\/(?!\/)[^\s()]*)\)/g;
+
+// A block whose every line is a "| a | b |" row, with a "|---|---|" divider as
+// its second line, is a table: the live price list the API writes in place of
+// {price_table} (backend core/views.py fill_price_table). Returns
+// { head, rows } of cell strings, or null for any other block.
+const TABLE_DIVIDER = /^\|(\s*:?-{3,}:?\s*\|)+$/;
+
+export function parseSeoTable(block) {
+  const lines = String(block || '').split('\n').map((line) => line.trim());
+  if (lines.length < 2) return null;
+  if (!lines.every((line) => line.length > 1 && line.startsWith('|') && line.endsWith('|'))) {
+    return null;
+  }
+  if (!TABLE_DIVIDER.test(lines[1])) return null;
+  const cells = (line) => line.slice(1, -1).split('|').map((cell) => cell.trim());
+  return { head: cells(lines[0]), rows: lines.slice(2).map(cells) };
+}
 
 export function splitSeoBlocks(text) {
   return String(text || '')
@@ -59,7 +77,8 @@ export function extractSeoFaq(blocks) {
       faq.push(current);
     } else if (block.startsWith('## ')) {
       current = null;
-    } else if (current) {
+    } else if (current && !parseSeoTable(block)) {
+      // A table has no plain-text form worth putting in JSON-LD.
       current.answers.push(stripInlineLinks(block));
     }
   }

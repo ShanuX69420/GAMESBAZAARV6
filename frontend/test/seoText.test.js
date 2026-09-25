@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { extractSeoFaq, parseInlineLinks, splitSeoBlocks, stripInlineLinks } from '../lib/seoText';
+import {
+  extractSeoFaq, parseInlineLinks, parseSeoTable, splitSeoBlocks, stripInlineLinks,
+} from '../lib/seoText';
 
 describe('SEO copy inline links', () => {
   it('leaves copy without links untouched', () => {
@@ -94,5 +96,45 @@ describe('SEO copy FAQ extraction', () => {
       '### Unanswered?',
     ].join('\n\n'));
     expect(extractSeoFaq(blocks)).toEqual([{ q: 'Answered?', a: 'Yes.' }]);
+  });
+});
+
+describe('SEO copy price tables', () => {
+  const TABLE = [
+    '| Pack | Price | Per Robux |',
+    '|---|---|---|',
+    '| 50 Robux (Global) | PKR 320 | PKR 6.40 |',
+    '| 1,000 Robux (Global) | PKR 3,530 | PKR 3.53 |',
+  ].join('\n');
+
+  it('parses the API price table into header and rows', () => {
+    expect(parseSeoTable(TABLE)).toEqual({
+      head: ['Pack', 'Price', 'Per Robux'],
+      rows: [
+        ['50 Robux (Global)', 'PKR 320', 'PKR 6.40'],
+        ['1,000 Robux (Global)', 'PKR 3,530', 'PKR 3.53'],
+      ],
+    });
+  });
+
+  it('stays a table block when split out of the surrounding copy', () => {
+    const blocks = splitSeoBlocks(`## Robux to PKR price list\n\n${TABLE}\n\nPrices move daily.`);
+    expect(blocks).toHaveLength(3);
+    expect(parseSeoTable(blocks[1])?.rows).toHaveLength(2);
+  });
+
+  it('treats anything else as ordinary copy', () => {
+    expect(parseSeoTable('A paragraph | with a pipe in it.')).toBeNull();
+    expect(parseSeoTable('| lone row |')).toBeNull();
+    expect(parseSeoTable('| a | b |\n| c | d |')).toBeNull(); // no divider
+    expect(parseSeoTable('## Heading')).toBeNull();
+    expect(parseSeoTable('')).toBeNull();
+  });
+
+  it('never puts a table into a FAQ answer', () => {
+    const faq = extractSeoFaq(splitSeoBlocks(
+      `### How much is 1,000 Robux in PKR?\n\nSee the list.\n\n${TABLE}`,
+    ));
+    expect(faq).toEqual([{ q: 'How much is 1,000 Robux in PKR?', a: 'See the list.' }]);
   });
 });

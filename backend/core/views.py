@@ -1188,6 +1188,112 @@ def region_seo_title_with_from_price(region_page, label, region_filter):
     )
 
 
+# Hand-written seo_body / seo_description may also carry a live price list
+# (Search Console 2026-09-26: "200 robux in pkr", "1 uc to pkr" and the like
+# ranked ~9 with ~0.5% CTR — nothing in the result answered "how much is N in
+# rupees"). Offer-mode pages only, built from the option tiles' own "from"
+# prices, so the list can never disagree with the tiles above it.
+#   {price_table} in seo_body        -> a "| Pack | Price | Per <unit> |" table
+#   {price_list} in seo_description  -> "60 UC PKR 290 · 325 UC PKR 1,420 · ..."
+# Either may name a region — {price_table:Global} — to list only the tiles
+# whose name ends "(Global)" (Robux sells 44 packs over three regions; Shayan
+# wanted the list Global-only).
+SEO_PRICE_TABLE_TOKEN = re.compile(r'\{price_table(?::([^{}]+))?\}')
+# (with the punctuation after it, which goes too when there is no stock)
+SEO_PRICE_LIST_TOKEN = re.compile(r'\{price_list(?::([^{}]+))?\}([.,;:]?\s*)')
+SEO_PRICE_LIST_LIMIT = 4
+SEO_PRICE_TABLE_EMPTY = 'No packs are in stock right now.'
+_OPTION_REGION_SUFFIX = re.compile(r'\s*\(([^()]*)\)\s*$')
+_OPTION_AMOUNT = re.compile(r'^(\d[\d,]*)\s+(\S.*)$')
+
+
+def _priced_options(options_payload, region=None):
+    options = [opt for opt in options_payload or [] if opt.get('min_price') is not None]
+    if region:
+        wanted = region.strip().lower()
+        options = [
+            opt for opt in options
+            if (match := _OPTION_REGION_SUFFIX.search(opt['name']))
+            and match.group(1).strip().lower() == wanted
+        ]
+    return options
+
+
+def _option_amount(name):
+    """(amount, unit) from a tile name such as "1000 Robux (Global)" ->
+    (1000, "Robux"), or None when the name does not start with a number."""
+    match = _OPTION_AMOUNT.match(_OPTION_REGION_SUFFIX.sub('', name).strip())
+    if not match:
+        return None
+    amount = int(match.group(1).replace(',', ''))
+    return (amount, match.group(2).strip()) if amount > 0 else None
+
+
+def _option_label(name, keep_region):
+    """The tile name with its leading number comma-grouped ("1000 Robux
+    (Global)" -> "1,000 Robux (Global)"), optionally without the region."""
+    label = name.strip() if keep_region else _OPTION_REGION_SUFFIX.sub('', name).strip()
+    return re.sub(r'^\d{4,}(?=\s)', lambda m: f'{int(m.group(0)):,}', label or name.strip())
+
+
+def _pkr(price):
+    return f'PKR {int(Decimal(price)):,}'
+
+
+def _price_table(options):
+    if not options:
+        return SEO_PRICE_TABLE_EMPTY
+    amounts = [_option_amount(opt['name']) for opt in options]
+    units = {amount[1] for amount in amounts if amount}
+    # The per-unit column ("1 uc to pkr") only when every pack is a count of
+    # the same unit — mixed pages ("10 USD", "Premium 1 Month") skip it.
+    per_unit = all(amounts) and len(units) == 1
+    header = '| Pack | Price |' + (f' Per {units.pop()} |' if per_unit else '')
+    lines = [header, '|---|---|' + ('---|' if per_unit else '')]
+    for opt, amount in zip(options, amounts):
+        cells = [_option_label(opt['name'], keep_region=True).replace('|', '/'),
+                 _pkr(opt['min_price'])]
+        if per_unit:
+            cells.append(f"PKR {Decimal(opt['min_price']) / amount[0]:,.2f}")
+        lines.append('| ' + ' | '.join(cells) + ' |')
+    return '\n'.join(lines)
+
+
+def fill_price_table(text, options_payload):
+    if not text or '{price_table' not in text:
+        return text
+    return SEO_PRICE_TABLE_TOKEN.sub(
+        lambda m: _price_table(_priced_options(options_payload, m.group(1))), text)
+
+
+def _price_list(options):
+    """Up to SEO_PRICE_LIST_LIMIT packs in tile order (low -> high), one per
+    amount: region twins ("100 Robux (Global)" / "(USA)") share a line, the
+    first tile's price wins."""
+    entries, seen = [], set()
+    for opt in options:
+        label = _option_label(opt['name'], keep_region=False)
+        if label in seen:
+            continue
+        seen.add(label)
+        entries.append(f"{label} {_pkr(opt['min_price'])}")
+        if len(entries) == SEO_PRICE_LIST_LIMIT:
+            break
+    return ' · '.join(entries)
+
+
+def fill_price_list(text, options_payload):
+    """With no stock the token and the punctuation right after it drop out."""
+    if not text or '{price_list' not in text:
+        return text
+
+    def replace(match):
+        entries = _price_list(_priced_options(options_payload, match.group(1)))
+        return entries + match.group(2) if entries else ''
+
+    return SEO_PRICE_LIST_TOKEN.sub(replace, text).strip()
+
+
 class GameCategoryDetailView(APIView):
     """GET /api/games/{game_slug}/{category_slug}/ — Category with filters + listings."""
 
@@ -1408,6 +1514,14 @@ class GameCategoryDetailView(APIView):
                 listings_qs = listings_qs.filter(option_id=selected_option_id)
             else:
                 listings_qs = listings_qs.none()
+
+        # The copy's live price list comes from the tiles just built (so on a
+        # region page it is that region's packs); other modes have no tiles
+        # and the tokens resolve empty.
+        cat_data['seo_body'] = fill_price_table(
+            cat_data.get('seo_body'), cat_data.get('options'))
+        cat_data['seo_description'] = fill_price_list(
+            cat_data.get('seo_description'), cat_data.get('options'))
 
         # Annotate with seller rating stats (for display on listing cards)
         seller_avg_rating_subquery = (
