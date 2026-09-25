@@ -129,10 +129,11 @@ class GameCategory(models.Model):
     )
     display_slug = models.SlugField(max_length=200, blank=True, default='', editable=False)
     order = models.PositiveIntegerField(default=0, help_text='Display order within the game')
-    featured = models.BooleanField(
-        default=False,
-        help_text='Pin this game to the top of its category\'s "Popular" panel '
-                  'on the home page.',
+    popular_rank = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name='Popular position',
+        help_text='Pin this game to its category\'s "Popular" panel on the home '
+                  'page at this position (1 = first). Blank = not pinned; the '
+                  'panel fills its remaining slots by stock.',
     )
     allow_auto_delivery = models.BooleanField(
         default=False,

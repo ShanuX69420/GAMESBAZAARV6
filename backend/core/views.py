@@ -770,9 +770,10 @@ class HomePopularView(APIView):
     """GET /api/home/popular/ — Curated "Popular" panels for the home page.
 
     One section per HOME_PANEL_SECTIONS category, each listing the top games
-    in that category: featured (admin-pinned) first, then by active listing
-    count, then the game's manual order. Categories without games are omitted
-    so the home page never shows an empty panel.
+    in that category: admin-pinned games first in their Popular position
+    order, then by active listing count, then the game's manual order.
+    Categories without games are omitted so the home page never shows an
+    empty panel.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -807,7 +808,8 @@ class HomePopularView(APIView):
                     'listings__price', filter=Q(listings__status='active'),
                 ),
             )
-            .order_by('-featured', '-active_listing_count', 'game__order', 'game__name')
+            .order_by(F('popular_rank').asc(nulls_last=True), '-active_listing_count',
+                      'game__order', 'game__name')
         )
 
         games_by_section = {}

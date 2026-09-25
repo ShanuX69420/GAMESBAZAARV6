@@ -4298,21 +4298,25 @@ class HomePopularViewTests(TestCase):
         response = self.client.get('/api/categories/offline-activation/games/')
         self.assertEqual(response.status_code, 404)
 
-    def test_featured_then_stocked_games_rank_first(self):
+    def test_pinned_games_in_position_order_then_stocked_games(self):
         self.add_game('Alpha', 'alpha', self.accounts)
         stocked = self.add_game('Stocked', 'stocked', self.accounts)
         self.add_listing(stocked)
         self.add_listing(stocked, status='sold')  # inactive stock must not count
-        self.add_game('Pinned', 'pinned', self.accounts, featured=True)
+        # Position beats stock: the better-stocked pin still goes second.
+        busy_pin = self.add_game('Busy Pin', 'busy-pin', self.accounts, popular_rank=2)
+        self.add_listing(busy_pin)
+        self.add_listing(busy_pin)
+        self.add_game('Pinned', 'pinned', self.accounts, popular_rank=1)
 
         response = self.client.get('/api/home/popular/')
 
         items = response.data['sections'][0]['items']
         self.assertEqual(
             [item['game_slug'] for item in items],
-            ['pinned', 'stocked', 'alpha'],
+            ['pinned', 'busy-pin', 'stocked', 'alpha'],
         )
-        self.assertEqual(items[1]['listing_count'], 1)
+        self.assertEqual(items[2]['listing_count'], 1)
 
     def test_category_slug_uses_per_game_display_override(self):
         self.add_game('Valorant', 'valorant', self.accounts, display_name='Logins')
